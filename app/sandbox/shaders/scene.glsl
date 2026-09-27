@@ -186,6 +186,7 @@ struct particle_inst
 	vec4 pos_size; // xyz, size
 	vec4 color;	   // rgb, a unused
 	vec4 rot;	   // quaternion
+	vec4 shape;	   // xyz: per-axis scale (a splinter is long, a leaf flat), w: glint strength
 };
 
 layout( binding = 2 ) readonly buffer particles
@@ -207,9 +208,12 @@ vec3 qrot( vec4 q, vec3 v )
 void main()
 {
 	particle_inst p = inst[gl_InstanceIndex];
-	vec3 wp = qrot( p.rot, in_corner * p.pos_size.w ) + p.pos_size.xyz;
-	vec3 n = qrot( p.rot, in_cnormal );
-	float light = 0.55 + 0.25 * n.y + 0.3 * max( dot( n, normalize( vec3( 0.4, 0.8, 0.3 ) ) ), 0.0 );
+	vec3 wp = qrot( p.rot, in_corner * p.shape.xyz * p.pos_size.w ) + p.pos_size.xyz;
+	vec3 n = normalize( qrot( p.rot, in_cnormal / p.shape.xyz ) );
+	float sun = max( dot( n, normalize( vec3( 0.4, 0.8, 0.3 ) ) ), 0.0 );
+	float light = 0.55 + 0.25 * n.y + 0.3 * sun;
+	// Glass shards flash as they tumble through the sun direction
+	light += p.shape.w * 2.5 * pow( sun, 12.0 );
 	v_pcolor = p.color.rgb * light;
 	gl_Position = view_proj_p * vec4( wp, 1.0 );
 }

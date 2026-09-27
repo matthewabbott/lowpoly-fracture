@@ -551,13 +551,23 @@ void Renderer_SetParticles( const Particle* particles, int count )
 		d.color[1] = (float)( ( p.color >> 8 ) & 0xFF ) / 255.0f;
 		d.color[2] = (float)( ( p.color >> 16 ) & 0xFF ) / 255.0f;
 		d.color[3] = 1.0f;
-		// spin about a fixed tilted axis
 		float half = 0.5f * p.spin;
 		float sn = sinf( half ), cs = cosf( half );
-		d.rot[0] = 0.577f * sn;
-		d.rot[1] = 0.577f * sn;
-		d.rot[2] = 0.577f * sn;
+		d.rot[0] = p.axis.x * sn;
+		d.rot[1] = p.axis.y * sn;
+		d.rot[2] = p.axis.z * sn;
 		d.rot[3] = cs;
+
+		// Shape by kind: a dust cube, a squat chip, a long splinter, a flat leaf, a thin glinting shard
+		static const float kShapes[5][4] = {
+			{ 1.0f, 1.0f, 1.0f, 0.0f }, { 1.0f, 0.6f, 0.8f, 0.0f }, { 0.3f, 0.3f, 2.4f, 0.0f },
+			{ 1.3f, 0.1f, 0.9f, 0.0f }, { 1.1f, 0.08f, 0.8f, 1.0f },
+		};
+		int kind = p.kind >= 0 && p.kind < 5 ? p.kind : 0;
+		d.shape[0] = kShapes[kind][0];
+		d.shape[1] = kShapes[kind][1];
+		d.shape[2] = kShapes[kind][2];
+		d.shape[3] = kShapes[kind][3];
 	}
 	s.particleCount = count;
 }

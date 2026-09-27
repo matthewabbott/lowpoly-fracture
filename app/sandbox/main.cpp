@@ -37,11 +37,12 @@ enum Tool
 	ToolBall,
 	ToolFlask,
 	ToolPull,
+	ToolBlow,
 	ToolCount
 };
 
 const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledgehammer", "Cannonball", "Volatile flask",
-									  "Grab / pull" };
+									  "Grab / pull", "Leaf blower" };
 
 // A sim input: applied at the start of `tick`, before the step. Recorded and replayed as text.
 struct Event
@@ -212,7 +213,7 @@ void LoadScene( int scene )
 
 const char* ToolToken( int tool )
 {
-	static const char* tokens[ToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull" };
+	static const char* tokens[ToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull", "blow" };
 	return tokens[tool];
 }
 
@@ -249,14 +250,22 @@ void LoadScript( const std::string& path )
 			}
 			if ( e.tool < 0 )
 			{
-				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull)\n", name );
+				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow)\n", name );
 				continue;
 			}
 			if ( e.tool != ToolPull )
 			{
 				e.dir = Normalize( e.dir );
 			}
-			app.script.push_back( e );
+			// A held blower: the last field is how many ticks it stays on
+			int repeat = e.tool == ToolBlow && e.piece > 1 ? e.piece : 1;
+			for ( int k = 0; k < repeat; ++k )
+			{
+				Event copy = e;
+				copy.tick = e.tick + k;
+				copy.piece = -1;
+				app.script.push_back( copy );
+			}
 		}
 	}
 	fclose( f );
@@ -273,6 +282,30 @@ void ApplyEvent( const Event& e )
 	{
 		// origin = target, dir = grabbed point in the body frame
 		lpWorld_Pull( app.world, e.piece, dir, origin, 40.0f, 400.0f );
+		return;
+	}
+
+	if ( e.tool == ToolBlow )
+	{
+		// 8 m cone of air: wakes and pushes rubble, scrap and ghosts, so a road can be cleared. Gentle enough that
+		// blown rubble does not smash into what it lands against (damage starts at 4 m/s).
+		lpWorld_Blow( app.world, origin, dir, 8.0f, 0.35f, 4.5f );
+		uint32_t h = (uint32_t)( e.tick * 2654435761u );
+		for ( int i = 0; i < 1; ++i )
+		{
+			h = h * 1664525u + 1013904223u;
+			float rx = (float)( ( h >> 8 ) & 1023 ) / 1023.0f - 0.5f;
+			float ry = (float)( ( h >> 18 ) & 1023 ) / 1023.0f - 0.5f;
+			Particle p = {};
+			p.position = { e.origin.x + 0.6f * e.dir.x, e.origin.y + 0.6f * e.dir.y - 0.3f, e.origin.z + 0.6f * e.dir.z };
+			p.velocity = { 9.0f * e.dir.x + 2.0f * rx, 9.0f * e.dir.y + 2.0f * ry + 1.0f, 9.0f * e.dir.z + 2.0f * rx };
+			p.size = 0.03f;
+			p.life = 0.35f;
+			p.color = 0xFFD8E0E4u;
+			p.kind = lp_particleDust;
+			p.axis = { 0.577f, 0.577f, 0.577f };
+			app.particles.push_back( p );
+		}
 		return;
 	}
 
@@ -376,7 +409,7 @@ void ApplyEvent( const Event& e )
 	lpWorld_AddImpact( app.world, &im );
 
 	// cosmetic dust puff
-	int n = e.tool == ToolRifle ? 6 : 30;
+	int n = e.tool == ToolRifle ? 6 : 16;
 	for ( int i = 0; i < n; ++i )
 	{
 		uint32_t h = (uint32_t)( app.tick * 2654435761u ) ^ (uint32_t)( i * 40503u );
@@ -387,9 +420,12 @@ void ApplyEvent( const Event& e )
 		p.position = { (float)hit.point.x, (float)hit.point.y, (float)hit.point.z };
 		float speed = e.tool == ToolRifle ? 2.0f : 6.0f;
 		p.velocity = { speed * rx + 0.8f * hit.normal.x, speed * ry, speed * rz + 0.8f * hit.normal.z };
-		p.size = e.tool == ToolRifle ? 0.05f : 0.12f;
+		p.size = e.tool == ToolRifle ? 0.04f : 0.07f;
 		p.life = 0.6f + 0.8f * ry;
+		p.spin = 6.2832f * rz;
 		p.color = 0xFFB8C4CCu;
+		p.kind = lp_particleDust;
+		p.axis = Normalize( V3{ rx, ry - 0.5f, rz + 0.3f } );
 		app.particles.push_back( p );
 	}
 }
@@ -484,6 +520,11 @@ void StepSimulation()
 		p.life = 1.5f + 0.5f * (float)( i % 5 ) / 5.0f;
 		p.spin = (float)i;
 		p.color = src.color;
+		p.kind = src.kind;
+		// A spin axis per particle, hashed from its tick and index
+		uint32_t h = (uint32_t)( app.tick * 2654435761u ) ^ (uint32_t)( ( i + 1 ) * 2246822519u );
+		V3 axis = { (float)( h & 255 ) - 127.5f, (float)( ( h >> 8 ) & 255 ) - 127.5f, (float)( ( h >> 16 ) & 255 ) - 127.5f };
+		p.axis = Normalize( axis );
 		app.particles.push_back( p );
 	}
 
@@ -507,6 +548,12 @@ void UpdateParticles( float dt )
 			continue;
 		}
 		p.velocity.y -= 9.8f * dt;
+		if ( p.kind == lp_particleLeaf || p.kind == lp_particleDust )
+		{
+			// Air drag: leaves flutter down, dust hangs
+			float drag = p.kind == lp_particleLeaf ? 3.0f : 1.5f;
+			p.velocity = ( 1.0f - drag * dt ) * p.velocity;
+		}
 		p.position = p.position + dt * p.velocity;
 		if ( p.position.y < 0.5f * p.size )
 		{
@@ -556,6 +603,9 @@ void DrawUi()
 	ImGui::Text( "pieces %d  bonds %d  structures %d", app.last.pieceCount, app.last.bondCount, app.last.structureBodies );
 	ImGui::Text( "debris %d (awake %d)  rubble %d  particles %d", app.last.debrisBodies, app.last.awakeDebris, app.last.rubbleBodies,
 				 (int)app.particles.size() );
+	ImGui::Text( "tiers: full %d  light %d  ghosts %d  scrap %d", app.last.fullDebris, app.last.lightDebris, app.last.ghostBodies,
+				 app.last.scrapBodies );
+	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );
 	ImGui::Text( "triangles %d  draws %d  pages %d  upload %d KB", r.triangles, r.drawCalls, r.pages, r.uploadKB );
 	ImGui::Text( "tick %lld", (long long)app.tick );
 	ImGui::Separator();
@@ -590,8 +640,8 @@ void DrawUi()
 	ImGui::Checkbox( "shadows", &app.rs.shadows );
 	ImGui::SliderFloat( "fog", &app.rs.fogDensity, 0.0f, 0.04f, "%.3f" );
 	ImGui::Checkbox( "paused (P)", &app.paused );
-	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-7 tools" );
-	ImGui::TextDisabled( "grab: hold LMB, wheel changes distance" );
+	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-8 tools" );
+	ImGui::TextDisabled( "grab / blower: hold LMB, wheel changes grab distance" );
 	ImGui::TextDisabled( "R reload, B bombard, F1 ui, F12 screenshot" );
 	ImGui::End();
 
@@ -683,6 +733,10 @@ void Frame()
 			if ( app.firing && app.tool == ToolPull )
 			{
 				QueueGrab();
+			}
+			if ( app.firing && app.tool == ToolBlow )
+			{
+				QueueFire(); // one blow per tick while held
 			}
 			StepSimulation();
 			app.fireCooldown -= 1;
@@ -817,7 +871,7 @@ void Event_( const sapp_event* ev )
 				{
 					BeginGrab();
 				}
-				else if ( app.tool != ToolRifle )
+				else if ( app.tool != ToolRifle && app.tool != ToolBlow )
 				{
 					QueueFire();
 				}

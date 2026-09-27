@@ -20,11 +20,16 @@ keep the destruction layer (`src/`) and the app from breaking it.
 6. **Parallel work is pure.** A fracture job reads only its own snapshot and writes only its own output; results are
    integrated sequentially in job order (`world.c`, "fracture jobs"). Box3D's threading is deterministic by design.
 7. **Nothing in the simulation looks at the camera or wall-clock time.** Debris budgets rank by volume, age and
-   index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on.
-8. **Cosmetic state lives outside the simulation.** Dust particles are emitted by the core but simulated only by
+   index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on. Every
+   per-step cap (fracture jobs, freezes, ghost ray casts, demotions) is a count taken in index order, never a time
+   budget.
+8. **Ghosts are simulated by the core, not Box3D, and are part of the state.** Their integration copies Box3D's
+   math; their landing ray casts are ordinary deterministic world queries whose callback keeps the closest hit
+   (no dependence on callback order). Their state is in `lpWorld_Hash`.
+9. **Cosmetic state lives outside the simulation.** Dust particles are emitted by the core but simulated only by
    the app; they never feed back.
-9. **Inputs are events stamped with a tick.** The sandbox records tool use as text (`--record`), replays it
-   (`--script`) and applies it before the step of that tick. A pull/grab is one event per tick.
+10. **Inputs are events stamped with a tick.** The sandbox records tool use as text (`--record`), replays it
+   (`--script`) and applies it before the step of that tick. A pull/grab or a held blower is one event per tick.
 
 ## How it is checked
 
@@ -39,5 +44,6 @@ keep the destruction layer (`src/`) and the app from breaking it.
 - Cross-compiler and cross-OS determinism is designed for (rules 1 to 5, and Box3D's own guarantee) but only
   Windows/MSVC is exercised so far. Box3D's author calls cross-platform determinism "brittle" across compiler
   versions: pin the toolchain for any multiplayer build.
-- `lpWorld_Hash` covers body transforms and velocities, piece geometry and bonds. Rendering and particles are
-  deliberately excluded.
+- `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry and bonds. Rendering
+  and particles are deliberately excluded.
+- Checked scenes: walls, house (flasks), tower (collapse), lumber, and the blower demo, at 1, 4 and 8 workers.

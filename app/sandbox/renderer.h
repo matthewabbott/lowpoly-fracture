@@ -28,6 +28,8 @@ struct Particle
 	float life;
 	float spin;
 	uint32_t color; // 0xAABBGGRR
+	int kind;		// lpParticleKind: the shape it is drawn with
+	V3 axis;		// spin axis, unit length
 };
 
 struct RenderStats
