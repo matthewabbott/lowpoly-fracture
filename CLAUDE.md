@@ -22,7 +22,8 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/world.h` | internal layout of `lpWorld` and the core's shared internals, used by tests too |
 | `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, hash, validation |
 | `src/impact.c` | impacts: fracture jobs (3 phases), bond damage, detonators, blast forces, collision hits |
-| `src/split.c` | weight check and splitting bodies into components (tiered by volume) |
+| `src/split.c` | splitting bodies into components (tiered by volume), then the stress step for structures |
+| `src/stress.c` | quasi-static stress solve on a structure's bond graph (PCG, block-Jacobi), joint failure and strain |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber) and scripted bombardment |

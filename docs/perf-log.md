@@ -93,3 +93,25 @@ Findings and candidate wins, biggest first:
   rubble never move.
 - **Scrap render batching:** scrap is static, so it could be merged into static render chunks per grid cell.
 - **Toaster profile:** caps, fragment scale, render scale and shadows behind one switch.
+
+## 2026-09-27 stress solve replaces the weight check
+
+Best of 3, 8 workers (1 worker in brackets); the tower joins the ladder.
+
+| scene | step avg | stress avg / max | awake contacts avg |
+|---|---|---|---|
+| walls | 0.84 (1.86) ms | 0.12 / 2.9 ms | 1.6k |
+| town | 1.35 (2.92) ms | 0.27 / 2.9 ms | 2.1k |
+| pile | 0.93 (2.37) ms | 0 | 3.0k |
+| tower | 2.20 (4.70) ms | 0.10 / 2.8 ms | 2.9k |
+
+- The solve itself stays inside its work budget (40k bond-iterations, about 3 ms worst step). Cold solves: tower 85
+  pieces in 19 iterations, house 48 pieces in 27; a damaged tower of 391 pieces and 1.3k bonds converges over about
+  10 steps with warm starts and continuation.
+- Town and walls cost more because structures now really come down under bombardment: falling chunks hit, fracture
+  and make debris (town fracture avg 0.16 -> 0.49 ms, physics 0.51 -> 0.75 ms, peak pieces 5.4k -> 7.3k). Levers if
+  this matters: `stressScale`, joint strengths, hit-impact caps, debris budgets.
+- What made the solve converge: continuing conjugate gradient across steps instead of restarting it, a block-Jacobi
+  preconditioner (6x6 per piece), and not keeping fracture crumbs on structures (kept cells below the light-debris
+  size fall). Before those, a damaged tower needed 60+ steps and the old "judge anyway" fallback broke hundreds of
+  joints on garbage forces.

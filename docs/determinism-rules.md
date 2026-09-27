@@ -21,8 +21,8 @@ keep the destruction layer (`src/`) and the app from breaking it.
    integrated sequentially in job order (`impact.c`, "fracture jobs"). Box3D's threading is deterministic by design.
 7. **Nothing in the simulation looks at the camera or wall-clock time.** Debris budgets rank by volume, age and
    index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on. Every
-   per-step cap (fracture jobs, freezes, ghost ray casts, demotions) is a count taken in index order, never a time
-   budget.
+   per-step cap (fracture jobs, freezes, ghost ray casts, demotions, stress bond-iterations) is a count taken in index
+   order, never a time budget. The stress solve is sequential per structure with double accumulators.
 8. **Ghosts are simulated by the core, not Box3D, and are part of the state.** Their integration copies Box3D's
    math; their landing ray casts are ordinary deterministic world queries whose callback keeps the closest hit
    (no dependence on callback order). Their state is in `lpWorld_Hash`.

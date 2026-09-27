@@ -687,7 +687,20 @@ bool lpShape_NearlyOverlap( const lpShape* a, const lpShape* b, float margin )
 			return true;
 		}
 	}
-	return false;
+
+	// Two convex solids can cross edge to edge with no vertex inside the other (overlapping low-poly blobs): GJK
+	if ( a->vertexCount > B3_MAX_SHAPE_CAST_POINTS || b->vertexCount > B3_MAX_SHAPE_CAST_POINTS )
+	{
+		return false;
+	}
+	b3DistanceInput input = { 0 };
+	input.proxyA = (b3ShapeProxy){ a->vertices, a->vertexCount, 0.0f };
+	input.proxyB = (b3ShapeProxy){ b->vertices, b->vertexCount, 0.0f };
+	input.transform = b3Transform_identity;
+	input.useRadii = false;
+	b3SimplexCache cache = { 0 };
+	b3DistanceOutput output = b3ShapeDistance( &input, &cache, NULL, 0 );
+	return output.distance < margin;
 }
 
 b3HullData* lpShape_CreateHull( const lpShape* shape )

@@ -38,7 +38,7 @@ Automation (used by agents and CI): `--script file` replays tool events (see `sc
 collapse, lumber, blower; a `blow` line's last number is how many ticks it is held), `--record file` writes them,
 `--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame, `--hash-log file` writes the
 per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--hide-ui`, `--vsync 0`, `--workers N`,
-`--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and weight checks.
+`--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves.
 
 ## Third-party
 

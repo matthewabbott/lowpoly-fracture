@@ -26,6 +26,11 @@ popping.
 
 ## 2. Toppling and stress points
 
+In progress. Done: a quasi-static stress solve on each structure's bond graph (`stress.c`, see architecture.md),
+joints (mortar, dry, nails, solid) with their own strengths, strain so joints creak before they give, and toppling
+that emerges from no-tension joints (the tower felling test). Next: slender pieces breaking mid-span, the masonry
+fracture pattern (bricks and mortar), a ruins scene. The earlier notes below shaped it.
+
 The idea is snapshotted stress that is checked only where things break.
 
 - **Local re-check.** After a break, re-check a neighbourhood only (k bond hops or radius R around broken bonds).

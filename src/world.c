@@ -24,24 +24,24 @@
 // wood 5 / 18 / 31 cm (splinters are long and thin, so most are ghosts), glass shards nearly all ghosts, foliage mostly
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
-	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true, 3.0e5f,
+	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true,
 				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f },
-	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f,
+	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true,
 				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f },
-	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f,
+	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true,
 				   3.4e-6f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f },
-	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f,
+	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true,
 					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f },
-	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f,
+	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true,
 					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f },
-	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f,
+	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true,
 				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f },
-	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f,
+	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false,
 				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f },
-	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f,
+	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false,
 					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f },
-	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 1e6f, 1e6f, 1e6f },
+	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true,
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f },
 };
 
 // Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by
@@ -118,6 +118,11 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.killDepth = -50.0f;
 	def.workerCount = 1;
 	def.stressScale = 1.0f;
+	def.maxStressWork = 40000;
+	def.maxStressIterations = 256;
+	def.maxStressBreaks = 4;
+	def.stressPatience = 30;
+	def.strainRate = 1.0f;
 	def.maxFractureJobsPerStep = 48;
 	def.maxFreezesPerStep = 64;
 	def.maxGhostCastsPerStep = 2048;
@@ -180,6 +185,8 @@ int lpAllocPiece( lpWorld* w )
 	p->body = -1;
 	p->nextFree = -1;
 	p->shapeId = b3_nullShapeId;
+	memset( &p->stressX, 0, 3 * sizeof( lpVec6 ) );
+	p->strain = 0.0f;
 	return index;
 }
 
@@ -305,7 +312,11 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->pendingWakes );
 	lpArray_Free( w->freezeCandidates );
 	lpArray_Free( w->pendingDestroy );
-	lpArray_Free( w->scratchLoad );
+	lpArray_Free( w->stressNodes );
+	lpArray_Free( w->stressEdges );
+	lpArray_Free( w->stressVectors );
+	lpArray_Free( w->stressBlocks );
+	lpArray_Free( w->scratchOverloads );
 	lpArray_Free( w->stressAgain );
 	for ( int i = 0; i < w->jobCapacity; ++i )
 	{
@@ -392,6 +403,7 @@ bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 	p->body = bodyIndex;
 	lpArray_Push( b->pieces, pieceIndex );
 	b->volume += p->shape->volume;
+	b->topology += 1;
 	return true;
 }
 
@@ -424,6 +436,11 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 {
 	lpBond* bond = w->bonds.data + bondIndex;
 	LP_ASSERT( bond->alive );
+	int body = w->pieces.data[bond->a].body;
+	if ( body >= 0 )
+	{
+		w->bodies.data[body].topology += 1;
+	}
 	lpRemoveBondFromPiece( w->pieces.data + bond->a, bondIndex );
 	lpRemoveBondFromPiece( w->pieces.data + bond->b, bondIndex );
 	bond->alive = false;
@@ -432,13 +449,17 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 	w->bondCount -= 1;
 }
 
-void lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint )
+int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint )
 {
 	lpPiece* pa = w->pieces.data + a;
 	lpPiece* pb = w->pieces.data + b;
 	float strengthA = lpGetMaterial( pa->material )->bondStrength;
 	float strengthB = lpGetMaterial( pb->material )->bondStrength;
 
+	if ( pa->body >= 0 )
+	{
+		w->bodies.data[pa->body].topology += 1;
+	}
 	int index = lpAllocBond( w );
 	lpBond* bond = w->bonds.data + index;
 	bond->a = a < b ? a : b;
@@ -452,13 +473,11 @@ void lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t join
 	bond->strain = 0.0f;
 	bond->health = strengthA < strengthB ? strengthA : strengthB;
 	bond->strength = bond->health;
-	float loadA = lpGetMaterial( pa->material )->loadStrength;
-	float loadB = lpGetMaterial( pb->material )->loadStrength;
-	bond->loadStrength = loadA < loadB ? loadA : loadB;
 	bond->alive = true;
 	lpArray_Push( pa->bonds, index );
 	lpArray_Push( pb->bonds, index );
 	w->bondCount += 1;
+	return index;
 }
 
 // Bond two pieces of one body if they share a face. Parts that meet at an angle (a roof plank on a gable) share no
@@ -711,6 +730,10 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	if ( type == b3_dynamicBody )
 	{
 		b3Body_ApplyMassFromShapes( b->id );
+	}
+	else
+	{
+		lpMarkDirty( w, bodyIndex ); // one stress check, so a structure that cannot stand comes down
 	}
 	return bodyIndex;
 }

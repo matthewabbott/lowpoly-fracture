@@ -1,158 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Connectivity: the weight check for static structures, and splitting a body into its connected components, each of
-// which becomes structure, rubble or debris of the tier its volume calls for.
+// Connectivity: splitting a body into its connected components, each of which becomes structure, rubble or debris of
+// the tier its volume calls for; then the stress solve for what stays a structure (stress.c).
 
 #include "world.h"
 
 #include <math.h>
 #include <stdio.h>
 
-// Weight check for a static structure. A BFS from the anchored pieces gives every piece a bond distance to the
-// ground. Loads then flow from the top down: each piece splits its own weight plus everything resting on it across
-// all its bonds to pieces one step closer to the ground, in proportion to bond area, so parallel supports share the
-// load like a real wall. A bond whose share exceeds area * health * stressScale breaks and its share moves to the
-// piece's other supports. One pass per step; the caller re-checks the body next step if anything broke, so an
-// undermined structure comes down progressively. Returns the number of broken bonds.
-static int lpStressPass( lpWorld* w, int bodyIndex )
-{
-	lpBody* body = w->bodies.data + bodyIndex;
-	int n = body->pieces.count;
-	if ( w->def.stressScale <= 0.0f || n < 2 )
-	{
-		return 0;
-	}
-
-	// BFS from all anchored pieces (in body order)
-	w->stamp += 1;
-	int stamp = w->stamp;
-	w->scratchQueue.count = 0;
-	lpArray_Reserve( w->scratchQueue, n );
-	lpArray_Reserve( w->scratchLoad, n );
-	for ( int i = 0; i < n; ++i )
-	{
-		int pi = body->pieces.data[i];
-		lpPiece* p = w->pieces.data + pi;
-		p->groundDepth = -1; // reused here as the BFS depth
-		if ( p->anchored )
-		{
-			p->mark = stamp;
-			p->groundDepth = 0;
-			w->scratchQueue.data[w->scratchQueue.count++] = pi;
-		}
-	}
-	for ( int head = 0; head < w->scratchQueue.count; ++head )
-	{
-		int pi = w->scratchQueue.data[head];
-		lpPiece* p = w->pieces.data + pi;
-		for ( int k = 0; k < p->bonds.count; ++k )
-		{
-			lpBond* bond = w->bonds.data + p->bonds.data[k];
-			int other = bond->a == pi ? bond->b : bond->a;
-			lpPiece* q = w->pieces.data + other;
-			if ( q->mark != stamp )
-			{
-				q->mark = stamp;
-				q->groundDepth = p->groundDepth + 1;
-				w->scratchQueue.data[w->scratchQueue.count++] = other;
-			}
-		}
-	}
-
-	// Loads in newtons, flowing from the deepest pieces toward the ground (reverse BFS order)
-	int reached = w->scratchQueue.count;
-	float g = b3Length( b3World_GetGravity( w->def.physics ) );
-	for ( int i = 0; i < reached; ++i )
-	{
-		lpPiece* p = w->pieces.data + w->scratchQueue.data[i];
-		w->scratchLoad.data[i] = p->shape->volume * lpGetMaterial( p->material )->density * g;
-		p->loadSlot = i;
-	}
-
-	int broken = 0;
-	float maxUtilization = 0.0f;
-	for ( int i = reached - 1; i >= 0; --i )
-	{
-		int pi = w->scratchQueue.data[i];
-		lpPiece* p = w->pieces.data + pi;
-		int depth = p->groundDepth;
-		if ( depth == 0 )
-		{
-			continue; // anchored: the ground takes it
-		}
-		float load = w->scratchLoad.data[i];
-
-		// Repeatedly split over the surviving downward bonds until none is overloaded (or none is left)
-		for ( int attempt = 0; attempt < 8; ++attempt )
-		{
-			float totalArea = 0.0f;
-			for ( int k = 0; k < p->bonds.count; ++k )
-			{
-				lpBond* bond = w->bonds.data + p->bonds.data[k];
-				int other = bond->a == pi ? bond->b : bond->a;
-				if ( w->pieces.data[other].groundDepth == depth - 1 )
-				{
-					totalArea += bond->area;
-				}
-			}
-			if ( totalArea <= 0.0f )
-			{
-				break;
-			}
-
-			bool failed = false;
-			for ( int k = 0; k < p->bonds.count; )
-			{
-				int bi = p->bonds.data[k];
-				lpBond* bond = w->bonds.data + bi;
-				int other = bond->a == pi ? bond->b : bond->a;
-				if ( w->pieces.data[other].groundDepth != depth - 1 )
-				{
-					k += 1;
-					continue;
-				}
-				float share = load * bond->area / totalArea;
-				float capacity = bond->area * bond->loadStrength * b3MaxFloat( bond->health, 0.0f ) / bond->strength * w->def.stressScale;
-				float utilization = capacity > 0.0f ? share / capacity : 1e9f;
-				maxUtilization = utilization > maxUtilization ? utilization : maxUtilization;
-				if ( share > capacity )
-				{
-					lpBreakBond( w, bi ); // removes it from p->bonds
-					broken += 1;
-					failed = true;
-				}
-				else
-				{
-					k += 1;
-				}
-			}
-			if ( failed )
-			{
-				continue; // redistribute over the survivors
-			}
-
-			for ( int k = 0; k < p->bonds.count; ++k )
-			{
-				lpBond* bond = w->bonds.data + p->bonds.data[k];
-				int other = bond->a == pi ? bond->b : bond->a;
-				lpPiece* q = w->pieces.data + other;
-				if ( q->groundDepth == depth - 1 )
-				{
-					w->scratchLoad.data[q->loadSlot] += load * bond->area / totalArea;
-				}
-			}
-			break;
-		}
-	}
-	if ( w->def.debugLog )
-	{
-		printf( "[lpf] tick %llu stress: body %d, %d pieces, %d reach the ground, %d bonds broke\n", (unsigned long long)w->tick,
-				bodyIndex, n, reached, broken );
-		printf( "[lpf]   peak bond utilization %.2f\n", (double)maxUtilization );
-	}
-	return broken;
-}
-
-void lpUpdateBody( lpWorld* w, int bodyIndex )
+static void lpSplitBody( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
 	body->dirty = false;
@@ -164,11 +19,6 @@ void lpUpdateBody( lpWorld* w, int bodyIndex )
 	{
 		lpDestroyBody( w, bodyIndex, false );
 		return;
-	}
-
-	if ( body->kind == lp_kindStructure && lpStressPass( w, bodyIndex ) > 0 )
-	{
-		lpArray_Push( w->stressAgain, bodyIndex );
 	}
 
 	// Flood fill over live bonds. Components are listed in the order of their first piece in the body list.
@@ -361,6 +211,22 @@ void lpUpdateBody( lpWorld* w, int bodyIndex )
 		else if ( body->tier == lp_tierFull && body->volume < lpLightVolume( w, material ) )
 		{
 			lpConvertToLight( w, bodyIndex );
+		}
+	}
+}
+
+void lpUpdateBody( lpWorld* w, int bodyIndex )
+{
+	lpSplitBody( w, bodyIndex );
+
+	// What is still a structure is anchored: solve its stresses. Broken joints split it next step.
+	lpBody* body = w->bodies.data + bodyIndex;
+	if ( body->alive && body->kind == lp_kindStructure )
+	{
+		int broken = lpStressStep( w, bodyIndex );
+		if ( broken > 0 || body->unsettled )
+		{
+			lpArray_Push( w->stressAgain, bodyIndex );
 		}
 	}
 }

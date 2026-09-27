@@ -1,4 +1,4 @@
-add_executable(lpf_test main.c test_macros.h test_sim.h test_poly.c test_fracture.c test_world.c test_debris.c)
+add_executable(lpf_test main.c test_macros.h test_sim.h test_poly.c test_fracture.c test_world.c test_debris.c test_stress.c)
 target_link_libraries(lpf_test PRIVATE lpf lpf_scenes)
 target_include_directories(lpf_test PRIVATE ${PROJECT_SOURCE_DIR}/src) # tests reach into the core's internals
 set_target_properties(lpf_test PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
@@ -8,3 +8,4 @@ add_test(NAME poly COMMAND lpf_test poly)
 add_test(NAME fracture COMMAND lpf_test fracture)
 add_test(NAME world COMMAND lpf_test world)
 add_test(NAME debris COMMAND lpf_test debris)
+add_test(NAME stress COMMAND lpf_test stress)

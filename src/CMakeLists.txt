@@ -11,6 +11,7 @@ add_library(lpf STATIC
 	poly.h
 	split.c
 	step.c
+	stress.c
 	tasks.c
 	tasks.h
 	world.c

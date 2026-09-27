@@ -400,11 +400,13 @@ static void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed 
 		if ( part != NULL )
 		{
 			part->grainAxis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+			part->joint = lp_jointSolid; // one living tree, not timber nailed together
 		}
 	}
 
 	// Canopy: a few chunky low-poly blobs
 	int blobs = 2 + (int)( lpNext( &rng ) % 2u );
+	b3Vec3 below = { 0.0f, trunkH - 0.3f, 0.0f }; // each blob reaches into what holds it up: the trunk, then the blob below
 	for ( int b = 0; b < blobs; ++b )
 	{
 		float cr = 0.35f * height * ( 0.8f + 0.3f * lpUnit( &rng ) );
@@ -416,7 +418,13 @@ static void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed 
 			d = b3Normalize( d );
 			pts[i] = b3MulAdd( c, cr * ( 0.85f + 0.3f * lpUnit( &rng ) ), d );
 		}
-		lpHull( pts, 14, lp_foliage, b % 2 == 0 ? LP_LEAF : LP_LEAF_DARK, false );
+		pts[0] = below;
+		below = c;
+		lpPartDef* canopy = lpHull( pts, 14, lp_foliage, b % 2 == 0 ? LP_LEAF : LP_LEAF_DARK, false );
+		if ( canopy != NULL )
+		{
+			canopy->joint = lp_jointSolid;
+		}
 		cr *= 0.7f;
 	}
 	lpCommit( world, base, 0.0f, true );
@@ -527,7 +535,11 @@ static void lpAddTowerAt( lpWorld* world, b3Vec3 base, int levels )
 			b3Vec3 c = { radius * cs.cosine, ( (float)l + 0.5f ) * levelH, radius * cs.sine };
 			b3Quat q = lpYaw( -a + 0.5f * B3_PI );
 			uint32_t color = ( ( l + s ) % 3 == 0 ) ? LP_STONE_DARK : LP_STONE;
-			lpBox( c, (b3Vec3){ 0.5f * side, 0.5f * levelH, 0.5f * t }, q, lp_stone, color, l == 0 );
+			lpPartDef* block = lpBox( c, (b3Vec3){ 0.5f * side, 0.5f * levelH, 0.5f * t }, q, lp_stone, color, l == 0 );
+			if ( block != NULL )
+			{
+				block->joint = lp_jointDry; // dry-stacked: friction only, so the tower hinges and falls once it leans
+			}
 		}
 	}
 	// Crenellations
@@ -536,7 +548,11 @@ static void lpAddTowerAt( lpWorld* world, b3Vec3 base, int levels )
 		float a = 2.0f * B3_PI * (float)s / (float)sides;
 		b3CosSin cs = b3ComputeCosSin( a );
 		b3Vec3 c = { radius * cs.cosine, (float)levels * levelH + 0.35f, radius * cs.sine };
-		lpBox( c, (b3Vec3){ 0.35f * side, 0.35f, 0.5f * t }, lpYaw( -a + 0.5f * B3_PI ), lp_stone, LP_STONE, false );
+		lpPartDef* merlon = lpBox( c, (b3Vec3){ 0.35f * side, 0.35f, 0.5f * t }, lpYaw( -a + 0.5f * B3_PI ), lp_stone, LP_STONE, false );
+		if ( merlon != NULL )
+		{
+			merlon->joint = lp_jointDry;
+		}
 	}
 	lpCommit( world, base, 0.0f, true );
 }

@@ -270,51 +270,9 @@ static float LooseVolume( const lpWorld* world )
 
 // Blasting out one side of the tower's base: with the weight check the undermined masonry comes down,
 // without it (Teardown-style connectivity only) it hangs on whatever still connects it to the ground.
-static float TowerRun( float stressScale )
-{
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (b3Vec3){ 0.0f, -10.0f, 0.0f };
-	b3WorldId physics = b3CreateWorld( &wd );
-	lpWorldDef ld = lpDefaultWorldDef();
-	ld.physics = physics;
-	ld.stressScale = stressScale;
-	lpWorld* world = lpCreateWorld( &ld );
-	lpBuildScene( world, lp_sceneTower );
-
-	for ( int tick = 0; tick < 300; ++tick )
-	{
-		if ( tick == 5 || tick == 20 || tick == 35 )
-		{
-			lpImpactDef im = { 0 };
-			float x = tick == 5 ? 0.0f : ( tick == 20 ? -1.4f : 1.4f );
-			im.point = (b3Pos){ x, 0.8f, -5.2f };
-			im.radius = 2.4f;
-			im.energy = 400000.0f;
-			im.impulse = 6.0f;
-			im.explosion = true;
-			lpWorld_AddImpact( world, &im );
-		}
-		lpWorld_Step( world, 1.0f / 60.0f, 4 );
-	}
-	float loose = LooseVolume( world );
-	lpDestroyWorld( world );
-	b3DestroyWorld( physics );
-	return loose;
-}
-
-static int TestStressCollapse( void )
-{
-	float withStress = TowerRun( 1.0f );
-	float without = TowerRun( 0.0f );
-	printf( "  loose volume: %.2f m^3 with weight check, %.2f m^3 without\n", (double)withStress, (double)without );
-	ENSURE( withStress > 1.5f * without );
-	return 0;
-}
-
 int WorldTest( void )
 {
 	RUN_TEST( TestRefractureBonds );
-	RUN_TEST( TestStressCollapse );
 	RUN_TEST( TestDetonator );
 	RUN_TEST( TestPull );
 	RUN_TEST( TestWallDamage );

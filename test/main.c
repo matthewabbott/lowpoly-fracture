@@ -9,10 +9,11 @@ int PolyTest( void );
 int FractureTest( void );
 int WorldTest( void );
 int DebrisTest( void );
+int StressTest( void );
 
 int main( int argc, char** argv )
 {
-	// Optional filter: lpf_test poly|fracture|world|debris
+	// Optional filter: lpf_test poly|fracture|world|debris|stress
 	const char* only = argc > 1 ? argv[1] : NULL;
 	printf( "lowpoly-fracture tests\n" );
 	if ( only == NULL || strcmp( only, "poly" ) == 0 )
@@ -30,6 +31,10 @@ int main( int argc, char** argv )
 	if ( only == NULL || strcmp( only, "debris" ) == 0 )
 	{
 		RUN_TEST( DebrisTest );
+	}
+	if ( only == NULL || strcmp( only, "stress" ) == 0 )
+	{
+		RUN_TEST( StressTest );
 	}
 	printf( "All tests passed.\n" );
 	return 0;

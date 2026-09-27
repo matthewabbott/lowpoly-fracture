@@ -45,6 +45,35 @@ typedef enum lpCellClass
 #define LP_CAT_PROJECTILE 0x20ull
 #define LP_CAT_ALL 0xFFFFFFFFFFFFFFFFull
 
+// Stress solve (stress.c): a 6-vector per node (force and torque, or translation and rotation)
+typedef struct lpVec6
+{
+	b3Vec3 f;
+	b3Vec3 t;
+} lpVec6;
+
+// A bond as a short beam between two nodes (slot -1: an anchored piece, fixed to the world)
+typedef struct lpStressEdge
+{
+	int a, b;
+	int bond;
+	b3Vec3 ra, rb; // contact centroid from each piece's centroid
+	b3Vec3 n, t1, t2;
+	float kn, ks, kb1, kb2, kt; // axial, shear, bending about t1 and t2, twist
+} lpStressEdge;
+
+// One node's 6x6 block of the stress stiffness, then its Cholesky factor (block-Jacobi preconditioner)
+typedef struct lpBlock6
+{
+	float m[6][6];
+} lpBlock6;
+
+typedef struct lpOverload
+{
+	float rho;
+	int bond;
+} lpOverload;
+
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
@@ -59,8 +88,11 @@ typedef struct lpPiece
 	int body;
 	int nextFree;
 	int mark;
-	int groundDepth; // stress pass: BFS depth
-	int loadSlot;	 // stress pass: index into scratchLoad
+	int solveSlot;	// stress solve: node index, -1 for anchored pieces
+	lpVec6 stressX; // stress solve: last solution in newtons of load (the warm start after a topology change)
+	lpVec6 stressR; // stress solve: residual and search direction, so a solve continues across steps
+	lpVec6 stressP;
+	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
 	uint8_t depth;
@@ -73,7 +105,6 @@ typedef struct lpBond
 	float area;
 	float health;		// J/m^2 of damage left
 	float strength;		// health when intact
-	float loadStrength; // N/m^2 under the weight check, when intact
 	b3Vec3 centroid;	// body frame
 	b3Vec3 normal;		// unit, body frame, from piece a toward piece b
 	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
@@ -98,6 +129,13 @@ typedef struct lpBody
 	bool dirty;
 	bool freezePending;
 	bool armed;
+	bool unsettled;	   // structure: still solving, or joints straining toward a break
+	bool solving;	   // structure: a solve is in progress (r, p on the pieces, solveRz here)
+	int stressSteps;   // structure: steps spent solving the current topology
+	uint32_t topology; // bumped whenever a bond or piece of the body changes; a solve in progress restarts then
+	uint32_t solveTopology;
+	int solveNodes, solveEdges;
+	double solveRz;
 	lpDetonatorDef detonator;
 
 	// Ghost and scrap state. The body frame is com - q * localCenter, so piece geometry stays in object space.
@@ -177,6 +215,7 @@ typedef struct lpFractureJob
 	int piece;
 	b3Vec3 localImpact; // body frame
 	b3Vec3 center;		// piece centroid; the fracture runs in a frame centered here
+	lpImpactDef impact; // what broke it: new bonds between its cells start with the damage it did there
 	lpPoly poly;
 	lpFractureInput input;
 	float particleVolume; // tier thresholds of the piece's material, scaled
@@ -222,7 +261,12 @@ struct lpWorld
 	LP_ARRAY( int ) dirtyBodies;
 	LP_ARRAY( int ) freezeCandidates;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
-	LP_ARRAY( float ) scratchLoad;
+	LP_ARRAY( int ) stressNodes; // stress solve scratch (stress.c)
+	LP_ARRAY( lpStressEdge ) stressEdges;
+	LP_ARRAY( lpVec6 ) stressVectors;
+	LP_ARRAY( lpBlock6 ) stressBlocks;
+	LP_ARRAY( lpOverload ) scratchOverloads;
+	int stressWork; // bond-iterations used this step
 	LP_ARRAY( int ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;
@@ -272,7 +316,7 @@ int lpCompareInt( const void* a, const void* b );
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale
 // bonds and dirty bodies (world.c)
 void lpBreakBond( lpWorld* w, int bondIndex );
-void lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint );
+int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint );
 void lpTryBond( lpWorld* w, int a, int b );
 void lpMarkDirty( lpWorld* w, int bodyIndex );
 
@@ -282,6 +326,9 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
 void lpCollectHits( lpWorld* w );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
+
+// stress (stress.c): one solve step for a structure; returns the bonds it broke and sets body->unsettled
+int lpStressStep( lpWorld* w, int bodyIndex );
 
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );

@@ -13,8 +13,8 @@ Every destructible object is a Box3D body whose shapes are convex hulls, one per
 face are joined by **bonds**. An **impact** (tool, blast, detonating flask, or a hard collision found through Box3D
 hit events) refractures the pieces it reaches into convex **cells** and damages bonds near it. A flood fill over
 the surviving bonds splits the body; components without an anchored piece become dynamic **debris** bodies. A
-**weight check** breaks bonds that carry more load than they can hold, so undermined structures come down over the
-following steps. New fragments are sorted into cheap **debris tiers** by volume (below), resting debris freezes
+**stress solve** finds the force in every bond under the structure's own weight and breaks the joints that cannot
+hold it, so undermined structures crack, hinge and topple where they are weak. New fragments are sorted into cheap **debris tiers** by volume (below), resting debris freezes
 into static **rubble** that wakes when something knocks it, and budgets move the oldest, smallest bodies down the
 tiers instead of popping them.
 
@@ -84,9 +84,27 @@ tiers instead of popping them.
 - Damage model: an impact of energy E and radius R delivers `E (1 - d/R)^2 / (pi R^2)` J/m^2 at distance d. A piece
   refractures above its material's `fractureEnergy`; a bond loses that much health and breaks at zero. Strengths
   are calibrated so a rifle chips brick and a grenade opens it (see the comment on the material table).
-- Weight check: BFS depth from anchors, then loads flow from the top down, split over each piece's bonds toward the
-  ground by area. A bond over `area * loadStrength * (health / strength)` breaks. This is a vertical-load model: it
-  catches crushed or cut-away supports, not overturning moments.
+- Joints: every part meets its neighbours with a joint (`lpJointId`: mortar for masonry and plaster, nails for wood,
+  dry, solid). A bond between parts takes the weaker joint; bonds between the cells of one broken piece are solid but
+  start with the damage the impact did at their location, so cracks near a hit barely hold.
+
+## Stress (`stress.c`)
+
+- Quasi-static solve per structure: pieces are rigid nodes (6 degrees of freedom, anchored pieces fixed), bonds are
+  short beams through their contact patch with axial, shear, bending and twist stiffness from its area and extents.
+  Stiffness is normalized (only ratios share the load), so bond forces come out in newtons.
+- K x = gravity by conjugate gradient with a block-Jacobi preconditioner (each piece's 6x6 block, Cholesky), warm
+  started from the last solution. A solve continues across steps (residual and search direction live on the pieces)
+  until the structure's topology stamp changes; a per-step work budget in bond-iterations slices big solves.
+- Each bond's tension side (axial plus bending), compression side and shear (Coulomb: cohesion plus friction times
+  compression) against its joint's limits, scaled by `stressScale` and the bond's health, give a utilization. Over
+  1, strain accumulates each converged check (`strainRate`); at strain 1 the bond breaks, everything at twice its
+  limit at once and otherwise the worst few per check, so failure cascades and a structure creaks before it gives.
+- Nothing is judged on an unconverged solution. Dry and mortar joints carry little or no tension, so an overhang's
+  moment opens the tension side, the part above loses its anchor, and Box3D topples it.
+- New structures get one check when created; afterwards only topology changes (impacts, breaks) queue a solve.
+- Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics
+  and the solve cheap (no crumbs hanging on tiny bonds).
 - Invariants are checked every tick in tests by `lpWorld_Validate` (every piece on one live body with one shape,
   bonds only within a body, counts consistent).
 
@@ -109,7 +127,7 @@ tiers instead of popping them.
 - `lpMaterialDef` table (`lpSetMaterial`): density, strengths, fragment size, pattern, grain stretch, interior colour,
   tier thresholds, plate size, cells per fracture, particle kind, merge slack.
 - `lpWorldDef`: fragment scale (main performance knob), debris scale (tier thresholds), per-tier caps, fracture
-  jobs per step, weight check scale, worker count, debug log (`LPF_DEBUG=1` in the sandbox).
+  jobs per step, stress scale and budgets, worker count, debug log (`LPF_DEBUG=1` in the sandbox).
 - `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
 
 ## Borrowed from Nebenan

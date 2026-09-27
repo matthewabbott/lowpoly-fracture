@@ -13,7 +13,8 @@ nothing much. The engine table lives in `src/world.c` (`lp_materials`); the stru
 | | `friction`, `restitution` | Box3D contact material |
 | strength | `bondStrength` | J/m² that breaks a bond between two pieces (how easily chunks come apart) |
 | | `fractureEnergy` | J/m² that refractures a piece (how easily a chunk itself shatters) |
-| | `loadStrength` | N/m² a bond can carry in the weight check (how much can stand on it) |
+| | `tensileStrength`, `compressiveStrength`, `shearStrength` | Pa limits of the solid material in the stress solve |
+| joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails or solid (table in `world.c`) |
 | | `breakable` | false for ground and metal today |
 | fracture shape | `pattern` | impact Voronoi, grain Voronoi (wood), radial (glass) |
 | | `grainStretch` | wood: splinters this many times longer along the grain |

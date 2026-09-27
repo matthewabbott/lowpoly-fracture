@@ -104,8 +104,8 @@ bool lpShape_HasFaceOnPlane( const lpShape* shape, b3Plane plane, float toleranc
 float lpShape_SignedDistance( const lpShape* shape, b3Vec3 point );
 float lpShape_FaceArea( const lpShape* shape, int faceIndex, b3Vec3* centroid );
 
-// True if a vertex of either shape lies within `margin` of the other (inside or touching). Catches authored parts that
-// meet at an angle (roof on a gable) where there is no shared coplanar face.
+// True if the shapes overlap or come within `margin` of each other. Catches authored parts that meet at an angle
+// (roof on a gable) where there is no shared coplanar face.
 bool lpShape_NearlyOverlap( const lpShape* a, const lpShape* b, float margin );
 
 // True if the boxes overlap or are within `margin` of each other on every axis

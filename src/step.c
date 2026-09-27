@@ -183,6 +183,10 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.voronoiCpuMs = 0.0f;
 	w->stats.mergeCpuMs = 0.0f;
 	w->stats.hullCpuMs = 0.0f;
+	w->stats.stressMs = 0.0f;
+	w->stats.stressIterations = 0;
+	w->stats.stressBreaks = 0;
+	w->stressWork = 0;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
 	w->particles.count = 0;
@@ -238,7 +242,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->dirtyBodies.count = 0;
 	for ( int i = 0; i < w->stressAgain.count; ++i )
 	{
-		lpMarkDirty( w, w->stressAgain.data[i] ); // keep collapsing next step
+		lpMarkDirty( w, w->stressAgain.data[i] ); // still solving or straining: check again next step
 	}
 	w->stressAgain.count = 0;
 	w->stats.splitMs = b3GetMilliseconds( splitTicks );
@@ -260,6 +264,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 
 	// Counters
 	w->stats.structureBodies = 0;
+	w->stats.unsettledStructures = 0;
 	w->stats.debrisBodies = 0;
 	w->stats.awakeDebris = 0;
 	w->stats.rubbleBodies = 0;
@@ -279,6 +284,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		if ( b->kind == lp_kindStructure )
 		{
 			w->stats.structureBodies += 1;
+			w->stats.unsettledStructures += b->unsettled ? 1 : 0;
 		}
 		else if ( b->kind == lp_kindRubble )
 		{

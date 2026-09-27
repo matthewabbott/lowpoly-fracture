@@ -4,7 +4,7 @@
 #   pwsh tools/bench.ps1 -Update         # write the current numbers as the new baseline
 #   pwsh tools/bench.ps1 -Repeat 3       # best of 3 runs per scene (timings are noisy, about +-10% run to run)
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,

@@ -46,6 +46,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 
 	job->piece = pieceIndex;
 	job->localImpact = localImpact;
+	job->impact = *impact;
 	job->center = piece->shape->centroid;
 	lpShape_ToPoly( piece->shape, &job->poly );
 	for ( int f = 0; f < job->poly.faceCount; ++f )
@@ -136,6 +137,18 @@ static void lpRunFractureJob( int index, void* context )
 	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
 								   job->input.interiorMaterial );
 	job->stats.mergeMs = b3GetMillisecondsAndReset( &ticks );
+
+	// What is still too small to carry load does not stay on the piece: it falls as debris. Structures keep chunks,
+	// not crumbs, which is cheaper for physics and keeps the stress solve well conditioned (no tiny bonds).
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		float volume = job->cells[i]->volume;
+		if ( job->cellClass[i] == lp_cellKeep && volume < job->lightVolume )
+		{
+			job->cellClass[i] = volume < job->ghostVolume ? lp_cellGhost : lp_cellLight;
+		}
+	}
+
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		uint8_t cls = job->cellClass[i];
@@ -382,7 +395,16 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		int b = cellToPiece[cb.b];
 		if ( a >= 0 && b >= 0 )
 		{
-			lpAddBond( w, a, b, &cb.contact, lp_jointSolid ); // cells of one piece: its own material holds them
+			// Cells of one piece: its own material holds them, cracked by the blow that broke it. Far from the
+			// impact the stone is whole; near it the cracks barely hold, and past the break radius not at all.
+			float damage = lpImpactDensity( &job->impact, b3Distance( cb.contact.centroid, job->localImpact ) );
+			int bi = lpAddBond( w, a, b, &cb.contact, lp_jointSolid );
+			lpBond* bond = w->bonds.data + bi;
+			bond->health -= damage;
+			if ( bond->health <= 0.0f )
+			{
+				lpBreakBond( w, bi );
+			}
 		}
 	}
 	for ( int i = 0; i < childCount; ++i )

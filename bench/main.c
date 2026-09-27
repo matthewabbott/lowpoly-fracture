@@ -46,6 +46,8 @@ typedef struct Result
 	lpStats worst; // stats of the step with the largest fracture time
 	double sumCell, sumHull, sumShape, sumBond, sumSplit;
 	double sumVoronoiCpu, sumMergeCpu, sumHullCpu;
+	double sumStress, maxStress;
+	int stressIterations, stressBreaks;
 	int maxContacts, maxAwakeContacts, maxShapes;
 	double sumAwakeContacts;
 } Result;
@@ -90,6 +92,10 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.sumBond += st.bondMs;
 		r.sumSplit += st.splitMs;
 		r.sumVoronoiCpu += st.voronoiCpuMs;
+		r.sumStress += st.stressMs;
+		r.maxStress = st.stressMs > r.maxStress ? st.stressMs : r.maxStress;
+		r.stressIterations += st.stressIterations;
+		r.stressBreaks += st.stressBreaks;
 		r.sumMergeCpu += st.mergeCpuMs;
 		r.sumHullCpu += st.hullCpuMs;
 		phys[tick] = st.physicsMs;
@@ -215,6 +221,8 @@ int main( int argc, char** argv )
 		double jobCpu = r.sumVoronoiCpu + r.sumMergeCpu + r.sumHullCpu;
 		printf( "        fracture job cpu ms: voronoi %.0f merge %.0f hulls %.0f (hulls %.0f%% of job time)\n", r.sumVoronoiCpu,
 				r.sumMergeCpu, r.sumHullCpu, jobCpu > 0.0 ? 100.0 * r.sumHullCpu / jobCpu : 0.0 );
+		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke\n", r.sumStress / (double)ticks,
+				r.maxStress, r.stressIterations, r.stressBreaks );
 	}
 	printf( "impacts %d, fractures %d, cells %d\n", results[0].impacts, results[0].fractures, results[0].cells );
 	printf( "deterministic across worker counts: %s\n", deterministic ? "yes" : "NO" );
@@ -234,11 +242,12 @@ int main( int argc, char** argv )
 						 "\"fractureMaxMs\": %.3f, \"physicsAvgMs\": %.3f, \"physicsP95Ms\": %.3f, \"maxPieces\": %d, \"maxBodies\": %d, "
 						 "\"maxAwakeDebris\": %d, \"maxRubble\": %d, \"impacts\": %d, \"fractures\": %d, \"cells\": %d, "
 						 "\"awakeContactsAvg\": %.0f, \"maxContacts\": %d, \"voronoiCpuMs\": %.1f, \"mergeCpuMs\": %.1f, "
-						 "\"hullCpuMs\": %.1f, \"hash\": \"%016llx\"}%s\n",
+						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"hash\": \"%016llx\"}%s\n",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
-						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, (unsigned long long)r.hash, w + 1 < workerCount ? "," : "" );
+						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)ticks, r.maxStress,
+						 (unsigned long long)r.hash, w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );
 			fclose( f );
