@@ -5,7 +5,7 @@ several destructible cars, and containers of sloshing volatile reagents, all at 
 before/after numbers in [perf-log.md](perf-log.md).
 
 Order (one at a time):
-1. Chunky fracture + debris tiers (in progress)
+1. Chunky fracture + debris tiers (done; polish and prune pass in progress)
 2. Toppling and stress points
 3. Breakable joints and assemblies
 4. Destructible vehicles
@@ -111,3 +111,13 @@ A two-process lockstep experiment comes first.
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public
 demo; deliberately last.
+
+Effects and mess, noted while tuning debris:
+
+- **Dirt where debris lands:** decals or vertex-colour darkening on the ground and on walls around scrap and rubble,
+  so a fight leaves the place dirty even after the pieces are cleared or sunk.
+- **Smoke and fire:** particle smoke and volumetric fire (Teardown-style). Fire ties into material flammability
+  ([materials.md](materials.md)).
+- **Dust:** soft, fading dust clouds instead of solid motes once a transparent particle pass exists.
+- **Toaster profile:** one switch that lowers caps (debris, ghosts, scrap), raises the fragment scale and render
+  scale, and turns off shadows, so low-end machines still get the destruction.

@@ -28,7 +28,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, renderer (vertex pulling), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `get-shdc.ps1` |
 | `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`) |
-| `docs/` | feasibility, architecture, determinism rules, roadmap, perf log |
+| `docs/` | feasibility, architecture, determinism rules, materials catalog, roadmap, perf log |
 
 ## Commands (PowerShell; run from the repo root)
 
