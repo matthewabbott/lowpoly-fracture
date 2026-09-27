@@ -943,6 +943,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	int children[LP_MAX_SITES];
 	int childCount = 0;
 	int ejected = 0;
+	float ejectedVolume = 0.0f;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		lpShape* cell = job->cells[i];
@@ -963,6 +964,10 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			cellV = b3Add( v, b3Cross( omega, b3RotateVector( xf.q, b3Sub( cell->centroid, localCenter ) ) ) );
 		}
 
+		if ( cls != lp_cellKeep )
+		{
+			ejectedVolume += cell->volume;
+		}
 		if ( cls == lp_cellPuff )
 		{
 			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
@@ -1028,6 +1033,24 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		body = w->bodies.data + bodyIndex; // the body array may have moved
 	}
 	job->cellCount = 0;
+
+	// Impact dust in the colour of what broke. Cosmetic: it hashes its own randomness from the tick and the piece and
+	// never touches simulation state.
+	if ( ejectedVolume > 0.0f )
+	{
+		int motes = 3 + (int)( 9.0f * b3MinFloat( 1.0f, ejectedVolume / 0.02f ) );
+		uint64_t h = lpMix64( ( w->tick << 20 ) ^ (uint64_t)pieceIndex );
+		for ( int k = 0; k < motes; ++k )
+		{
+			h = lpMix64( h + (uint64_t)k );
+			float rx = (float)( h & 0xFFFF ) / 65535.0f - 0.5f;
+			float ry = (float)( ( h >> 16 ) & 0xFFFF ) / 65535.0f;
+			float rz = (float)( ( h >> 32 ) & 0xFFFF ) / 65535.0f - 0.5f;
+			float rs = (float)( ( h >> 48 ) & 0xFFFF ) / 65535.0f;
+			b3Vec3 dustV = b3Add( v, (b3Vec3){ 4.0f * rx, 0.5f + 2.5f * ry, 4.0f * rz } );
+			lpEmitParticle( w, xf, job->localImpact, dustV, 0.02f + 0.03f * rs, material );
+		}
+	}
 
 	uint64_t bondTicks = b3GetTicks();
 	for ( int i = 0; i < job->bondCount; ++i )

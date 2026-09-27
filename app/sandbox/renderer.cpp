@@ -550,7 +550,7 @@ void Renderer_SetParticles( const Particle* particles, int count )
 		d.color[0] = (float)( p.color & 0xFF ) / 255.0f;
 		d.color[1] = (float)( ( p.color >> 8 ) & 0xFF ) / 255.0f;
 		d.color[2] = (float)( ( p.color >> 16 ) & 0xFF ) / 255.0f;
-		d.color[3] = 1.0f;
+		d.color[3] = p.seed;
 		float half = 0.5f * p.spin;
 		float sn = sinf( half ), cs = cosf( half );
 		d.rot[0] = p.axis.x * sn;

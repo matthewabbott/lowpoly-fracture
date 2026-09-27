@@ -173,7 +173,7 @@ void main()
 
 #pragma sokol @program shadow vs_shadow fs_shadow
 
-// ---------------------------------------------------------------- particles (instanced cubes)
+// ---------------------------------------------------------------- particles (instanced lumpy solids)
 
 #pragma sokol @vs vs_particle
 layout( binding = 0 ) uniform particle_vs
@@ -184,7 +184,7 @@ layout( binding = 0 ) uniform particle_vs
 struct particle_inst
 {
 	vec4 pos_size; // xyz, size
-	vec4 color;	   // rgb, a unused
+	vec4 color;	   // rgb, a: shape seed in [0, 1]
 	vec4 rot;	   // quaternion
 	vec4 shape;	   // xyz: per-axis scale (a splinter is long, a leaf flat), w: glint strength
 };
@@ -198,6 +198,9 @@ in vec3 in_corner;
 in vec3 in_cnormal;
 
 out vec3 v_pcolor;
+out vec3 v_pwpos;
+out vec3 v_pnormal;
+out float v_glint;
 
 vec3 qrot( vec4 q, vec3 v )
 {
@@ -205,26 +208,46 @@ vec3 qrot( vec4 q, vec3 v )
 	return v + q.w * t + cross( q.xyz, t );
 }
 
+// Cosmetic only (never feeds the simulation), so a sin hash is fine here
+float hash1( float n )
+{
+	return fract( sin( n ) * 43758.5453 );
+}
+
 void main()
 {
 	particle_inst p = inst[gl_InstanceIndex];
-	vec3 wp = qrot( p.rot, in_corner * p.shape.xyz * p.pos_size.w ) + p.pos_size.xyz;
-	vec3 n = normalize( qrot( p.rot, in_cnormal / p.shape.xyz ) );
-	float sun = max( dot( n, normalize( vec3( 0.4, 0.8, 0.3 ) ) ), 0.0 );
-	float light = 0.55 + 0.25 * n.y + 0.3 * sun;
-	// Glass shards flash as they tumble through the sun direction
-	light += p.shape.w * 2.5 * pow( sun, 12.0 );
-	v_pcolor = p.color.rgb * light;
+	// A lumpy low-poly solid per particle, never a cube: each corner is pushed by a hash of (seed, corner). The three
+	// faces meeting at a corner move it the same way, so the solid stays closed.
+	float corner = dot( step( vec3( 0.0 ), in_corner ), vec3( 1.0, 2.0, 4.0 ) );
+	float key = p.color.a * 97.0 + corner * 7.31;
+	vec3 lump = vec3( hash1( key ), hash1( key + 17.13 ), hash1( key + 31.71 ) ) - 0.5;
+	vec3 local = ( in_corner + 0.45 * lump ) * p.shape.xyz * p.pos_size.w;
+	vec3 wp = qrot( p.rot, local ) + p.pos_size.xyz;
+	v_pwpos = wp;
+	v_pnormal = qrot( p.rot, in_cnormal / p.shape.xyz );
+	v_pcolor = p.color.rgb * ( 0.88 + 0.24 * hash1( p.color.a * 53.0 + 3.7 ) );
+	v_glint = p.shape.w;
 	gl_Position = view_proj_p * vec4( wp, 1.0 );
 }
 #pragma sokol @end
 
 #pragma sokol @fs fs_particle
 in vec3 v_pcolor;
+in vec3 v_pwpos;
+in vec3 v_pnormal;
+in float v_glint;
 out vec4 frag_color;
 void main()
 {
-	frag_color = vec4( v_pcolor, 1.0 );
+	// Flat facets: the triangle normal from screen-space derivatives, turned to agree with the face's rough normal
+	vec3 n = normalize( cross( dFdx( v_pwpos ), dFdy( v_pwpos ) ) );
+	n = dot( n, v_pnormal ) < 0.0 ? -n : n;
+	float sun = max( dot( n, normalize( vec3( 0.4, 0.8, 0.3 ) ) ), 0.0 );
+	float light = 0.55 + 0.25 * n.y + 0.3 * sun;
+	// Glass shards flash as they tumble through the sun direction
+	light += v_glint * 2.5 * pow( sun, 12.0 );
+	frag_color = vec4( v_pcolor * light, 1.0 );
 }
 #pragma sokol @end
 

@@ -290,22 +290,6 @@ void ApplyEvent( const Event& e )
 		// 8 m cone of air: wakes and pushes rubble, scrap and ghosts, so a road can be cleared. Gentle enough that
 		// blown rubble does not smash into what it lands against (damage starts at 4 m/s).
 		lpWorld_Blow( app.world, origin, dir, 8.0f, 0.35f, 4.5f );
-		uint32_t h = (uint32_t)( e.tick * 2654435761u );
-		for ( int i = 0; i < 1; ++i )
-		{
-			h = h * 1664525u + 1013904223u;
-			float rx = (float)( ( h >> 8 ) & 1023 ) / 1023.0f - 0.5f;
-			float ry = (float)( ( h >> 18 ) & 1023 ) / 1023.0f - 0.5f;
-			Particle p = {};
-			p.position = { e.origin.x + 0.6f * e.dir.x, e.origin.y + 0.6f * e.dir.y - 0.3f, e.origin.z + 0.6f * e.dir.z };
-			p.velocity = { 9.0f * e.dir.x + 2.0f * rx, 9.0f * e.dir.y + 2.0f * ry + 1.0f, 9.0f * e.dir.z + 2.0f * rx };
-			p.size = 0.03f;
-			p.life = 0.35f;
-			p.color = 0xFFD8E0E4u;
-			p.kind = lp_particleDust;
-			p.axis = { 0.577f, 0.577f, 0.577f };
-			app.particles.push_back( p );
-		}
 		return;
 	}
 
@@ -406,28 +390,7 @@ void ApplyEvent( const Event& e )
 		default:
 			return;
 	}
-	lpWorld_AddImpact( app.world, &im );
-
-	// cosmetic dust puff
-	int n = e.tool == ToolRifle ? 6 : 16;
-	for ( int i = 0; i < n; ++i )
-	{
-		uint32_t h = (uint32_t)( app.tick * 2654435761u ) ^ (uint32_t)( i * 40503u );
-		float rx = (float)( ( h >> 0 ) & 1023 ) / 1023.0f - 0.5f;
-		float ry = (float)( ( h >> 10 ) & 1023 ) / 1023.0f;
-		float rz = (float)( ( h >> 20 ) & 1023 ) / 1023.0f - 0.5f;
-		Particle p = {};
-		p.position = { (float)hit.point.x, (float)hit.point.y, (float)hit.point.z };
-		float speed = e.tool == ToolRifle ? 2.0f : 6.0f;
-		p.velocity = { speed * rx + 0.8f * hit.normal.x, speed * ry, speed * rz + 0.8f * hit.normal.z };
-		p.size = e.tool == ToolRifle ? 0.04f : 0.07f;
-		p.life = 0.6f + 0.8f * ry;
-		p.spin = 6.2832f * rz;
-		p.color = 0xFFB8C4CCu;
-		p.kind = lp_particleDust;
-		p.axis = Normalize( V3{ rx, ry - 0.5f, rz + 0.3f } );
-		app.particles.push_back( p );
-	}
+	lpWorld_AddImpact( app.world, &im ); // dust comes from the core, in the colour of what broke
 }
 
 void RecordAndQueue( const Event& e )
@@ -521,10 +484,11 @@ void StepSimulation()
 		p.spin = (float)i;
 		p.color = src.color;
 		p.kind = src.kind;
-		// A spin axis per particle, hashed from its tick and index
+		// A spin axis and a shape seed per particle, hashed from its tick and index
 		uint32_t h = (uint32_t)( app.tick * 2654435761u ) ^ (uint32_t)( ( i + 1 ) * 2246822519u );
 		V3 axis = { (float)( h & 255 ) - 127.5f, (float)( ( h >> 8 ) & 255 ) - 127.5f, (float)( ( h >> 16 ) & 255 ) - 127.5f };
 		p.axis = Normalize( axis );
+		p.seed = (float)( h >> 24 ) / 255.0f;
 		app.particles.push_back( p );
 	}
 

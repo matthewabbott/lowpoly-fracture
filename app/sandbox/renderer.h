@@ -30,6 +30,7 @@ struct Particle
 	uint32_t color; // 0xAABBGGRR
 	int kind;		// lpParticleKind: the shape it is drawn with
 	V3 axis;		// spin axis, unit length
+	float seed;		// 0..1, picks the particle's lumpy shape and colour jitter
 };
 
 struct RenderStats
