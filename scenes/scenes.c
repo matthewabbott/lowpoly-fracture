@@ -126,6 +126,8 @@ const char* lpSceneName( int scene )
 			return "tower";
 		case lp_scenePile:
 			return "pile";
+		case lp_sceneLumber:
+			return "lumber";
 		default:
 			return "?";
 	}
@@ -407,6 +409,70 @@ void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed )
 	lpCommit( world, base, 0.0f, true );
 }
 
+int lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radius, bool isStatic )
+{
+	lpBegin();
+	b3Vec3 pts[16];
+	for ( int i = 0; i < 8; ++i )
+	{
+		b3CosSin cs = b3ComputeCosSin( 0.3926991f + 0.7853982f * (float)i );
+		pts[i] = (b3Vec3){ -0.5f * length, radius * cs.cosine, radius * cs.sine };
+		pts[8 + i] = (b3Vec3){ 0.5f * length, radius * cs.cosine, radius * cs.sine };
+	}
+	lpPartDef* part = lpHull( pts, 16, lp_wood, LP_BARK, false );
+	if ( part != NULL )
+	{
+		part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	}
+	return lpCommit( world, center, yaw, isStatic );
+}
+
+static void lpAddStump( lpWorld* world, b3Vec3 base, float height, float radius )
+{
+	lpBegin();
+	b3Vec3 pts[16];
+	lpRing( pts, (b3Vec3){ 0.0f, 0.0f, 0.0f }, radius, 8, 0.2f );
+	lpRing( pts + 8, (b3Vec3){ 0.0f, height, 0.0f }, 0.9f * radius, 8, 0.2f );
+	lpPartDef* part = lpHull( pts, 16, lp_wood, LP_BARK, true );
+	if ( part != NULL )
+	{
+		part->grainAxis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	}
+	lpCommit( world, base, 0.0f, true );
+}
+
+// A small plank shed: posts, horizontal wall planks, a lean-to roof
+static void lpAddShed( lpWorld* world, b3Vec3 base, float yaw )
+{
+	lpBegin();
+	float w = 4.0f, d = 3.0f, h = 2.4f;
+	for ( int sx = -1; sx <= 1; sx += 2 )
+	{
+		for ( int sz = -1; sz <= 1; sz += 2 )
+		{
+			lpBox( (b3Vec3){ (float)sx * 0.5f * w, 0.5f * h, (float)sz * 0.5f * d }, (b3Vec3){ 0.08f, 0.5f * h, 0.08f },
+				   b3Quat_identity, lp_wood, LP_BEAM, true );
+		}
+	}
+	int rows = 8;
+	float ph = h / (float)rows;
+	for ( int r = 0; r < rows; ++r )
+	{
+		float y = ( (float)r + 0.5f ) * ph;
+		uint32_t color = ( r % 2 ) ? LP_PLANK : 0x9A6A3Au;
+		lpBox( (b3Vec3){ 0.0f, y, -0.5f * d }, (b3Vec3){ 0.5f * w - 0.08f, 0.5f * ph - 0.005f, 0.03f }, b3Quat_identity, lp_wood, color, r == 0 );
+		lpBox( (b3Vec3){ -0.5f * w, y, 0.0f }, (b3Vec3){ 0.03f, 0.5f * ph - 0.005f, 0.5f * d - 0.08f }, b3Quat_identity, lp_wood, color, r == 0 );
+		lpBox( (b3Vec3){ 0.5f * w, y, 0.0f }, (b3Vec3){ 0.03f, 0.5f * ph - 0.005f, 0.5f * d - 0.08f }, b3Quat_identity, lp_wood, color, r == 0 );
+	}
+	b3Quat tilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 1.0f, 0.0f, 0.0f }, 0.18f );
+	for ( int k = 0; k < 5; ++k )
+	{
+		float x = -0.5f * w - 0.2f + ( (float)k + 0.5f ) * ( w + 0.4f ) / 5.0f;
+		lpBox( (b3Vec3){ x, h + 0.12f, 0.0f }, (b3Vec3){ 0.5f * ( w + 0.4f ) / 5.0f, 0.05f, 0.5f * d + 0.3f }, tilt, lp_wood, LP_ROOF, false );
+	}
+	lpCommit( world, base, yaw, true );
+}
+
 static void lpAddFence( lpWorld* world, b3Vec3 base, float yaw, float length )
 {
 	lpBegin();
@@ -547,6 +613,33 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddGround( world, 60.0f );
 			lpAddPile( world, (b3Vec3){ 0.0f, 0.0f, -6.0f }, 512, 9u );
 			break;
+
+		case lp_sceneLumber:
+		{
+			lpAddGround( world, 60.0f );
+			// A log bridge over two stumps, the first thing in view
+			lpAddStump( world, (b3Vec3){ -2.2f, 0.0f, -3.0f }, 0.8f, 0.35f );
+			lpAddStump( world, (b3Vec3){ 2.2f, 0.0f, -3.0f }, 0.8f, 0.35f );
+			lpAddLog( world, (b3Vec3){ 0.0f, 1.05f, -3.0f }, 0.0f, 5.2f, 0.24f, false );
+			// Logs lying about
+			lpAddLog( world, (b3Vec3){ -4.5f, 0.3f, 0.5f }, 0.4f, 4.0f, 0.3f, false );
+			lpAddLog( world, (b3Vec3){ 4.8f, 0.25f, 0.0f }, -0.3f, 3.2f, 0.25f, false );
+			// A woodpile
+			for ( int row = 0; row < 3; ++row )
+			{
+				for ( int k = 0; k < 4 - row; ++k )
+				{
+					float x = 6.0f + 0.42f * ( (float)k - 0.5f * (float)( 3 - row ) );
+					lpAddLog( world, (b3Vec3){ x, 0.2f + 0.36f * (float)row, -7.0f }, 0.5f * B3_PI, 2.0f, 0.2f, false );
+				}
+			}
+			lpAddShed( world, (b3Vec3){ -6.0f, 0.0f, -8.0f }, 0.3f );
+			lpAddTree( world, (b3Vec3){ 1.0f, 0.0f, -10.0f }, 6.0f, 21u );
+			lpAddTree( world, (b3Vec3){ 9.0f, 0.0f, -4.0f }, 5.0f, 22u );
+			lpAddTree( world, (b3Vec3){ -10.0f, 0.0f, -3.0f }, 5.5f, 23u );
+			lpAddFence( world, (b3Vec3){ 0.0f, 0.0f, 3.5f }, 0.0f, 10.0f );
+			break;
+		}
 
 		default:
 			lpAddGround( world, 60.0f );

@@ -25,23 +25,23 @@
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
 	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true, 3.0e5f,
-				  1.2e-4f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter },
+				  1.2e-4f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f },
 	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f },
 	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f,
-				   6.4e-5f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip },
+				   6.4e-5f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f },
 	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f,
-					 2.2e-4f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust },
+					 2.2e-4f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f },
 	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f,
-					  6.4e-5f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip },
+					  6.4e-5f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f },
 	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f,
-				   6.4e-5f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint },
+				   6.4e-5f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f },
 	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f },
 	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f,
-					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust },
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf },
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f },
 };
 
 const lpMaterialDef* lpGetMaterial( int materialId )
@@ -333,10 +333,10 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 			return false;
 		}
 	}
+	w->stats.hullMs += b3GetMilliseconds( t0 );
 	uint64_t t1 = b3GetTicks();
 	b3ShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
 	p->shapeId = b3CreateHullShape( b->id, &def, p->hull );
-	w->stats.hullMs += b3GetMilliseconds( t0 ) - b3GetMilliseconds( t1 );
 	w->stats.shapeMs += b3GetMilliseconds( t1 );
 	return true;
 }
@@ -813,6 +813,10 @@ static void lpRunFractureJob( int index, int worker, void* context )
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
 	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
 	job->bondCount = 0;
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		job->hulls[i] = NULL; // the job slot is reused: never leave a stale hull for lpFreeJobOutput
+	}
 	if ( job->cellCount < 2 )
 	{
 		return;
@@ -846,8 +850,17 @@ static void lpRunFractureJob( int index, int worker, void* context )
 			cls = lp_cellFull;
 		}
 		job->cellClass[i] = cls;
+	}
+
+	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece
+	float slack = lpGetMaterial( job->input.interiorMaterial )->mergeSlack;
+	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
+								   job->input.interiorMaterial );
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		uint8_t cls = job->cellClass[i];
 		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
-		job->hulls[i] = needsHull ? lpShape_CreateHull( cell ) : NULL;
+		job->hulls[i] = needsHull ? lpShape_CreateHull( job->cells[i] ) : NULL;
 	}
 	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
 }

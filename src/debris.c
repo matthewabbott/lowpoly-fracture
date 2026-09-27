@@ -378,7 +378,8 @@ static float lpStaticRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 	{
 		ray->fraction = fraction;
 		ray->point = point;
-		ray->normal = normal;
+		// A ray that starts inside a shape reports it with no normal: the ghost is already in, so it lands upward
+		ray->normal = b3LengthSquared( normal ) > 0.5f ? normal : (b3Vec3){ 0.0f, 1.0f, 0.0f };
 		ray->hit = true;
 	}
 	return fraction;
@@ -453,12 +454,15 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			continue;
 		}
 
-		// Flight plan: cast along the chord of the next few ticks of the ballistic arc. The arc sags off the chord by
-		// g T^2 / 8 (about 2 cm for 8 ticks), which is invisible. A hit gives the landing tick.
+		// Flight plan: cast along the chord of the next few ticks of the ballistic arc. The arc bows off the chord by
+		// g T^2 / 8 (about 2 cm for 8 ticks), which is invisible. A hit gives the landing tick. The chord ends where
+		// the stepping below really ends (velocity first, then position), a centimetre under the exact parabola, or
+		// a ghost skimming the ground would end up inside it.
 		if ( b->planTicks <= 0 && casts < w->def.maxGhostCastsPerStep )
 		{
 			casts += 1;
-			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * plan * plan, g ) );
+			float n = (float)LP_GHOST_PLAN_TICKS;
+			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), g ) );
 			lpStaticRay ray = { w, 2.0f, { 0 }, b3Vec3_zero, false };
 			b3World_CastRay( w->def.physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
 			b->planTicks = LP_GHOST_PLAN_TICKS;

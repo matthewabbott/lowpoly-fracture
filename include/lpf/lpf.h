@@ -74,6 +74,7 @@ typedef struct lpMaterialDef
 	float plateSize; // spacing of the few large "plate" cells away from the impact; keeps remainders whole
 	int maxCells;	 // cells per fracture
 	int particleKind; // lpParticleKind
+	float mergeSlack; // remaining cells merge while their convex hull is at most this much bigger (0.3 = 30%)
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );
@@ -219,8 +220,8 @@ typedef struct lpStats
 	float updateMs;
 
 	// Breakdown of fractureMs for this step
-	float cellMs;  // Voronoi cells (lpFracture)
-	float hullMs;  // Box3D hulls for new pieces
+	float cellMs;  // the parallel phase: Voronoi cells, merges and Box3D hulls of the new pieces
+	float hullMs;  // Box3D hulls built later (a piece that had none, such as a ghost getting physics back)
 	float shapeMs; // Box3D shape create/destroy
 	float bondMs;  // contact areas for new bonds
 	float splitMs; // connectivity and new bodies

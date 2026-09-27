@@ -1,0 +1,9 @@
+# Scripted demo for the "lumber" scene, camera at (0, 2, 3).
+# tick tool origin(xyz) direction(xyz, normalized on load)
+# The log bridge (y 1.05, z -3) takes a cannon through the middle, then the lying logs get shot.
+10 cannon  0 2.0 3    0.0 -0.95 -6.0
+60 rifle   0 2.0 3   -4.3 -1.7 -2.3
+64 rifle   0 2.0 3   -4.6 -1.7 -2.6
+90 grenade 0 2.0 3    4.8 -1.75 -3.0
+130 cannon 0 2.0 3    6.0 -1.6 -10.0
+170 grenade 0 2.0 3  -6.0 -0.8 -11.0

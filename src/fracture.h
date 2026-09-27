@@ -67,6 +67,15 @@ typedef struct lpCellBond
 // lookup, no polygon clipping); other patterns fall back to lpShape_ContactArea.
 int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpCellBond* bonds, int capacity );
 
+// Merges touching Voronoi cells of class `mergeClass` while the convex hull of their union stays within (1 + slack)
+// of the volume the cells really had: fewer, chunkier pieces for the same look (a broken log end is one piece, not
+// four). The hull spills into neighbouring cells' space by at most the slack, and never over the centroid of a cell
+// of another class (the ejecta), so knocked-out notches stay open. Hull faces keep the tag and material of
+// a source face in their plane; the rest become cut faces. Compacts cells, cellSites and classes in place and
+// returns the new count. Deterministic: pairs are tried in cell and face order.
+int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
+				  uint8_t interiorMaterial );
+
 // Building blocks, exposed for tests and benchmarks ------------------------------------------------------
 
 // Sites inside the parent: dense near the impact (density ~ 1/distance, the ejecta), 4-6 ring sites around the
@@ -78,7 +87,9 @@ typedef struct lpSiteParams
 	float fragmentSize;
 	float plateSize;
 	int maxSites;
-	b3Vec3 avoidAxis; // ring sites stay out of a 25 degree cone around this axis (the grain); zero for none
+	b3Vec3 grainAxis; // ring sites stay out of a 25 degree cone around this axis; zero for none
+	float stretch;	  // the parent is squashed along grainAxis by this (> 1): distances along it count this much more
+	int ringSites;	  // how many ring sites to aim for (0 for none: a broken log end is one piece)
 } lpSiteParams;
 
 int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites );

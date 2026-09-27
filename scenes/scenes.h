@@ -16,6 +16,7 @@ typedef enum lpSceneId
 	lp_sceneTown,  // a street of houses, trees, fences and a tower
 	lp_sceneTower, // a tall stone tower on a plaza
 	lp_scenePile,  // loose crates and rocks dropped in a heap (physics stress)
+	lp_sceneLumber, // logs, a log bridge, a woodpile, trees and a timber shed
 	lp_sceneCount
 } lpSceneId;
 
@@ -35,6 +36,9 @@ void lpAddWall( lpWorld* world, b3Vec3 base, float yaw, float length, float heig
 				uint32_t color, float panelWidth );
 void lpAddHouse( lpWorld* world, b3Vec3 base, float yaw, uint64_t seed );
 void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed );
+
+// A round log lying along its local x axis (dynamic unless isStatic)
+int lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radius, bool isStatic );
 
 #ifdef __cplusplus
 }
