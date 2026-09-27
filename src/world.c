@@ -25,24 +25,73 @@
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
 	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true, 3.0e5f,
-				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1 },
+				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f },
 	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f,
-				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2 },
+				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f },
 	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f,
-				   3.4e-6f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f, 2 },
+				   3.4e-6f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f },
 	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f,
-					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3 },
+					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f },
 	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f,
-					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2 },
+					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f },
 	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f,
-				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3 },
+				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f },
 	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0 },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f },
 	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f,
-					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0 },
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0 },
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 1e6f, 1e6f, 1e6f },
 };
+
+// Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by
+// friction; nails hold timber well in shear but pull out in tension.
+static const lpJointDef lp_joints[lp_jointCount] = {
+	[lp_jointAuto] = { "auto", 0.0f, 0.0f, 0.0f, 0.0f },
+	[lp_jointSolid] = { "solid", 1e12f, 1e12f, 1e12f, 0.6f },
+	[lp_jointMortar] = { "mortar", 0.3e6f, 15e6f, 0.3e6f, 0.6f },
+	[lp_jointDry] = { "dry", 0.0f, 40e6f, 0.0f, 0.7f },
+	[lp_jointNails] = { "nails", 0.5e6f, 20e6f, 1e6f, 0.5f },
+};
+
+const lpJointDef* lpGetJoint( int jointId )
+{
+	LP_ASSERT( 0 <= jointId && jointId < lp_jointCount );
+	return lp_joints + jointId;
+}
+
+// The joint a part gets when it asks for lp_jointAuto
+static uint8_t lpResolveJoint( uint8_t joint, uint8_t material )
+{
+	if ( joint != lp_jointAuto )
+	{
+		return joint;
+	}
+	switch ( material )
+	{
+		case lp_stone:
+		case lp_brick:
+		case lp_concrete:
+		case lp_plaster:
+			return lp_jointMortar;
+		case lp_wood:
+			return lp_jointNails;
+		default:
+			return lp_jointSolid;
+	}
+}
+
+// The weaker of two joints: lower tensile strength, then the higher id
+static uint8_t lpWeakerJoint( uint8_t a, uint8_t b )
+{
+	float ta = lp_joints[a].tensileStrength;
+	float tb = lp_joints[b].tensileStrength;
+	if ( ta != tb )
+	{
+		return ta < tb ? a : b;
+	}
+	return a > b ? a : b;
+}
 
 const lpMaterialDef* lpGetMaterial( int materialId )
 {
@@ -383,7 +432,7 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 	w->bondCount -= 1;
 }
 
-void lpAddBond( lpWorld* w, int a, int b, float area, b3Vec3 centroid )
+void lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint )
 {
 	lpPiece* pa = w->pieces.data + a;
 	lpPiece* pb = w->pieces.data + b;
@@ -394,8 +443,13 @@ void lpAddBond( lpWorld* w, int a, int b, float area, b3Vec3 centroid )
 	lpBond* bond = w->bonds.data + index;
 	bond->a = a < b ? a : b;
 	bond->b = a < b ? b : a;
-	bond->area = area;
-	bond->centroid = centroid;
+	bond->area = contact->area;
+	bond->centroid = contact->centroid;
+	bond->normal = a < b ? contact->normal : b3Neg( contact->normal ); // always from bond->a toward bond->b
+	bond->h1 = contact->h1;
+	bond->h2 = contact->h2;
+	bond->joint = joint;
+	bond->strain = 0.0f;
 	bond->health = strengthA < strengthB ? strengthA : strengthB;
 	bond->strength = bond->health;
 	float loadA = lpGetMaterial( pa->material )->loadStrength;
@@ -420,19 +474,25 @@ void lpTryBond( lpWorld* w, int a, int b )
 		return;
 	}
 
-	b3Vec3 centroid;
-	float area = lpShape_ContactArea( pa->shape, pb->shape, tolerance, &centroid );
-	if ( area >= 1e-4f )
+	uint8_t joint = lpWeakerJoint( pa->joint, pb->joint );
+	lpContact contact;
+	if ( lpShape_Contact( pa->shape, pb->shape, tolerance, &contact ) && contact.area >= 1e-4f )
 	{
-		lpAddBond( w, a, b, area, centroid );
+		lpAddBond( w, a, b, &contact, joint );
 		return;
 	}
 
 	if ( lpShape_NearlyOverlap( pa->shape, pb->shape, weldMargin ) )
 	{
+		// A weld: a nominal square patch facing from one centroid to the other
 		float v = pa->shape->volume < pb->shape->volume ? pa->shape->volume : pb->shape->volume;
-		float nominal = 0.5f * cbrtf( v * v );
-		lpAddBond( w, a, b, nominal, b3MulSV( 0.5f, b3Add( pa->shape->centroid, pb->shape->centroid ) ) );
+		contact.area = 0.5f * cbrtf( v * v );
+		contact.centroid = b3MulSV( 0.5f, b3Add( pa->shape->centroid, pb->shape->centroid ) );
+		b3Vec3 d = b3Sub( pb->shape->centroid, pa->shape->centroid );
+		contact.normal = b3LengthSquared( d ) > 1e-12f ? b3Normalize( d ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		contact.h1 = 0.5f * sqrtf( contact.area );
+		contact.h2 = contact.h1;
+		lpAddBond( w, a, b, &contact, joint );
 	}
 }
 
@@ -598,6 +658,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		lpPiece* p = w->pieces.data + pieceIndex;
 		p->shape = shape;
 		p->material = part->material;
+		p->joint = lpResolveJoint( part->joint, part->material );
 		p->color = part->color;
 		p->seed = (uint32_t)lpMix64( w->def.seed ^ ( (uint64_t)pieceIndex << 20 ) ^ w->pieceSerial++ );
 
@@ -946,7 +1007,21 @@ bool lpWorld_Validate( const lpWorld* w )
 	int liveBonds = 0;
 	for ( int i = 0; i < w->bonds.count; ++i )
 	{
-		liveBonds += w->bonds.data[i].alive ? 1 : 0;
+		const lpBond* bond = w->bonds.data + i;
+		if ( bond->alive == false )
+		{
+			continue;
+		}
+		liveBonds += 1;
+		float len2 = b3LengthSquared( bond->normal );
+		if ( b3AbsFloat( len2 - 1.0f ) > 1e-3f || ( bond->h1 > 0.0f && bond->h2 > 0.0f ) == false )
+		{
+			return lpFail( "bond %d has a bad contact patch (joins %d and %d)", i, bond->a, bond->b );
+		}
+		if ( bond->joint == lp_jointAuto || bond->joint >= lp_jointCount )
+		{
+			return lpFail( "bond %d has joint %d (piece %d)", i, bond->joint, bond->a );
+		}
 	}
 	if ( liveBonds != w->bondCount || bondRefs != 2 * liveBonds )
 	{

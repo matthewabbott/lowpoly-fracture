@@ -119,6 +119,26 @@ static inline bool lpBoxesTouch( b3AABB a, b3AABB b, float margin )
 // Box3D hull with the same vertices. Caller owns the result (b3DestroyHull). NULL on failure.
 b3HullData* lpShape_CreateHull( const lpShape* shape );
 
-// Total area where a face of `a` lies on a face of `b` with opposite normals (the faces two pieces share).
-// Writes the area-weighted centroid.
-float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid );
+// Where two pieces touch: the patch a bond sits on
+typedef struct lpContact
+{
+	float area;
+	b3Vec3 centroid;
+	b3Vec3 normal; // unit, pointing from the first shape toward the second
+	float h1, h2;  // half-extents of the patch along the tangents of lpContactBasis( normal )
+} lpContact;
+
+// Tangents for a contact normal. The same rule everywhere, so extents and bending axes agree.
+static inline void lpContactBasis( b3Vec3 n, b3Vec3* t1, b3Vec3* t2 )
+{
+	b3Vec3 t = b3AbsFloat( n.x ) < 0.57f ? (b3Vec3){ 1.0f, 0.0f, 0.0f } : (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	*t1 = b3Normalize( b3Cross( t, n ) );
+	*t2 = b3Cross( n, *t1 );
+}
+
+// Where a face of `a` lies on a face of `b` with opposite normals (the faces two pieces share): total area,
+// area-weighted centroid, the normal of the largest patch and the extents of all patches. False if they share none.
+bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpContact* contact );
+
+// The contact a face of `shape` makes with whatever lies on it (Voronoi siblings share whole faces)
+void lpShape_FaceContact( const lpShape* shape, int faceIndex, lpContact* contact );

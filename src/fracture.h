@@ -47,13 +47,12 @@ int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, i
 // A face two cells of one fracture share
 typedef struct lpCellBond
 {
-	int a, b; // cell indices, a < b
-	float area;
-	b3Vec3 centroid;
+	int a, b;		   // cell indices, a < b
+	lpContact contact; // normal points from cell a to cell b
 } lpCellBond;
 
 // Shared faces between the cells of one fracture. Voronoi cells share exact faces, found through the face tags (a
-// lookup, no polygon clipping); other patterns fall back to lpShape_ContactArea.
+// lookup, no polygon clipping); other patterns fall back to lpShape_Contact.
 int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpCellBond* bonds, int capacity );
 
 // Merges touching Voronoi cells of class `mergeClass` while the convex hull of their union stays within (1 + slack)

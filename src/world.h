@@ -62,6 +62,7 @@ typedef struct lpPiece
 	int groundDepth; // stress pass: BFS depth
 	int loadSlot;	 // stress pass: index into scratchLoad
 	uint8_t material;
+	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
 	uint8_t depth;
 	bool anchored;
 } lpPiece;
@@ -74,6 +75,10 @@ typedef struct lpBond
 	float strength;		// health when intact
 	float loadStrength; // N/m^2 under the weight check, when intact
 	b3Vec3 centroid;	// body frame
+	b3Vec3 normal;		// unit, body frame, from piece a toward piece b
+	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
+	float strain;		// stress overload accumulated over checks; the bond breaks at 1
+	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
 	int nextFree;
 	bool alive;
@@ -267,7 +272,7 @@ int lpCompareInt( const void* a, const void* b );
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale
 // bonds and dirty bodies (world.c)
 void lpBreakBond( lpWorld* w, int bondIndex );
-void lpAddBond( lpWorld* w, int a, int b, float area, b3Vec3 centroid );
+void lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint );
 void lpTryBond( lpWorld* w, int a, int b );
 void lpMarkDirty( lpWorld* w, int bodyIndex );
 

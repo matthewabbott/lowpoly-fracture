@@ -76,9 +76,37 @@ typedef struct lpMaterialDef
 	int particleKind; // lpParticleKind
 	float mergeSlack; // remaining cells merge while their convex hull is at most this much bigger (0.3 = 30%)
 	int chipSplits;	  // small ejecta cells are split this many times into real chips (a dirtier mess)
+
+	// Stress limits of the solid material, Pa. Joints between parts have their own (lpJointDef).
+	float tensileStrength;
+	float compressiveStrength;
+	float shearStrength;
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );
+
+// How two parts are joined. A bond between parts takes the weaker joint of the two; a bond between fracture cells of
+// one part is solid. Structures break at their joints first: mortar before brick, nails before timber.
+typedef enum lpJointId
+{
+	lp_jointAuto,	// by material: mortar for stone, brick, concrete and plaster, nails for wood, solid otherwise
+	lp_jointSolid,	// as strong as the weaker of the two materials
+	lp_jointMortar, // weak in tension: masonry cracks and hinges at its joints
+	lp_jointDry,	// stacked with nothing between: no tension or cohesion, friction only
+	lp_jointNails,
+	lp_jointCount
+} lpJointId;
+
+typedef struct lpJointDef
+{
+	const char* name;
+	float tensileStrength;	   // Pa
+	float compressiveStrength; // Pa
+	float shearStrength;	   // Pa of cohesion; friction x compression adds to it
+	float friction;
+} lpJointDef;
+
+const lpJointDef* lpGetJoint( int jointId );
 
 // ---- world ----
 
@@ -129,6 +157,7 @@ typedef struct lpPartDef
 	uint32_t color;	  // exterior 0xRRGGBB
 	b3Vec3 grainAxis; // object space; zero picks the longest box axis
 	bool anchored;	  // rests on a foundation: bonded to the world through its bottom face
+	uint8_t joint;	  // lpJointId where this part meets its neighbours (lp_jointAuto: by material)
 } lpPartDef;
 
 // Makes an object explode: when it hits something at triggerSpeed or faster, or when a nearby blast reaches it.

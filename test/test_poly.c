@@ -120,15 +120,19 @@ static int TestContactArea( void )
 	lpPoly_MakeBox( &b, (b3Vec3){ 0.5f, 0.25f, 0.5f }, (b3Transform){ { 1.0f, 0.1f, 0.0f }, b3Quat_identity }, 0 );
 	lpShape* sa = lpShape_Create( &a );
 	lpShape* sb = lpShape_Create( &b );
-	b3Vec3 centroid;
-	float area = lpShape_ContactArea( sa, sb, 1e-3f, &centroid );
-	ENSURE_NEAR( area, 0.5f, 1e-4f );
-	ENSURE_NEAR( centroid.x, 0.5f, 1e-5f );
-	ENSURE_NEAR( centroid.y, 0.1f, 1e-5f );
+	lpContact contact;
+	ENSURE( lpShape_Contact( sa, sb, 1e-3f, &contact ) );
+	ENSURE_NEAR( contact.area, 0.5f, 1e-4f );
+	ENSURE_NEAR( contact.centroid.x, 0.5f, 1e-5f );
+	ENSURE_NEAR( contact.centroid.y, 0.1f, 1e-5f );
+	ENSURE_NEAR( contact.normal.x, 1.0f, 1e-5f );
+	// the patch is 0.5 tall (y) and 1 deep (z): half-extents 0.25 and 0.5 in some order
+	ENSURE_NEAR( contact.h1 + contact.h2, 0.75f, 1e-4f );
+	ENSURE_NEAR( contact.h1 * contact.h2, 0.125f, 1e-4f );
 
 	// Not touching
 	lpShape_Translate( sb, (b3Vec3){ 0.1f, 0.0f, 0.0f } );
-	ENSURE( lpShape_ContactArea( sa, sb, 1e-3f, &centroid ) == 0.0f );
+	ENSURE( lpShape_Contact( sa, sb, 1e-3f, &contact ) == false );
 	lpShape_Destroy( sa );
 	lpShape_Destroy( sb );
 	return 0;

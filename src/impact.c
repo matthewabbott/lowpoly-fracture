@@ -234,6 +234,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	}
 
 	uint8_t material = piece->material;
+	uint8_t joint = piece->joint;
 	uint32_t color = piece->color;
 	b3Vec3 axis = piece->axis;
 	int depth = piece->depth + 1;
@@ -305,6 +306,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		child->material = material;
 		child->color = color;
 		child->axis = axis;
+		child->joint = joint;
 		child->depth = (uint8_t)( depth > 255 ? 255 : depth );
 		child->seed = (uint32_t)lpMix64( w->def.seed ^ w->pieceSerial++ );
 		child->anchorPlane = anchorPlane;
@@ -380,7 +382,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		int b = cellToPiece[cb.b];
 		if ( a >= 0 && b >= 0 )
 		{
-			lpAddBond( w, a, b, cb.area, cb.centroid );
+			lpAddBond( w, a, b, &cb.contact, lp_jointSolid ); // cells of one piece: its own material holds them
 		}
 	}
 	for ( int i = 0; i < childCount; ++i )

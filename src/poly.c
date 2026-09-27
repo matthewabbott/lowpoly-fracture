@@ -758,10 +758,52 @@ static float lpPolygonArea2( const lpVec2* p, int count, lpVec2* centroid )
 	return 0.5f * a2;
 }
 
-float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid )
+// Half-extents of points around a centroid along the contact tangents
+static void lpContactExtents( lpContact* contact, const b3Vec3* points, int count )
 {
+	b3Vec3 t1, t2;
+	lpContactBasis( contact->normal, &t1, &t2 );
+	float lo1 = FLT_MAX, hi1 = -FLT_MAX, lo2 = FLT_MAX, hi2 = -FLT_MAX;
+	for ( int k = 0; k < count; ++k )
+	{
+		b3Vec3 d = b3Sub( points[k], contact->centroid );
+		float p1 = b3Dot( d, t1 );
+		float p2 = b3Dot( d, t2 );
+		lo1 = p1 < lo1 ? p1 : lo1;
+		hi1 = p1 > hi1 ? p1 : hi1;
+		lo2 = p2 < lo2 ? p2 : lo2;
+		hi2 = p2 > hi2 ? p2 : hi2;
+	}
+	contact->h1 = count > 0 ? b3MaxFloat( 0.5f * ( hi1 - lo1 ), 1e-3f ) : 1e-3f;
+	contact->h2 = count > 0 ? b3MaxFloat( 0.5f * ( hi2 - lo2 ), 1e-3f ) : 1e-3f;
+}
+
+void lpShape_FaceContact( const lpShape* shape, int faceIndex, lpContact* contact )
+{
+	const lpFace* face = shape->faces + faceIndex;
+	contact->area = lpShape_FaceArea( shape, faceIndex, &contact->centroid );
+	contact->normal = face->plane.normal;
+	b3Vec3 points[LP_POLY_MAX_VERTICES];
+	int count = face->count < LP_POLY_MAX_VERTICES ? face->count : LP_POLY_MAX_VERTICES;
+	for ( int k = 0; k < count; ++k )
+	{
+		points[k] = shape->vertices[shape->indices[face->first + k]];
+	}
+	lpContactExtents( contact, points, count );
+}
+
+bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpContact* contact )
+{
+	enum
+	{
+		lp_maxContactPoints = 128
+	};
 	float total = 0.0f;
 	b3Vec3 weighted = b3Vec3_zero;
+	float largest = 0.0f;
+	b3Vec3 normal = b3Vec3_zero;
+	b3Vec3 points[lp_maxContactPoints];
+	int pointCount = 0;
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
 	{
@@ -830,12 +872,25 @@ float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, 
 			b3Vec3 c3 = b3Add( origin, b3Add( b3MulSV( c2.x, u ), b3MulSV( c2.y, v ) ) );
 			total += area;
 			weighted = b3Add( weighted, b3MulSV( area, c3 ) );
+			if ( area > largest )
+			{
+				largest = area;
+				normal = n;
+			}
+			for ( int k = 0; k < count && pointCount < lp_maxContactPoints; ++k )
+			{
+				points[pointCount++] = b3Add( origin, b3Add( b3MulSV( src[k].x, u ), b3MulSV( src[k].y, v ) ) );
+			}
 		}
 	}
 
-	if ( total > 0.0f && centroid != NULL )
+	contact->area = total;
+	if ( total <= 0.0f )
 	{
-		*centroid = b3MulSV( 1.0f / total, weighted );
+		return false;
 	}
-	return total;
+	contact->centroid = b3MulSV( 1.0f / total, weighted );
+	contact->normal = normal;
+	lpContactExtents( contact, points, pointCount );
+	return true;
 }

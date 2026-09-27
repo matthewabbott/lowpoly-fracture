@@ -602,11 +602,11 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 				{
 					continue;
 				}
-				b3Vec3 centroid;
-				float area = lpShape_FaceArea( shape, f, &centroid );
-				if ( area > 1e-4f )
+				lpCellBond bond = { a, b };
+				lpShape_FaceContact( shape, f, &bond.contact );
+				if ( bond.contact.area > 1e-4f )
 				{
-					bonds[n++] = (lpCellBond){ a, b, area, centroid };
+					bonds[n++] = bond;
 				}
 			}
 		}
@@ -618,11 +618,10 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 				{
 					continue;
 				}
-				b3Vec3 centroid;
-				float area = lpShape_ContactArea( cells[a], cells[b], 2e-3f, &centroid );
-				if ( area > 1e-4f )
+				lpCellBond bond = { a, b };
+				if ( lpShape_Contact( cells[a], cells[b], 2e-3f, &bond.contact ) && bond.contact.area > 1e-4f )
 				{
-					bonds[n++] = (lpCellBond){ a, b, area, centroid };
+					bonds[n++] = bond;
 				}
 			}
 		}
@@ -655,11 +654,16 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 			{
 				known = bonds[k].a == b && bonds[k].b == a;
 			}
-			b3Vec3 centroid = b3Vec3_zero;
-			float area = known ? 0.0f : lpShape_FaceArea( shape, f, &centroid );
-			if ( area > 1e-4f )
+			if ( known )
 			{
-				bonds[n++] = (lpCellBond){ b, a, area, centroid };
+				continue;
+			}
+			lpCellBond bond = { b, a };
+			lpShape_FaceContact( shape, f, &bond.contact );
+			bond.contact.normal = b3Neg( bond.contact.normal ); // the face is a's; the bond runs from b to a
+			if ( bond.contact.area > 1e-4f )
+			{
+				bonds[n++] = bond;
 			}
 		}
 	}
