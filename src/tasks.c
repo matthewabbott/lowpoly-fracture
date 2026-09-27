@@ -31,17 +31,10 @@ typedef pthread_t lpThread;
 
 #define LP_MAX_WORKERS 32
 
-typedef struct lpWorkerArg
-{
-	lpTaskPool* pool;
-	int worker;
-} lpWorkerArg;
-
 struct lpTaskPool
 {
 	int workerCount;
 	lpThread threads[LP_MAX_WORKERS];
-	lpWorkerArg args[LP_MAX_WORKERS];
 
 	lpMutex mutex;
 	lpCond wake; // workers wait for a new batch
@@ -58,7 +51,7 @@ struct lpTaskPool
 };
 
 // Take items until the batch is exhausted. Called with the mutex held; returns with it held.
-static void lpDrain( lpTaskPool* pool, int worker )
+static void lpDrain( lpTaskPool* pool )
 {
 	while ( pool->next < pool->count )
 	{
@@ -66,7 +59,7 @@ static void lpDrain( lpTaskPool* pool, int worker )
 		lpTaskFcn* fcn = pool->fcn;
 		void* context = pool->context;
 		lpMutexUnlock( &pool->mutex );
-		fcn( index, worker, context );
+		fcn( index, context );
 		lpMutexLock( &pool->mutex );
 		pool->finished += 1;
 		if ( pool->finished == pool->count )
@@ -82,8 +75,7 @@ static DWORD WINAPI lpWorkerMain( LPVOID param )
 static void* lpWorkerMain( void* param )
 #endif
 {
-	lpWorkerArg* arg = param;
-	lpTaskPool* pool = arg->pool;
+	lpTaskPool* pool = param;
 	uint64_t seen = 0;
 	lpMutexLock( &pool->mutex );
 	for ( ;; )
@@ -97,7 +89,7 @@ static void* lpWorkerMain( void* param )
 			break;
 		}
 		seen = pool->batch;
-		lpDrain( pool, arg->worker );
+		lpDrain( pool );
 	}
 	lpMutexUnlock( &pool->mutex );
 #if defined( _WIN32 )
@@ -118,11 +110,10 @@ lpTaskPool* lpTaskPool_Create( int workerCount )
 	lpCondInit( &pool->done );
 	for ( int i = 1; i < workerCount; ++i )
 	{
-		pool->args[i] = (lpWorkerArg){ pool, i };
 #if defined( _WIN32 )
-		pool->threads[i] = CreateThread( NULL, 0, lpWorkerMain, pool->args + i, 0, NULL );
+		pool->threads[i] = CreateThread( NULL, 0, lpWorkerMain, pool, 0, NULL );
 #else
-		pthread_create( pool->threads + i, NULL, lpWorkerMain, pool->args + i );
+		pthread_create( pool->threads + i, NULL, lpWorkerMain, pool );
 #endif
 	}
 	return pool;
@@ -160,7 +151,7 @@ void lpTaskPool_ParallelFor( lpTaskPool* pool, int count, lpTaskFcn* fcn, void* 
 	{
 		for ( int i = 0; i < count; ++i )
 		{
-			fcn( i, 0, context );
+			fcn( i, context );
 		}
 		return;
 	}
@@ -173,7 +164,7 @@ void lpTaskPool_ParallelFor( lpTaskPool* pool, int count, lpTaskFcn* fcn, void* 
 	pool->finished = 0;
 	pool->batch += 1;
 	lpCondBroadcast( &pool->wake );
-	lpDrain( pool, 0 );
+	lpDrain( pool );
 	while ( pool->finished < pool->count )
 	{
 		lpCondWait( &pool->done, &pool->mutex );
@@ -182,7 +173,3 @@ void lpTaskPool_ParallelFor( lpTaskPool* pool, int count, lpTaskFcn* fcn, void* 
 	lpMutexUnlock( &pool->mutex );
 }
 
-int lpTaskPool_GetWorkerCount( const lpTaskPool* pool )
-{
-	return pool != NULL ? pool->workerCount : 1;
-}

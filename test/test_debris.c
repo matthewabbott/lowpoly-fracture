@@ -90,7 +90,7 @@ static int TestSliverAbsorption( void )
 		input.plateSize = 1.2f;
 		input.maxCells = 28;
 		input.absorbVolume = 0.002f;
-		input.pattern = lp_patternImpact;
+		input.pattern = lp_breakImpact;
 		input.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
 		input.seed = (uint64_t)seed;
 		input.tolerance = 2e-5f;

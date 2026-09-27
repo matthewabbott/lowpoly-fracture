@@ -120,16 +120,15 @@ static int TestContactArea( void )
 	lpPoly_MakeBox( &b, (b3Vec3){ 0.5f, 0.25f, 0.5f }, (b3Transform){ { 1.0f, 0.1f, 0.0f }, b3Quat_identity }, 0 );
 	lpShape* sa = lpShape_Create( &a );
 	lpShape* sb = lpShape_Create( &b );
-	b3Vec3 centroid, normal;
-	float area = lpShape_ContactArea( sa, sb, 1e-3f, &centroid, &normal );
+	b3Vec3 centroid;
+	float area = lpShape_ContactArea( sa, sb, 1e-3f, &centroid );
 	ENSURE_NEAR( area, 0.5f, 1e-4f );
-	ENSURE_NEAR( normal.x, 1.0f, 1e-5f );
 	ENSURE_NEAR( centroid.x, 0.5f, 1e-5f );
 	ENSURE_NEAR( centroid.y, 0.1f, 1e-5f );
 
 	// Not touching
 	lpShape_Translate( sb, (b3Vec3){ 0.1f, 0.0f, 0.0f } );
-	ENSURE( lpShape_ContactArea( sa, sb, 1e-3f, &centroid, &normal ) == 0.0f );
+	ENSURE( lpShape_ContactArea( sa, sb, 1e-3f, &centroid ) == 0.0f );
 	lpShape_Destroy( sa );
 	lpShape_Destroy( sb );
 	return 0;

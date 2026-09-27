@@ -35,9 +35,9 @@ typedef enum lpMaterialId
 
 typedef enum lpPatternId
 {
-	lp_breakImpact, // Voronoi dense at the impact: stone, brick, concrete, plaster
-	lp_breakGrain,	// Voronoi stretched along the grain: wood splinters
-	lp_breakRadial, // wedges and rings in the pane: glass
+	lp_breakImpact, // Voronoi dense at the impact, coarse away from it: stone, brick, concrete, plaster
+	lp_breakGrain,	// Voronoi in a space squashed along the grain, so cells come out as long splinters: wood
+	lp_breakRadial, // wedges cut by concentric chords around the impact, in the plane of a thin pane: glass
 } lpPatternId;
 
 // Cosmetic particle look, per material

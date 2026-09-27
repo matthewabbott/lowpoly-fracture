@@ -55,7 +55,7 @@ static lpFractureInput SlabInput( lpPoly* slab, int pattern )
 static int TestImpactPattern( void )
 {
 	lpPoly slab;
-	lpFractureInput input = SlabInput( &slab, lp_patternImpact );
+	lpFractureInput input = SlabInput( &slab, lp_breakImpact );
 	lpShape* cells[LP_MAX_SITES];
 	lpFractureStats stats = { 0 };
 	int count = lpFracture( &input, cells, NULL, LP_MAX_SITES, &stats );
@@ -89,7 +89,7 @@ static int TestImpactPattern( void )
 static int TestGrainPattern( void )
 {
 	lpPoly slab;
-	lpFractureInput input = SlabInput( &slab, lp_patternGrain );
+	lpFractureInput input = SlabInput( &slab, lp_breakGrain );
 	lpShape* cells[LP_MAX_SITES];
 	lpFractureStats stats = { 0 };
 	int count = lpFracture( &input, cells, NULL, LP_MAX_SITES, &stats );
@@ -119,7 +119,7 @@ static int TestRadialPattern( void )
 	input.radius = 0.9f;
 	input.fragmentSize = 0.07f;
 	input.maxCells = 128;
-	input.pattern = lp_patternRadial;
+	input.pattern = lp_breakRadial;
 	input.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
 	input.seed = 5;
 	input.tolerance = 1e-4f;
@@ -139,7 +139,7 @@ static int TestFractureDeterminism( void )
 	{
 		lpPoly slab;
 		lpFractureInput input = SlabInput( &slab, pattern );
-		if ( pattern == lp_patternRadial )
+		if ( pattern == lp_breakRadial )
 		{
 			input.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
 		}

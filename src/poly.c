@@ -459,15 +459,20 @@ float lpPoly_MaxDistanceSquared( const lpPoly* poly, b3Vec3 point )
 	return m;
 }
 
-float lpPoly_SignedDistance( const lpPoly* poly, b3Vec3 point )
+static float lpPlanesDistance( const lpFace* faces, int faceCount, b3Vec3 point )
 {
 	float m = -FLT_MAX;
-	for ( int f = 0; f < poly->faceCount; ++f )
+	for ( int f = 0; f < faceCount; ++f )
 	{
-		float d = b3Dot( poly->faces[f].plane.normal, point ) - poly->faces[f].plane.offset;
+		float d = b3Dot( faces[f].plane.normal, point ) - faces[f].plane.offset;
 		m = d > m ? d : m;
 	}
 	return m;
+}
+
+float lpPoly_SignedDistance( const lpPoly* poly, b3Vec3 point )
+{
+	return lpPlanesDistance( poly->faces, poly->faceCount, point );
 }
 
 bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
@@ -642,13 +647,7 @@ bool lpShape_HasFaceOnPlane( const lpShape* shape, b3Plane plane, float toleranc
 
 float lpShape_SignedDistance( const lpShape* shape, b3Vec3 point )
 {
-	float m = -FLT_MAX;
-	for ( int f = 0; f < shape->faceCount; ++f )
-	{
-		float d = b3Dot( shape->faces[f].plane.normal, point ) - shape->faces[f].plane.offset;
-		m = d > m ? d : m;
-	}
-	return m;
+	return lpPlanesDistance( shape->faces, shape->faceCount, point );
 }
 
 float lpShape_FaceArea( const lpShape* shape, int faceIndex, b3Vec3* centroid )
@@ -759,12 +758,10 @@ static float lpPolygonArea2( const lpVec2* p, int count, lpVec2* centroid )
 	return 0.5f * a2;
 }
 
-float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid, b3Vec3* normal )
+float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid )
 {
 	float total = 0.0f;
 	b3Vec3 weighted = b3Vec3_zero;
-	b3Vec3 bestNormal = b3Vec3_zero;
-	float bestArea = 0.0f;
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
 	{
@@ -833,24 +830,12 @@ float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, 
 			b3Vec3 c3 = b3Add( origin, b3Add( b3MulSV( c2.x, u ), b3MulSV( c2.y, v ) ) );
 			total += area;
 			weighted = b3Add( weighted, b3MulSV( area, c3 ) );
-			if ( area > bestArea )
-			{
-				bestArea = area;
-				bestNormal = n;
-			}
 		}
 	}
 
-	if ( total > 0.0f )
+	if ( total > 0.0f && centroid != NULL )
 	{
-		if ( centroid != NULL )
-		{
-			*centroid = b3MulSV( 1.0f / total, weighted );
-		}
-		if ( normal != NULL )
-		{
-			*normal = bestNormal;
-		}
+		*centroid = b3MulSV( 1.0f / total, weighted );
 	}
 	return total;
 }

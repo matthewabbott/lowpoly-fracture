@@ -415,17 +415,13 @@ static void lpTryBond( lpWorld* w, int a, int b )
 	lpPiece* pb = w->pieces.data + b;
 	const float tolerance = 2e-3f;
 	const float weldMargin = 0.03f;
-	b3AABB ba = pa->shape->bounds;
-	b3AABB bb = pb->shape->bounds;
-	if ( ba.lowerBound.x > bb.upperBound.x + weldMargin || bb.lowerBound.x > ba.upperBound.x + weldMargin ||
-		 ba.lowerBound.y > bb.upperBound.y + weldMargin || bb.lowerBound.y > ba.upperBound.y + weldMargin ||
-		 ba.lowerBound.z > bb.upperBound.z + weldMargin || bb.lowerBound.z > ba.upperBound.z + weldMargin )
+	if ( lpBoxesTouch( pa->shape->bounds, pb->shape->bounds, weldMargin ) == false )
 	{
 		return;
 	}
 
-	b3Vec3 centroid, normal;
-	float area = lpShape_ContactArea( pa->shape, pb->shape, tolerance, &centroid, &normal );
+	b3Vec3 centroid;
+	float area = lpShape_ContactArea( pa->shape, pb->shape, tolerance, &centroid );
 	if ( area >= 1e-4f )
 	{
 		lpAddBond( w, a, b, area, centroid );
@@ -781,7 +777,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->maxCells = m->maxCells;
 	input->plateSize = m->plateSize * w->def.fragmentScale;
 	input->absorbVolume = b3MaxFloat( job->particleVolume, 0.1f * job->ghostVolume ); // slivers merge into neighbours
-	input->pattern = m->pattern == lp_breakGrain ? lp_patternGrain : ( m->pattern == lp_breakRadial ? lp_patternRadial : lp_patternImpact );
+	input->pattern = (lpPatternId)m->pattern;
 	input->axis = piece->axis;
 	input->stretch = m->grainStretch;
 	input->interiorMaterial = piece->material;
@@ -791,9 +787,8 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 
 // Phase 2. Must not touch the world. Cells inside the break radius are ejecta: their bonds would break anyway, so
 // they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no Box3D hull at all.
-static void lpRunFractureJob( int index, int worker, void* context )
+static void lpRunFractureJob( int index, void* context )
 {
-	(void)worker;
 	lpFractureJob* job = (lpFractureJob*)context + index;
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
 	uint64_t ticks = b3GetTicks();
@@ -865,7 +860,7 @@ static void lpRunFractureJob( int index, int worker, void* context )
 		{
 			continue;
 		}
-		bool oriented = job->input.pattern == lp_patternGrain || job->input.pattern == lp_patternRadial;
+		bool oriented = job->input.pattern == lp_breakGrain || job->input.pattern == lp_breakRadial;
 		lpRandom rng;
 		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
 		lpShape* chips[4];

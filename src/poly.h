@@ -108,9 +108,17 @@ float lpShape_FaceArea( const lpShape* shape, int faceIndex, b3Vec3* centroid );
 // meet at an angle (roof on a gable) where there is no shared coplanar face.
 bool lpShape_NearlyOverlap( const lpShape* a, const lpShape* b, float margin );
 
+// True if the boxes overlap or are within `margin` of each other on every axis
+static inline bool lpBoxesTouch( b3AABB a, b3AABB b, float margin )
+{
+	return !( a.lowerBound.x > b.upperBound.x + margin || b.lowerBound.x > a.upperBound.x + margin ||
+			  a.lowerBound.y > b.upperBound.y + margin || b.lowerBound.y > a.upperBound.y + margin ||
+			  a.lowerBound.z > b.upperBound.z + margin || b.lowerBound.z > a.upperBound.z + margin );
+}
+
 // Box3D hull with the same vertices. Caller owns the result (b3DestroyHull). NULL on failure.
 b3HullData* lpShape_CreateHull( const lpShape* shape );
 
 // Total area where a face of `a` lies on a face of `b` with opposite normals (the faces two pieces share).
-// Writes the area-weighted centroid and the normal of a (pointing from a toward b).
-float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid, b3Vec3* normal );
+// Writes the area-weighted centroid.
+float lpShape_ContactArea( const lpShape* a, const lpShape* b, float tolerance, b3Vec3* centroid );

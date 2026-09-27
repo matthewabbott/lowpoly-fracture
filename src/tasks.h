@@ -12,9 +12,7 @@ typedef struct lpTaskPool lpTaskPool;
 lpTaskPool* lpTaskPool_Create( int workerCount );
 void lpTaskPool_Destroy( lpTaskPool* pool );
 
-typedef void lpTaskFcn( int index, int worker, void* context );
+typedef void lpTaskFcn( int index, void* context );
 
 // Runs fcn(i) for i in [0, count) across the pool and the caller, and returns when all are done.
 void lpTaskPool_ParallelFor( lpTaskPool* pool, int count, lpTaskFcn* fcn, void* context );
-
-int lpTaskPool_GetWorkerCount( const lpTaskPool* pool );

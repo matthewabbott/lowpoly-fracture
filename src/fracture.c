@@ -4,6 +4,20 @@
 
 #include <float.h>
 
+// Sites inside the parent: dense near the impact (density ~ 1/distance, the ejecta), 4-6 ring sites around the
+// damage radius that shape a jagged rim, and at most three far sites that keep the rest of the piece in large plates.
+typedef struct lpSiteParams
+{
+	b3Vec3 impact;
+	float radius;
+	float fragmentSize;
+	float plateSize;
+	int maxSites;
+	b3Vec3 grainAxis; // ring sites stay out of a 25 degree cone around this axis; zero for none
+	float stretch;	  // the parent is squashed along grainAxis by this (> 1): distances along it count this much more
+	int ringSites;	  // how many ring sites to aim for (0 for none: a broken log end is one piece)
+} lpSiteParams;
+
 static uint32_t lpFloatBits( float value )
 {
 	uint32_t bits;
@@ -34,7 +48,10 @@ static void lpSortKeys( uint64_t* keys, int count )
 	}
 }
 
-bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int siteCount, int index, uint8_t material,
+// Voronoi cell of site `index`, clipped to the parent. Returns the cell in `out`. Returns false if the
+// cell is empty or a clip failed. Neighbor sites are visited nearest first, and the search stops once the
+// next site is farther than twice the current cell radius (no further plane can cut).
+static bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int siteCount, int index, uint8_t material,
 						   float tolerance, lpPoly* scratch, lpPoly* out, lpFractureStats* stats )
 {
 	b3Vec3 site = sites[index];
@@ -162,7 +179,7 @@ static float lpSiteDistance( const lpSiteParams* params, b3Vec3 p, b3Vec3 focus 
 	return b3Length( v );
 }
 
-int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites )
+static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites )
 {
 	int maxSites = params->maxSites < LP_MAX_SITES ? params->maxSites : LP_MAX_SITES;
 	float radius = params->radius;
@@ -314,7 +331,7 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	b3Vec3 impact = input->impact;
 	b3Matrix3 unsquash = { 0 };
 
-	bool grain = input->pattern == lp_patternGrain && input->stretch > 1.0f;
+	bool grain = input->pattern == lp_breakGrain && input->stretch > 1.0f;
 	if ( grain )
 	{
 		// Squash along the grain: isotropic Voronoi there becomes cells `stretch` times longer after unsquashing.
@@ -544,18 +561,11 @@ int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, i
 	lpRandom rng;
 	lpRandom_Seed( &rng, input->seed, 0x5EEDu );
 
-	if ( input->pattern == lp_patternRadial )
+	if ( input->pattern == lp_breakRadial )
 	{
 		return lpFractureRadial( input, &rng, cells, cellSites, capacity, stats );
 	}
 	return lpFractureVoronoi( input, &rng, cells, cellSites, capacity, stats );
-}
-
-static bool lpBoxesTouch( b3AABB a, b3AABB b, float margin )
-{
-	return !( a.lowerBound.x > b.upperBound.x + margin || b.lowerBound.x > a.upperBound.x + margin ||
-			  a.lowerBound.y > b.upperBound.y + margin || b.lowerBound.y > a.upperBound.y + margin ||
-			  a.lowerBound.z > b.upperBound.z + margin || b.lowerBound.z > a.upperBound.z + margin );
 }
 
 int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpCellBond* bonds, int capacity )
@@ -608,8 +618,8 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 				{
 					continue;
 				}
-				b3Vec3 centroid, normal;
-				float area = lpShape_ContactArea( cells[a], cells[b], 2e-3f, &centroid, &normal );
+				b3Vec3 centroid;
+				float area = lpShape_ContactArea( cells[a], cells[b], 2e-3f, &centroid );
 				if ( area > 1e-4f )
 				{
 					bonds[n++] = (lpCellBond){ a, b, area, centroid };

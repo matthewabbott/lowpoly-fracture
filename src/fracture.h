@@ -8,18 +8,6 @@
 
 #include "poly.h"
 
-typedef enum lpPattern
-{
-	// Voronoi cells, dense at the impact and coarse away from it (stone, brick, concrete, plaster)
-	lp_patternImpact,
-
-	// Voronoi computed in a space squashed along the grain, so cells come out as long splinters (wood)
-	lp_patternGrain,
-
-	// Radial wedges cut by concentric chords around the impact, in the plane of a thin pane (glass)
-	lp_patternRadial,
-} lpPattern;
-
 typedef struct lpFractureInput
 {
 	// Piece to split, in a frame near the piece (for precision)
@@ -32,7 +20,7 @@ typedef struct lpFractureInput
 	int maxCells;
 	float absorbVolume; // cells smaller than this outside the damage radius are slivers and get absorbed (0: keep)
 
-	lpPattern pattern;
+	lpPatternId pattern;
 	b3Vec3 axis;	 // grain axis (grain pattern) or pane normal (radial pattern), unit length
 	float stretch;	 // grain pattern: how much longer cells are along the grain (e.g. 4)
 
@@ -83,27 +71,3 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 // cut faces. Writes new shapes (caller owns them) and returns their count; 0 means the cell was left whole.
 int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
 				lpShape** chips, int capacity );
-
-// Building blocks, exposed for tests and benchmarks ------------------------------------------------------
-
-// Sites inside the parent: dense near the impact (density ~ 1/distance, the ejecta), 4-6 ring sites around the
-// damage radius that shape a jagged rim, and at most three far sites that keep the rest of the piece in large plates.
-typedef struct lpSiteParams
-{
-	b3Vec3 impact;
-	float radius;
-	float fragmentSize;
-	float plateSize;
-	int maxSites;
-	b3Vec3 grainAxis; // ring sites stay out of a 25 degree cone around this axis; zero for none
-	float stretch;	  // the parent is squashed along grainAxis by this (> 1): distances along it count this much more
-	int ringSites;	  // how many ring sites to aim for (0 for none: a broken log end is one piece)
-} lpSiteParams;
-
-int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites );
-
-// Voronoi cell of site `index`, clipped to the parent. Returns the cell in `out`. Returns false if the
-// cell is empty or a clip failed. Neighbor sites are visited nearest first, and the search stops once the
-// next site is farther than twice the current cell radius (no further plane can cut).
-bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int siteCount, int index, uint8_t material,
-						   float tolerance, lpPoly* scratch, lpPoly* out, lpFractureStats* stats );
