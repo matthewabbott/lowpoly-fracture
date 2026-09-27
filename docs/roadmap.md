@@ -18,12 +18,8 @@ Order (one at a time):
 "Cooking the books": the fracture detail is real, but most fragments become cheap objects. A log shot through leaves
 cosmetic splinters and two rough ends of a handful of triangles each.
 
-| Tier | Flying | At rest |
-|---|---|---|
-| Puff | particles (dust, chips, splinters, leaves, glints) | gone |
-| Ghost | no physics body; falls like rock, passes through everything | render-only scrap (capped, oldest sink away) |
-| Light (≈ baseball to brick) | collides with static geometry only; cannot push anything | light rubble: static, collides with nothing; moving things and tools shove it aside one-way ("styrofoam") |
-| Full (≈ torso and up) | full physics | fragile rubble: static and solid, wakes when anything approaches or hits it (strong static friction, not cement) |
+Done: the tiers (puff, ghost, light, full), rest states, shoving, the budget ladder and the blower are described
+in [architecture.md](architecture.md) ("Debris tiers"); numbers are in [perf-log.md](perf-log.md).
 
 Grabbing or launching a piece promotes it to full. Over budget, debris is demoted down the ladder instead of
 popping.

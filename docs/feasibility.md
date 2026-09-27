@@ -1,5 +1,8 @@
 # Feasibility: low-poly Teardown-style destruction
 
+> A snapshot of the first push (commit 8a855c6). Numbers since then are in [perf-log.md](perf-log.md) (the debris
+> tiers made every scene 4 to 10 times cheaper), and plans are in [roadmap.md](roadmap.md).
+
 **Verdict: feasible, and now demonstrated.** The sandbox in this repo breaks buildings, walls, trees, fences and glass
 into jagged convex low-poly pieces on Box3D. It runs at about 200 fps on an RTX 3060 laptop (i7-10870H) under
 continuous bombardment of a 12-house town, and stays bit-for-bit deterministic across thread counts and builds.
@@ -81,18 +84,6 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
 4. **Visual polish.** Glass cracks are invisible until pieces fall (plane-keyed colours hide them); foliage blasts
    into many small chunks; debris pops out of existence at the budget (fade or shrink instead).
 5. **Content pipeline.** Destructible art must be convex parts; tooling to author or decompose it is not built yet.
-
-## Next steps (suggested order; superseded by [roadmap.md](roadmap.md))
-
-1. Vehicles: raycast vehicle on Box3D (wheel joint or custom suspension), a drivable truck that smashes through
-   walls. This unlocks the race-rigging prototype.
-2. Joints: breakable welds, ropes (distance-joint chains), a crane arm using `lpWorld_Pull`.
-3. Fracture time-slicing and a direct hull builder, to remove the remaining spikes.
-4. Overturning in the weight check.
-5. Art pipeline: Blender (now connectable via its MCP) for convex-part props; RetroDiffusion (pixel-textured low-poly
-   GLB, auto-rigged) or Meshy (target poly count, humanoid rigging) for characters; a skinned, point-filtered
-   character renderer.
-6. A lockstep experiment: two sandbox processes exchanging only input events, comparing hashes.
 
 ## Sources
 

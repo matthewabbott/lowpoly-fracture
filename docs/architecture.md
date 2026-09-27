@@ -127,4 +127,4 @@ Not taken: its renderer, stress solver, scheduler, hull builder (we use Box3D's 
 
 ## Where to go next
 
-See the "Next steps" section of [feasibility.md](feasibility.md).
+See [roadmap.md](roadmap.md); open performance work is the backlog in [perf-log.md](perf-log.md).
