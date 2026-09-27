@@ -70,7 +70,7 @@ tiers instead of popping them.
 - Voronoi neighbours are visited nearest first and the search stops once the next site is farther than twice the
   cell radius.
 
-## Pieces and bodies (`world.c`, `world.h`)
+## Pieces and bodies (`world.c`, `impact.c`, `split.c`, `step.c`, `world.h`)
 
 - Piece geometry stays in its original **object frame** for its whole life. A split-off body is created at its
   parent's transform, so moving pieces between bodies never transforms geometry: no drift, cached Box3D hulls are

@@ -32,7 +32,7 @@ typedef struct lpFractureInput
 typedef struct lpFractureStats
 {
 	int failureCount;
-	float voronoiMs; // CPU time of a fracture job's stages (world.c), measured and never branched on
+	float voronoiMs; // CPU time of a fracture job's stages (impact.c), measured and never branched on
 	float mergeMs;
 	float hullMs;
 } lpFractureStats;

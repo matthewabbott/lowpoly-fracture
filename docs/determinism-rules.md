@@ -18,7 +18,7 @@ keep the destruction layer (`src/`) and the app from breaking it.
 5. **Sorts use a total order.** Every comparator breaks ties by an index (`lpCompareHits`, `lpCompareBudget`,
    Voronoi neighbour keys embed the site index), so `qsort` instability cannot leak.
 6. **Parallel work is pure.** A fracture job reads only its own snapshot and writes only its own output; results are
-   integrated sequentially in job order (`world.c`, "fracture jobs"). Box3D's threading is deterministic by design.
+   integrated sequentially in job order (`impact.c`, "fracture jobs"). Box3D's threading is deterministic by design.
 7. **Nothing in the simulation looks at the camera or wall-clock time.** Debris budgets rank by volume, age and
    index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on. Every
    per-step cap (fracture jobs, freezes, ghost ray casts, demotions) is a count taken in index order, never a time

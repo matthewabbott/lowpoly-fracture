@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Internal layout of lpWorld, shared by world.c, debris.c and the tests.
+// Internal layout of lpWorld, shared by the core's source files (world, impact, split, step, debris) and the tests.
 
 #pragma once
 
@@ -166,7 +166,7 @@ typedef struct lpHitCandidate
 
 #define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
 
-// One piece to fracture during an impact (see world.c)
+// One piece to fracture during an impact (see impact.c, "fracture jobs")
 typedef struct lpFractureJob
 {
 	int piece;
@@ -248,7 +248,7 @@ struct lpWorld
 	lpStats stats;
 };
 
-// ---- shared internals (world.c) ----
+// ---- shared internals (world.c, impact.c, split.c, step.c) ----
 
 int lpAllocBody( lpWorld* w );
 int lpAllocPiece( lpWorld* w );
@@ -265,6 +265,19 @@ b3WorldTransform lpGetTransform( const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
 
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale
+// bonds and dirty bodies (world.c)
+void lpBreakBond( lpWorld* w, int bondIndex );
+void lpAddBond( lpWorld* w, int a, int b, float area, b3Vec3 centroid );
+void lpTryBond( lpWorld* w, int a, int b );
+void lpMarkDirty( lpWorld* w, int bodyIndex );
+
+// impacts (impact.c), connectivity (split.c)
+void lpProcessDeferred( lpWorld* w );
+void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
+void lpApplyForces( lpWorld* w );
+void lpCollectHits( lpWorld* w );
+void lpUpdateBody( lpWorld* w, int bodyIndex );
+
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );
 float lpLightVolume( const lpWorld* w, int material );

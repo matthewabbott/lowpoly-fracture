@@ -6,8 +6,11 @@ add_library(lpf STATIC
 	facet.h
 	fracture.c
 	fracture.h
+	impact.c
 	poly.c
 	poly.h
+	split.c
+	step.c
 	tasks.c
 	tasks.h
 	world.c

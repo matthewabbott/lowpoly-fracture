@@ -19,8 +19,11 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
 | `src/tasks.h/.c` | thread pool with a blocking parallel-for (fracture jobs) |
-| `src/world.h` | internal layout of `lpWorld`, shared by world.c, debris.c and tests |
-| `src/world.c` | materials table, objects, bodies, bonds, fracture jobs (3 phases), impacts, weight check, step, hash, validate |
+| `src/world.h` | internal layout of `lpWorld` and the core's shared internals, used by tests too |
+| `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, hash, validation |
+| `src/impact.c` | impacts: fracture jobs (3 phases), bond damage, detonators, blast forces, collision hits |
+| `src/split.c` | weight check and splitting bodies into components (tiered by volume) |
+| `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber) and scripted bombardment |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
