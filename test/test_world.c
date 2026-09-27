@@ -140,10 +140,13 @@ static int TestDeterminism( void )
 	return 0;
 }
 
-// A blast at the corner of a house brings part of it down: bodies split off the structure
+static float LooseVolume( const lpWorld* world );
+
+// Blasts at the corners of a house knock a good part of it loose (ejected fragments, split-off chunks, rubble)
 static int TestHouseCollapse( void )
 {
 	Sim s = CreateSim( lp_sceneHouse, 1 );
+	float before = LooseVolume( s.world );
 	int splits = 0;
 	for ( int tick = 0; tick < 240; ++tick )
 	{
@@ -162,8 +165,10 @@ static int TestHouseCollapse( void )
 		splits += lpWorld_GetStats( s.world ).splitsThisStep;
 	}
 	lpStats st = lpWorld_GetStats( s.world );
-	printf( "  splits %d, pieces %d, debris %d, rubble %d\n", splits, st.pieceCount, st.debrisBodies, st.rubbleBodies );
-	ENSURE( splits > 5 );
+	float loose = LooseVolume( s.world ) - before;
+	printf( "  splits %d, loose volume %.2f m^3, pieces %d, debris %d (full %d, light %d), rubble %d, ghosts %d, scrap %d\n", splits,
+			(double)loose, st.pieceCount, st.debrisBodies, st.fullDebris, st.lightDebris, st.rubbleBodies, st.ghostBodies, st.scrapBodies );
+	ENSURE( loose > 2.0f );
 	DestroySim( &s );
 	return 0;
 }

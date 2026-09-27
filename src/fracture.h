@@ -28,7 +28,9 @@ typedef struct lpFractureInput
 	b3Vec3 impact;		// impact point in the parent frame
 	float radius;		// damage radius
 	float fragmentSize; // edge length of the smallest fragments, near the impact
+	float plateSize;	// spacing of the few large cells away from the impact
 	int maxCells;
+	float absorbVolume; // cells smaller than this outside the damage radius are slivers and get absorbed (0: keep)
 
 	lpPattern pattern;
 	b3Vec3 axis;	 // grain axis (grain pattern) or pane normal (radial pattern), unit length
@@ -67,10 +69,19 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 
 // Building blocks, exposed for tests and benchmarks ------------------------------------------------------
 
-// Sites inside the parent: dense near the impact (density ~ 1/distance), a ring at the damage radius that
-// shapes the rim of the hole, and a few far sites that cut the rest into large plates.
-int lpGenerateImpactSites( const lpPoly* parent, b3Vec3 impact, float radius, float fragmentSize, int maxSites,
-						   lpRandom* rng, b3Vec3* sites );
+// Sites inside the parent: dense near the impact (density ~ 1/distance, the ejecta), 4-6 ring sites around the
+// damage radius that shape a jagged rim, and at most three far sites that keep the rest of the piece in large plates.
+typedef struct lpSiteParams
+{
+	b3Vec3 impact;
+	float radius;
+	float fragmentSize;
+	float plateSize;
+	int maxSites;
+	b3Vec3 avoidAxis; // ring sites stay out of a 25 degree cone around this axis (the grain); zero for none
+} lpSiteParams;
+
+int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites );
 
 // Voronoi cell of site `index`, clipped to the parent. Returns the cell in `out`. Returns false if the
 // cell is empty or a clip failed. Neighbor sites are visited nearest first, and the search stops once the

@@ -64,7 +64,7 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	lpWorldDef ld = lpDefaultWorldDef();
 	ld.physics = physics;
 	ld.fragmentScale = fragmentScale;
-	ld.maxDebrisBodies = maxDebris;
+	ld.maxFullDebris = maxDebris;
 	ld.workerCount = workers;
 	lpWorld* world = lpCreateWorld( &ld );
 	lpBuildScene( world, scene );
@@ -145,7 +145,7 @@ int main( int argc, char** argv )
 	int ticks = 600;
 	int period = 12;
 	float fragmentScale = 1.0f;
-	int maxDebris = 1500;
+	int maxDebris = 400;
 	const char* jsonPath = NULL;
 
 	for ( int i = 1; i < argc; ++i )

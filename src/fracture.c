@@ -155,15 +155,20 @@ static float lpOverlap1( float lo, float hi, float a, float b )
 	return h > l ? h - l : 0.0f;
 }
 
-int lpGenerateImpactSites( const lpPoly* parent, b3Vec3 impact, float radius, float fragmentSize, int maxSites,
-						   lpRandom* rng, b3Vec3* sites )
+int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites )
 {
-	maxSites = maxSites < LP_MAX_SITES ? maxSites : LP_MAX_SITES;
+	int maxSites = params->maxSites < LP_MAX_SITES ? params->maxSites : LP_MAX_SITES;
+	float radius = params->radius;
+	float fragmentSize = params->fragmentSize;
 	b3AABB bounds = lpPoly_ComputeBounds( parent );
-	b3Vec3 focus = b3Clamp( impact, bounds.lowerBound, bounds.upperBound );
+	b3Vec3 focus = b3Clamp( params->impact, bounds.lowerBound, bounds.upperBound );
+	b3Vec3 extent = b3Sub( bounds.upperBound, bounds.lowerBound );
 
+	// Sites too close to the surface make thin slivers against it; keep them in by a margin, but never so much that
+	// a thin plank or pane has no room left.
 	float spacing = 0.7f * fragmentSize;
-	float margin = 0.2f * spacing;
+	float thinnest = 0.5f * b3MinFloat( extent.x, b3MinFloat( extent.y, extent.z ) );
+	float margin = b3MinFloat( 0.5f * spacing, 0.45f * thinnest );
 	float minRadius = b3MaxFloat( 0.15f * radius, spacing );
 
 	// Damaged volume: the cube around the focus clipped to the bounds, scaled to a sphere.
@@ -173,9 +178,11 @@ int lpGenerateImpactSites( const lpPoly* parent, b3Vec3 impact, float radius, fl
 	float damagedVolume = 0.5236f * ox * oy * oz;
 	float cellVolume = fragmentSize * fragmentSize * fragmentSize;
 
+	// A few ring and plate sites are always reserved; the inner (ejecta) sites get the rest of the budget.
 	int innerTarget = (int)( damagedVolume / cellVolume );
 	innerTarget = innerTarget < 2 ? 2 : innerTarget;
-	innerTarget = innerTarget > ( 3 * maxSites ) / 4 ? ( 3 * maxSites ) / 4 : innerTarget;
+	innerTarget = innerTarget > maxSites - 9 ? maxSites - 9 : innerTarget;
+	innerTarget = innerTarget < 2 ? 2 : innerTarget;
 
 	int count = 0;
 	b3AABB innerBox = {
@@ -205,16 +212,23 @@ int lpGenerateImpactSites( const lpPoly* parent, b3Vec3 impact, float radius, fl
 		sites[count++] = p;
 	}
 
-	// Ring just outside the damage radius: gives the hole a jagged rim of mid-sized pieces
-	int ringTarget = count / 2;
-	ringTarget = ringTarget < 4 ? 4 : ringTarget;
-	ringTarget = ringTarget > 16 ? 16 : ringTarget;
-	float ringSpacing = b3MaxFloat( spacing, 0.5f * radius );
+	// A handful of ring sites around the damage radius: their cells stay on the piece and give the hole (or the broken
+	// end of a log) a jagged rim of a few big facets. Sites near the grain axis are skipped so the rim cuts across the
+	// grain at varied angles instead of splitting the log lengthwise.
+	int ringTarget = count / 3;
+	ringTarget = ringTarget < 4 ? 4 : ( ringTarget > 6 ? 6 : ringTarget );
+	float ringSpacing = b3MaxFloat( spacing, 0.6f * radius );
 	int ringEnd = count + ringTarget < maxSites ? count + ringTarget : maxSites;
-	for ( int a = 0; a < 8 * ringTarget && count < ringEnd; ++a )
+	bool avoidAxis = b3LengthSquared( params->avoidAxis ) > 0.0f;
+	for ( int a = 0; a < 12 * ringTarget && count < ringEnd; ++a )
 	{
-		float r = radius * lpRandom_Range( rng, 1.0f, 1.35f );
-		b3Vec3 p = b3MulAdd( focus, r, lpRandomUnitVector( rng ) );
+		b3Vec3 dir = lpRandomUnitVector( rng );
+		if ( avoidAxis && b3AbsFloat( b3Dot( dir, params->avoidAxis ) ) > 0.906f ) // within 25 degrees
+		{
+			continue;
+		}
+		float r = radius * lpRandom_Range( rng, 0.95f, 1.5f );
+		b3Vec3 p = b3MulAdd( focus, r, dir );
 		if ( lpPoly_SignedDistance( parent, p ) > -margin || lpIsTooClose( p, sites, count, ringSpacing * ringSpacing ) )
 		{
 			continue;
@@ -222,13 +236,11 @@ int lpGenerateImpactSites( const lpPoly* parent, b3Vec3 impact, float radius, fl
 		sites[count++] = p;
 	}
 
-	// Far sites cut the rest of the piece into a few large plates
-	b3Vec3 extent = b3Sub( bounds.upperBound, bounds.lowerBound );
+	// At most three far sites: the rest of the piece stays in a few large plates (a log keeps two whole ends)
 	float totalVolume = extent.x * extent.y * extent.z;
-	float plate = b3MaxFloat( 3.0f * fragmentSize, 1.2f * radius );
+	float plate = b3MaxFloat( b3MaxFloat( 3.0f * fragmentSize, 1.2f * radius ), params->plateSize );
 	int farTarget = (int)( ( totalVolume - damagedVolume ) / ( plate * plate * plate ) );
-	farTarget = farTarget < 0 ? 0 : farTarget;
-	farTarget = farTarget > 12 ? 12 : farTarget;
+	farTarget = farTarget < 0 ? 0 : ( farTarget > 3 ? 3 : farTarget );
 	int farEnd = count + farTarget < maxSites ? count + farTarget : maxSites;
 	float farSpacing = 0.8f * plate;
 	for ( int a = 0; a < 16 * farTarget && count < farEnd; ++a )
@@ -285,16 +297,25 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	}
 
 	b3Vec3 sites[LP_MAX_SITES];
-	int maxSites = input->maxCells < capacity ? input->maxCells : capacity;
-	int siteCount = lpGenerateImpactSites( parent, impact, input->radius, input->fragmentSize, maxSites, rng, sites );
+	lpSiteParams params = { 0 };
+	params.impact = impact;
+	params.radius = input->radius;
+	params.fragmentSize = input->fragmentSize;
+	params.plateSize = grain ? input->plateSize / input->stretch : input->plateSize;
+	params.maxSites = input->maxCells < capacity ? input->maxCells : capacity;
+	params.avoidAxis = grain ? input->axis : b3Vec3_zero;
+	int siteCount = lpGenerateImpactSites( parent, &params, rng, sites );
 	if ( stats != NULL )
 	{
 		stats->siteCount += siteCount;
 	}
 
+	// Compute all cells. Tiny cells outside the damage radius are slivers: drop their sites and recompute, which
+	// hands their volume to the neighbours while keeping the tiling exact and every cell convex.
 	int count = 0;
-	if ( siteCount >= 2 )
+	for ( int pass = 0; pass < 3 && siteCount >= 2; ++pass )
 	{
+		count = 0;
 		for ( int i = 0; i < siteCount && count < capacity; ++i )
 		{
 			if ( lpComputeVoronoiCell( parent, sites, siteCount, i, input->interiorMaterial, input->tolerance, scratch,
@@ -316,6 +337,42 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 				cells[count++] = shape;
 			}
 		}
+
+		if ( pass == 2 || input->absorbVolume <= 0.0f || cellSites == NULL )
+		{
+			break;
+		}
+
+		bool drop[LP_MAX_SITES] = { false };
+		int dropCount = 0;
+		float r2 = input->radius * input->radius;
+		for ( int c = 0; c < count; ++c )
+		{
+			if ( cells[c]->volume < input->absorbVolume && b3DistanceSquared( cells[c]->centroid, input->impact ) > r2 )
+			{
+				drop[cellSites[c]] = true;
+				dropCount += 1;
+			}
+		}
+		if ( dropCount == 0 || siteCount - dropCount < 2 )
+		{
+			break;
+		}
+
+		for ( int c = 0; c < count; ++c )
+		{
+			lpShape_Destroy( cells[c] );
+		}
+		int kept = 0;
+		for ( int i = 0; i < siteCount; ++i )
+		{
+			if ( drop[i] == false )
+			{
+				sites[kept++] = sites[i];
+			}
+		}
+		siteCount = kept;
+		count = 0;
 	}
 
 	lpFree( work );

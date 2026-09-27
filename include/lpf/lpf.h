@@ -40,6 +40,20 @@ typedef enum lpPatternId
 	lp_breakRadial, // wedges and rings in the pane: glass
 } lpPatternId;
 
+// Cosmetic particle look, per material
+typedef enum lpParticleKind
+{
+	lp_particleDust,
+	lp_particleChip,
+	lp_particleSplinter,
+	lp_particleLeaf,
+	lp_particleGlint,
+} lpParticleKind;
+
+// Debris tiers by volume (m^3, per material): below particleVolume a fragment is a puff of particles; below
+// ghostVolume a ghost (no collision, falls like rock, lands as render-only scrap); below lightVolume light debris
+// (collides with static geometry only, cannot push anything, rests as rubble that movers shove aside); above it,
+// full physics (rests as fragile rubble that wakes when anything approaches).
 typedef struct lpMaterialDef
 {
 	const char* name;
@@ -54,6 +68,12 @@ typedef struct lpMaterialDef
 	uint32_t interiorColor; // 0xRRGGBB of freshly exposed faces
 	bool breakable;
 	float loadStrength; // N/m^2 a bond can carry under the weight check, scaled by its remaining health
+	float particleVolume;
+	float ghostVolume;
+	float lightVolume;
+	float plateSize; // spacing of the few large "plate" cells away from the impact; keeps remainders whole
+	int maxCells;	 // cells per fracture
+	int particleKind; // lpParticleKind
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );
@@ -65,11 +85,20 @@ typedef struct lpWorldDef
 {
 	b3WorldId physics;
 	uint64_t seed;
-	int maxDebrisBodies;   // cap on moving debris; smallest-oldest are removed first
-	int maxRubblePieces;   // cap on frozen rubble pieces
-	float fragmentScale;   // multiplies every material's fragment size (the main performance knob)
-	bool freezeRubble;	   // debris that Box3D puts to sleep becomes static rubble (costs nothing to simulate)
-	float minPieceVolume;  // cells smaller than this become cosmetic particles, m^3
+	// Budgets. Over budget, the smallest-oldest bodies move down a tier (full -> light -> ghost -> particles,
+	// rubble -> scrap, scrap sinks away) instead of popping out of existence.
+	int maxFullDebris;	 // moving full-physics debris bodies
+	int maxLightDebris;	 // moving light debris bodies
+	int maxGhosts;		 // flying ghost bodies
+	int maxRubblePieces; // frozen rubble pieces
+	int maxScrapPieces;	 // landed render-only scrap pieces
+	float fragmentScale; // multiplies every material's fragment size
+	float debrisScale;	 // multiplies every material's tier volumes (larger = cheaper debris)
+	bool freezeRubble;	 // debris that Box3D puts to sleep becomes static rubble (costs nothing to simulate)
+	int maxFractureJobsPerStep; // pieces refractured per step; the rest wait for the next step (spike guard)
+	int maxFreezesPerStep;		// debris frozen into rubble per step (body type changes are costly)
+	int maxGhostCastsPerStep;	// landing ray casts per step
+	float wakeSpeed;			// approach speed at which a hit wakes frozen rubble, m/s
 	int maxDepth;		   // refracture depth limit per piece lineage
 	int maxHitImpacts;	   // collision impacts processed per step
 	float hitSpeed;		   // minimum approach speed for collision damage, m/s
@@ -143,6 +172,13 @@ typedef struct lpImpactDef
 // Queued; applied at the start of the next step, in call order.
 void lpWorld_AddImpact( lpWorld* world, const lpImpactDef* impact );
 
+// Leaf blower: wakes rubble, scrap and ghosts in a cone and pushes them along the direction (light things strongly,
+// heavy things barely). Call every tick while blowing; applied at the next step.
+void lpWorld_Blow( lpWorld* world, b3Pos origin, b3Vec3 direction, float range, float halfAngleRadians, float speed );
+
+// Make a body full physics again (a thrown or launched piece). Ghost and scrap bodies get a Box3D body back.
+void lpWorld_PromoteBody( lpWorld* world, int body );
+
 // Pull a piece toward a target like a spring (grab tool, winch). Call every tick while pulling; applied at the next
 // step. localPoint is in the piece's body frame (lpRayHit gives world points: convert with lpWorld_ToBodyFrame).
 // Structures cannot be pulled; frozen rubble wakes up. The pull accelerates at most maxAccel and treats bodies
@@ -161,9 +197,16 @@ typedef struct lpStats
 	int pieceCount;
 	int bondCount;
 	int structureBodies;
-	int debrisBodies;
+	int debrisBodies; // full + light
 	int awakeDebris;
 	int rubbleBodies;
+	int fullDebris;
+	int lightDebris;
+	int ghostBodies;
+	int scrapBodies;
+	int demotionsThisStep;
+	int deferredJobs;
+	int ghostCasts;
 	int impactsThisStep;
 	int fracturesThisStep;
 	int cellsThisStep;
@@ -212,6 +255,8 @@ typedef struct lpVertex
 typedef struct lpPieceInfo
 {
 	int body;			  // -1 when the slot is free
+	int kind;			  // debug: 0 structure, 1 debris, 2 rubble, 3 ghost, 4 scrap
+	int tier;			  // debug: 0 full, 1 light
 	uint32_t meshVersion; // changes whenever the render mesh must be rebuilt
 	uint32_t generation;  // changes when the slot is reused
 } lpPieceInfo;
@@ -234,6 +279,7 @@ typedef struct lpParticle
 	float velocity[3];
 	float size;
 	uint32_t color; // 0xAABBGGRR
+	int kind;		// lpParticleKind
 } lpParticle;
 
 const lpParticle* lpWorld_GetParticles( const lpWorld* world, int* count );

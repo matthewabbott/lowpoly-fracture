@@ -64,7 +64,7 @@ struct Options
 	std::string hashLog;
 	int bombard = 0;
 	float fragmentScale = 1.0f;
-	int maxDebris = 1500;
+	int maxDebris = 400;
 	float renderScale = 1.0f;
 	bool vsync = true;
 	bool hideUi = false;
@@ -190,7 +190,7 @@ void LoadScene( int scene )
 	lpWorldDef ld = lpDefaultWorldDef();
 	ld.physics = app.physics;
 	ld.fragmentScale = app.opt.fragmentScale;
-	ld.maxDebrisBodies = app.opt.maxDebris;
+	ld.maxFullDebris = app.opt.maxDebris;
 	ld.workerCount = app.opt.workers;
 	ld.debugLog = getenv( "LPF_DEBUG" ) != nullptr;
 	app.world = lpCreateWorld( &ld );

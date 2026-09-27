@@ -20,16 +20,28 @@
 // Strengths are damage densities: an impact of energy E and radius R delivers E (1 - d/R)^2 / (pi R^2) at
 // distance d. Calibration: a rifle round (E 4 kJ, R 0.35 m, center 10.4 kJ/m^2) chips ~15 cm out of brick in one
 // shot; a grenade (E 80 kJ, R 1.4 m, center 13 kJ/m^2) opens ~0.7 m in brick and ~0.3 m in stone.
+// Tier volumes (particle / ghost / light) as cube edges: stone and brick about 4 / 9 / 22 cm, plaster 6 / 12 / 25 cm,
+// wood 5 / 18 / 31 cm (splinters are long and thin, so most are ghosts), glass shards nearly all ghosts, foliage mostly
+// leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
-	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.12f, 0.6f, 0.05f, lp_breakGrain, 5.0f, 0xE0B070u, true, 3.0e5f },
-	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f },
-	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.14f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f },
-	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.12f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f },
-	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f },
-	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.07f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f },
-	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f },
-	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f },
-	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.35f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f },
+	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true, 3.0e5f,
+				  1.2e-4f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter },
+	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f,
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip },
+	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f,
+				   6.4e-5f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip },
+	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f,
+					 2.2e-4f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust },
+	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f,
+					  6.4e-5f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip },
+	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f,
+				   6.4e-5f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint },
+	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f,
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip },
+	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f,
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust },
+	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f,
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf },
 };
 
 const lpMaterialDef* lpGetMaterial( int materialId )
@@ -48,18 +60,40 @@ lpWorldDef lpDefaultWorldDef( void )
 {
 	lpWorldDef def = { 0 };
 	def.seed = 1;
-	def.maxDebrisBodies = 1500;
+	def.maxFullDebris = 400;
+	def.maxLightDebris = 1200;
+	def.maxGhosts = 4000;
 	def.maxRubblePieces = 20000;
+	def.maxScrapPieces = 8000;
 	def.fragmentScale = 1.0f;
+	def.debrisScale = 1.0f;
 	def.freezeRubble = true;
-	def.minPieceVolume = 0.0004f; // a 7 cm cube
 	def.maxDepth = 3;
 	def.maxHitImpacts = 16;
 	def.hitSpeed = 4.0f;
+	def.wakeSpeed = 1.5f;
 	def.killDepth = -50.0f;
 	def.workerCount = 1;
 	def.stressScale = 1.0f;
+	def.maxFractureJobsPerStep = 48;
+	def.maxFreezesPerStep = 64;
+	def.maxGhostCastsPerStep = 2048;
 	return def;
+}
+
+float lpParticleVolume( const lpWorld* w, int material )
+{
+	return lpGetMaterial( material )->particleVolume * w->def.debrisScale;
+}
+
+float lpGhostVolume( const lpWorld* w, int material )
+{
+	return lpGetMaterial( material )->ghostVolume * w->def.debrisScale;
+}
+
+float lpLightVolume( const lpWorld* w, int material )
+{
+	return lpGetMaterial( material )->lightVolume * w->def.debrisScale;
 }
 
 lpObjectDef lpDefaultObjectDef( void )
@@ -82,7 +116,7 @@ lpPartDef lpDefaultPartDef( void )
 
 // ---- slots ----
 
-static int lpAllocPiece( lpWorld* w )
+int lpAllocPiece( lpWorld* w )
 {
 	int index;
 	if ( w->freePiece != -1 )
@@ -107,7 +141,7 @@ static int lpAllocPiece( lpWorld* w )
 	return index;
 }
 
-static void lpFreePieceSlot( lpWorld* w, int index )
+void lpFreePieceSlot( lpWorld* w, int index )
 {
 	lpPiece* p = w->pieces.data + index;
 	lpShape_Destroy( p->shape );
@@ -141,7 +175,7 @@ static int lpAllocBond( lpWorld* w )
 	return index;
 }
 
-static int lpAllocBody( lpWorld* w )
+int lpAllocBody( lpWorld* w )
 {
 	int index;
 	if ( w->freeBody != -1 )
@@ -167,6 +201,10 @@ static int lpAllocBody( lpWorld* w )
 	b->alive = true;
 	b->nextFree = -1;
 	b->createdTick = w->tick;
+	b->gridSlot = -1;
+	b->gridPrev = -1;
+	b->gridNext = -1;
+	b->landIn = -1;
 	return index;
 }
 
@@ -180,8 +218,11 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	w->freePiece = -1;
 	w->freeBond = -1;
 	w->freeBody = -1;
-	b3World_SetHitEventThreshold( def->physics, def->hitSpeed );
+	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
+	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
+	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
 	w->tasks = lpTaskPool_Create( def->workerCount );
+	lpGridInit( w );
 	return w;
 }
 
@@ -191,7 +232,7 @@ void lpDestroyWorld( lpWorld* w )
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive && physicsAlive )
+		if ( b->alive && physicsAlive && B3_IS_NON_NULL( b->id ) )
 		{
 			b3DestroyBody( b->id );
 		}
@@ -233,13 +274,20 @@ void lpDestroyWorld( lpWorld* w )
 	lpFree( w->jobs );
 	lpTaskPool_Destroy( w->tasks );
 	lpArray_Free( w->pulls );
+	lpArray_Free( w->blows );
+	lpArray_Free( w->deferred );
+	lpArray_Free( w->scratchLoose );
+	lpArray_Free( w->scratchHits );
 	lpArray_Free( w->scratchComponents );
+	lpGridFree( w );
 	lpFree( w );
 }
 
 // ---- pieces and bodies ----
 
-static b3ShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material )
+// Filters follow the body's tier (see world.h). Set at shape creation only; changing a filter later is as costly as
+// recreating the shape.
+static b3ShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material, const lpBody* body )
 {
 	const lpMaterialDef* m = lpGetMaterial( material );
 	b3ShapeDef def = b3DefaultShapeDef();
@@ -247,13 +295,32 @@ static b3ShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material )
 	def.baseMaterial.friction = m->friction;
 	def.baseMaterial.restitution = m->restitution;
 	def.baseMaterial.userMaterialId = material;
-	def.enableHitEvents = m->breakable;
 	def.updateBodyMass = false;
 	def.userData = (void*)(intptr_t)( pieceIndex + 1 );
+	if ( body->kind == lp_kindStructure )
+	{
+		def.filter.categoryBits = LP_CAT_STATIC;
+		def.filter.maskBits = LP_CAT_ALL;
+		def.enableHitEvents = m->breakable;
+	}
+	else if ( body->tier == lp_tierLight )
+	{
+		def.filter.categoryBits = LP_CAT_LIGHT;
+		def.filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
+		def.enableCustomFiltering = true;
+		def.enableHitEvents = false;
+	}
+	else
+	{
+		def.filter.categoryBits = LP_CAT_FULL;
+		def.filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL | LP_CAT_LIGHT | LP_CAT_VEHICLE | LP_CAT_CHARACTER | LP_CAT_PROJECTILE;
+		def.enableHitEvents = true; // also wakes fragile rubble it bumps into
+	}
 	return def;
 }
 
-static bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
+// Box3D shape for a piece on a Box3D body, without touching the body's piece list
+bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
@@ -267,17 +334,28 @@ static bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 		}
 	}
 	uint64_t t1 = b3GetTicks();
-	b3ShapeDef def = lpMakeShapeDef( pieceIndex, p->material );
+	b3ShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
 	p->shapeId = b3CreateHullShape( b->id, &def, p->hull );
 	w->stats.hullMs += b3GetMilliseconds( t0 ) - b3GetMilliseconds( t1 );
 	w->stats.shapeMs += b3GetMilliseconds( t1 );
+	return true;
+}
+
+bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
+{
+	if ( lpCreatePieceShape( w, pieceIndex, bodyIndex ) == false )
+	{
+		return false;
+	}
+	lpPiece* p = w->pieces.data + pieceIndex;
+	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
 	lpArray_Push( b->pieces, pieceIndex );
 	b->volume += p->shape->volume;
 	return true;
 }
 
-static void lpDetachPieceShape( lpWorld* w, int pieceIndex )
+void lpDetachPieceShape( lpWorld* w, int pieceIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
 	if ( B3_IS_NON_NULL( p->shapeId ) )
@@ -371,9 +449,23 @@ static void lpTryBond( lpWorld* w, int a, int b )
 	}
 }
 
-// Emit a cosmetic particle at a body-frame point
-static void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint32_t rgb )
+b3WorldTransform lpGetTransform( const lpWorld* w, const lpBody* b )
 {
+	(void)w;
+	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
+	{
+		b3Vec3 offset = b3RotateVector( b->q, b->localCenter );
+		b3WorldTransform xf = { b3OffsetPos( b->com, b3Neg( offset ) ), b->q };
+		return xf;
+	}
+	return b3Body_GetTransform( b->id );
+}
+
+// Emit a cosmetic particle at a body-frame point, coloured and shaped by the material
+void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint8_t material )
+{
+	const lpMaterialDef* m = lpGetMaterial( material );
+	uint32_t rgb = m->interiorColor;
 	b3Pos p = b3TransformWorldPoint( xf, localPoint );
 	lpParticle particle;
 	particle.position[0] = (float)p.x;
@@ -384,14 +476,16 @@ static void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, 
 	particle.velocity[2] = velocity.z;
 	particle.size = size;
 	particle.color = 0xFF000000u | ( ( rgb & 0xFF ) << 16 ) | ( rgb & 0xFF00 ) | ( ( rgb >> 16 ) & 0xFF );
+	particle.kind = m->particleKind;
 	lpArray_Push( w->particles, particle );
 }
 
-static void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
+void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
 	LP_ASSERT( b->alive );
-	b3WorldTransform xf = b3Body_GetTransform( b->id );
+	bool loose = b->kind == lp_kindGhost || b->kind == lp_kindScrap;
+	b3WorldTransform xf = lpGetTransform( w, b );
 
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
@@ -403,22 +497,29 @@ static void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 		}
 		if ( emitDust )
 		{
-			float size = cbrtf( p->shape->volume );
-			lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, size, lpGetMaterial( p->material )->interiorColor );
+			float size = b3MinFloat( cbrtf( p->shape->volume ), 0.3f );
+			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : b3Vec3_zero, size, p->material );
 		}
 		p->shapeId = b3_nullShapeId; // destroyed with the body
 		lpFreePieceSlot( w, pieceIndex );
 	}
 	b->pieces.count = 0;
 
-	b3DestroyBody( b->id );
+	if ( loose )
+	{
+		lpGridRemove( w, bodyIndex );
+	}
+	else
+	{
+		b3DestroyBody( b->id );
+	}
 	b->alive = false;
 	b->id = b3_nullBodyId;
 	b->nextFree = w->freeBody;
 	w->freeBody = bodyIndex;
 }
 
-static int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, b3Vec3 v, b3Vec3 omega )
+int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
@@ -429,8 +530,13 @@ static int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType typ
 	def.linearVelocity = v;
 	def.angularVelocity = omega;
 	def.userData = (void*)(intptr_t)( index + 1 );
+	if ( tier == lp_tierLight )
+	{
+		def.sleepThreshold = 0.3f; // light debris settles fast and freezes early
+	}
 	b->id = b3CreateBody( w->def.physics, &def );
 	b->kind = kind;
+	b->tier = tier;
 	return index;
 }
 
@@ -464,7 +570,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
-	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, def->linearVelocity, def->angularVelocity );
+	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity );
 	w->bodies.data[bodyIndex].detonator = def->detonator;
 	w->bodies.data[bodyIndex].armed = def->detonator.radius > 0.0f;
 
@@ -585,7 +691,7 @@ static bool lpCollectPieceFcn( b3ShapeId shapeId, void* context )
 	return true;
 }
 
-static int lpCompareInt( const void* a, const void* b )
+int lpCompareInt( const void* a, const void* b )
 {
 	int x = *(const int*)a;
 	int y = *(const int*)b;
@@ -593,7 +699,7 @@ static int lpCompareInt( const void* a, const void* b )
 }
 
 // Pieces whose shapes overlap the box, sorted and unique (query order must not leak into results).
-static void lpQueryPieces( lpWorld* w, b3AABB box )
+void lpQueryPieces( lpWorld* w, b3AABB box )
 {
 	w->scratchPieces.count = 0;
 	lpOverlapContext context = { w };
@@ -613,7 +719,7 @@ static void lpQueryPieces( lpWorld* w, b3AABB box )
 	}
 }
 
-static void lpWakeRubble( lpWorld* w, int bodyIndex )
+void lpWakeRubble( lpWorld* w, int bodyIndex )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( b->kind != lp_kindRubble )
@@ -674,7 +780,9 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 		}
 	}
 	lpPoly_Translate( &job->poly, b3Neg( job->center ) );
-	job->minPieceVolume = w->def.minPieceVolume;
+	job->particleVolume = lpParticleVolume( w, piece->material );
+	job->ghostVolume = lpGhostVolume( w, piece->material );
+	job->lightVolume = lpLightVolume( w, piece->material );
 	job->cellCount = 0;
 	job->bondCount = 0;
 	memset( &job->stats, 0, sizeof( job->stats ) );
@@ -685,7 +793,9 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->impact = b3Sub( localImpact, job->center );
 	input->radius = breakRadius;
 	input->fragmentSize = fragment;
-	input->maxCells = 64;
+	input->maxCells = m->maxCells;
+	input->plateSize = m->plateSize * w->def.fragmentScale;
+	input->absorbVolume = job->particleVolume;
 	input->pattern = m->pattern == lp_breakGrain ? lp_patternGrain : ( m->pattern == lp_breakRadial ? lp_patternRadial : lp_patternImpact );
 	input->axis = piece->axis;
 	input->stretch = m->grainStretch;
@@ -694,21 +804,50 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->tolerance = 2e-5f;
 }
 
-// Phase 2. Must not touch the world.
+// Phase 2. Must not touch the world. Cells inside the break radius are ejecta: their bonds would break anyway, so
+// they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no Box3D hull at all.
 static void lpRunFractureJob( int index, int worker, void* context )
 {
 	(void)worker;
 	lpFractureJob* job = (lpFractureJob*)context + index;
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
 	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
+	job->bondCount = 0;
 	if ( job->cellCount < 2 )
 	{
 		return;
 	}
+	float r2 = job->input.radius * job->input.radius;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
-		lpShape_Translate( job->cells[i], job->center );
-		job->hulls[i] = job->cells[i]->volume >= job->minPieceVolume ? lpShape_CreateHull( job->cells[i] ) : NULL;
+		lpShape* cell = job->cells[i];
+		lpShape_Translate( cell, job->center );
+		float volume = cell->volume;
+		bool ejecta = b3DistanceSquared( cell->centroid, job->localImpact ) < r2;
+		uint8_t cls;
+		if ( volume < job->particleVolume )
+		{
+			cls = lp_cellPuff;
+		}
+		else if ( ejecta == false )
+		{
+			cls = lp_cellKeep;
+		}
+		else if ( volume < job->ghostVolume )
+		{
+			cls = lp_cellGhost;
+		}
+		else if ( volume < job->lightVolume )
+		{
+			cls = lp_cellLight;
+		}
+		else
+		{
+			cls = lp_cellFull;
+		}
+		job->cellClass[i] = cls;
+		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
+		job->hulls[i] = needsHull ? lpShape_CreateHull( cell ) : NULL;
 	}
 	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
 }
@@ -741,10 +880,13 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		return;
 	}
 
-	const lpMaterialDef* m = lpGetMaterial( piece->material );
 	int bodyIndex = piece->body;
 	lpBody* body = w->bodies.data + bodyIndex;
 	b3WorldTransform xf = b3Body_GetTransform( body->id );
+	bool isDynamic = body->kind == lp_kindDebris;
+	b3Vec3 v = isDynamic ? b3Body_GetLinearVelocity( body->id ) : b3Vec3_zero;
+	b3Vec3 omega = isDynamic ? b3Body_GetAngularVelocity( body->id ) : b3Vec3_zero;
+	b3Vec3 localCenter = isDynamic ? b3Body_GetLocalCenter( body->id ) : b3Vec3_zero;
 
 	// Former neighbors, then retire the parent
 	int neighbors[256];
@@ -787,44 +929,90 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	int cellToPiece[LP_MAX_SITES];
 	int children[LP_MAX_SITES];
 	int childCount = 0;
+	int ejected = 0;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		lpShape* cell = job->cells[i];
+		b3HullData* hull = job->hulls[i];
+		uint8_t cls = job->cellClass[i];
 		job->cells[i] = NULL;
+		job->hulls[i] = NULL;
 		cellToPiece[i] = -1;
-
-		if ( job->hulls[i] == NULL )
+		if ( ( cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull ) && hull == NULL )
 		{
-			if ( cell->volume < w->def.minPieceVolume )
-			{
-				b3Vec3 away = b3Sub( cell->centroid, job->localImpact );
-				b3Vec3 v = b3MulSV( 2.0f, b3Normalize( away ) );
-				lpEmitParticle( w, xf, cell->centroid, b3RotateVector( xf.q, v ), cbrtf( cell->volume ), m->interiorColor );
-			}
+			cls = lp_cellPuff; // no valid hull (a sliver)
+		}
+
+		// Velocity of the parent at the cell
+		b3Vec3 cellV = v;
+		if ( isDynamic )
+		{
+			cellV = b3Add( v, b3Cross( omega, b3RotateVector( xf.q, b3Sub( cell->centroid, localCenter ) ) ) );
+		}
+
+		if ( cls == lp_cellPuff )
+		{
+			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
+			b3Vec3 pv = b3Add( cellV, b3RotateVector( xf.q, b3MulSV( 2.0f, away ) ) );
+			lpEmitParticle( w, xf, cell->centroid, pv, cbrtf( cell->volume ), material );
 			lpShape_Destroy( cell );
+			if ( hull != NULL )
+			{
+				b3DestroyHull( hull );
+			}
 			continue;
 		}
 
 		int childIndex = lpAllocPiece( w );
 		lpPiece* child = w->pieces.data + childIndex;
 		child->shape = cell;
-		child->hull = job->hulls[i];
-		job->hulls[i] = NULL;
+		child->hull = hull;
 		child->material = material;
 		child->color = color;
 		child->axis = axis;
 		child->depth = (uint8_t)( depth > 255 ? 255 : depth );
 		child->seed = (uint32_t)lpMix64( w->def.seed ^ w->pieceSerial++ );
 		child->anchorPlane = anchorPlane;
-		child->anchored = anchored && lpShape_HasFaceOnPlane( cell, anchorPlane, 1e-3f );
 
-		if ( lpAttachPiece( w, childIndex, bodyIndex ) == false )
+		if ( cls == lp_cellKeep )
 		{
-			lpFreePieceSlot( w, childIndex );
+			child->anchored = anchored && lpShape_HasFaceOnPlane( cell, anchorPlane, 1e-3f );
+			if ( lpAttachPiece( w, childIndex, bodyIndex ) == false )
+			{
+				lpFreePieceSlot( w, childIndex );
+				continue;
+			}
+			cellToPiece[i] = childIndex;
+			children[childCount++] = childIndex;
 			continue;
 		}
-		cellToPiece[i] = childIndex;
-		children[childCount++] = childIndex;
+
+		ejected += 1;
+		if ( cls == lp_cellGhost )
+		{
+			// A little tumble, seeded from the piece so it is deterministic
+			lpRandom rng;
+			lpRandom_Seed( &rng, child->seed, 17 );
+			b3Vec3 spin = { lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ) };
+			int ghost = lpBeginGhost( w, xf, cellV, b3Add( omega, spin ) );
+			lpAddLoosePiece( w, ghost, childIndex );
+			lpFinishLoose( w, ghost, xf );
+		}
+		else
+		{
+			uint8_t tier = cls == lp_cellLight ? lp_tierLight : lp_tierFull;
+			int debris = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, cellV, omega );
+			if ( lpAttachPiece( w, childIndex, debris ) )
+			{
+				b3Body_ApplyMassFromShapes( w->bodies.data[debris].id );
+			}
+			else
+			{
+				lpFreePieceSlot( w, childIndex );
+				lpDestroyBody( w, debris, false );
+			}
+		}
+		body = w->bodies.data + bodyIndex; // the body array may have moved
 	}
 	job->cellCount = 0;
 
@@ -848,13 +1036,13 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	}
 	w->stats.bondMs += b3GetMilliseconds( bondTicks );
 
-	if ( body->kind != lp_kindStructure )
+	if ( body->kind != lp_kindStructure && body->pieces.count > 0 )
 	{
 		b3Body_ApplyMassFromShapes( body->id );
 	}
 
 	w->stats.fracturesThisStep += 1;
-	w->stats.cellsThisStep += childCount;
+	w->stats.cellsThisStep += childCount + ejected;
 	lpMarkDirty( w, bodyIndex );
 }
 
@@ -868,7 +1056,7 @@ static void lpDetonate( lpWorld* w, int bodyIndex )
 	}
 	b->armed = false;
 	lpImpactDef blast = { 0 };
-	blast.point = b3Body_GetWorldCenter( b->id );
+	blast.point = B3_IS_NON_NULL( b->id ) ? b3Body_GetWorldCenter( b->id ) : b->com;
 	blast.radius = b->detonator.radius;
 	blast.energy = b->detonator.energy;
 	blast.impulse = b->detonator.speed;
@@ -877,12 +1065,157 @@ static void lpDetonate( lpWorld* w, int bodyIndex )
 	lpArray_Push( w->pendingDestroy, bodyIndex );
 }
 
+typedef struct lpFractureCandidate
+{
+	uint32_t distanceBits; // non-negative floats order like their bits
+	int piece;
+	b3Vec3 local;
+} lpFractureCandidate;
+
+static int lpCompareFractureCandidates( const void* a, const void* b )
+{
+	const lpFractureCandidate* x = a;
+	const lpFractureCandidate* y = b;
+	if ( x->distanceBits != y->distanceBits )
+	{
+		return x->distanceBits < y->distanceBits ? -1 : 1;
+	}
+	return ( x->piece > y->piece ) - ( x->piece < y->piece );
+}
+
+static lpFractureJob* lpNextJob( lpWorld* w )
+{
+	if ( w->jobCount == w->jobCapacity )
+	{
+		int capacity = w->jobCapacity < 8 ? 8 : 2 * w->jobCapacity;
+		w->jobs = lpRealloc( w->jobs, sizeof( lpFractureJob ) * (size_t)capacity );
+		for ( int k = w->jobCapacity; k < capacity; ++k )
+		{
+			w->jobs[k].bonds = lpAlloc( sizeof( lpCellBond ) * LP_MAX_CELL_BONDS );
+		}
+		w->jobCapacity = capacity;
+	}
+	return w->jobs + w->jobCount++;
+}
+
+// Refracture the qualifying candidates of an impact, nearest first, within the step's job budget. The rest wait
+// for the next step (the hole appears now, its outer refractures one step later). Deterministic: the budget is a
+// count and every order is a total order.
+static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_t serial, const int* candidates, int count )
+{
+	lpFractureCandidate* list = lpAlloc( sizeof( lpFractureCandidate ) * (size_t)( count > 0 ? count : 1 ) );
+	int n = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		int pieceIndex = candidates[i];
+		lpPiece* p = w->pieces.data + pieceIndex;
+		if ( p->body < 0 || p->shape == NULL || B3_IS_NULL( p->shapeId ) )
+		{
+			continue;
+		}
+		const lpMaterialDef* m = lpGetMaterial( p->material );
+		if ( m->breakable == false || p->depth >= w->def.maxDepth )
+		{
+			continue;
+		}
+		float fragment = m->fragmentSize * w->def.fragmentScale;
+		if ( p->shape->radius < 1.5f * fragment )
+		{
+			continue;
+		}
+		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
+		float d = lpShape_SignedDistance( p->shape, local );
+		if ( lpImpactDensity( impact, d ) >= m->fractureEnergy )
+		{
+			float key = d > 0.0f ? d : 0.0f;
+			uint32_t bits;
+			memcpy( &bits, &key, sizeof( bits ) );
+			list[n++] = (lpFractureCandidate){ bits, pieceIndex, local };
+		}
+	}
+	if ( n > 1 )
+	{
+		qsort( list, (size_t)n, sizeof( lpFractureCandidate ), lpCompareFractureCandidates );
+	}
+
+	int budget = w->def.maxFractureJobsPerStep - w->jobsThisStep;
+	budget = budget < 0 ? 0 : budget;
+	w->jobCount = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		if ( i < budget )
+		{
+			lpPrepareFractureJob( w, lpNextJob( w ), list[i].piece, list[i].local, impact );
+		}
+		else
+		{
+			lpDeferredJob deferred = { list[i].piece, w->pieces.data[list[i].piece].generation, serial, *impact };
+			lpArray_Push( w->deferred, deferred );
+		}
+	}
+	lpFree( list );
+	w->jobsThisStep += w->jobCount;
+
+	uint64_t cellTicks = b3GetTicks();
+	lpTaskPool_ParallelFor( w->tasks, w->jobCount, lpRunFractureJob, w->jobs );
+	w->stats.cellMs += b3GetMilliseconds( cellTicks );
+
+	for ( int i = 0; i < w->jobCount; ++i )
+	{
+		lpIntegrateFractureJob( w, w->jobs + i );
+	}
+	w->jobCount = 0;
+}
+
+// Damage bonds near an impact (including fresh ones). Each bond takes each impact at most once, even when part of
+// the impact's fracture work was deferred to a later step.
+static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t serial )
+{
+	lpQueryPieces( w, lpInflatedBox( impact->point, impact->radius ) );
+	for ( int i = 0; i < w->scratchPieces.count; ++i )
+	{
+		lpPiece* p = w->pieces.data + w->scratchPieces.data[i];
+		if ( p->body < 0 )
+		{
+			continue;
+		}
+		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
+
+		for ( int k = 0; k < p->bonds.count; )
+		{
+			int bondIndex = p->bonds.data[k];
+			lpBond* bond = w->bonds.data + bondIndex;
+			if ( bond->lastImpact == serial )
+			{
+				k += 1;
+				continue;
+			}
+			bond->lastImpact = serial;
+			float density = lpImpactDensity( impact, b3Distance( bond->centroid, local ) );
+			bond->health -= density;
+			if ( bond->health <= 0.0f )
+			{
+				lpBreakBond( w, bondIndex ); // removes it from p->bonds, so k stays
+				lpMarkDirty( w, p->body );
+			}
+			else
+			{
+				k += 1;
+			}
+		}
+	}
+}
+
 static void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 {
 	if ( impact->radius <= 0.0f || impact->energy <= 0.0f )
 	{
 		return;
 	}
+	w->impactSerial += 1;
+	uint32_t serial = w->impactSerial;
 
 	lpQueryPieces( w, lpInflatedBox( impact->point, impact->radius ) );
 
@@ -912,94 +1245,9 @@ static void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 		}
 	}
 
-	// Refracture struck pieces (see the phases above)
-	w->jobCount = 0;
-	for ( int i = 0; i < candidateCount; ++i )
-	{
-		int pieceIndex = candidates[i];
-		lpPiece* p = w->pieces.data + pieceIndex;
-		if ( p->body < 0 || p->shape == NULL )
-		{
-			continue;
-		}
-		const lpMaterialDef* m = lpGetMaterial( p->material );
-		if ( m->breakable == false || p->depth >= w->def.maxDepth )
-		{
-			continue;
-		}
-		float fragment = m->fragmentSize * w->def.fragmentScale;
-		if ( p->shape->radius < 1.5f * fragment )
-		{
-			continue;
-		}
-
-		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
-		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
-		float d = lpShape_SignedDistance( p->shape, local );
-		if ( lpImpactDensity( impact, d ) >= m->fractureEnergy )
-		{
-			if ( w->jobCount == w->jobCapacity )
-			{
-				int capacity = w->jobCapacity < 8 ? 8 : 2 * w->jobCapacity;
-				w->jobs = lpRealloc( w->jobs, sizeof( lpFractureJob ) * (size_t)capacity );
-				for ( int k = w->jobCapacity; k < capacity; ++k )
-				{
-					w->jobs[k].bonds = lpAlloc( sizeof( lpCellBond ) * LP_MAX_CELL_BONDS );
-				}
-				w->jobCapacity = capacity;
-			}
-			lpPrepareFractureJob( w, w->jobs + w->jobCount, pieceIndex, local, impact );
-			w->jobCount += 1;
-		}
-	}
+	lpFractureCandidates( w, impact, serial, candidates, candidateCount );
 	lpFree( candidates );
-
-	uint64_t cellTicks = b3GetTicks();
-	lpTaskPool_ParallelFor( w->tasks, w->jobCount, lpRunFractureJob, w->jobs );
-	w->stats.cellMs += b3GetMilliseconds( cellTicks );
-
-	for ( int i = 0; i < w->jobCount; ++i )
-	{
-		lpIntegrateFractureJob( w, w->jobs + i );
-	}
-	w->jobCount = 0;
-
-	// Damage bonds near the impact (including the fresh ones)
-	lpQueryPieces( w, lpInflatedBox( impact->point, impact->radius ) );
-	w->stamp += 1;
-	for ( int i = 0; i < w->scratchPieces.count; ++i )
-	{
-		lpPiece* p = w->pieces.data + w->scratchPieces.data[i];
-		if ( p->body < 0 )
-		{
-			continue;
-		}
-		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
-		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
-
-		for ( int k = 0; k < p->bonds.count; )
-		{
-			int bondIndex = p->bonds.data[k];
-			lpBond* bond = w->bonds.data + bondIndex;
-			if ( bond->stamp == w->stamp )
-			{
-				k += 1;
-				continue;
-			}
-			bond->stamp = w->stamp;
-			float density = lpImpactDensity( impact, b3Distance( bond->centroid, local ) );
-			bond->health -= density;
-			if ( bond->health <= 0.0f )
-			{
-				lpBreakBond( w, bondIndex ); // removes it from p->bonds, so k stays
-				lpMarkDirty( w, p->body );
-			}
-			else
-			{
-				k += 1;
-			}
-		}
-	}
+	lpDamageBonds( w, impact, serial );
 
 	w->stats.impactsThisStep += 1;
 	if ( w->def.debugLog )
@@ -1009,6 +1257,48 @@ static void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 				(double)impact->radius, (double)impact->energy, impact->explosion ? " (blast)" : "", candidateCount,
 				w->stats.fracturesThisStep );
 	}
+}
+
+// Fracture work left over from earlier steps goes first, grouped by the impact it belongs to
+static void lpProcessDeferred( lpWorld* w )
+{
+	if ( w->deferred.count == 0 )
+	{
+		return;
+	}
+	int count = w->deferred.count;
+	lpDeferredJob* pending = lpAlloc( sizeof( lpDeferredJob ) * (size_t)count );
+	memcpy( pending, w->deferred.data, sizeof( lpDeferredJob ) * (size_t)count );
+	w->deferred.count = 0;
+
+	int* pieces = lpAlloc( sizeof( int ) * (size_t)count );
+	for ( int first = 0; first < count; )
+	{
+		int last = first;
+		while ( last + 1 < count && pending[last + 1].impactSerial == pending[first].impactSerial )
+		{
+			last += 1;
+		}
+		int n = 0;
+		for ( int i = first; i <= last; ++i )
+		{
+			lpPiece* p = w->pieces.data + pending[i].piece;
+			if ( p->body >= 0 && p->generation == pending[i].generation )
+			{
+				pieces[n++] = pending[i].piece;
+			}
+		}
+		if ( n > 1 )
+		{
+			qsort( pieces, (size_t)n, sizeof( int ), lpCompareInt );
+		}
+		lpImpactDef impact = pending[first].impact;
+		lpFractureCandidates( w, &impact, pending[first].impactSerial, pieces, n );
+		lpDamageBonds( w, &impact, pending[first].impactSerial );
+		first = last + 1;
+	}
+	lpFree( pieces );
+	lpFree( pending );
 }
 
 // ---- connectivity ----
@@ -1193,7 +1483,7 @@ static void lpUpdateBody( lpWorld* w, int bodyIndex )
 		{
 			continue;
 		}
-		lpComponent fresh = { w->scratchQueue.count, 0, 0.0f, b3Vec3_zero, false };
+		lpComponent fresh = { w->scratchQueue.count, 0, 0.0f, b3Vec3_zero, false, 0, 0.0f };
 		lpArray_Push( w->scratchComponents, fresh );
 		lpComponent* c = w->scratchComponents.data + w->scratchComponents.count - 1;
 
@@ -1205,6 +1495,11 @@ static void lpUpdateBody( lpWorld* w, int bodyIndex )
 			lpPiece* p = w->pieces.data + pi;
 			c->count += 1;
 			c->volume += p->shape->volume;
+			if ( p->shape->volume > c->largest )
+			{
+				c->largest = p->shape->volume;
+				c->material = p->material;
+			}
 			c->centroid = b3MulAdd( c->centroid, p->shape->volume, p->shape->centroid );
 			c->anchored = c->anchored || p->anchored;
 			for ( int k = 0; k < p->bonds.count; ++k )
@@ -1260,41 +1555,75 @@ static void lpUpdateBody( lpWorld* w, int bodyIndex )
 			continue;
 		}
 
+		// Frozen rubble resting on what just left must be able to fall
+		b3AABB wakeBox = { comp->centroid, comp->centroid };
+		for ( int k = 0; k < comp->count; ++k )
+		{
+			lpPiece* p = w->pieces.data + w->scratchQueue.data[comp->first + k];
+			wakeBox.lowerBound = b3Min( wakeBox.lowerBound, p->shape->bounds.lowerBound );
+			wakeBox.upperBound = b3Max( wakeBox.upperBound, p->shape->bounds.upperBound );
+		}
+		b3Vec3 wakeCenter = b3ToVec3( b3TransformWorldPoint( xf, b3AABB_Center( wakeBox ) ) );
+		float wakeRadius = b3Length( b3AABB_Extents( wakeBox ) ) + 0.3f;
+		lpArray_Push( w->pendingWakes, ( (lpWake){ wakeCenter, wakeRadius } ) );
+
 		b3Vec3 compV = v;
 		if ( isDynamic )
 		{
 			b3Vec3 r = b3RotateVector( xf.q, b3Sub( comp->centroid, localCenter ) );
 			compV = b3Add( v, b3Cross( omega, r ) );
 		}
-		int newIndex = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, compV, isDynamic ? omega : b3Vec3_zero );
-		body = w->bodies.data + bodyIndex; // array may have moved
-		lpBody* nb = w->bodies.data + newIndex;
+		b3Vec3 compOmega = isDynamic ? omega : b3Vec3_zero;
 
-		for ( int k = 0; k < comp->count; ++k )
+		// The piece's tier follows its size
+		if ( comp->volume < lpParticleVolume( w, comp->material ) )
 		{
-			int pi = w->scratchQueue.data[comp->first + k];
-			lpPiece* p = w->pieces.data + pi;
-			lpDetachPieceShape( w, pi );
-			p->anchored = false;
-			p->body = -1;
-			lpAttachPiece( w, pi, newIndex );
+			for ( int k = 0; k < comp->count; ++k )
+			{
+				int pi = w->scratchQueue.data[comp->first + k];
+				lpPiece* p = w->pieces.data + pi;
+				while ( p->bonds.count > 0 )
+				{
+					lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
+				}
+				lpDetachPieceShape( w, pi );
+				lpEmitParticle( w, xf, p->shape->centroid, compV, cbrtf( p->shape->volume ), p->material );
+				lpFreePieceSlot( w, pi );
+			}
 		}
-		b3Body_ApplyMassFromShapes( nb->id );
+		else if ( comp->volume < lpGhostVolume( w, comp->material ) )
+		{
+			int ghost = lpBeginGhost( w, xf, compV, compOmega );
+			body = w->bodies.data + bodyIndex;
+			for ( int k = 0; k < comp->count; ++k )
+			{
+				int pi = w->scratchQueue.data[comp->first + k];
+				lpDetachPieceShape( w, pi );
+				lpAddLoosePiece( w, ghost, pi );
+			}
+			lpFinishLoose( w, ghost, xf );
+		}
+		else
+		{
+			uint8_t tier = comp->volume < lpLightVolume( w, comp->material ) ? lp_tierLight : lp_tierFull;
+			int newIndex = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, compV, compOmega );
+			body = w->bodies.data + bodyIndex; // array may have moved
+			lpBody* nb = w->bodies.data + newIndex;
+			for ( int k = 0; k < comp->count; ++k )
+			{
+				int pi = w->scratchQueue.data[comp->first + k];
+				lpPiece* p = w->pieces.data + pi;
+				lpDetachPieceShape( w, pi );
+				p->anchored = false;
+				p->body = -1;
+				lpAttachPiece( w, pi, newIndex );
+			}
+			b3Body_ApplyMassFromShapes( nb->id );
+		}
+		body = w->bodies.data + bodyIndex;
 		body->volume -= comp->volume;
 		movedAny += 1;
 		w->stats.splitsThisStep += 1;
-
-		// Frozen rubble resting on what just left must be able to fall
-		b3AABB box = { comp->centroid, comp->centroid };
-		for ( int k = 0; k < comp->count; ++k )
-		{
-			lpPiece* p = w->pieces.data + w->scratchQueue.data[comp->first + k];
-			box.lowerBound = b3Min( box.lowerBound, p->shape->bounds.lowerBound );
-			box.upperBound = b3Max( box.upperBound, p->shape->bounds.upperBound );
-		}
-		b3Vec3 c0 = b3ToVec3( b3TransformWorldPoint( xf, b3AABB_Center( box ) ) );
-		float r = b3Length( b3AABB_Extents( box ) ) + 0.3f;
-		lpArray_Push( w->pendingWakes, ( (lpWake){ c0, r } ) );
 	}
 
 	if ( movedAny == 0 )
@@ -1321,6 +1650,15 @@ static void lpUpdateBody( lpWorld* w, int bodyIndex )
 	else if ( isDynamic )
 	{
 		b3Body_ApplyMassFromShapes( body->id );
+		int material = w->pieces.data[body->pieces.data[0]].material;
+		if ( body->volume < lpGhostVolume( w, material ) )
+		{
+			lpConvertToGhost( w, bodyIndex );
+		}
+		else if ( body->tier == lp_tierFull && body->volume < lpLightVolume( w, material ) )
+		{
+			lpConvertToLight( w, bodyIndex );
+		}
 	}
 }
 
@@ -1398,6 +1736,7 @@ static void lpApplyForces( lpWorld* w )
 				b3Body_ApplyLinearImpulse( b->id, b3MulSV( impulse, force.direction ), center, true );
 			}
 		}
+		lpApplyLooseForce( w, &force );
 	}
 	w->forces.count = 0;
 }
@@ -1427,13 +1766,32 @@ static void lpCollectHits( lpWorld* w )
 	for ( int i = 0; i < events.hitCount; ++i )
 	{
 		const b3ContactHitEvent* e = events.hitEvents + i;
-		if ( e->approachSpeed < w->def.hitSpeed )
+		if ( e->approachSpeed < w->def.wakeSpeed )
 		{
 			continue;
 		}
 		intptr_t da = (intptr_t)b3Shape_GetUserData( e->shapeIdA );
 		intptr_t db = (intptr_t)b3Shape_GetUserData( e->shapeIdB );
 		if ( da <= 0 && db <= 0 )
+		{
+			continue;
+		}
+
+		// Fragile rubble: a moving body bumping into it knocks it loose (strong static friction, not cement)
+		if ( da > 0 && db > 0 )
+		{
+			int bodyA = w->pieces.data[da - 1].body;
+			int bodyB = w->pieces.data[db - 1].body;
+			if ( w->bodies.data[bodyA].kind == lp_kindRubble && w->bodies.data[bodyB].kind == lp_kindDebris )
+			{
+				lpWakeRubble( w, bodyA );
+			}
+			else if ( w->bodies.data[bodyB].kind == lp_kindRubble && w->bodies.data[bodyA].kind == lp_kindDebris )
+			{
+				lpWakeRubble( w, bodyB );
+			}
+		}
+		if ( e->approachSpeed < w->def.hitSpeed )
 		{
 			continue;
 		}
@@ -1528,11 +1886,13 @@ static void lpFreezeOrKill( lpWorld* w )
 			b->freezePending = false;
 			continue;
 		}
-		if ( w->tick - b->createdTick >= 30 )
+		uint64_t minAge = b->tier == lp_tierLight ? 6u : 30u;
+		if ( w->tick - b->createdTick >= minAge && w->freezesThisStep < w->def.maxFreezesPerStep )
 		{
 			b->freezePending = false;
 			b->kind = lp_kindRubble;
 			b3Body_SetType( b->id, b3_staticBody );
+			w->freezesThisStep += 1;
 			continue;
 		}
 		w->freezeCandidates.data[kept++] = bodyIndex;
@@ -1553,68 +1913,6 @@ static void lpFreezeOrKill( lpWorld* w )
 			w->stats.removedThisStep += 1;
 		}
 	}
-}
-
-typedef struct lpBudgetEntry
-{
-	float volume;
-	uint64_t tick;
-	int body;
-} lpBudgetEntry;
-
-static int lpCompareBudget( const void* a, const void* b )
-{
-	const lpBudgetEntry* x = a;
-	const lpBudgetEntry* y = b;
-	if ( x->volume != y->volume )
-	{
-		return x->volume < y->volume ? -1 : 1;
-	}
-	if ( x->tick != y->tick )
-	{
-		return x->tick < y->tick ? -1 : 1;
-	}
-	return ( x->body > y->body ) - ( x->body < y->body );
-}
-
-// Remove the smallest, oldest bodies of a kind until at most `limit` (bodies or pieces) remain
-static void lpEnforceBudget( lpWorld* w, uint8_t kind, int limit, bool countPieces )
-{
-	int total = 0;
-	int n = 0;
-	for ( int i = 0; i < w->bodies.count; ++i )
-	{
-		lpBody* b = w->bodies.data + i;
-		if ( b->alive && b->kind == kind )
-		{
-			total += countPieces ? b->pieces.count : 1;
-			n += 1;
-		}
-	}
-	if ( total <= limit )
-	{
-		return;
-	}
-
-	lpBudgetEntry* entries = lpAlloc( sizeof( lpBudgetEntry ) * (size_t)n );
-	int k = 0;
-	for ( int i = 0; i < w->bodies.count; ++i )
-	{
-		lpBody* b = w->bodies.data + i;
-		if ( b->alive && b->kind == kind )
-		{
-			entries[k++] = (lpBudgetEntry){ b->volume, b->createdTick, i };
-		}
-	}
-	qsort( entries, (size_t)n, sizeof( lpBudgetEntry ), lpCompareBudget );
-	for ( int i = 0; i < n && total > limit; ++i )
-	{
-		lpBody* b = w->bodies.data + entries[i].body;
-		total -= countPieces ? b->pieces.count : 1;
-		lpDestroyBody( w, entries[i].body, true );
-		w->stats.removedThisStep += 1;
-	}
-	lpFree( entries );
 }
 
 void lpWorld_Pull( lpWorld* w, int piece, b3Vec3 localPoint, b3Pos target, float maxAccel, float maxMass )
@@ -1659,6 +1957,12 @@ static void lpApplyPulls( lpWorld* w )
 		{
 			continue;
 		}
+		// Whatever is grabbed gets full physics back
+		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap || b->tier == lp_tierLight )
+		{
+			lpConvertToFull( w, bodyIndex );
+			b = w->bodies.data + bodyIndex;
+		}
 		lpWakeRubble( w, bodyIndex );
 
 		b3Pos point = b3TransformWorldPoint( b3Body_GetTransform( b->id ), pull.localPoint );
@@ -1694,7 +1998,11 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.shapeMs = 0.0f;
 	w->stats.bondMs = 0.0f;
 	w->stats.splitMs = 0.0f;
+	w->stats.demotionsThisStep = 0;
+	w->stats.ghostCasts = 0;
 	w->particles.count = 0;
+	w->jobsThisStep = 0;
+	w->freezesThisStep = 0;
 
 	uint64_t ticks = b3GetTicks();
 
@@ -1712,6 +2020,9 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		}
 	}
 	w->pendingDestroy.count = 0;
+
+	// Fracture work deferred by earlier steps' budgets
+	lpProcessDeferred( w );
 
 	// Impacts: tool impacts in call order, then last step's collision impacts
 	for ( int i = 0; i < w->nextImpacts.count; ++i )
@@ -1749,22 +2060,28 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 
 	lpApplyWakes( w );
 	lpApplyForces( w );
+	lpApplyBlows( w );
 	lpApplyPulls( w );
 	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
 
 	b3World_Step( w->def.physics, timeStep, subStepCount );
 	w->stats.physicsMs = b3GetMillisecondsAndReset( &ticks );
 
+	lpStepGhosts( w, timeStep );
+	lpShove( w, timeStep );
 	lpCollectHits( w );
 	lpFreezeOrKill( w );
-	lpEnforceBudget( w, lp_kindDebris, w->def.maxDebrisBodies, false );
-	lpEnforceBudget( w, lp_kindRubble, w->def.maxRubblePieces, true );
+	lpEnforceBudgets( w );
 
 	// Counters
 	w->stats.structureBodies = 0;
 	w->stats.debrisBodies = 0;
 	w->stats.awakeDebris = 0;
 	w->stats.rubbleBodies = 0;
+	w->stats.fullDebris = 0;
+	w->stats.lightDebris = 0;
+	w->stats.ghostBodies = 0;
+	w->stats.scrapBodies = 0;
 	int pieceCount = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
@@ -1782,15 +2099,26 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		{
 			w->stats.rubbleBodies += 1;
 		}
+		else if ( b->kind == lp_kindGhost )
+		{
+			w->stats.ghostBodies += 1;
+		}
+		else if ( b->kind == lp_kindScrap )
+		{
+			w->stats.scrapBodies += 1;
+		}
 		else
 		{
 			w->stats.debrisBodies += 1;
+			w->stats.fullDebris += b->tier == lp_tierFull ? 1 : 0;
+			w->stats.lightDebris += b->tier == lp_tierLight ? 1 : 0;
 			w->stats.awakeDebris += b3Body_IsAwake( b->id ) ? 1 : 0;
 		}
 	}
 	w->stats.pieceCount = pieceCount;
 	w->stats.bondCount = w->bondCount;
 	w->stats.particlesThisStep = w->particles.count;
+	w->stats.deferredJobs = w->deferred.count;
 	w->stats.updateMs = b3GetMillisecondsAndReset( &ticks );
 
 	w->tick += 1;
@@ -1815,8 +2143,17 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		}
 		h = lpHashBytes( h, &i, sizeof( i ) );
 		h = lpHashBytes( h, &b->kind, sizeof( b->kind ) );
+		h = lpHashBytes( h, &b->tier, sizeof( b->tier ) );
 		h = lpHashBytes( h, &b->pieces.count, sizeof( int ) );
 		h = lpHashBytes( h, b->pieces.data, sizeof( int ) * (size_t)b->pieces.count );
+		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
+		{
+			h = lpHashBytes( h, &b->com, sizeof( b->com ) );
+			h = lpHashBytes( h, &b->q, sizeof( b->q ) );
+			h = lpHashBytes( h, &b->v, sizeof( b->v ) );
+			h = lpHashBytes( h, &b->omega, sizeof( b->omega ) );
+			continue;
+		}
 		b3WorldTransform xf = b3Body_GetTransform( b->id );
 		b3Vec3 v = b3Body_GetLinearVelocity( b->id );
 		b3Vec3 omega = b3Body_GetAngularVelocity( b->id );
@@ -1884,7 +2221,12 @@ int lpWorld_GetPieceCapacity( const lpWorld* w )
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* w, int piece )
 {
 	const lpPiece* p = w->pieces.data + piece;
-	lpPieceInfo info = { p->body, p->meshVersion, p->generation };
+	lpPieceInfo info = { p->body, 0, 0, p->meshVersion, p->generation };
+	if ( p->body >= 0 )
+	{
+		info.kind = w->bodies.data[p->body].kind;
+		info.tier = w->bodies.data[p->body].tier;
+	}
 	return info;
 }
 
@@ -1900,7 +2242,7 @@ bool lpWorld_GetBodyTransform( const lpWorld* w, int body, b3WorldTransform* tra
 	{
 		return false;
 	}
-	*transform = b3Body_GetTransform( b->id );
+	*transform = lpGetTransform( w, b );
 	return true;
 }
 
@@ -1951,11 +2293,18 @@ bool lpWorld_Validate( const lpWorld* w )
 		{
 			continue;
 		}
-		if ( b3Body_IsValid( b->id ) == false )
+		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
+		{
+			if ( B3_IS_NON_NULL( b->id ) || b->pieces.count == 0 )
+			{
+				return lpFail( "loose body %d has a Box3D body or no pieces (%d)", i, b->pieces.count, 0 );
+			}
+		}
+		else if ( b3Body_IsValid( b->id ) == false )
 		{
 			return lpFail( "body %d has an invalid Box3D id", i, 0, 0 );
 		}
-		if ( b3Body_GetShapeCount( b->id ) != b->pieces.count )
+		else if ( b3Body_GetShapeCount( b->id ) != b->pieces.count )
 		{
 			return lpFail( "body %d: %d shapes but %d pieces", i, b3Body_GetShapeCount( b->id ), b->pieces.count );
 		}
@@ -1980,11 +2329,19 @@ bool lpWorld_Validate( const lpWorld* w )
 		{
 			return lpFail( "piece %d on dead body %d", i, p->body, 0 );
 		}
-		if ( b3Shape_IsValid( p->shapeId ) == false )
+		uint8_t kind = w->bodies.data[p->body].kind;
+		if ( kind == lp_kindGhost || kind == lp_kindScrap )
+		{
+			if ( B3_IS_NON_NULL( p->shapeId ) )
+			{
+				return lpFail( "loose piece %d still has a Box3D shape", i, 0, 0 );
+			}
+		}
+		else if ( b3Shape_IsValid( p->shapeId ) == false )
 		{
 			return lpFail( "piece %d has no shape", i, 0, 0 );
 		}
-		if ( b3Shape_GetBody( p->shapeId ).index1 != w->bodies.data[p->body].id.index1 )
+		if ( kind != lp_kindGhost && kind != lp_kindScrap && b3Shape_GetBody( p->shapeId ).index1 != w->bodies.data[p->body].id.index1 )
 		{
 			return lpFail( "piece %d shape on the wrong body", i, 0, 0 );
 		}

@@ -1,6 +1,7 @@
 add_library(lpf STATIC
 	core.c
 	core.h
+	debris.c
 	facet.c
 	facet.h
 	fracture.c
