@@ -842,7 +842,6 @@ void lpEnforceBudgets( lpWorld* w )
 		{
 			lpDestroyBody( w, e[i].body, true );
 			w->stats.demotionsThisStep += 1;
-			w->stats.removedThisStep += 1;
 		}
 		lpFree( e );
 	}

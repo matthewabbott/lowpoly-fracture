@@ -11,11 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct Timing
-{
-	float total, fracture, physics, update;
-} Timing;
-
 static int CompareFloat( const void* a, const void* b )
 {
 	float x = *(const float*)a, y = *(const float*)b;

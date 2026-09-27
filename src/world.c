@@ -50,12 +50,6 @@ const lpMaterialDef* lpGetMaterial( int materialId )
 	return lp_materials + materialId;
 }
 
-void lpSetMaterial( int materialId, const lpMaterialDef* def )
-{
-	LP_ASSERT( 0 <= materialId && materialId < lp_materialCount );
-	lp_materials[materialId] = *def;
-}
-
 lpWorldDef lpDefaultWorldDef( void )
 {
 	lpWorldDef def = { 0 };
@@ -137,7 +131,6 @@ int lpAllocPiece( lpWorld* w )
 	p->body = -1;
 	p->nextFree = -1;
 	p->shapeId = b3_nullShapeId;
-	p->meshVersion = 1;
 	return index;
 }
 
@@ -183,13 +176,11 @@ int lpAllocBody( lpWorld* w )
 		index = w->freeBody;
 		w->freeBody = w->bodies.data[index].nextFree;
 		lpBody* b = w->bodies.data + index;
-		uint32_t generation = b->generation;
 		int* data = b->pieces.data;
 		int capacity = b->pieces.capacity;
 		memset( b, 0, sizeof( lpBody ) );
 		b->pieces.data = data;
 		b->pieces.capacity = capacity;
-		b->generation = generation + 1;
 	}
 	else
 	{
@@ -675,14 +666,9 @@ void lpWorld_AddImpact( lpWorld* w, const lpImpactDef* impact )
 
 // ---- impacts ----
 
-typedef struct lpOverlapContext
-{
-	lpWorld* world;
-} lpOverlapContext;
-
 static bool lpCollectPieceFcn( b3ShapeId shapeId, void* context )
 {
-	lpWorld* w = ( (lpOverlapContext*)context )->world;
+	lpWorld* w = context;
 	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
 	if ( data > 0 )
 	{
@@ -702,8 +688,7 @@ int lpCompareInt( const void* a, const void* b )
 void lpQueryPieces( lpWorld* w, b3AABB box )
 {
 	w->scratchPieces.count = 0;
-	lpOverlapContext context = { w };
-	b3World_OverlapAABB( w->def.physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, &context );
+	b3World_OverlapAABB( w->def.physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, w );
 	if ( w->scratchPieces.count > 1 )
 	{
 		qsort( w->scratchPieces.data, (size_t)w->scratchPieces.count, sizeof( int ), lpCompareInt );
@@ -1991,7 +1976,6 @@ static void lpFreezeOrKill( lpWorld* w )
 		if ( w->bodies.data[bodyIndex].alive )
 		{
 			lpDestroyBody( w, bodyIndex, false );
-			w->stats.removedThisStep += 1;
 		}
 	}
 }
@@ -2073,7 +2057,6 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.fracturesThisStep = 0;
 	w->stats.cellsThisStep = 0;
 	w->stats.splitsThisStep = 0;
-	w->stats.removedThisStep = 0;
 	w->stats.cellMs = 0.0f;
 	w->stats.hullMs = 0.0f;
 	w->stats.shapeMs = 0.0f;
@@ -2201,12 +2184,10 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	}
 	w->stats.pieceCount = pieceCount;
 	w->stats.bondCount = w->bondCount;
-	w->stats.particlesThisStep = w->particles.count;
 	w->stats.deferredJobs = w->deferred.count;
 	w->stats.updateMs = b3GetMillisecondsAndReset( &ticks );
 
 	w->tick += 1;
-	w->stats.tick = w->tick;
 }
 
 lpStats lpWorld_GetStats( const lpWorld* w )
@@ -2305,12 +2286,7 @@ int lpWorld_GetPieceCapacity( const lpWorld* w )
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* w, int piece )
 {
 	const lpPiece* p = w->pieces.data + piece;
-	lpPieceInfo info = { p->body, 0, 0, p->meshVersion, p->generation };
-	if ( p->body >= 0 )
-	{
-		info.kind = w->bodies.data[p->body].kind;
-		info.tier = w->bodies.data[p->body].tier;
-	}
+	lpPieceInfo info = { p->body, p->generation };
 	return info;
 }
 
@@ -2328,11 +2304,6 @@ bool lpWorld_GetBodyTransform( const lpWorld* w, int body, b3WorldTransform* tra
 	}
 	*transform = lpGetTransform( w, b );
 	return true;
-}
-
-uint32_t lpWorld_GetBodyGeneration( const lpWorld* w, int body )
-{
-	return w->bodies.data[body].generation;
 }
 
 int lpWorld_BuildPieceMesh( const lpWorld* w, int piece, lpVertex* vertices, int capacity )

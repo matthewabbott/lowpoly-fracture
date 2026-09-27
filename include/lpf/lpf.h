@@ -79,7 +79,6 @@ typedef struct lpMaterialDef
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );
-void lpSetMaterial( int materialId, const lpMaterialDef* def );
 
 // ---- world ----
 
@@ -213,8 +212,6 @@ typedef struct lpStats
 	int fracturesThisStep;
 	int cellsThisStep;
 	int splitsThisStep;
-	int removedThisStep;
-	int particlesThisStep;
 	int clipFailures;
 	float fractureMs;
 	float physicsMs;
@@ -231,7 +228,6 @@ typedef struct lpStats
 	float voronoiCpuMs;
 	float mergeCpuMs;
 	float hullCpuMs;
-	uint64_t tick;
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );
@@ -261,11 +257,8 @@ typedef struct lpVertex
 
 typedef struct lpPieceInfo
 {
-	int body;			  // -1 when the slot is free
-	int kind;			  // debug: 0 structure, 1 debris, 2 rubble, 3 ghost, 4 scrap
-	int tier;			  // debug: 0 full, 1 light
-	uint32_t meshVersion; // changes whenever the render mesh must be rebuilt
-	uint32_t generation;  // changes when the slot is reused
+	int body;			 // -1 when the slot is free
+	uint32_t generation; // changes when the slot is reused; piece geometry never changes otherwise
 } lpPieceInfo;
 
 int lpWorld_GetPieceCapacity( const lpWorld* world );
@@ -273,7 +266,6 @@ lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* world, int piece );
 
 int lpWorld_GetBodyCapacity( const lpWorld* world );
 bool lpWorld_GetBodyTransform( const lpWorld* world, int body, b3WorldTransform* transform );
-uint32_t lpWorld_GetBodyGeneration( const lpWorld* world, int body );
 
 // Triangles (3 vertices each, no index buffer). Returns the vertex count, or -1 if capacity is too small.
 int lpWorld_BuildPieceMesh( const lpWorld* world, int piece, lpVertex* vertices, int capacity );

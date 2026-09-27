@@ -470,27 +470,6 @@ float lpPoly_SignedDistance( const lpPoly* poly, b3Vec3 point )
 	return m;
 }
 
-float lpPoly_FaceArea( const lpPoly* poly, int faceIndex, b3Vec3* centroid )
-{
-	const lpFace* face = poly->faces + faceIndex;
-	b3Vec3 a = poly->vertices[poly->indices[face->first]];
-	float area2 = 0.0f;
-	b3Vec3 c = b3Vec3_zero;
-	for ( int k = 1; k + 1 < face->count; ++k )
-	{
-		b3Vec3 b = poly->vertices[poly->indices[face->first + k]];
-		b3Vec3 d = poly->vertices[poly->indices[face->first + k + 1]];
-		float t = b3Dot( face->plane.normal, b3Cross( b3Sub( b, a ), b3Sub( d, a ) ) );
-		area2 += t;
-		c = b3Add( c, b3MulSV( t, b3Add( b3Add( a, b ), d ) ) );
-	}
-	if ( centroid != NULL )
-	{
-		*centroid = area2 > 0.0f ? b3MulSV( 1.0f / ( 3.0f * area2 ), c ) : a;
-	}
-	return 0.5f * area2;
-}
-
 bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 {
 	if ( poly->vertexCount < 4 || poly->faceCount < 4 )

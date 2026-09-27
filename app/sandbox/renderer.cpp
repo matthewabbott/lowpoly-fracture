@@ -45,7 +45,6 @@ struct Page
 struct PieceSlot
 {
 	uint32_t generation = 0;
-	uint32_t meshVersion = 0;
 	int page = -1;
 	int offset = 0;
 	int count = 0;
@@ -465,7 +464,7 @@ void Renderer_Sync( const lpWorld* world )
 			continue;
 		}
 
-		if ( slot.page < 0 || slot.generation != info.generation || slot.meshVersion != info.meshVersion )
+		if ( slot.page < 0 || slot.generation != info.generation )
 		{
 			FreeSlot( i );
 			int count = lpWorld_BuildPieceMesh( world, i, s.scratch.data(), (int)s.scratch.size() );
@@ -487,7 +486,6 @@ void Renderer_Sync( const lpWorld* world )
 				slot.count = count;
 			}
 			slot.generation = info.generation;
-			slot.meshVersion = info.meshVersion;
 			s.stats.meshesBuilt += 1;
 		}
 		s.pieceMap[i + 1] = (uint32_t)( info.body + 1 );

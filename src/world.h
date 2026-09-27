@@ -56,7 +56,6 @@ typedef struct lpPiece
 	uint32_t color;
 	uint32_t seed;
 	uint32_t generation;
-	uint32_t meshVersion;
 	int body;
 	int nextFree;
 	int mark;
@@ -77,7 +76,6 @@ typedef struct lpBond
 	b3Vec3 centroid;	// body frame
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
 	int nextFree;
-	int stamp;
 	bool alive;
 } lpBond;
 
@@ -87,7 +85,6 @@ typedef struct lpBody
 	LP_ARRAY( int ) pieces;
 	uint64_t createdTick;
 	float volume;
-	uint32_t generation;
 	int nextFree;
 	int stamp;
 	uint8_t kind;

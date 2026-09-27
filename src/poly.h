@@ -74,9 +74,6 @@ float lpPoly_MaxDistanceSquared( const lpPoly* poly, b3Vec3 point );
 // of the true distance near edges and corners.
 float lpPoly_SignedDistance( const lpPoly* poly, b3Vec3 point );
 
-// Area, centroid and unit normal of a face
-float lpPoly_FaceArea( const lpPoly* poly, int faceIndex, b3Vec3* centroid );
-
 // Topology and geometry checks for tests: closed 2-manifold with consistent orientation, planar faces,
 // convex (every vertex behind every plane), Euler characteristic 2.
 bool lpPoly_IsValid( const lpPoly* poly, float tolerance );

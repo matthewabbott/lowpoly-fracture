@@ -75,10 +75,6 @@ bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int siteCo
 		b3Plane plane = { normal, b3Dot( normal, mid ) };
 
 		lpClipResult result = lpPoly_Clip( current, plane, material, j, tolerance, next );
-		if ( stats != NULL )
-		{
-			stats->clipCount += 1;
-		}
 
 		if ( result == lp_clipCut )
 		{
@@ -353,10 +349,6 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	// jagged from the splinters that left it.
 	params.ringSites = grain ? 0 : 5;
 	int siteCount = lpGenerateImpactSites( parent, &params, rng, sites );
-	if ( stats != NULL )
-	{
-		stats->siteCount += siteCount;
-	}
 
 	// Compute all cells. Tiny cells outside the damage radius are slivers: drop their sites and recompute, which
 	// hands their volume to the neighbours while keeping the tiling exact and every cell convex.
@@ -510,10 +502,6 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 			for ( int q = 0; q < planeCount; ++q )
 			{
 				lpClipResult result = lpPoly_Clip( cur, planes[q], input->interiorMaterial, tags[q], input->tolerance, nxt );
-				if ( stats != NULL )
-				{
-					stats->clipCount += 1;
-				}
 				if ( result == lp_clipCut )
 				{
 					lpPoly* tmp = cur;
@@ -546,10 +534,6 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 		}
 	}
 
-	if ( stats != NULL )
-	{
-		stats->siteCount += wedgeCount * ( ringCount + 1 );
-	}
 
 	lpFree( work );
 	return count;
