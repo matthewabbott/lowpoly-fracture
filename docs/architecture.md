@@ -2,7 +2,7 @@
 
 ```
 app/sandbox  (C++20, sokol D3D11 + Dear ImGui)   tools, camera, record/replay, renderer, screenshots
-scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber; scripted bombardment
+scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins; scripted bombardment
 src/         (C17)  lpf: the destruction core               include/lpf/lpf.h is the whole public API
 extern/box3d (C17)  physics, pinned (extern/box3d/PATCHES.md)
 ```

@@ -26,11 +26,23 @@ popping.
 
 ## 2. Toppling and stress points
 
-In progress. Done: a quasi-static stress solve on each structure's bond graph (`stress.c`, see architecture.md),
-joints (mortar, dry, nails, solid) with their own strengths, strain so joints creak before they give, and toppling
-that emerges from no-tension joints (the tower felling test). Also done: slender pieces snapping mid-span, resting
-loads, and the masonry pattern (brick walls are one solid piece until hit, then break along their mortar). Next: a
-ruins scene (arch, colonnade, balconies) and solving structures in parallel. The earlier notes below shaped it.
+Done: a quasi-static stress solve on each structure's bond graph (`stress.c`, see architecture.md), joints (mortar,
+dry, nails, solid) with their own strengths, strain so joints creak before they give, and toppling that emerges from
+no-tension joints (the tower felling test). Also done: slender pieces snapping mid-span, resting loads, and the
+masonry pattern (brick walls are one solid piece until hit, then break along their mortar). The ruins scene shows
+structures failing where they are weak: a dry arch falls without its keystone, a colonnade drops the two lintels on a
+lost column, and a balcony near its limit breaks off after one round at its root (`scripts/ruins_demo.txt`).
+
+Open, taken up when measurements call for them:
+- faster solves in town (about 0.7 ms of a 2 ms step re-solves houses). Solving structures in parallel would barely
+  help: under the bench bombardment most solve steps have one house solving, and the heaviest steps are one house
+  using the whole work budget (perf-log, "ruins scene"). The levers are within one solve: a parallel K·x with fixed
+  partitions, or the k-hop patch;
+- the k-hop patch (re-solve only near the damage) for structures of 1000+ pieces;
+- ground joints, so whole walls can overturn off their foundations;
+- slump (a structure that sags into a new rest pose instead of cracking), mortar relief, creak sounds.
+
+The earlier notes below shaped it.
 
 The idea is snapshotted stress that is checked only where things break.
 

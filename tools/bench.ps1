@@ -4,7 +4,7 @@
 #   pwsh tools/bench.ps1 -Update         # write the current numbers as the new baseline
 #   pwsh tools/bench.ps1 -Repeat 3       # best of 3 runs per scene (timings are noisy, about +-10% run to run)
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,
@@ -62,7 +62,7 @@ foreach ($scene in $Scenes) {
     foreach ($run in $current[$scene]) {
         $old = $was | Where-Object { $_.workers -eq $run.workers } | Select-Object -First 1
         $same = $old -and $old.hash -eq $run.hash
-        if (-not $same) { $hashChanged = $true }
+        if ($old -and -not $same) { $hashChanged = $true } # a scene new to the baseline is not a change
         $mark = if ($same) { 'same' } elseif ($old) { "CHANGED (was $($old.hash))" } else { 'new' }
         $contacts = if ($null -ne $run.awakeContactsAvg) { Delta $run.awakeContactsAvg $old.awakeContactsAvg } else { '-' }
         Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} {6,-15} | {7} {8}' -f $scene, $run.workers,

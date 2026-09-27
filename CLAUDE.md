@@ -26,9 +26,9 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/stress.c` | quasi-static stress solve on a structure's bond graph (PCG, block-Jacobi), joint failure and strain |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber) and scripted bombardment |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins) and scripted bombardment |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; one argument (`poly`, `fracture`, `world`, `debris`) runs one suite |
+| `test/` | `lpf_test` runs everything; one argument (`poly`, `fracture`, `world`, `debris`, `stress`) runs one suite |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, renderer (vertex pulling), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |

@@ -129,6 +129,8 @@ const char* lpSceneName( int scene )
 			return "pile";
 		case lp_sceneLumber:
 			return "lumber";
+		case lp_sceneRuins:
+			return "ruins";
 		default:
 			return "?";
 	}
@@ -499,6 +501,78 @@ static void lpAddShed( lpWorld* world, b3Vec3 base, float yaw )
 	lpCommit( world, base, yaw, true );
 }
 
+// A semicircular arch of dry-laid voussoirs on two piers: it stands by compression alone, and falls without its
+// keystone. `voussoirs` should be odd so one sits at the crown.
+static void lpAddArch( lpWorld* world, b3Vec3 base, float radius, float thickness, float depth, int voussoirs )
+{
+	lpBegin();
+	float springing = 1.2f;
+	float mid = radius + 0.5f * thickness;
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		lpPartDef* pier = lpBox( (b3Vec3){ (float)side * mid, 0.5f * springing, 0.0f },
+								 (b3Vec3){ 0.5f * thickness + 0.1f, 0.5f * springing, 0.5f * depth }, b3Quat_identity, lp_stone,
+								 LP_STONE_DARK, true );
+		if ( pier != NULL )
+		{
+			pier->joint = lp_jointDry;
+		}
+	}
+	for ( int i = 0; i < voussoirs; ++i )
+	{
+		float a0 = B3_PI * (float)i / (float)voussoirs;
+		float a1 = B3_PI * (float)( i + 1 ) / (float)voussoirs;
+		b3CosSin c0 = b3ComputeCosSin( a0 );
+		b3CosSin c1 = b3ComputeCosSin( a1 );
+		b3Vec3 pts[8];
+		for ( int k = 0; k < 2; ++k )
+		{
+			float z = k == 0 ? -0.5f * depth : 0.5f * depth;
+			pts[4 * k + 0] = (b3Vec3){ radius * c0.cosine, springing + radius * c0.sine, z };
+			pts[4 * k + 1] = (b3Vec3){ ( radius + thickness ) * c0.cosine, springing + ( radius + thickness ) * c0.sine, z };
+			pts[4 * k + 2] = (b3Vec3){ radius * c1.cosine, springing + radius * c1.sine, z };
+			pts[4 * k + 3] = (b3Vec3){ ( radius + thickness ) * c1.cosine, springing + ( radius + thickness ) * c1.sine, z };
+		}
+		uint32_t color = i == voussoirs / 2 ? LP_STONE_DARK : LP_STONE;
+		lpPartDef* v = lpHull( pts, 8, lp_stone, color, false );
+		if ( v != NULL )
+		{
+			v->joint = lp_jointDry;
+		}
+	}
+	lpCommit( world, base, 0.0f, true );
+}
+
+// Columns carrying mortared stone lintels: take a column out and the two lintels on it come down
+static void lpAddColonnade( lpWorld* world, b3Vec3 base, int columns, float spacing, float height )
+{
+	lpBegin();
+	for ( int i = 0; i < columns; ++i )
+	{
+		lpBox( (b3Vec3){ (float)i * spacing, 0.5f * height, 0.0f }, (b3Vec3){ 0.2f, 0.5f * height, 0.2f }, b3Quat_identity, lp_stone,
+			   LP_STONE, true );
+	}
+	for ( int i = 0; i + 1 < columns; ++i )
+	{
+		float x0 = (float)i * spacing - ( i == 0 ? 0.2f : 0.0f );
+		float x1 = (float)( i + 1 ) * spacing + ( i + 2 == columns ? 0.2f : 0.0f );
+		lpBox( (b3Vec3){ 0.5f * ( x0 + x1 ), height + 0.175f, 0.0f }, (b3Vec3){ 0.5f * ( x1 - x0 ), 0.175f, 0.25f },
+			   b3Quat_identity, lp_stone, LP_STONE_DARK, false );
+	}
+	lpCommit( world, base, 0.0f, true );
+}
+
+// A stone wall with two mortared balconies: the short one stands easily; the long one is near its limit (root joint
+// at about 94%), so one hit at its root brings it down
+static void lpAddBalconies( lpWorld* world, b3Vec3 base )
+{
+	lpBegin();
+	lpBox( (b3Vec3){ 0.0f, 1.5f, 0.0f }, (b3Vec3){ 2.0f, 1.5f, 0.2f }, b3Quat_identity, lp_stone, LP_STONE, true );
+	lpBox( (b3Vec3){ -1.0f, 2.2f, 0.2f + 0.4f }, (b3Vec3){ 0.5f, 0.2f, 0.4f }, b3Quat_identity, lp_stone, LP_STONE_DARK, false );
+	lpBox( (b3Vec3){ 1.0f, 2.2f, 0.2f + 0.625f }, (b3Vec3){ 0.5f, 0.2f, 0.625f }, b3Quat_identity, lp_stone, LP_STONE_DARK, false );
+	lpCommit( world, base, 0.0f, true );
+}
+
 static void lpAddFence( lpWorld* world, b3Vec3 base, float yaw, float length )
 {
 	lpBegin();
@@ -648,6 +722,13 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddPile( world, (b3Vec3){ 0.0f, 0.0f, -6.0f }, 512, 9u );
 			break;
 
+		case lp_sceneRuins:
+			lpAddGround( world, 60.0f );
+			lpAddArch( world, (b3Vec3){ -7.0f, 0.0f, -6.0f }, 2.0f, 0.5f, 1.0f, 9 );
+			lpAddColonnade( world, (b3Vec3){ 0.0f, 0.0f, -6.0f }, 4, 2.6f, 3.0f );
+			lpAddBalconies( world, (b3Vec3){ 12.0f, 0.0f, -6.0f } );
+			break;
+
 		case lp_sceneLumber:
 		{
 			lpAddGround( world, 60.0f );
@@ -705,6 +786,13 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			{
 				target = (b3Vec3){ 40.0f, 0.5f + 8.0f * lpUnit( &rng ), 2.0f * ( lpUnit( &rng ) - 0.5f ) };
 			}
+			break;
+		}
+		case lp_sceneRuins:
+		{
+			// Across the whole row: the arch, the colonnade and the balcony wall
+			origin = (b3Vec3){ 2.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
+			target = (b3Vec3){ -10.0f + 24.0f * lpUnit( &rng ), 0.3f + 3.7f * lpUnit( &rng ), -6.0f };
 			break;
 		}
 		default:

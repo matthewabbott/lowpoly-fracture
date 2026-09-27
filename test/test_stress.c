@@ -331,6 +331,125 @@ static int TestMasonryWallHole( void )
 	return 0;
 }
 
+// The ruins scene's structure whose frame sits at world x (arch -7, colonnade 0, balconies 12), not the ground
+static int RuinsBody( const lpWorld* w, float x )
+{
+	for ( int i = 0; i < w->bodies.count; ++i )
+	{
+		const lpBody* b = w->bodies.data + i;
+		b3WorldTransform xf;
+		if ( b->alive && b->kind == lp_kindStructure && b->pieces.count > 0 &&
+			 w->pieces.data[b->pieces.data[0]].material != lp_ground && lpWorld_GetBodyTransform( w, i, &xf ) &&
+			 b3AbsFloat( (float)xf.p.x - x ) < 0.01f )
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+// Volume of the pieces still in a structure body
+static float BodyVolume( const lpWorld* w, int bodyIndex )
+{
+	float v = 0.0f;
+	const lpBody* b = w->bodies.data + bodyIndex;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		v += w->pieces.data[b->pieces.data[k]].shape->volume;
+	}
+	return v;
+}
+
+// Knock pieces out of a structure, as if blasted away without the blast: those whose centroid (body frame) lies in
+// [lo, hi] lose their bonds and anchors, split off on the next step and are removed. Returns how many.
+static int KnockOut( Sim* s, int bodyIndex, b3Vec3 lo, b3Vec3 hi )
+{
+	int removed[16];
+	int count = 0;
+	const lpBody* body = s->world->bodies.data + bodyIndex;
+	for ( int k = 0; k < body->pieces.count && count < 16; ++k )
+	{
+		lpPiece* p = s->world->pieces.data + body->pieces.data[k];
+		b3Vec3 c = p->shape->centroid;
+		if ( c.x > lo.x && c.x < hi.x && c.y > lo.y && c.y < hi.y && c.z > lo.z && c.z < hi.z )
+		{
+			while ( p->bonds.count > 0 )
+			{
+				lpBreakBond( s->world, p->bonds.data[p->bonds.count - 1] );
+			}
+			p->anchored = false;
+			removed[count++] = body->pieces.data[k];
+		}
+	}
+	lpMarkDirty( s->world, bodyIndex );
+	Run( s, 1 );
+	for ( int i = 0; i < count; ++i )
+	{
+		int b = s->world->pieces.data[removed[i]].body;
+		if ( b >= 0 && b != bodyIndex && s->world->bodies.data[b].pieces.count == 1 )
+		{
+			lpDestroyBody( s->world, b, false );
+		}
+	}
+	return count;
+}
+
+// The dry-laid arch stands by compression alone; take its keystone and the span comes down, leaving the piers
+static int TestArchKeystone( void )
+{
+	Sim s = CreateSim( lp_sceneRuins );
+	Run( &s, 2 );
+	int arch = RuinsBody( s.world, -7.0f );
+	ENSURE( arch >= 0 );
+	float whole = BodyVolume( s.world, arch );
+	Run( &s, 300 );
+	float stood = BodyVolume( s.world, arch );
+
+	int removed = KnockOut( &s, arch, (b3Vec3){ -0.3f, 3.0f, -1.0f }, (b3Vec3){ 0.3f, 4.0f, 1.0f } );
+	float before = BodyVolume( s.world, arch );
+	Run( &s, 300 );
+	float after = BodyVolume( s.world, arch );
+	printf( "  arch volume %.3f, after 300 steps %.3f; %d keystone removed: %.3f -> %.3f m^3\n", (double)whole, (double)stood,
+			removed, (double)before, (double)after );
+	ENSURE_NEAR( stood, whole, 1e-4f );
+	ENSURE( removed == 1 );
+	ENSURE( after < 0.5f * before );
+	DestroySim( &s );
+	return 0;
+}
+
+// Knock out one column and the two lintels it carried come down; the other columns and lintel stand
+static int TestColonnade( void )
+{
+	Sim s = CreateSim( lp_sceneRuins );
+	Run( &s, 2 );
+	int colonnade = RuinsBody( s.world, 0.0f );
+	ENSURE( colonnade >= 0 );
+	float column = 0.4f * 3.0f * 0.4f, lastLintel = 2.8f * 0.35f * 0.5f;
+	int removed = KnockOut( &s, colonnade, (b3Vec3){ 2.3f, 0.0f, -1.0f }, (b3Vec3){ 2.9f, 3.0f, 1.0f } );
+	Run( &s, 300 );
+	float after = BodyVolume( s.world, colonnade );
+	float highest = -1.0f; // the highest stone that has come loose
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		b3WorldTransform xf;
+		if ( p->body >= 0 && p->material == lp_stone && s.world->bodies.data[p->body].kind != lp_kindStructure &&
+			 lpWorld_GetBodyTransform( s.world, p->body, &xf ) )
+		{
+			b3Vec3 c = b3ToVec3( b3TransformWorldPoint( xf, p->shape->centroid ) );
+			highest = c.x > -1.0f && c.x < 9.0f && c.y > highest ? c.y : highest;
+		}
+	}
+	printf( "  %d column removed; standing %.3f m^3 (three columns and a lintel: %.3f), highest loose stone %.2f m\n",
+			removed, (double)after, (double)( 3.0f * column + lastLintel ), (double)highest );
+	ENSURE( removed == 1 );
+	ENSURE_NEAR( after, 3.0f * column + lastLintel, 1e-3f );
+	ENSURE( highest > 0.0f && highest < 2.5f );
+	DestroySim( &s );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestStructuresStand );
@@ -340,5 +459,7 @@ int StressTest( void )
 	RUN_TEST( TestStressBudget );
 	RUN_TEST( TestDamagedWallSettles );
 	RUN_TEST( TestMasonryWallHole );
+	RUN_TEST( TestArchKeystone );
+	RUN_TEST( TestColonnade );
 	return 0;
 }

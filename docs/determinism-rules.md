@@ -46,4 +46,5 @@ keep the destruction layer (`src/`) and the app from breaking it.
   versions: pin the toolchain for any multiplayer build.
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry and bonds. Rendering
   and particles are deliberately excluded.
-- Checked scenes: walls, house (flasks), tower (collapse), lumber, and the blower demo, at 1, 4 and 8 workers.
+- Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, and ruins (its demo and under
+  bombardment), at 1, 4 and 8 workers.

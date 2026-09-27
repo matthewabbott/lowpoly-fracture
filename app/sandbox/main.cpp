@@ -163,6 +163,10 @@ void SetSceneCamera( int scene )
 			app.camPos = { 0.0f, 2.0f, 3.0f };
 			app.pitch = -0.12f;
 			break;
+		case lp_sceneRuins:
+			app.camPos = { 2.0f, 3.0f, 8.0f };
+			app.pitch = -0.08f;
+			break;
 		default:
 			break;
 	}

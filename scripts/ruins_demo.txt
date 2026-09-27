@@ -1,0 +1,9 @@
+# Scripted demo for the "ruins" scene, camera at (2, 3, 8): structures that know where they are weak.
+# tick tool origin(xyz) direction(xyz)
+# A cannon blast takes the arch's keystone; the dry-laid arch cannot stand without it.
+20 cannon 2 3 8   -9.0 0.45 -14.0
+# Another takes out the second column; the two lintels on it come down, the rest stands.
+120 cannon 2 3 8   0.6 -1.5 -14.0
+# A rifle round at the root of each balcony: the short one shrugs it off, the long one, near its limit, breaks off.
+200 rifle 2 3 8   9.0 -0.6 -13.72
+230 rifle 2 3 8   11.0 -0.6 -13.72

@@ -17,6 +17,7 @@ typedef enum lpSceneId
 	lp_sceneTower, // a tall stone tower on a plaza
 	lp_scenePile,  // loose crates and rocks dropped in a heap (physics stress)
 	lp_sceneLumber, // logs, a log bridge, a woodpile, trees and a timber shed
+	lp_sceneRuins,	// a dry-stone arch, a colonnade with lintels, balconies: structures that know where they are weak
 	lp_sceneCount
 } lpSceneId;
 

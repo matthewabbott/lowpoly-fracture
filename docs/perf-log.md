@@ -147,3 +147,14 @@ Best of 3, 8 workers (1 worker in brackets).
 Brick walls are one solid piece until hit, then break along a shared course grid (stair-stepped holes, mortar bonds).
 Town got cheaper with it: 2.04 ms per step at 8 workers (was 2.67), because its brick walls are now one piece each.
 Walls 0.55 ms, pile, lumber and tower unchanged.
+
+## 2026-09-27 ruins scene
+
+New bench rung: the ruins scene (a dry arch, a colonnade, balconies) under the default bombardment, 0.11 ms per step
+at 8 workers (0.13 ms at 1). The other scenes' hashes are unchanged; their timings were within noise of the last
+entry (walls 0.54, town 1.97, pile 0.83, lumber 0.20, tower 2.00 ms at 8 workers, best of 2).
+
+Should structures be solved in parallel (milestone 2's optional step)? Measured on town with `--bombard 12`, 600
+ticks: 346 ticks finish a solve; 240 of them finish one structure, 78 two, 28 three or more. The heaviest ticks are
+one house (about 130 pieces) spending the whole 20k bond-iteration budget. Parallel solves per structure would save
+little, so they were not built. Solve time lives inside one structure's conjugate gradient.
