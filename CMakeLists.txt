@@ -11,6 +11,7 @@ option(LPF_TESTS "Build the unit and determinism tests" ON)
 option(LPF_BENCH "Build the headless benchmark" ON)
 option(LPF_WARNINGS_AS_ERRORS "Treat warnings in our own code as errors" ON)
 option(LPF_SANITIZE "Build with AddressSanitizer" OFF)
+option(LPF_ASSERTS "Keep lpf asserts in optimized builds (asserts never change state, so hashes are unaffected)" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -33,6 +34,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
 elseif(MSVC)
 	# MSVC: /fp:precise never contracts to FMA unless /fp:contract is given
 	add_compile_options(/fp:precise)
+endif()
+
+if(LPF_ASSERTS)
+	add_compile_definitions(LP_FORCE_ASSERT)
 endif()
 
 if(LPF_SANITIZE)

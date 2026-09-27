@@ -35,7 +35,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 
 ```powershell
 pwsh tools/build.ps1 -Test                      # build msvc-release, run all tests
-pwsh tools/build.ps1 -Preset msvc-asan -Test    # ASan build and tests
+pwsh tools/build.ps1 -Preset msvc-asan -Test    # ASan build and tests, with lpf asserts on
 pwsh tools/build.ps1 -Shaders                   # after editing app/sandbox/shaders/scene.glsl
 pwsh tools/check-determinism.ps1 -Scene walls -Script scripts/walls_demo.txt   # 1/4/8 workers must match
 pwsh tools/bench.ps1 -Repeat 3                  # perf ladder vs bench/baseline.json; exit 3 if a sim hash changed

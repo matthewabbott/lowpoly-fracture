@@ -33,7 +33,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo", "CMAKE_C_COMPILER": "cl", "CMAKE_CXX_COMPILER": "cl",
-        "LPF_SANITIZE": "ON", "LPF_SANDBOX": "OFF"
+        "LPF_SANITIZE": "ON", "LPF_ASSERTS": "ON", "LPF_SANDBOX": "OFF"
       }
     }
   ],
