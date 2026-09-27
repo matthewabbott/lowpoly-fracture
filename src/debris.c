@@ -302,7 +302,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
-		b3WorldTransform xf = lpGetTransform( w, b );
+		b3WorldTransform xf = lpGetTransform( b );
 		b3BodyDef def = b3DefaultBodyDef();
 		def.type = b3_dynamicBody;
 		def.position = xf.p;

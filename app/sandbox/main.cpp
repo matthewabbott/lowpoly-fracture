@@ -892,17 +892,6 @@ void Cleanup()
 	sg_shutdown();
 }
 
-int ParseScene( const char* s )
-{
-	for ( int i = 0; i < lp_sceneCount; ++i )
-	{
-		if ( strcmp( s, lpSceneName( i ) ) == 0 )
-		{
-			return i;
-		}
-	}
-	return atoi( s );
-}
 
 } // namespace
 
@@ -915,7 +904,7 @@ int main( int argc, char** argv )
 		const char* v = i + 1 < argc ? argv[i + 1] : "";
 		bool takes = true;
 		if ( strcmp( a, "--scene" ) == 0 )
-			o.scene = ParseScene( v );
+			o.scene = lpSceneFromName( v );
 		else if ( strcmp( a, "--workers" ) == 0 )
 			o.workers = atoi( v );
 		else if ( strcmp( a, "--frames" ) == 0 )
@@ -953,7 +942,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: sandbox [--scene walls|house|town|tower|pile] [--workers N] [--frames N] [--screenshot out.png]\n"
+			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui]\n" );
 			return 1;

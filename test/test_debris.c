@@ -2,53 +2,8 @@
 // Debris tiers: chunky fracture, ghosts and scrap, light debris, shoving, fragile rubble, budgets, deferred fracture.
 
 #include "facet.h"
-#include "scenes.h"
 #include "test_macros.h"
-#include "world.h"
-
-typedef struct Sim
-{
-	b3WorldId physics;
-	lpWorld* world;
-} Sim;
-
-static Sim CreateSimDef( lpWorldDef ld, int scene )
-{
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (b3Vec3){ 0.0f, -10.0f, 0.0f };
-	Sim s;
-	s.physics = b3CreateWorld( &wd );
-	ld.physics = s.physics;
-	s.world = lpCreateWorld( &ld );
-	if ( scene >= 0 )
-	{
-		lpBuildScene( s.world, scene );
-	}
-	else
-	{
-		lpAddGround( s.world, 40.0f );
-	}
-	return s;
-}
-
-static Sim CreateSim( int scene )
-{
-	return CreateSimDef( lpDefaultWorldDef(), scene );
-}
-
-static void DestroySim( Sim* s )
-{
-	lpDestroyWorld( s->world );
-	b3DestroyWorld( s->physics );
-}
-
-static void Run( Sim* s, int ticks )
-{
-	for ( int i = 0; i < ticks; ++i )
-	{
-		lpWorld_Step( s->world, 1.0f / 60.0f, 4 );
-	}
-}
+#include "test_sim.h"
 
 // A dynamic box object; returns its body index
 static int AddBox( Sim* s, b3Vec3 position, b3Vec3 half, int material, b3Vec3 velocity )

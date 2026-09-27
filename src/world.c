@@ -2,7 +2,8 @@
 // The destruction world: pieces, bonds and bodies on top of a Box3D world.
 //
 // Invariants (checked by lpWorld_Validate in tests):
-// - every live piece belongs to exactly one live body and owns one Box3D hull shape on that body
+// - every live piece belongs to exactly one live body and, unless that body is a ghost or scrap (no Box3D body),
+//   owns one Box3D hull shape on it
 // - bonds only join pieces of the same body; a piece's bond list holds exactly its live bonds
 // - body frames never change when pieces move between bodies: a split-off body is created at the parent's
 //   transform, so piece geometry stays in the original object frame for its whole life (no drift, and solid
@@ -436,9 +437,8 @@ static void lpTryBond( lpWorld* w, int a, int b )
 	}
 }
 
-b3WorldTransform lpGetTransform( const lpWorld* w, const lpBody* b )
+b3WorldTransform lpGetTransform( const lpBody* b )
 {
-	(void)w;
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
 		b3Vec3 offset = b3RotateVector( b->q, b->localCenter );
@@ -472,7 +472,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	lpBody* b = w->bodies.data + bodyIndex;
 	LP_ASSERT( b->alive );
 	bool loose = b->kind == lp_kindGhost || b->kind == lp_kindScrap;
-	b3WorldTransform xf = lpGetTransform( w, b );
+	b3WorldTransform xf = lpGetTransform( b );
 
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
@@ -1390,11 +1390,11 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 	{
 		int pi = body->pieces.data[i];
 		lpPiece* p = w->pieces.data + pi;
-		p->supportBond = -1; // reused here as the BFS depth
+		p->groundDepth = -1; // reused here as the BFS depth
 		if ( p->anchored )
 		{
 			p->mark = stamp;
-			p->supportBond = 0;
+			p->groundDepth = 0;
 			w->scratchQueue.data[w->scratchQueue.count++] = pi;
 		}
 	}
@@ -1410,7 +1410,7 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 			if ( q->mark != stamp )
 			{
 				q->mark = stamp;
-				q->supportBond = p->supportBond + 1;
+				q->groundDepth = p->groundDepth + 1;
 				w->scratchQueue.data[w->scratchQueue.count++] = other;
 			}
 		}
@@ -1432,7 +1432,7 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 	{
 		int pi = w->scratchQueue.data[i];
 		lpPiece* p = w->pieces.data + pi;
-		int depth = p->supportBond;
+		int depth = p->groundDepth;
 		if ( depth == 0 )
 		{
 			continue; // anchored: the ground takes it
@@ -1447,7 +1447,7 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 			{
 				lpBond* bond = w->bonds.data + p->bonds.data[k];
 				int other = bond->a == pi ? bond->b : bond->a;
-				if ( w->pieces.data[other].supportBond == depth - 1 )
+				if ( w->pieces.data[other].groundDepth == depth - 1 )
 				{
 					totalArea += bond->area;
 				}
@@ -1463,7 +1463,7 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 				int bi = p->bonds.data[k];
 				lpBond* bond = w->bonds.data + bi;
 				int other = bond->a == pi ? bond->b : bond->a;
-				if ( w->pieces.data[other].supportBond != depth - 1 )
+				if ( w->pieces.data[other].groundDepth != depth - 1 )
 				{
 					k += 1;
 					continue;
@@ -1493,7 +1493,7 @@ static int lpStressPass( lpWorld* w, int bodyIndex )
 				lpBond* bond = w->bonds.data + p->bonds.data[k];
 				int other = bond->a == pi ? bond->b : bond->a;
 				lpPiece* q = w->pieces.data + other;
-				if ( q->supportBond == depth - 1 )
+				if ( q->groundDepth == depth - 1 )
 				{
 					w->scratchLoad.data[q->loadSlot] += load * bond->area / totalArea;
 				}
@@ -2297,7 +2297,7 @@ bool lpWorld_GetBodyTransform( const lpWorld* w, int body, b3WorldTransform* tra
 	{
 		return false;
 	}
-	*transform = lpGetTransform( w, b );
+	*transform = lpGetTransform( b );
 	return true;
 }
 
@@ -2308,7 +2308,7 @@ int lpWorld_BuildPieceMesh( const lpWorld* w, int piece, lpVertex* vertices, int
 	{
 		return 0;
 	}
-	lpFacetParams params = { p->material, p->color, p->axis, p->seed };
+	lpFacetParams params = { p->color, p->axis };
 	return lpBuildFacetMesh( p->shape, &params, vertices, capacity );
 }
 

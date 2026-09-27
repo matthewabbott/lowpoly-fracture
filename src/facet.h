@@ -11,14 +11,9 @@
 
 typedef struct lpFacetParams
 {
-	uint8_t material;
 	uint32_t exteriorColor; // 0xRRGGBB
 	b3Vec3 axis;			// grain axis in the body frame
-	uint32_t seed;			// per-piece variation
 } lpFacetParams;
 
 // Returns the vertex count (3 per triangle), or -1 if capacity is too small.
 int lpBuildFacetMesh( const lpShape* shape, const lpFacetParams* params, lpVertex* vertices, int capacity );
-
-// 0xRRGGBB of a cut face of `material` at object-space point p
-uint32_t lpInteriorColor( uint8_t material, b3Vec3 p, b3Vec3 axis );

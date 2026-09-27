@@ -35,13 +35,10 @@ struct Particle
 
 struct RenderStats
 {
-	int pieces = 0;
 	int triangles = 0;
 	int pages = 0;
 	int drawCalls = 0;
-	int meshesBuilt = 0;
 	int uploadKB = 0;
-	int particles = 0;
 };
 
 void Renderer_Init();

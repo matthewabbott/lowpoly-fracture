@@ -22,6 +22,9 @@ typedef enum lpSceneId
 
 const char* lpSceneName( int scene );
 
+// Scene id from its name ("town") or number ("2")
+int lpSceneFromName( const char* name );
+
 // Adds everything for the scene to the world, including the ground.
 void lpBuildScene( lpWorld* world, int scene );
 
@@ -30,15 +33,8 @@ void lpBuildScene( lpWorld* world, int scene );
 // Returns true if an impact was queued this tick.
 bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
 
-// Pieces of a scene: helpers the scenes are made of, exposed for tests
+// The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );
-void lpAddWall( lpWorld* world, b3Vec3 base, float yaw, float length, float height, float thickness, int material,
-				uint32_t color, float panelWidth );
-void lpAddHouse( lpWorld* world, b3Vec3 base, float yaw, uint64_t seed );
-void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed );
-
-// A round log lying along its local x axis (dynamic unless isStatic)
-int lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radius, bool isStatic );
 
 #ifdef __cplusplus
 }

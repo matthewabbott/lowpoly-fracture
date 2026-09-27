@@ -1,5 +1,6 @@
-add_executable(lpf_test main.c test_macros.h test_poly.c test_fracture.c test_world.c test_debris.c)
-target_link_libraries(lpf_test PRIVATE lpf_internal lpf_scenes)
+add_executable(lpf_test main.c test_macros.h test_sim.h test_poly.c test_fracture.c test_world.c test_debris.c)
+target_link_libraries(lpf_test PRIVATE lpf lpf_scenes)
+target_include_directories(lpf_test PRIVATE ${PROJECT_SOURCE_DIR}/src) # tests reach into the core's internals
 set_target_properties(lpf_test PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
 lpf_warnings(lpf_test)
 

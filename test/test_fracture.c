@@ -3,10 +3,6 @@
 #include "fracture.h"
 #include "test_macros.h"
 
-#ifndef LP_TEST_TOLERANCE
-#define LP_TEST_TOLERANCE 2e-5f
-#endif
-
 // Cells must be valid convex polyhedra that tile the parent: volumes sum to the parent volume.
 static int CheckTiling( const lpPoly* parent, lpShape** cells, int count, float relativeTolerance )
 {
@@ -191,7 +187,7 @@ static int TestFractureFuzz( void )
 		input.axis = b3Normalize( (b3Vec3){ 1.0f, lpRandom_Range( &rng, -0.3f, 0.3f ), 0.0f } );
 		input.stretch = 4.0f;
 		input.seed = (uint64_t)trial;
-		input.tolerance = LP_TEST_TOLERANCE;
+		input.tolerance = 2e-5f;
 
 		lpShape* cells[LP_MAX_SITES];
 		lpFractureStats stats = { 0 };

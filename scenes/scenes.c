@@ -3,6 +3,7 @@
 #include "scenes.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum
@@ -133,6 +134,18 @@ const char* lpSceneName( int scene )
 	}
 }
 
+int lpSceneFromName( const char* name )
+{
+	for ( int i = 0; i < lp_sceneCount; ++i )
+	{
+		if ( strcmp( name, lpSceneName( i ) ) == 0 )
+		{
+			return i;
+		}
+	}
+	return atoi( name );
+}
+
 void lpAddGround( lpWorld* world, float halfSize )
 {
 	lpBegin();
@@ -162,7 +175,7 @@ static void lpWallPanels( b3Vec3 origin, float length, float y0, float y1, float
 	}
 }
 
-void lpAddWall( lpWorld* world, b3Vec3 base, float yaw, float length, float height, float thickness, int material,
+static void lpAddWall( lpWorld* world, b3Vec3 base, float yaw, float length, float height, float thickness, int material,
 				uint32_t color, float panelWidth )
 {
 	lpBegin();
@@ -245,7 +258,7 @@ static void lpWallWithOpenings( b3Quat q, b3Vec3 origin, float length, float y0,
 	}
 }
 
-void lpAddHouse( lpWorld* world, b3Vec3 base, float yaw, uint64_t seed )
+static void lpAddHouse( lpWorld* world, b3Vec3 base, float yaw, uint64_t seed )
 {
 	uint64_t rng = seed;
 	float width = 6.0f + 2.0f * lpUnit( &rng );
@@ -366,7 +379,7 @@ static int lpRing( b3Vec3* out, b3Vec3 center, float radius, int sides, float ph
 	return sides;
 }
 
-void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed )
+static void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed )
 {
 	uint64_t rng = seed;
 	lpBegin();
@@ -409,7 +422,8 @@ void lpAddTree( lpWorld* world, b3Vec3 base, float height, uint64_t seed )
 	lpCommit( world, base, 0.0f, true );
 }
 
-int lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radius, bool isStatic )
+// A round log lying along its local x axis (dynamic unless isStatic)
+static void lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radius, bool isStatic )
 {
 	lpBegin();
 	b3Vec3 pts[16];
@@ -424,7 +438,7 @@ int lpAddLog( lpWorld* world, b3Vec3 center, float yaw, float length, float radi
 	{
 		part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
 	}
-	return lpCommit( world, center, yaw, isStatic );
+	lpCommit( world, center, yaw, isStatic );
 }
 
 static void lpAddStump( lpWorld* world, b3Vec3 base, float height, float radius )

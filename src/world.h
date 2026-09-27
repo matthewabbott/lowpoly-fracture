@@ -35,7 +35,7 @@ typedef enum lpCellClass
 	lp_cellFull,  // ejected as a full debris body
 } lpCellClass;
 
-// Box3D collision categories. Light shapes also run the custom filter (world.c, lpCustomFilter): a light piece
+// Box3D collision categories. Light shapes also run the custom filter (debris.c, lpCustomFilter): a light piece
 // touches a full piece only if the full piece is frozen static rubble.
 #define LP_CAT_STATIC 0x01ull
 #define LP_CAT_FULL 0x02ull
@@ -59,7 +59,7 @@ typedef struct lpPiece
 	int body;
 	int nextFree;
 	int mark;
-	int supportBond; // stress pass: BFS depth
+	int groundDepth; // stress pass: BFS depth
 	int loadSlot;	 // stress pass: index into scratchLoad
 	uint8_t material;
 	uint8_t depth;
@@ -261,7 +261,7 @@ int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint
 void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint8_t material );
 void lpQueryPieces( lpWorld* w, b3AABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
-b3WorldTransform lpGetTransform( const lpWorld* w, const lpBody* b );
+b3WorldTransform lpGetTransform( const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
 
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale

@@ -124,17 +124,6 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	return r;
 }
 
-static int ParseScene( const char* s )
-{
-	for ( int i = 0; i < lp_sceneCount; ++i )
-	{
-		if ( strcmp( s, lpSceneName( i ) ) == 0 )
-		{
-			return i;
-		}
-	}
-	return atoi( s );
-}
 
 int main( int argc, char** argv )
 {
@@ -153,7 +142,7 @@ int main( int argc, char** argv )
 		const char* v = i + 1 < argc ? argv[i + 1] : "";
 		if ( strcmp( a, "--scene" ) == 0 )
 		{
-			scene = ParseScene( v );
+			scene = lpSceneFromName( v );
 			++i;
 		}
 		else if ( strcmp( a, "--workers" ) == 0 )
@@ -195,7 +184,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile] [--workers 1,4,8] [--ticks N] [--period N]\n"
+			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber] [--workers 1,4,8] [--ticks N] [--period N]\n"
 					"                 [--fragment-scale F] [--max-debris N] [--json path]\n" );
 			return 1;
 		}

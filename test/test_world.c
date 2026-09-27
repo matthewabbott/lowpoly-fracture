@@ -1,35 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-#include "scenes.h"
 #include "test_macros.h"
-#include "world.h"
-
-typedef struct Sim
-{
-	b3WorldId physics;
-	lpWorld* world;
-} Sim;
-
-static Sim CreateSim( int scene, int workers )
-{
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (b3Vec3){ 0.0f, -10.0f, 0.0f };
-	wd.workerCount = (uint32_t)workers;
-	Sim s;
-	s.physics = b3CreateWorld( &wd );
-	lpWorldDef ld = lpDefaultWorldDef();
-	ld.physics = s.physics;
-	ld.workerCount = workers;
-	s.world = lpCreateWorld( &ld );
-	lpBuildScene( s.world, scene );
-	return s;
-}
-
-static void DestroySim( Sim* s )
-{
-	lpDestroyWorld( s->world );
-	b3DestroyWorld( s->physics );
-}
+#include "test_sim.h"
 
 // Rifle shots walking across the brick wall, then a grenade and a cannon-sized blast
 static void Bombard( Sim* s, int tick )
@@ -69,7 +41,7 @@ static void Bombard( Sim* s, int tick )
 
 static int TestWallDamage( void )
 {
-	Sim s = CreateSim( lp_sceneWall, 1 );
+	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
 	ENSURE( lpWorld_Validate( s.world ) );
 	int initialPieces = 0;
 	for ( int i = 0; i < s.world->pieces.count; ++i )
@@ -102,7 +74,7 @@ static int TestWallDamage( void )
 
 static int RunHashes( int scene, int workers, int ticks, uint64_t* hashes )
 {
-	Sim s = CreateSim( scene, workers );
+	Sim s = CreateSimWorkers( scene, workers );
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
 		Bombard( &s, tick );
@@ -145,7 +117,7 @@ static float LooseVolume( const lpWorld* world );
 // Blasts at the corners of a house knock a good part of it loose (ejected fragments, split-off chunks, rubble)
 static int TestHouseCollapse( void )
 {
-	Sim s = CreateSim( lp_sceneHouse, 1 );
+	Sim s = CreateSimWorkers( lp_sceneHouse, 1 );
 	float before = LooseVolume( s.world );
 	int splits = 0;
 	for ( int tick = 0; tick < 240; ++tick )
@@ -176,7 +148,7 @@ static int TestHouseCollapse( void )
 // A volatile flask thrown at the brick wall goes off on impact and blows a hole
 static int TestDetonator( void )
 {
-	Sim s = CreateSim( lp_sceneWall, 1 );
+	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
 	b3Vec3 points[8];
 	for ( int i = 0; i < 8; ++i )
 	{
@@ -212,7 +184,7 @@ static int TestDetonator( void )
 // Pulling a loose crate lifts it toward the target
 static int TestPull( void )
 {
-	Sim s = CreateSim( lp_scenePile, 1 );
+	Sim s = CreateSimWorkers( lp_scenePile, 1 );
 	for ( int tick = 0; tick < 120; ++tick )
 	{
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
@@ -255,7 +227,7 @@ static int TestPull( void )
 // pieces that touch (stale cut-face tags once created phantom bonds between unrelated cells).
 static int TestRefractureBonds( void )
 {
-	Sim s = CreateSim( lp_sceneWall, 1 );
+	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
 	for ( int tick = 0; tick < 40; ++tick )
 	{
 		if ( tick % 8 == 1 )

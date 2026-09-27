@@ -68,7 +68,8 @@ static uint32_t lpMixColor( uint32_t a, uint32_t b, float t )
 	return ( (uint32_t)r << 16 ) | ( (uint32_t)g << 8 ) | (uint32_t)bl;
 }
 
-uint32_t lpInteriorColor( uint8_t material, b3Vec3 p, b3Vec3 axis )
+// 0xRRGGBB of a cut face of `material` at object-space point p
+static uint32_t lpInteriorColor( uint8_t material, b3Vec3 p, b3Vec3 axis )
 {
 	const lpMaterialDef* m = lpGetMaterial( material );
 	uint32_t base = m->interiorColor;

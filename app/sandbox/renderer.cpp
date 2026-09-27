@@ -437,7 +437,6 @@ void Renderer_Reset()
 void Renderer_Sync( const lpWorld* world )
 {
 	s.uploadBytes = 0;
-	s.stats.meshesBuilt = 0;
 
 	int capacity = lpWorld_GetPieceCapacity( world );
 	if ( (int)s.slots.size() < capacity )
@@ -451,7 +450,6 @@ void Renderer_Sync( const lpWorld* world )
 		s.scratch.resize( (size_t)lpWorld_GetMaxPieceVertices() );
 	}
 
-	int livePieces = 0;
 	int triangles = 0;
 	for ( int i = 0; i < capacity; ++i )
 	{
@@ -486,10 +484,8 @@ void Renderer_Sync( const lpWorld* world )
 				slot.count = count;
 			}
 			slot.generation = info.generation;
-			s.stats.meshesBuilt += 1;
 		}
 		s.pieceMap[i + 1] = (uint32_t)( info.body + 1 );
-		livePieces += 1;
 		triangles += slot.count / 3;
 	}
 
@@ -528,7 +524,6 @@ void Renderer_Sync( const lpWorld* world )
 		page.dirty = false;
 	}
 
-	s.stats.pieces = livePieces;
 	s.stats.triangles = triangles;
 	s.stats.pages = (int)s.pages.size();
 }
@@ -583,7 +578,6 @@ void Renderer_BeginFrame( const lpMat4& view, const lpMat4& proj, V3 cameraPos, 
 					   "particles" );
 	}
 	s.stats.uploadKB = s.uploadBytes / 1024;
-	s.stats.particles = s.particleCount;
 
 	lpMat4 viewProj = Mul( proj, view );
 
