@@ -1,0 +1,18 @@
+.env
+
+# build output
+build/
+out/
+.fetchcontent-cache/
+
+# local reference media (third-party art, personal reference only)
+refs/
+
+# agent scratch
+*.log
+
+# fetched tools (tools/get-shdc.ps1)
+tools/bin/
+
+# sandbox F12 screenshots
+screenshot_*.png

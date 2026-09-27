@@ -1,0 +1,6 @@
+# Blast out the front half of the tower's base (scene "tower", camera at 0, 4, 12)
+5 cannon 0 4 12    0.0 -3.2 -17.2
+20 cannon 0 4 12  -1.4 -3.2 -17.2
+35 cannon 0 4 12   1.4 -3.2 -17.2
+50 cannon 0 4 12  -2.6 -3.2 -17.2
+65 cannon 0 4 12   2.6 -3.2 -17.2
