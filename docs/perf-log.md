@@ -47,6 +47,26 @@ Single-threaded: town 1.88, walls 1.67, pile 2.61 ms average step.
 - The hull merge runs in the parallel fracture phase; worst fracture steps are 4 to 5 ms at 8 workers (baseline 25
   to 54 ms).
 
+## 2026-09-27 dirtier mess: ejecta chipping, real geometry down to 1.5 cm
+
+Best of 3, 8 workers (1 worker in brackets). Hashes changed on purpose.
+
+| scene | step avg | awake contacts avg | peak pieces (incl. ghosts and scrap) |
+|---|---|---|---|
+| walls | 0.74 (1.72) ms | 1,963 | 1,839 |
+| town | 0.71 (1.71) ms | 1,410 | 5,445 |
+| pile | 0.88 (2.42) ms | 3,203 | 2,057 |
+
+- The glass-pane test now throws 140 to 160 ghost chips and leaves about 370 scrap pieces (was 34 and 77); the house
+  flask demo leaves a carpet of plaster chips. Step times are within run-to-run noise of the previous baseline.
+- A heuristic merge pre-check (reject pairs whose vertices poke out of each other's faces) was tried and dropped:
+  it cut merge CPU by 5 to 10 times but also rejected good merges, and the extra pieces cost more in physics than the
+  merge saved (pile at the strictest setting: 7.0k contacts and 1.51 ms per step, against 3.2k and 0.94 ms).
+  Merging is worth its CPU. What shipped is exact: a lower bound on the hull volume plus skipping repeated tries of
+  the same pair, with bit-identical results and about 12% less merge time.
+- Contact counts swing by 10 to 20% between any two different simulations of the same bombardment (chaos), so
+  small contact deltas need several bombard seeds before they mean anything.
+
 ## Backlog (measured 2026-09-27, commit after 7bf0f45)
 
 Where the parallel fracture phase spends CPU time (`lpf_bench`, 600 ticks, sum over all jobs, 1 worker / 8 workers):
@@ -60,8 +80,9 @@ Where the parallel fracture phase spends CPU time (`lpf_bench`, 600 ticks, sum o
 Findings and candidate wins, biggest first:
 
 - **Keeper merge is about 60% of fracture job time.** Every candidate pair runs a quickhull (`b3CreateHull`) and a
-  volume check, and most pairs are rejected. A cheap convexity pre-check (how far each cell's vertices poke outside
-  the other cell's face planes: a few hundred dot products) can reject most pairs before any hull is built.
+  volume check, and 60 to 90% of pairs fail it. The exact lower bound now rejects about a third of those without a
+  hull (see above); the rest need a cheaper exact hull volume, e.g. an incremental hull that inserts one cell's
+  vertices into the other (both are convex, so no general quickhull is needed).
 - **CPU time roughly doubles at 8 workers.** Hull building and shape creation allocate on every call, so the heap
   lock is contended. Per-job scratch arenas for merge and hull building would remove most of that.
 - **Direct hull builder** (deferred): build Box3D hull data straight from our cells, which already have exact

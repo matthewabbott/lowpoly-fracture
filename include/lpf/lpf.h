@@ -75,6 +75,7 @@ typedef struct lpMaterialDef
 	int maxCells;	 // cells per fracture
 	int particleKind; // lpParticleKind
 	float mergeSlack; // remaining cells merge while their convex hull is at most this much bigger (0.3 = 30%)
+	int chipSplits;	  // small ejecta cells are split this many times into real chips (a dirtier mess)
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );

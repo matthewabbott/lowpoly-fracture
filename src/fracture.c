@@ -672,6 +672,31 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 	return n;
 }
 
+// Volume of conv(a + p) for the vertex p of b that adds the most: a's volume plus the pyramids from p over the faces
+// of a that p can see, which is exact for adding one point to a convex solid. The hull of a and b contains every
+// such solid, so this is a true lower bound on the hull's volume, found without building it.
+static float lpHullVolumeLowerBound( const lpShape* a, const lpShape* b )
+{
+	float area[LP_POLY_MAX_FACES];
+	for ( int f = 0; f < a->faceCount; ++f )
+	{
+		b3Vec3 centroid;
+		area[f] = lpShape_FaceArea( a, f, &centroid );
+	}
+	float added = 0.0f;
+	for ( int k = 0; k < b->vertexCount; ++k )
+	{
+		float sum = 0.0f;
+		for ( int f = 0; f < a->faceCount; ++f )
+		{
+			float d = b3Dot( a->faces[f].plane.normal, b->vertices[k] ) - a->faces[f].plane.offset;
+			sum += d > 0.0f ? area[f] * d : 0.0f;
+		}
+		added = sum > added ? sum : added;
+	}
+	return a->volume + added / 3.0f;
+}
+
 // Hull of two cells into `poly`, retagged from their faces. False if it is too much bigger than the cells were, or
 // if it would fill in the space of a cell that leaves (a notch knocked out of a log must stay a notch).
 static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int siteB, float allowedVolume,
@@ -679,6 +704,14 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 {
 	int n = a->vertexCount + b->vertexCount;
 	if ( n > LP_POLY_MAX_VERTICES )
+	{
+		return false;
+	}
+	// Cheap reject before paying for a quickhull: most pairs fail the volume test, and a lower bound on the hull's
+	// volume already proves it for most of them. The margin keeps rounding from ever rejecting a pair the exact test
+	// would accept, so merge results are the same as without this check.
+	float margin = 1.0f + 1e-3f;
+	if ( lpHullVolumeLowerBound( a, b ) > margin * allowedVolume || lpHullVolumeLowerBound( b, a ) > margin * allowedVolume )
 	{
 		return false;
 	}
@@ -766,6 +799,12 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 
 	lpPoly* poly = lpAlloc( sizeof( lpPoly ) );
 	b3Vec3 points[LP_POLY_MAX_VERTICES];
+	int tried[LP_MAX_SITES]; // the version of `a` each neighbour was last tried against
+	int version = 0;
+	for ( int i = 0; i < LP_MAX_SITES; ++i )
+	{
+		tried[i] = -1;
+	}
 	int merged = 0;
 	for ( int a = 0; a < count; ++a )
 	{
@@ -778,6 +817,7 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 		while ( grew )
 		{
 			grew = false;
+			version += 1; // a new shape for `a`: every neighbour is worth one try again
 			const lpShape* shape = cells[a];
 			for ( int f = 0; grew == false && f < shape->faceCount; ++f )
 			{
@@ -788,8 +828,13 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 					continue;
 				}
 				float allowed = ( 1.0f + slack ) * ( trueVolume[a] + trueVolume[b] );
-				if ( lpMergePair( cells[a], cells[b], cellSites[a], cellSites[b], allowed, keepOut, keepOutCount, interiorMaterial,
-								  poly, points ) == false )
+				if ( tried[b] == version )
+				{
+					continue; // another face of a names the same neighbour: same inputs, same answer
+				}
+				tried[b] = version;
+				if ( lpMergePair( cells[a], cells[b], cellSites[a], cellSites[b], allowed, keepOut, keepOutCount,
+								  interiorMaterial, poly, points ) == false )
 				{
 					continue;
 				}

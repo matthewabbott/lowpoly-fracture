@@ -61,7 +61,12 @@ tiers instead of popping them.
   keeps the tiling exact.
 - Keeper merging (`lpMergeCells`): cells that stay on the piece merge while the convex hull of the pair is within
   the material's `mergeSlack` of their true volume and covers no ejecta centroid. Fewer, chunkier pieces for the
-  same look: a shot log leaves two ends of about 40 triangles each.
+  same look: a shot log leaves two ends of about 40 triangles each. Before any quickhull, an exact lower bound on
+  the hull volume (the solid spanned by the other cell's most distant vertex) rejects pairs that cannot fit.
+- Ejecta chipping (`lpChipCell`): ghost-sized ejecta are split by the material's `chipSplits` random planes into
+  real chips (along the grain for wood, across the pane for glass), so a blast leaves a dirty spray of real
+  fragments that land as scrap. Only chips smaller than about 1.5 cm become particles; a sliver left on the piece
+  still turns to dust.
 - Voronoi neighbours are visited nearest first and the search stops once the next site is farther than twice the
   cell radius.
 

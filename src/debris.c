@@ -851,7 +851,9 @@ void lpEnforceBudgets( lpWorld* w )
 		lpBudgetEntry* e = lpRankBodies( w, lpIsRubble, &n );
 		for ( int i = 0, done = 0; i < n && rubblePieces > w->def.maxRubblePieces && done < 64; ++i, ++done )
 		{
-			rubblePieces -= w->bodies.data[e[i].body].pieces.count;
+			int pieces = w->bodies.data[e[i].body].pieces.count;
+			rubblePieces -= pieces;
+			scrapPieces += pieces; // counted now, so the scrap cap below holds in this same step
 			lpConvertToScrap( w, e[i].body );
 			w->stats.demotionsThisStep += 1;
 		}

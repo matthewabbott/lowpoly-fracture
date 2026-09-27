@@ -25,23 +25,23 @@
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
 	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true, 3.0e5f,
-				  1.2e-4f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f },
+				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1 },
 	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true, 5.0e5f,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f },
+				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2 },
 	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true, 4.0e5f,
-				   6.4e-5f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f },
+				   3.4e-6f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f, 2 },
 	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true, 3.0e5f,
-					 2.2e-4f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f },
+					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3 },
 	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true, 1.0e6f,
-					  6.4e-5f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f },
+					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2 },
 	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true, 5.0e4f,
-				   6.4e-5f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f },
+				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3 },
 	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false, 1e12f,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0 },
 	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false, 1e12f,
-					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f },
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0 },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true, 2.0e5f,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f },
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0 },
 };
 
 const lpMaterialDef* lpGetMaterial( int materialId )
@@ -795,7 +795,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->fragmentSize = fragment;
 	input->maxCells = m->maxCells;
 	input->plateSize = m->plateSize * w->def.fragmentScale;
-	input->absorbVolume = job->particleVolume;
+	input->absorbVolume = b3MaxFloat( job->particleVolume, 0.1f * job->ghostVolume ); // slivers merge into neighbours
 	input->pattern = m->pattern == lp_breakGrain ? lp_patternGrain : ( m->pattern == lp_breakRadial ? lp_patternRadial : lp_patternImpact );
 	input->axis = piece->axis;
 	input->stretch = m->grainStretch;
@@ -831,7 +831,9 @@ static void lpRunFractureJob( int index, int worker, void* context )
 		float volume = cell->volume;
 		bool ejecta = b3DistanceSquared( cell->centroid, job->localImpact ) < r2;
 		uint8_t cls;
-		if ( volume < job->particleVolume )
+		// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
+		float dustBelow = ejecta ? job->particleVolume : job->input.absorbVolume;
+		if ( volume < dustBelow )
 		{
 			cls = lp_cellPuff;
 		}
@@ -867,6 +869,39 @@ static void lpRunFractureJob( int index, int worker, void* context )
 	}
 	job->stats.hullMs = b3GetMillisecondsAndReset( &ticks );
 	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
+
+	// Ghost ejecta break into a few real chips: a dirtier spray for a few plane clips. After the bonds, which only
+	// keepers use, so the chips need none. Wood splits along the grain, glass across the pane.
+	const lpMaterialDef* m = lpGetMaterial( job->input.interiorMaterial );
+	int original = job->cellCount;
+	for ( int i = 0; i < original && m->chipSplits > 0; ++i )
+	{
+		if ( job->cellClass[i] != lp_cellGhost )
+		{
+			continue;
+		}
+		bool oriented = job->input.pattern == lp_patternGrain || job->input.pattern == lp_patternRadial;
+		lpRandom rng;
+		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
+		lpShape* chips[4];
+		int room = LP_MAX_SITES - job->cellCount + 1;
+		int count = lpChipCell( job->cells[i], m->chipSplits, oriented ? job->input.axis : b3Vec3_zero,
+								job->input.interiorMaterial, job->particleVolume, &rng, chips, room < 4 ? room : 4 );
+		if ( count == 0 )
+		{
+			continue;
+		}
+		lpShape_Destroy( job->cells[i] );
+		job->cells[i] = chips[0];
+		for ( int k = 1; k < count; ++k )
+		{
+			int c = job->cellCount++;
+			job->cells[c] = chips[k];
+			job->cellSites[c] = -1;
+			job->cellClass[c] = lp_cellGhost;
+			job->hulls[c] = NULL;
+		}
+	}
 }
 
 static void lpFreeJobOutput( lpFractureJob* job )
@@ -1019,7 +1054,10 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			lpRandom rng;
 			lpRandom_Seed( &rng, child->seed, 17 );
 			b3Vec3 spin = { lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ) };
-			int ghost = lpBeginGhost( w, xf, cellV, b3Add( omega, spin ) );
+			// and a small kick away from the impact, so chips of one cell spread instead of flying as a clump
+			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
+			b3Vec3 kick = b3RotateVector( xf.q, b3MulSV( lpRandom_Range( &rng, 0.5f, 2.0f ), away ) );
+			int ghost = lpBeginGhost( w, xf, b3Add( cellV, kick ), b3Add( omega, spin ) );
 			lpAddLoosePiece( w, ghost, childIndex );
 			lpFinishLoose( w, ghost, xf );
 		}
