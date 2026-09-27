@@ -567,6 +567,8 @@ void DrawUi()
 	ImGui::Text( "pieces %d  bonds %d  structures %d", app.last.pieceCount, app.last.bondCount, app.last.structureBodies );
 	ImGui::Text( "debris %d (awake %d)  rubble %d  particles %d", app.last.debrisBodies, app.last.awakeDebris, app.last.rubbleBodies,
 				 (int)app.particles.size() );
+	ImGui::Text( "stress %.2f ms  %d iterations  unsettled %d  joints broke %d", app.last.stressMs, app.last.stressIterations,
+				 app.last.unsettledStructures, app.last.stressBreaks );
 	ImGui::Text( "tiers: full %d  light %d  ghosts %d  scrap %d", app.last.fullDebris, app.last.lightDebris, app.last.ghostBodies,
 				 app.last.scrapBodies );
 	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );

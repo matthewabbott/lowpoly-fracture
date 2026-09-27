@@ -381,9 +381,26 @@ static int lpCompareOverload( const void* a, const void* b )
 	return ( x->bond > y->bond ) - ( x->bond < y->bond );
 }
 
+// Creaking you can see: dust trickles from a joint under strain, and puffs when one lets go. Cosmetic only: the
+// randomness is hashed from the tick and the bond, never taken from simulation state.
+static void lpStressDust( lpWorld* w, b3WorldTransform xf, const lpBond* bond, int bondIndex, int motes )
+{
+	uint8_t material = w->pieces.data[bond->a].material;
+	uint64_t h = lpMix64( ( w->tick << 24 ) ^ (uint64_t)bondIndex );
+	for ( int k = 0; k < motes; ++k )
+	{
+		h = lpMix64( h + (uint64_t)k );
+		float rx = (float)( h & 0xFFFF ) / 65535.0f - 0.5f;
+		float rz = (float)( ( h >> 16 ) & 0xFFFF ) / 65535.0f - 0.5f;
+		float rs = (float)( ( h >> 32 ) & 0xFFFF ) / 65535.0f;
+		b3Vec3 v = { 0.6f * rx, -0.3f - 0.4f * rs, 0.6f * rz };
+		lpEmitParticle( w, xf, bond->centroid, v, 0.02f + 0.02f * rs, material );
+	}
+}
+
 // Stresses at every bond from the solution; strain for the overloaded ones, and the worst of those break.
 // Writes the peak utilization. Returns the number of broken bonds.
-static int lpStressEvaluate( lpWorld* w, float forceScale, float* peak, int* strained )
+static int lpStressEvaluate( lpWorld* w, b3WorldTransform xf, float forceScale, float* peak, int* strained )
 {
 	const lpVec6* x = w->stressVectors.data;
 	w->scratchOverloads.count = 0;
@@ -427,6 +444,10 @@ static int lpStressEvaluate( lpWorld* w, float forceScale, float* peak, int* str
 		if ( rho > 1.0f )
 		{
 			*strained += 1;
+			if ( ( w->tick + (uint64_t)e->bond ) % 4 == 0 )
+			{
+				lpStressDust( w, xf, bond, e->bond, 1 );
+			}
 			bond->strain += ( rho - 1.0f ) * w->def.strainRate;
 			if ( bond->strain >= 1.0f )
 			{
@@ -449,6 +470,7 @@ static int lpStressEvaluate( lpWorld* w, float forceScale, float* peak, int* str
 		{
 			break; // the rest wait for the re-solve: failure cascades a few joints at a time
 		}
+		lpStressDust( w, xf, w->bonds.data + o.bond, o.bond, 4 );
 		lpBreakBond( w, o.bond );
 		broken += 1;
 	}
@@ -529,13 +551,23 @@ int lpStressStep( lpWorld* w, int bodyIndex )
 	{
 		body->stressSteps += 1;
 		body->unsettled = true; // still solving: nothing is judged on an unconverged solution
+		b3WorldTransform xf = b3Body_GetTransform( body->id );
+		for ( int k = 0; k < w->stressEdges.count; ++k )
+		{
+			int bi = w->stressEdges.data[k].bond;
+			const lpBond* bond = w->bonds.data + bi;
+			if ( bond->strain > 0.0f && ( w->tick + (uint64_t)bi ) % 4 == 0 )
+			{
+				lpStressDust( w, xf, bond, bi, 1 ); // joints that were straining keep creaking while it solves
+			}
+		}
 		w->stats.stressMs += b3GetMilliseconds( ticks );
 		return 0;
 	}
 
 	float peak = 0.0f;
 	int strained = 0;
-	int broken = lpStressEvaluate( w, forceScale, &peak, &strained );
+	int broken = lpStressEvaluate( w, b3Body_GetTransform( body->id ), forceScale, &peak, &strained );
 	body->unsettled = broken > 0 || strained > 0;
 	w->stats.stressBreaks += broken;
 	if ( w->def.debugLog )
