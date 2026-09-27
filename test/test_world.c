@@ -167,16 +167,17 @@ static int TestDetonator( void )
 	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
 	int flask = lpCreateObject( s.world, &def );
 
-	int fractures = 0;
+	int fractures = 0, cells = 0;
 	for ( int tick = 0; tick < 90; ++tick )
 	{
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 		ENSURE( lpWorld_Validate( s.world ) );
 		fractures += lpWorld_GetStats( s.world ).fracturesThisStep;
+		cells += lpWorld_GetStats( s.world ).cellsThisStep;
 	}
 	ENSURE( s.world->bodies.data[flask].alive == false || s.world->bodies.data[flask].armed == false );
-	printf( "  fractures %d, debris %d\n", fractures, lpWorld_GetStats( s.world ).debrisBodies );
-	ENSURE( fractures > 3 );
+	printf( "  fractures %d, cells %d, debris %d\n", fractures, cells, lpWorld_GetStats( s.world ).debrisBodies );
+	ENSURE( fractures >= 1 && cells > 20 ); // one solid brick wall now: fewer pieces break, into many cells
 	DestroySim( &s );
 	return 0;
 }

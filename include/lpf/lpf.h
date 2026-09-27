@@ -38,6 +38,7 @@ typedef enum lpPatternId
 	lp_breakImpact, // Voronoi dense at the impact, coarse away from it: stone, brick, concrete, plaster
 	lp_breakGrain,	// Voronoi in a space squashed along the grain, so cells come out as long splinters: wood
 	lp_breakRadial, // wedges cut by concentric chords around the impact, in the plane of a thin pane: glass
+	lp_breakMasonry, // along the mortar of a course grid: loose bricks, stair-stepped holes: brick
 } lpPatternId;
 
 // Cosmetic particle look, per material
@@ -80,6 +81,10 @@ typedef struct lpMaterialDef
 	float tensileStrength;
 	float compressiveStrength;
 	float shearStrength;
+
+	// Masonry (lp_breakMasonry): the course grid, in the object's frame so neighbouring panels line up
+	float courseHeight;
+	float brickLength;
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );

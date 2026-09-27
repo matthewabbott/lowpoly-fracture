@@ -141,3 +141,9 @@ Best of 3, 8 workers (1 worker in brackets).
 - **Town's stress share:** 0.74 ms of its 2.67 ms step goes to re-solving houses after each blast. That work is
   real, and houses are independent, so solving structures in parallel is the next lever (roadmap section 2,
   optional step).
+
+## 2026-09-27 masonry pattern
+
+Brick walls are one solid piece until hit, then break along a shared course grid (stair-stepped holes, mortar bonds).
+Town got cheaper with it: 2.04 ms per step at 8 workers (was 2.67), because its brick walls are now one piece each.
+Walls 0.55 ms, pile, lumber and tower unchanged.

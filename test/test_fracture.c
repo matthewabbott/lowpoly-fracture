@@ -218,6 +218,70 @@ static int TestFractureFuzz( void )
 }
 
 // Chips tile the cell they came from, and with a grain axis every chip cut contains the axis (splinters stay long)
+// Masonry cuts lie on the course grid: every cut face of a run or plate is a bed joint (horizontal, at a course line)
+// or a head joint (across the run, at a brick line of that course). Volume is conserved.
+static int TestMasonryGrid( void )
+{
+	lpPoly slab;
+	lpPoly_MakeBox( &slab, (b3Vec3){ 1.6f, 0.8f, 0.15f }, b3Transform_identity, 0 );
+	float h = 0.15f, l = 0.3f;
+	b3Vec3 origin = { -1.6f, -0.8f, 0.0f }; // the grid's origin: the slab's lower corner, in its own frame
+	lpFractureInput input = { 0 };
+	input.parent = &slab;
+	input.impact = (b3Vec3){ 0.1f, 0.05f, 0.15f };
+	input.radius = 0.7f;
+	input.fragmentSize = 0.16f;
+	input.maxCells = 80;
+	input.pattern = lp_breakMasonry;
+	input.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	input.courseHeight = h;
+	input.brickLength = l;
+	input.gridOrigin = origin;
+	input.seed = 3;
+	input.tolerance = 2e-5f;
+
+	lpShape* cells[LP_MAX_SITES];
+	int sites[LP_MAX_SITES];
+	lpFractureStats stats = { 0 };
+	int count = lpFracture( &input, cells, sites, LP_MAX_SITES, &stats );
+	printf( "  %d masonry cells\n", count );
+	ENSURE( count > 10 && count <= 80 );
+	ENSURE( stats.failureCount == 0 );
+	ENSURE( CheckTiling( &slab, cells, count, 1e-3f ) == 0 );
+	float brick = h * l * 0.3f;
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( cells[i]->volume <= 1.01f * brick )
+		{
+			continue; // a loose brick or a chip of one
+		}
+		for ( int f = 0; f < cells[i]->faceCount; ++f )
+		{
+			const lpFace* face = cells[i]->faces + f;
+			if ( face->tag != LP_TAG_CUT )
+			{
+				continue;
+			}
+			b3Vec3 n = face->plane.normal;
+			float d = face->plane.offset - b3Dot( n, origin );
+			if ( fabsf( n.y ) > 0.999f )
+			{
+				float k = d / ( h * n.y );
+				ENSURE( fabsf( k - roundf( k ) ) < 1e-2f ); // on a course line
+			}
+			else
+			{
+				ENSURE( fabsf( n.x ) > 0.999f );
+				float u = d / n.x; // the head joint's position along the run
+				float inOdd = ( u - 0.5f * l ) / l, inEven = u / l;
+				ENSURE( fabsf( inEven - roundf( inEven ) ) < 1e-2f || fabsf( inOdd - roundf( inOdd ) ) < 1e-2f );
+			}
+		}
+	}
+	FreeCells( cells, count );
+	return 0;
+}
+
 static int TestChipCell( void )
 {
 	lpPoly box;
@@ -266,5 +330,6 @@ int FractureTest( void )
 	RUN_TEST( TestFractureDeterminism );
 	RUN_TEST( TestFractureFuzz );
 	RUN_TEST( TestChipCell );
+	RUN_TEST( TestMasonryGrid );
 	return 0;
 }

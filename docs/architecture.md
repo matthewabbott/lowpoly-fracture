@@ -55,7 +55,10 @@ tiers instead of popping them.
 - Patterns: **impact Voronoi** (sites dense near the hit, a ring at the damage radius, a few far sites for big
   plates), **grain Voronoi** (the same in space squashed along the grain, then unsquashed: long convex splinters;
   distances to the hit are still measured in real space, and an anchor site on each side keeps a log end whole),
-  **radial** (wedges and concentric chords around the hit, for glass). Every cell is convex because it is an
+  **radial** (wedges and concentric chords around the hit, for glass), **masonry** (brick: along the mortar of a
+  course grid shared by the whole wall; bricks near the hit shatter, further ones come loose, the rest is cut into a
+  plate above, a plate below and a run on each side of the hole per course, so holes are stair-stepped and the new
+  bonds are mortar), and a **snap** (one tilted cut across an overloaded beam). Every cell is convex because it is an
   intersection of half-spaces, so it is directly a Box3D hull: no convex decomposition at runtime.
 - Sliver absorption: tiny cells outside the damage radius have their sites dropped and the cells recomputed, which
   keeps the tiling exact.

@@ -162,6 +162,10 @@ static void lpWallPanels( b3Vec3 origin, float length, float y0, float y1, float
 	float height = y1 - y0;
 	int rows = (int)ceilf( height / 1.6f );
 	rows = rows < 1 ? 1 : rows;
+	if ( lpGetMaterial( material )->pattern == lp_breakMasonry )
+	{
+		columns = rows = 1; // one solid wall: its course grid decides where it breaks
+	}
 	float w = length / (float)columns;
 	float h = height / (float)rows;
 	for ( int r = 0; r < rows; ++r )

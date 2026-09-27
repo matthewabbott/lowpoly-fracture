@@ -25,23 +25,23 @@
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
 static lpMaterialDef lp_materials[lp_materialCount] = {
 	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true,
-				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f },
+				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f, 0.0f, 0.0f },
 	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true,
-				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f },
-	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xC8704Au, true,
-				   3.4e-6f, 7.3e-4f, 8.0e-3f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f },
+				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f, 0.0f, 0.0f },
+	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakMasonry, 1.0f, 0xC8704Au, true,
+				   3.4e-6f, 7.3e-4f, 2.0e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f, 0.15f, 0.3f },
 	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true,
-					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f },
+					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f, 0.0f, 0.0f },
 	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true,
-					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f },
+					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f, 0.0f, 0.0f },
 	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true,
-				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f },
+				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f, 0.0f, 0.0f },
 	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f },
 	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false,
-					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f },
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f },
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f, 0.0f, 0.0f },
 };
 
 // Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by
@@ -685,10 +685,18 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		p->seed = (uint32_t)lpMix64( w->def.seed ^ ( (uint64_t)pieceIndex << 20 ) ^ w->pieceSerial++ );
 
 		b3Quat q = part->pointCount == 0 ? part->transform.q : b3Quat_identity;
-		bool glass = lpGetMaterial( part->material )->pattern == lp_breakRadial;
+		int pattern = lpGetMaterial( part->material )->pattern;
+		bool glass = pattern == lp_breakRadial;
 		if ( b3LengthSquared( part->grainAxis ) > 0.0f )
 		{
 			p->axis = b3Normalize( part->grainAxis );
+		}
+		else if ( pattern == lp_breakMasonry )
+		{
+			// Bricks run horizontally along the wall: across the wall's thinnest axis and the vertical
+			b3Vec3 thin = lpBoxAxis( extents, q, false );
+			b3Vec3 run = b3Cross( (b3Vec3){ 0.0f, 1.0f, 0.0f }, thin );
+			p->axis = b3LengthSquared( run ) > 1e-6f ? b3Normalize( run ) : (b3Vec3){ 1.0f, 0.0f, 0.0f };
 		}
 		else
 		{

@@ -28,8 +28,9 @@ popping.
 
 In progress. Done: a quasi-static stress solve on each structure's bond graph (`stress.c`, see architecture.md),
 joints (mortar, dry, nails, solid) with their own strengths, strain so joints creak before they give, and toppling
-that emerges from no-tension joints (the tower felling test). Next: slender pieces breaking mid-span, the masonry
-fracture pattern (bricks and mortar), a ruins scene. The earlier notes below shaped it.
+that emerges from no-tension joints (the tower felling test). Also done: slender pieces snapping mid-span, resting
+loads, and the masonry pattern (brick walls are one solid piece until hit, then break along their mortar). Next: a
+ruins scene (arch, colonnade, balconies) and solving structures in parallel. The earlier notes below shaped it.
 
 The idea is snapshotted stress that is checked only where things break.
 

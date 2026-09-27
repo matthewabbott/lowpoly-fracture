@@ -296,6 +296,41 @@ static int TestBeamMidspan( void )
 	return 0;
 }
 
+// A grenade into the brick wall: the wall breaks along its mortar, so every bond left between brick pieces is mortar
+static int TestMasonryWallHole( void )
+{
+	Sim s = CreateSim( lp_sceneWall );
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.0f, 1.4f, -3.85f };
+	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.radius = 1.4f;
+	im.energy = 80000.0f;
+	im.impulse = 12.0f;
+	im.explosion = true;
+	lpWorld_AddImpact( s.world, &im );
+	Run( &s, 60 );
+	int brickBonds = 0, mortar = 0, brickPieces = 0;
+	for ( int i = 0; i < s.world->bonds.count; ++i )
+	{
+		const lpBond* bond = s.world->bonds.data + i;
+		if ( bond->alive && s.world->pieces.data[bond->a].material == lp_brick && s.world->pieces.data[bond->b].material == lp_brick )
+		{
+			brickBonds += 1;
+			mortar += bond->joint == lp_jointMortar ? 1 : 0;
+		}
+	}
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		brickPieces += p->body >= 0 && p->material == lp_brick ? 1 : 0;
+	}
+	printf( "  %d brick pieces, %d brick bonds, %d of them mortar\n", brickPieces, brickBonds, mortar );
+	ENSURE( brickPieces > 10 );
+	ENSURE( brickBonds > 0 && mortar == brickBonds );
+	DestroySim( &s );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestStructuresStand );
@@ -304,5 +339,6 @@ int StressTest( void )
 	RUN_TEST( TestTowerTopples );
 	RUN_TEST( TestStressBudget );
 	RUN_TEST( TestDamagedWallSettles );
+	RUN_TEST( TestMasonryWallHole );
 	return 0;
 }

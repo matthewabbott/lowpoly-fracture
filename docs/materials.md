@@ -21,6 +21,7 @@ nothing much. The engine table lives in `src/world.c` (`lp_materials`); the stru
 | | `fragmentSize` | smallest fragments at the impact, metres |
 | | `plateSize`, `maxCells` | how few, how big the remaining chunks are; cells per fracture |
 | | `mergeSlack` | cells that stay merge while their hull is at most this much bigger (chunky ends) |
+| | `courseHeight`, `brickLength` | masonry: the course grid (brick: 15 cm courses of 30 cm bricks) |
 | tiers | `particleVolume`, `ghostVolume`, `lightVolume` | size thresholds for puff / ghost / light / full debris |
 | look | `interiorColor`, `particleKind` | colour of fresh cuts; dust, chip, splinter, leaf or glint particles |
 

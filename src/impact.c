@@ -73,6 +73,9 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->fragmentSize = fragment;
 	input->maxCells = m->maxCells;
 	input->plateSize = m->plateSize * w->def.fragmentScale;
+	input->courseHeight = m->courseHeight * w->def.fragmentScale;
+	input->brickLength = m->brickLength * w->def.fragmentScale;
+	input->gridOrigin = b3Neg( job->center ); // the object frame's origin, in the job frame
 	input->absorbVolume = b3MaxFloat( job->particleVolume, 0.1f * job->ghostVolume ); // slivers merge into neighbours
 	input->pattern = (lpPatternId)m->pattern;
 	input->axis = piece->axis;
@@ -402,7 +405,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			// Cells of one piece: its own material holds them, cracked by the blow that broke it. Far from the
 			// impact the stone is whole; near it the cracks barely hold, and past the break radius not at all.
 			float damage = lpImpactDensity( &job->impact, b3Distance( cb.contact.centroid, job->localImpact ) );
-			int bi = lpAddBond( w, a, b, &cb.contact, lp_jointSolid );
+			uint8_t cellJoint = job->input.pattern == lp_breakMasonry ? lp_jointMortar : lp_jointSolid;
+			int bi = lpAddBond( w, a, b, &cb.contact, cellJoint );
 			lpBond* bond = w->bonds.data + bi;
 			bond->health -= damage;
 			if ( bond->health <= 0.0f )

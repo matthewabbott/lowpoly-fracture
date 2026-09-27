@@ -556,6 +556,215 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 	return count;
 }
 
+// Keep the part of `in` behind the plane (dot(n, x) <= d) in `out`; false if nothing is left
+static bool lpKeepBehind( const lpPoly* in, b3Vec3 n, float d, const lpFractureInput* input, lpPoly* out, lpFractureStats* stats )
+{
+	lpClipResult result = lpPoly_Clip( in, (b3Plane){ n, d }, input->interiorMaterial, LP_TAG_CUT, input->tolerance, out );
+	if ( result == lp_clipUnchanged )
+	{
+		*out = *in;
+		return true;
+	}
+	if ( result == lp_clipCut )
+	{
+		return true;
+	}
+	if ( result != lp_clipEmpty && stats != NULL )
+	{
+		stats->failureCount += 1;
+	}
+	return false;
+}
+
+// The slab of `in` between two parallel planes along `n`: lo <= dot(n, x) <= hi
+static bool lpKeepBetween( const lpPoly* in, b3Vec3 n, float lo, float hi, const lpFractureInput* input, lpPoly* scratch,
+						   lpPoly* out, lpFractureStats* stats )
+{
+	return lpKeepBehind( in, n, hi, input, scratch, stats ) && lpKeepBehind( scratch, b3Neg( n ), -lo, input, out, stats );
+}
+
+static int lpAddMasonryCell( const lpPoly* poly, lpShape** cells, int* cellSites, int count, int capacity )
+{
+	if ( count >= capacity )
+	{
+		return count;
+	}
+	lpShape* shape = lpShape_Create( poly );
+	if ( shape != NULL )
+	{
+		cellSites[count] = -1;
+		cells[count++] = shape;
+	}
+	return count;
+}
+
+// Brick walls break along their mortar. The parent is one solid panel until it is hit; then, in a course grid shared by
+// the whole wall, the bricks within the break radius of each course come out (those near the centre as chips, the rest
+// whole) and the rest of the wall is cut on mortar lines only: one plate below the damaged courses, one above, and a run
+// on each side of the hole in every damaged course. The alternating offsets of the courses make the hole stair-stepped,
+// and every cut is a bed or head joint, so later stress cracks follow the mortar too.
+static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpShape** cells, int* cellSites, int capacity,
+							  lpFractureStats* stats )
+{
+	enum
+	{
+		lp_maxCourses = 48
+	};
+	b3Vec3 up = { 0.0f, 1.0f, 0.0f };
+	b3Vec3 run = { input->axis.x, 0.0f, input->axis.z };
+	run = b3LengthSquared( run ) > 1e-6f ? b3Normalize( run ) : (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	float h = input->courseHeight;
+	float l = input->brickLength;
+	b3Vec3 o = input->gridOrigin;
+	const lpPoly* parent = input->parent;
+
+	float y0 = FLT_MAX, y1 = -FLT_MAX;
+	for ( int i = 0; i < parent->vertexCount; ++i )
+	{
+		float y = b3Dot( b3Sub( parent->vertices[i], o ), up );
+		y0 = y < y0 ? y : y0;
+		y1 = y > y1 ? y : y1;
+	}
+	float yi = b3Dot( b3Sub( input->impact, o ), up );
+	float ui = b3Dot( b3Sub( input->impact, o ), run );
+	float r = input->radius;
+	int k0 = (int)floorf( y0 / h + 1e-4f );
+	int k1 = (int)ceilf( y1 / h - 1e-4f ) - 1;
+	if ( k1 - k0 + 1 > lp_maxCourses )
+	{
+		return 0; // a wall this tall in one piece: let the impact pattern handle it
+	}
+
+	// The bricks each course loses: those whose centre lies inside the damage sphere
+	int first[lp_maxCourses], last[lp_maxCourses];
+	int low = INT32_MAX, high = INT32_MIN, bricks = 0;
+	for ( int k = k0; k <= k1; ++k )
+	{
+		int row = k - k0;
+		first[row] = 1;
+		last[row] = 0;
+		float cy = ( (float)k + 0.5f ) * h;
+		float dy = b3AbsFloat( cy - yi );
+		float offset = ( k & 1 ) ? 0.5f * l : 0.0f;
+		if ( dy < r )
+		{
+			float half = sqrtf( r * r - dy * dy );
+			first[row] = (int)ceilf( ( ui - half - offset ) / l - 0.5f );
+			last[row] = (int)floorf( ( ui + half - offset ) / l - 0.5f );
+		}
+		if ( first[row] > last[row] && yi >= (float)k * h && yi < (float)( k + 1 ) * h )
+		{
+			first[row] = last[row] = (int)floorf( ( ui - offset ) / l ); // at least the brick that was hit
+		}
+		if ( first[row] <= last[row] )
+		{
+			low = k < low ? k : low;
+			high = k > high ? k : high;
+			bricks += last[row] - first[row] + 1;
+		}
+	}
+	if ( low > high )
+	{
+		return 0;
+	}
+
+	// Loose bricks come out in groups when there are more than the cells allow
+	int courses = high - low + 1;
+	int room = capacity - 2 - 2 * courses;
+	int group = 1;
+	while ( group < 8 && bricks / group > room - 8 )
+	{
+		group += 1;
+	}
+
+	lpPoly* work = lpAlloc( 4 * sizeof( lpPoly ) );
+	lpPoly* slab = work;
+	lpPoly* piece = work + 1;
+	lpPoly* scratch = work + 2;
+	lpPoly* brick = work + 3;
+	int count = 0;
+
+	if ( (float)low * h > y0 + 1e-3f && lpKeepBehind( parent, up, (float)low * h + b3Dot( o, up ), input, piece, stats ) )
+	{
+		count = lpAddMasonryCell( piece, cells, cellSites, count, capacity ); // the wall below the hole
+	}
+	if ( (float)( high + 1 ) * h < y1 - 1e-3f &&
+		 lpKeepBehind( parent, b3Neg( up ), -( (float)( high + 1 ) * h + b3Dot( o, up ) ), input, piece, stats ) )
+	{
+		count = lpAddMasonryCell( piece, cells, cellSites, count, capacity ); // the wall above it
+	}
+
+	float oy = b3Dot( o, up );
+	float ou = b3Dot( o, run );
+	for ( int k = low; k <= high; ++k )
+	{
+		int row = k - k0;
+		if ( lpKeepBetween( parent, up, (float)k * h + oy, (float)( k + 1 ) * h + oy, input, scratch, slab, stats ) == false )
+		{
+			continue;
+		}
+		if ( first[row] > last[row] )
+		{
+			count = lpAddMasonryCell( slab, cells, cellSites, count, capacity ); // an intact course inside the hole's span
+			continue;
+		}
+		float offset = ( k & 1 ) ? 0.5f * l : 0.0f;
+		float ua = (float)first[row] * l + offset + ou;
+		float ub = (float)( last[row] + 1 ) * l + offset + ou;
+		if ( lpKeepBehind( slab, run, ua, input, piece, stats ) )
+		{
+			count = lpAddMasonryCell( piece, cells, cellSites, count, capacity );
+		}
+		if ( lpKeepBehind( slab, b3Neg( run ), -ub, input, piece, stats ) )
+		{
+			count = lpAddMasonryCell( piece, cells, cellSites, count, capacity );
+		}
+		for ( int j = first[row]; j <= last[row]; j += group )
+		{
+			int end = j + group - 1 < last[row] ? j + group - 1 : last[row];
+			float lo = (float)j * l + offset + ou;
+			float hi = (float)( end + 1 ) * l + offset + ou;
+			if ( lpKeepBetween( slab, run, lo, hi, input, scratch, brick, stats ) == false )
+			{
+				continue;
+			}
+			// Bricks near the centre shatter into chips; further out they come loose whole
+			b3Vec3 centre = b3Add( b3MulAdd( o, 0.5f * ( lo + hi ) - ou, run ), b3MulSV( ( (float)k + 0.5f ) * h, up ) );
+			lpShape* shape = lpShape_Create( brick );
+			if ( shape == NULL )
+			{
+				continue;
+			}
+			lpShape* chips[4];
+			int chipCount = 0;
+			if ( group == 1 && b3Distance( centre, input->impact ) < 0.5f * r && count + 4 <= capacity )
+			{
+				chipCount = lpChipCell( shape, 2, b3Vec3_zero, input->interiorMaterial, 1e-5f, rng, chips, 4 );
+			}
+			if ( chipCount > 0 )
+			{
+				lpShape_Destroy( shape );
+				for ( int c = 0; c < chipCount; ++c )
+				{
+					cellSites[count] = -1;
+					cells[count++] = chips[c];
+				}
+			}
+			else if ( count < capacity )
+			{
+				cellSites[count] = -1;
+				cells[count++] = shape;
+			}
+			else
+			{
+				lpShape_Destroy( shape );
+			}
+		}
+	}
+	lpFree( work );
+	return count;
+}
+
 // A beam giving way under load: one cut across its axis through the overloaded point, tilted a little at random so
 // it reads as broken, not sawn. Two cells; the blow's damage at the cut keeps them apart.
 static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape** cells, int* cellSites, int capacity,
@@ -608,6 +817,18 @@ int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, i
 	if ( input->pattern == lp_breakRadial )
 	{
 		return lpFractureRadial( input, &rng, cells, cellSites, capacity, stats );
+	}
+	if ( input->pattern == lp_breakMasonry && cellSites != NULL && input->courseHeight > 0.0f && input->brickLength > 0.0f )
+	{
+		int count = lpFractureMasonry( input, &rng, cells, cellSites, capacity, stats );
+		if ( count >= 2 )
+		{
+			return count;
+		}
+		for ( int i = 0; i < count; ++i )
+		{
+			lpShape_Destroy( cells[i] );
+		}
 	}
 	return lpFractureVoronoi( input, &rng, cells, cellSites, capacity, stats );
 }

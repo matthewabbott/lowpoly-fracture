@@ -29,6 +29,12 @@ typedef struct lpFractureInput
 	float tolerance;
 
 	bool snap; // overloaded beam: one tilted cut across `axis` through `impact` instead of the pattern
+
+	// Masonry pattern: courses and bricks of this size, bricks running along `axis`, the grid anchored at gridOrigin
+	// (the object frame's origin in the parent's frame) so every piece of a wall shares it
+	float courseHeight;
+	float brickLength;
+	b3Vec3 gridOrigin;
 } lpFractureInput;
 
 typedef struct lpFractureStats
