@@ -134,7 +134,7 @@ typedef struct lpWorldDef
 	bool debugLog;		   // print every processed impact to stdout (for diagnosing tuning)
 	int workerCount;	   // threads for fracture work, including the caller (results do not depend on it)
 	float stressScale;	   // multiplies every strength in the stress solve; 0 disables collapse under weight
-	int maxStressWork;	   // bond-iterations of stress solving per step, over all structures (about 40 ns each)
+	int maxStressWork;	   // bond-iterations of stress solving per step, over all structures (about 60 ns each)
 	int maxStressIterations; // per structure per step; a structure that needs more keeps creaking for a few steps
 	int maxStressBreaks;   // joints a structure may lose per check below twice their limit (worse ones go at once)
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%

@@ -92,6 +92,7 @@ typedef struct lpPiece
 	lpVec6 stressX; // stress solve: last solution in newtons of load (the warm start after a topology change)
 	lpVec6 stressR; // stress solve: residual and search direction, so a solve continues across steps
 	lpVec6 stressP;
+	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
 	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
@@ -109,6 +110,7 @@ typedef struct lpBond
 	b3Vec3 normal;		// unit, body frame, from piece a toward piece b
 	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
 	float strain;		// stress overload accumulated over checks; the bond breaks at 1
+	float rho;			// utilization at the last converged check (1 = at its limit)
 	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
 	int nextFree;
@@ -131,11 +133,14 @@ typedef struct lpBody
 	bool armed;
 	bool unsettled;	   // structure: still solving, or joints straining toward a break
 	bool solving;	   // structure: a solve is in progress (r, p on the pieces, solveRz here)
+	bool creaking;	   // structure: converged, joints straining but none broken: checks only add strain
+	bool strainedLastCheck; // structure: something was over its limit at the last converged check
 	int stressSteps;   // structure: steps spent solving the current topology
 	uint32_t topology; // bumped whenever a bond or piece of the body changes; a solve in progress restarts then
 	uint32_t solveTopology;
 	int solveNodes, solveEdges;
 	double solveRz;
+	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
 	lpDetonatorDef detonator;
 
 	// Ghost and scrap state. The body frame is com - q * localCenter, so piece geometry stays in object space.
@@ -239,6 +244,7 @@ typedef struct lpDeferredJob
 	uint32_t generation;
 	uint32_t impactSerial;
 	lpImpactDef impact;
+	bool snap; // a stress snap inside the piece: fracture only, no bond damage around it
 } lpDeferredJob;
 
 struct lpWorld
@@ -266,6 +272,8 @@ struct lpWorld
 	LP_ARRAY( lpVec6 ) stressVectors;
 	LP_ARRAY( lpBlock6 ) stressBlocks;
 	LP_ARRAY( lpOverload ) scratchOverloads;
+	LP_ARRAY( b3ContactData ) scratchContacts;
+	LP_ARRAY( lpVec6 ) scratchLoads;
 	int stressWork; // bond-iterations used this step
 	LP_ARRAY( int ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;
@@ -290,6 +298,7 @@ struct lpWorld
 	int jobsThisStep;
 
 	uint64_t tick;
+	float lastTimeStep; // of the last physics step, to turn contact impulses into forces
 	uint64_t pieceSerial;
 	uint32_t impactSerial;
 	int stamp;

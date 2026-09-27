@@ -556,11 +556,55 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 	return count;
 }
 
+// A beam giving way under load: one cut across its axis through the overloaded point, tilted a little at random so
+// it reads as broken, not sawn. Two cells; the blow's damage at the cut keeps them apart.
+static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape** cells, int* cellSites, int capacity,
+						   lpFractureStats* stats )
+{
+	if ( capacity < 2 )
+	{
+		return 0;
+	}
+	b3Vec3 n = input->axis;
+	b3Vec3 t1, t2;
+	lpContactBasis( n, &t1, &t2 );
+	n = b3Normalize( b3Add( n, b3Add( b3MulSV( lpRandom_Range( rng, -0.35f, 0.35f ), t1 ),
+									  b3MulSV( lpRandom_Range( rng, -0.35f, 0.35f ), t2 ) ) ) );
+	b3Plane plane = { n, b3Dot( n, input->impact ) };
+	b3Plane flipped = { b3Neg( n ), -plane.offset };
+
+	lpPoly* halves = lpAlloc( 2 * sizeof( lpPoly ) );
+	int count = 0;
+	if ( lpPoly_Clip( input->parent, plane, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves ) == lp_clipCut &&
+		 lpPoly_Clip( input->parent, flipped, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves + 1 ) == lp_clipCut )
+	{
+		for ( int i = 0; i < 2; ++i )
+		{
+			lpShape* shape = lpShape_Create( halves + i );
+			if ( shape != NULL )
+			{
+				cellSites[count] = -1;
+				cells[count++] = shape;
+			}
+		}
+	}
+	else if ( stats != NULL )
+	{
+		stats->failureCount += 1;
+	}
+	lpFree( halves );
+	return count;
+}
+
 int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, int capacity, lpFractureStats* stats )
 {
 	lpRandom rng;
 	lpRandom_Seed( &rng, input->seed, 0x5EEDu );
 
+	if ( input->snap && cellSites != NULL )
+	{
+		return lpFractureSnap( input, &rng, cells, cellSites, capacity, stats );
+	}
 	if ( input->pattern == lp_breakRadial )
 	{
 		return lpFractureRadial( input, &rng, cells, cellSites, capacity, stats );
@@ -767,7 +811,7 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 }
 
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
-				  uint8_t interiorMaterial )
+				  uint8_t interiorMaterial, b3Vec3 impact )
 {
 	if ( ( slack > 0.0f ) == false || cellSites == NULL || count < 2 || count > LP_MAX_SITES )
 	{
@@ -776,8 +820,9 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 
 	int siteToCell[LP_MAX_SITES];
 	float trueVolume[LP_MAX_SITES];
-	b3Vec3 keepOut[LP_MAX_SITES]; // centroids of the cells that do not merge
+	b3Vec3 keepOut[LP_MAX_SITES + 1]; // centroids of the cells that do not merge, and the impact point
 	int keepOutCount = 0;
+	keepOut[keepOutCount++] = impact;
 	for ( int i = 0; i < LP_MAX_SITES; ++i )
 	{
 		siteToCell[i] = -1;

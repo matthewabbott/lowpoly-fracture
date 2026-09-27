@@ -27,6 +27,8 @@ typedef struct lpFractureInput
 	uint8_t interiorMaterial;
 	uint64_t seed;
 	float tolerance;
+
+	bool snap; // overloaded beam: one tilted cut across `axis` through `impact` instead of the pattern
 } lpFractureInput;
 
 typedef struct lpFractureStats
@@ -58,11 +60,12 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 // Merges touching Voronoi cells of class `mergeClass` while the convex hull of their union stays within (1 + slack)
 // of the volume the cells really had: fewer, chunkier pieces for the same look (a broken log end is one piece, not
 // four). The hull spills into neighbouring cells' space by at most the slack, and never over the centroid of a cell
-// of another class (the ejecta), so knocked-out notches stay open. Hull faces keep the tag and material of
+// of another class (the ejecta) or over the impact point itself, so knocked-out notches stay open and a snapped
+// beam stays snapped. Hull faces keep the tag and material of
 // a source face in their plane; the rest become cut faces. Compacts cells, cellSites and classes in place and
 // returns the new count. Deterministic: pairs are tried in cell and face order.
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
-				  uint8_t interiorMaterial );
+				  uint8_t interiorMaterial, b3Vec3 impact );
 
 // Splits a small ejecta cell into up to 1 + splits chips with random planes near its centroid: a blast throws a
 // dirtier spray of real fragments than the Voronoi budget alone gives, at the price of a few plane clips. With a

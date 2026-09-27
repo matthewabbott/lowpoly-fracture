@@ -254,6 +254,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
 
 	b3World_Step( w->def.physics, timeStep, subStepCount );
+	w->lastTimeStep = timeStep;
 	w->stats.physicsMs = b3GetMillisecondsAndReset( &ticks );
 
 	lpStepGhosts( w, timeStep );

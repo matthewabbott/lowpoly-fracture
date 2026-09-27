@@ -33,7 +33,8 @@ static float lpImpactDensity( const lpImpactDef* impact, float d )
 // 2. compute cells, Box3D hulls and sibling bonds for every piece (parallel; each job is a pure function of its input)
 // 3. swap parents for their cells (sequential, in job order)
 
-static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex, b3Vec3 localImpact, const lpImpactDef* impact )
+static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex, b3Vec3 localImpact, const lpImpactDef* impact,
+								  bool snap )
 {
 	lpPiece* piece = w->pieces.data + pieceIndex;
 	const lpMaterialDef* m = lpGetMaterial( piece->material );
@@ -77,6 +78,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	input->axis = piece->axis;
 	input->stretch = m->grainStretch;
 	input->interiorMaterial = piece->material;
+	input->snap = snap;
 	input->seed = lpMix64( w->def.seed ^ ( w->tick << 24 ) ^ ( (uint64_t)pieceIndex << 1 ) ^ piece->generation );
 	input->tolerance = 2e-5f;
 }
@@ -135,15 +137,17 @@ static void lpRunFractureJob( int index, void* context )
 	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece
 	float slack = lpGetMaterial( job->input.interiorMaterial )->mergeSlack;
 	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
-								   job->input.interiorMaterial );
+								   job->input.interiorMaterial, job->localImpact );
 	job->stats.mergeMs = b3GetMillisecondsAndReset( &ticks );
 
 	// What is still too small to carry load does not stay on the piece: it falls as debris. Structures keep chunks,
-	// not crumbs, which is cheaper for physics and keeps the stress solve well conditioned (no tiny bonds).
+	// not crumbs, which is cheaper for physics and keeps the stress solve well conditioned (no tiny bonds). A crumb is
+	// small in every direction: half a snapped plank is thin but long, and stays.
+	float crumbReach = 4.0f * job->input.fragmentSize;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		float volume = job->cells[i]->volume;
-		if ( job->cellClass[i] == lp_cellKeep && volume < job->lightVolume )
+		if ( job->cellClass[i] == lp_cellKeep && volume < job->lightVolume && job->cells[i]->radius < crumbReach )
 		{
 			job->cellClass[i] = volume < job->ghostVolume ? lp_cellGhost : lp_cellLight;
 		}
@@ -481,7 +485,8 @@ static lpFractureJob* lpNextJob( lpWorld* w )
 // Refracture the qualifying candidates of an impact, nearest first, within the step's job budget. The rest wait
 // for the next step (the hole appears now, its outer refractures one step later). Deterministic: the budget is a
 // count and every order is a total order.
-static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_t serial, const int* candidates, int count )
+static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_t serial, const int* candidates, int count,
+								  bool snap )
 {
 	lpFractureCandidate* list = lpAlloc( sizeof( lpFractureCandidate ) * (size_t)( count > 0 ? count : 1 ) );
 	int n = 0;
@@ -526,11 +531,11 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 	{
 		if ( i < budget )
 		{
-			lpPrepareFractureJob( w, lpNextJob( w ), list[i].piece, list[i].local, impact );
+			lpPrepareFractureJob( w, lpNextJob( w ), list[i].piece, list[i].local, impact, snap );
 		}
 		else
 		{
-			lpDeferredJob deferred = { list[i].piece, w->pieces.data[list[i].piece].generation, serial, *impact };
+			lpDeferredJob deferred = { list[i].piece, w->pieces.data[list[i].piece].generation, serial, *impact, snap };
 			lpArray_Push( w->deferred, deferred );
 		}
 	}
@@ -625,7 +630,7 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 		}
 	}
 
-	lpFractureCandidates( w, impact, serial, candidates, candidateCount );
+	lpFractureCandidates( w, impact, serial, candidates, candidateCount, false );
 	lpFree( candidates );
 	lpDamageBonds( w, impact, serial );
 
@@ -673,8 +678,11 @@ void lpProcessDeferred( lpWorld* w )
 			qsort( pieces, (size_t)n, sizeof( int ), lpCompareInt );
 		}
 		lpImpactDef impact = pending[first].impact;
-		lpFractureCandidates( w, &impact, pending[first].impactSerial, pieces, n );
-		lpDamageBonds( w, &impact, pending[first].impactSerial );
+		lpFractureCandidates( w, &impact, pending[first].impactSerial, pieces, n, pending[first].snap );
+		if ( pending[first].snap == false )
+		{
+			lpDamageBonds( w, &impact, pending[first].impactSerial );
+		}
 		first = last + 1;
 	}
 	lpFree( pieces );
@@ -773,6 +781,24 @@ void lpCollectHits( lpWorld* w )
 		if ( da <= 0 && db <= 0 )
 		{
 			continue;
+		}
+
+		// Something landed on or knocked a structure: its loads changed, so its stresses are checked again
+		for ( int k = 0; k < 2; ++k )
+		{
+			intptr_t data = k == 0 ? da : db;
+			if ( data > 0 )
+			{
+				int bi = w->pieces.data[data - 1].body;
+				lpBody* hit = bi >= 0 ? w->bodies.data + bi : NULL;
+				if ( hit != NULL && hit->kind == lp_kindStructure && w->tick >= hit->hitCheckTick + 30 )
+				{
+					hit->hitCheckTick = w->tick;
+					hit->creaking = false;
+					hit->solving = false; // sample the new loads
+					lpMarkDirty( w, bi );
+				}
+			}
 		}
 
 		// Fragile rubble: a moving body bumping into it knocks it loose (strong static friction, not cement)

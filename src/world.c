@@ -118,7 +118,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.killDepth = -50.0f;
 	def.workerCount = 1;
 	def.stressScale = 1.0f;
-	def.maxStressWork = 40000;
+	def.maxStressWork = 20000;
 	def.maxStressIterations = 256;
 	def.maxStressBreaks = 4;
 	def.stressPatience = 30;
@@ -185,7 +185,7 @@ int lpAllocPiece( lpWorld* w )
 	p->body = -1;
 	p->nextFree = -1;
 	p->shapeId = b3_nullShapeId;
-	memset( &p->stressX, 0, 3 * sizeof( lpVec6 ) );
+	memset( &p->stressX, 0, 4 * sizeof( lpVec6 ) );
 	p->strain = 0.0f;
 	return index;
 }
@@ -317,6 +317,8 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->stressVectors );
 	lpArray_Free( w->stressBlocks );
 	lpArray_Free( w->scratchOverloads );
+	lpArray_Free( w->scratchContacts );
+	lpArray_Free( w->scratchLoads );
 	lpArray_Free( w->stressAgain );
 	for ( int i = 0; i < w->jobCapacity; ++i )
 	{
@@ -471,6 +473,7 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	bond->h2 = contact->h2;
 	bond->joint = joint;
 	bond->strain = 0.0f;
+	bond->rho = 0.0f;
 	bond->health = strengthA < strengthB ? strengthA : strengthB;
 	bond->strength = bond->health;
 	bond->alive = true;

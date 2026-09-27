@@ -228,10 +228,79 @@ static int TestDamagedWallSettles( void )
 	return 0;
 }
 
+// A 6 m plank on two posts: alone it stands (3 MPa at midspan against wood's 30); with a 300 kg stone on its middle
+// the rigid-plank statics give about 52 MPa, so it snaps near midspan and the stone comes down. After the snap the stone
+// rests on both halves as a contact load, which the solve sees.
+static int BeamRun( bool loaded, float* stoneY, float* biggestWood )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef parts[4];
+	for ( int i = 0; i < 2; ++i )
+	{
+		parts[i] = lpDefaultPartDef();
+		parts[i].halfExtents = (b3Vec3){ 0.1f, 0.5f, 0.1f };
+		parts[i].transform.p = (b3Vec3){ i == 0 ? -2.8f : 2.8f, 0.5f, 0.0f };
+		parts[i].material = lp_wood;
+		parts[i].anchored = true;
+	}
+	parts[2] = lpDefaultPartDef();
+	parts[2].halfExtents = (b3Vec3){ 3.0f, 0.025f, 0.1f };
+	parts[2].transform.p = (b3Vec3){ 0.0f, 1.025f, 0.0f };
+	parts[2].material = lp_wood;
+	parts[2].grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	parts[3] = lpDefaultPartDef();
+	parts[3].halfExtents = (b3Vec3){ 0.25f, 0.25f, 0.1f };
+	parts[3].transform.p = (b3Vec3){ 0.0f, 1.3f, 0.0f };
+	parts[3].material = lp_stone;
+	parts[3].halfExtents = (b3Vec3){ 0.25f, 0.25f, 0.25f };
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = true;
+	def.parts = parts;
+	def.partCount = loaded ? 4 : 3;
+	lpCreateObject( s.world, &def );
+	Run( &s, 180 );
+	*stoneY = 99.0f;
+	*biggestWood = 0.0f;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* piece = s.world->pieces.data + i;
+		b3WorldTransform xf;
+		if ( piece->body < 0 || lpWorld_GetBodyTransform( s.world, piece->body, &xf ) == false )
+		{
+			continue;
+		}
+		b3Vec3 c = b3ToVec3( b3TransformWorldPoint( xf, piece->shape->centroid ) );
+		if ( piece->material == lp_stone )
+		{
+			*stoneY = c.y < *stoneY ? c.y : *stoneY;
+		}
+		if ( piece->material == lp_wood && c.y > 0.9f )
+		{
+			*biggestWood = piece->shape->volume > *biggestWood ? piece->shape->volume : *biggestWood;
+		}
+	}
+	DestroySim( &s );
+	return 0;
+}
+
+static int TestBeamMidspan( void )
+{
+	float stoneY, plankAlone, plankLoaded;
+	ENSURE( BeamRun( false, &stoneY, &plankAlone ) == 0 );
+	ENSURE( BeamRun( true, &stoneY, &plankLoaded ) == 0 );
+	printf( "  plank alone: largest raised wood %.4f m^3; loaded: %.4f m^3, stone at y %.2f\n", (double)plankAlone,
+			(double)plankLoaded, (double)stoneY );
+	ENSURE( plankAlone > 0.055f ); // still the whole 0.06 m^3 plank
+	ENSURE( plankLoaded < 0.04f ); // snapped (the stone resting on the halves' tips then drags them off their posts)
+	ENSURE( stoneY < 0.8f );	   // the stone fell through
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestStructuresStand );
 	RUN_TEST( TestCantileverRoot );
+	RUN_TEST( TestBeamMidspan );
 	RUN_TEST( TestTowerTopples );
 	RUN_TEST( TestStressBudget );
 	RUN_TEST( TestDamagedWallSettles );

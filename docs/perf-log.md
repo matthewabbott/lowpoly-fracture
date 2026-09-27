@@ -115,3 +115,29 @@ Best of 3, 8 workers (1 worker in brackets); the tower joins the ladder.
   preconditioner (6x6 per piece), and not keeping fracture crumbs on structures (kept cells below the light-debris
   size fall). Before those, a damaged tower needed 60+ steps and the old "judge anyway" fallback broke hundreds of
   joints on garbage forces.
+
+## 2026-09-27 stress, part 2: rocking joints, slender pieces, resting loads
+
+Best of 3, 8 workers (1 worker in brackets).
+
+| scene | step avg | notes |
+|---|---|---|
+| walls | 0.56 (1.19) ms | 34% faster: rocking joints stop spurious dry-joint breaks, fewer pieces |
+| town | 2.67 (5.45) ms | twice the previous step: houses under constant bombardment now also collapse under the rubble on them |
+| pile | 0.87 (2.43) ms | unchanged |
+| tower | 2.23 (4.93) ms | unchanged average, spikier p95 |
+
+- **Rocking capacity:** a compressed joint holds a moment until its resultant reaches the edge of the patch (masonry
+  tips over an edge; it does not crack as soon as the load leaves the middle third).
+- **Slender pieces** (beams, planks) check their bending along the axis between supports and snap there with a
+  tilted planar cut (a fracture job flagged as a snap: no bond damage around it, and merging never heals the spot
+  that was hit).
+- **Resting loads:** dynamic bodies pressing on a structure add their contact forces (sampled when a solve starts and
+  frozen for it). A hit re-checks a structure at most every 30 ticks, and a check whose loads changed by under 2%
+  of the structure's weight ends without a solve.
+- **Creaking shortcut:** a converged structure that is only creaking adds strain from stored utilizations with no
+  rebuild or solve.
+- **Budget:** now 20k bond-iterations per step (measured about 60 ns each).
+- **Town's stress share:** 0.74 ms of its 2.67 ms step goes to re-solving houses after each blast. That work is
+  real, and houses are independent, so solving structures in parallel is the next lever (roadmap section 2,
+  optional step).

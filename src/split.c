@@ -7,18 +7,18 @@
 #include <math.h>
 #include <stdio.h>
 
-static void lpSplitBody( lpWorld* w, int bodyIndex )
+static int lpSplitBody( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
 	body->dirty = false;
 	if ( body->alive == false )
 	{
-		return;
+		return 0;
 	}
 	if ( body->pieces.count == 0 )
 	{
 		lpDestroyBody( w, bodyIndex, false );
-		return;
+		return 0;
 	}
 
 	// Flood fill over live bonds. Components are listed in the order of their first piece in the body list.
@@ -74,7 +74,7 @@ static void lpSplitBody( lpWorld* w, int bodyIndex )
 
 	if ( componentCount <= 1 && ( body->kind != lp_kindStructure || componentCount == 0 || components[0].anchored ) )
 	{
-		return;
+		return 0;
 	}
 
 	// Which components stay on this body
@@ -181,10 +181,11 @@ static void lpSplitBody( lpWorld* w, int bodyIndex )
 
 	if ( movedAny == 0 )
 	{
-		return;
+		return 0;
 	}
 
 	// Rebuild this body's piece list from the pieces that stayed
+	body->topology += 1;
 	int kept = 0;
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
@@ -213,18 +214,20 @@ static void lpSplitBody( lpWorld* w, int bodyIndex )
 			lpConvertToLight( w, bodyIndex );
 		}
 	}
+	return movedAny;
 }
 
 void lpUpdateBody( lpWorld* w, int bodyIndex )
 {
-	lpSplitBody( w, bodyIndex );
+	int moved = lpSplitBody( w, bodyIndex );
 
-	// What is still a structure is anchored: solve its stresses. Broken joints split it next step.
+	// What is still a structure is anchored: solve its stresses. Broken joints split it next step. What just came off
+	// may still rest on it; its weight shows up in the contacts after the next physics step, so check again then.
 	lpBody* body = w->bodies.data + bodyIndex;
 	if ( body->alive && body->kind == lp_kindStructure )
 	{
 		int broken = lpStressStep( w, bodyIndex );
-		if ( broken > 0 || body->unsettled )
+		if ( broken > 0 || body->unsettled || moved > 0 )
 		{
 			lpArray_Push( w->stressAgain, bodyIndex );
 		}
