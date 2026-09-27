@@ -10,3 +10,18 @@
 ## Local patches
 
 None yet.
+
+## Known issues at this commit (found in a code audit; not patched, avoided instead)
+
+- `solver.c:443`: CCD calls `world->preSolveFcn` without a NULL check. Never enable `enablePreSolveEvents` on a
+  shape unless a presolve callback is registered.
+- `body.c:1571-1591`: `b3Body_SetType` sets `world->locked` and returns early without unlocking for bodies with
+  compound or height-field shapes. We only change the type of hull-shape bodies.
+- `shape.c:1402-1410`: `b3Shape_SetFilter` assigns the new filter before comparing category bits, so it always
+  recreates the broadphase proxy. It is slow but safe; we set filters at shape creation instead.
+- `contact.c:248, 322-330`: contact-event, presolve and rolling-resistance settings are captured when a contact is
+  created; toggling them on a shape only affects future contacts.
+- `joint.c:1432`: `b3Joint_GetAngularSeparation` asserts on wheel joints.
+- `joint.c:1114`: the wheel joint reaction force is marked "todo probably wrong".
+- The custom filter callback runs only at pair creation, and both callbacks run on worker threads (they must be
+  pure).

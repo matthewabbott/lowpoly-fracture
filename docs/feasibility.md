@@ -82,7 +82,7 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
    into many small chunks; debris pops out of existence at the budget (fade or shrink instead).
 5. **Content pipeline.** Destructible art must be convex parts; tooling to author or decompose it is not built yet.
 
-## Next steps (suggested order)
+## Next steps (suggested order; superseded by [roadmap.md](roadmap.md))
 
 1. Vehicles: raycast vehicle on Box3D (wheel joint or custom suspension), a drivable truck that smashes through
    walls. This unlocks the race-rigging prototype.
