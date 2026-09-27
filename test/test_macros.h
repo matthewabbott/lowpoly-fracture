@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <math.h>
+#include <stdio.h>
+
+#define ENSURE( c )                                                                                                    \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		if ( !( c ) )                                                                                                  \
+		{                                                                                                              \
+			printf( "  FAILED %s:%d: %s\n", __FILE__, __LINE__, #c );                                                  \
+			return 1;                                                                                                  \
+		}                                                                                                              \
+	}                                                                                                                  \
+	while ( 0 )
+
+#define ENSURE_NEAR( a, b, tol )                                                                                       \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		double lpA_ = (double)( a ), lpB_ = (double)( b );                                                             \
+		if ( fabs( lpA_ - lpB_ ) > (double)( tol ) )                                                                   \
+		{                                                                                                              \
+			printf( "  FAILED %s:%d: %s = %.9g, %s = %.9g\n", __FILE__, __LINE__, #a, lpA_, #b, lpB_ );                \
+			return 1;                                                                                                  \
+		}                                                                                                              \
+	}                                                                                                                  \
+	while ( 0 )
+
+#define RUN_TEST( t )                                                                                                  \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		int lpR_ = t();                                                                                                \
+		if ( lpR_ != 0 )                                                                                               \
+		{                                                                                                              \
+			printf( "test FAILED: %s\n", #t );                                                                         \
+			return 1;                                                                                                  \
+		}                                                                                                              \
+		printf( "test passed: %s\n", #t );                                                                             \
+	}                                                                                                                  \
+	while ( 0 )
