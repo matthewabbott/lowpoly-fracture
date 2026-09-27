@@ -55,7 +55,7 @@ function Delta($now, $was) {
 }
 
 Write-Host "vs baseline $($base.commit) ($($base.date)); ms per step, change in brackets"
-Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} | {6}' -f 'scene', 'w', 'avg', 'p95', 'max', 'pieces', 'hash')
+Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} {6,-15} | {7}' -f 'scene', 'w', 'avg', 'p95', 'max', 'pieces', 'contacts', 'hash')
 $hashChanged = $false
 foreach ($scene in $Scenes) {
     $was = $base.scenes.$scene
@@ -64,9 +64,10 @@ foreach ($scene in $Scenes) {
         $same = $old -and $old.hash -eq $run.hash
         if (-not $same) { $hashChanged = $true }
         $mark = if ($same) { 'same' } elseif ($old) { "CHANGED (was $($old.hash))" } else { 'new' }
-        Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} | {6} {7}' -f $scene, $run.workers,
+        $contacts = if ($null -ne $run.awakeContactsAvg) { Delta $run.awakeContactsAvg $old.awakeContactsAvg } else { '-' }
+        Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} {6,-15} | {7} {8}' -f $scene, $run.workers,
             (Delta $run.stepAvgMs $old.stepAvgMs), (Delta $run.stepP95Ms $old.stepP95Ms), (Delta $run.stepMaxMs $old.stepMaxMs),
-            $run.maxPieces, $run.hash, $mark)
+            $run.maxPieces, $contacts, $run.hash, $mark)
     }
 }
 if ($hashChanged -and -not $AcceptHashes) {

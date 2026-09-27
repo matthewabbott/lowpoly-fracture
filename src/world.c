@@ -811,7 +811,9 @@ static void lpRunFractureJob( int index, int worker, void* context )
 	(void)worker;
 	lpFractureJob* job = (lpFractureJob*)context + index;
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
+	uint64_t ticks = b3GetTicks();
 	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
+	job->stats.voronoiMs = b3GetMillisecondsAndReset( &ticks );
 	job->bondCount = 0;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
@@ -856,12 +858,14 @@ static void lpRunFractureJob( int index, int worker, void* context )
 	float slack = lpGetMaterial( job->input.interiorMaterial )->mergeSlack;
 	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
 								   job->input.interiorMaterial );
+	job->stats.mergeMs = b3GetMillisecondsAndReset( &ticks );
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		uint8_t cls = job->cellClass[i];
 		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
 		job->hulls[i] = needsHull ? lpShape_CreateHull( job->cells[i] ) : NULL;
 	}
+	job->stats.hullMs = b3GetMillisecondsAndReset( &ticks );
 	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
 }
 
@@ -885,6 +889,9 @@ static void lpFreeJobOutput( lpFractureJob* job )
 static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 {
 	w->stats.clipFailures += job->stats.failureCount;
+	w->stats.voronoiCpuMs += job->stats.voronoiMs;
+	w->stats.mergeCpuMs += job->stats.mergeMs;
+	w->stats.hullCpuMs += job->stats.hullMs;
 	int pieceIndex = job->piece;
 	lpPiece* piece = w->pieces.data + pieceIndex;
 	if ( job->cellCount < 2 || piece->body < 0 )
@@ -2034,6 +2041,9 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.shapeMs = 0.0f;
 	w->stats.bondMs = 0.0f;
 	w->stats.splitMs = 0.0f;
+	w->stats.voronoiCpuMs = 0.0f;
+	w->stats.mergeCpuMs = 0.0f;
+	w->stats.hullCpuMs = 0.0f;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
 	w->particles.count = 0;

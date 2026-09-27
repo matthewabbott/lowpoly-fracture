@@ -225,6 +225,11 @@ typedef struct lpStats
 	float shapeMs; // Box3D shape create/destroy
 	float bondMs;  // contact areas for new bonds
 	float splitMs; // connectivity and new bodies
+
+	// CPU time inside the parallel phase, summed over its jobs (so it can exceed cellMs with several workers)
+	float voronoiCpuMs;
+	float mergeCpuMs;
+	float hullCpuMs;
 	uint64_t tick;
 } lpStats;
 

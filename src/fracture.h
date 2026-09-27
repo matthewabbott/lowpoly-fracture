@@ -46,6 +46,9 @@ typedef struct lpFractureStats
 	int siteCount;
 	int clipCount;
 	int failureCount;
+	float voronoiMs; // CPU time of a fracture job's stages (world.c), measured and never branched on
+	float mergeMs;
+	float hullMs;
 } lpFractureStats;
 
 #define LP_MAX_SITES 128

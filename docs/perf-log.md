@@ -46,3 +46,29 @@ Single-threaded: town 1.88, walls 1.67, pile 2.61 ms average step.
   because wooden crates break into fewer, bigger pieces.
 - The hull merge runs in the parallel fracture phase; worst fracture steps are 4 to 5 ms at 8 workers (baseline 25
   to 54 ms).
+
+## Backlog (measured 2026-09-27, commit after 7bf0f45)
+
+Where the parallel fracture phase spends CPU time (`lpf_bench`, 600 ticks, sum over all jobs, 1 worker / 8 workers):
+
+| scene | Voronoi cells | keeper merge | Box3D hulls |
+|---|---|---|---|
+| walls | 14 / 19 ms | 46 / 92 ms | 15 / 30 ms |
+| town | 22 / 30 ms | 70 / 120 ms | 21 / 38 ms |
+| pile | 26 / 39 ms | 51 / 160 ms | 14 / 41 ms |
+
+Findings and candidate wins, biggest first:
+
+- **Keeper merge is about 60% of fracture job time.** Every candidate pair runs a quickhull (`b3CreateHull`) and a
+  volume check, and most pairs are rejected. A cheap convexity pre-check (how far each cell's vertices poke outside
+  the other cell's face planes: a few hundred dot products) can reject most pairs before any hull is built.
+- **CPU time roughly doubles at 8 workers.** Hull building and shape creation allocate on every call, so the heap
+  lock is contended. Per-job scratch arenas for merge and hull building would remove most of that.
+- **Direct hull builder** (deferred): build Box3D hull data straight from our cells, which already have exact
+  face topology, instead of re-running quickhull. It needs a Box3D patch (`extern/box3d/PATCHES.md`) and removes at
+  most the hull column above: worth it after the two items above.
+- **Renderer sync is O(everything) per frame.** `Renderer_Sync` walks every piece and every body transform each
+  frame. A change feed from the core (pieces whose mesh changed, bodies that moved) makes it O(changes); scrap and
+  rubble never move.
+- **Scrap render batching:** scrap is static, so it could be merged into static render chunks per grid cell.
+- **Toaster profile:** caps, fragment scale, render scale and shadows behind one switch.
