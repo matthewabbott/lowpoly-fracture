@@ -172,3 +172,6 @@ struct lpWorld
 
 // Full invariant check, for tests. Returns false and prints the first violation.
 bool lpWorld_Validate( const lpWorld* world );
+
+// Every live bond joins two pieces that touch (within the weld margin). Slower; for tests.
+bool lpWorld_ValidateBondGeometry( const lpWorld* world );

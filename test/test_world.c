@@ -246,6 +246,37 @@ static int TestPull( void )
 	return 0;
 }
 
+// Hitting the same spot repeatedly refractures pieces that came from an earlier fracture. Every bond must still join
+// pieces that touch (stale cut-face tags once created phantom bonds between unrelated cells).
+static int TestRefractureBonds( void )
+{
+	Sim s = CreateSim( lp_sceneWall, 1 );
+	for ( int tick = 0; tick < 40; ++tick )
+	{
+		if ( tick % 8 == 1 )
+		{
+			lpImpactDef im = { 0 };
+			im.point = (b3Pos){ -1.5f + 0.05f * (float)tick, 1.5f, -3.85f };
+			im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+			im.radius = 0.8f;
+			im.energy = 9000.0f;
+			lpWorld_AddImpact( s.world, &im );
+		}
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		ENSURE( lpWorld_Validate( s.world ) );
+		ENSURE( lpWorld_ValidateBondGeometry( s.world ) );
+	}
+	int deep = 0;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		deep += s.world->pieces.data[i].body >= 0 && s.world->pieces.data[i].depth >= 2 ? 1 : 0;
+	}
+	printf( "  pieces from a second-generation fracture: %d\n", deep );
+	ENSURE( deep > 0 );
+	DestroySim( &s );
+	return 0;
+}
+
 static float LooseVolume( const lpWorld* world )
 {
 	float v = 0.0f;
@@ -305,6 +336,7 @@ static int TestStressCollapse( void )
 
 int WorldTest( void )
 {
+	RUN_TEST( TestRefractureBonds );
 	RUN_TEST( TestStressCollapse );
 	RUN_TEST( TestDetonator );
 	RUN_TEST( TestPull );

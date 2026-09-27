@@ -666,6 +666,13 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	job->localImpact = localImpact;
 	job->center = piece->shape->centroid;
 	lpShape_ToPoly( piece->shape, &job->poly );
+	for ( int f = 0; f < job->poly.faceCount; ++f )
+	{
+		if ( job->poly.faces[f].tag >= 0 )
+		{
+			job->poly.faces[f].tag = LP_TAG_CUT; // cut faces of an earlier fracture
+		}
+	}
 	lpPoly_Translate( &job->poly, b3Neg( job->center ) );
 	job->minPieceVolume = w->def.minPieceVolume;
 	job->cellCount = 0;
@@ -2010,6 +2017,25 @@ bool lpWorld_Validate( const lpWorld* w )
 	if ( liveBonds != w->bondCount || bondRefs != 2 * liveBonds )
 	{
 		return lpFail( "bond count %d, live %d, refs %d", w->bondCount, liveBonds, bondRefs );
+	}
+	return true;
+}
+
+bool lpWorld_ValidateBondGeometry( const lpWorld* w )
+{
+	for ( int i = 0; i < w->bonds.count; ++i )
+	{
+		const lpBond* bond = w->bonds.data + i;
+		if ( bond->alive == false )
+		{
+			continue;
+		}
+		const lpShape* a = w->pieces.data[bond->a].shape;
+		const lpShape* b = w->pieces.data[bond->b].shape;
+		if ( lpShape_NearlyOverlap( a, b, 0.035f ) == false )
+		{
+			return lpFail( "bond %d joins pieces %d and %d that do not touch", i, bond->a, bond->b );
+		}
 	}
 	return true;
 }

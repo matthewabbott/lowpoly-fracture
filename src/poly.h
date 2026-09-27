@@ -13,8 +13,11 @@
 #define LP_POLY_MAX_FACES 64
 #define LP_POLY_MAX_INDICES 512
 
-// Face tag for authored outer surface. Cut faces get a tag >= 0 naming the cut (site or plane id).
+// Face tag for authored outer surface. Cut faces get a tag >= 0 naming the cut (site or plane id) while their
+// fracture is being computed; afterwards they are normalised to LP_TAG_CUT so a later fracture of the same piece
+// cannot mistake them for its own site indices.
 #define LP_TAG_EXTERIOR ( -1 )
+#define LP_TAG_CUT ( -2 )
 
 typedef struct lpFace
 {

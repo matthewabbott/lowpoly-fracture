@@ -50,6 +50,8 @@ typedef struct Result
 	uint64_t hash;
 	lpStats worst; // stats of the step with the largest fracture time
 	double sumCell, sumHull, sumShape, sumBond, sumSplit;
+	int maxContacts, maxAwakeContacts, maxShapes;
+	double sumAwakeContacts;
 } Result;
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
@@ -101,7 +103,13 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.impacts += st.impactsThisStep;
 		r.fractures += st.fracturesThisStep;
 		r.cells += st.cellsThisStep;
+		b3Counters counters = b3World_GetCounters( physics );
+		r.maxContacts = counters.contactCount > r.maxContacts ? counters.contactCount : r.maxContacts;
+		r.maxAwakeContacts = counters.awakeContactCount > r.maxAwakeContacts ? counters.awakeContactCount : r.maxAwakeContacts;
+		r.maxShapes = counters.shapeCount > r.maxShapes ? counters.shapeCount : r.maxShapes;
+		r.sumAwakeContacts += counters.awakeContactCount;
 	}
+	r.sumAwakeContacts /= (double)ticks;
 	r.hash = lpWorld_Hash( world );
 	r.total = Summarize( total, ticks );
 	r.fracture = Summarize( fracture, ticks );
@@ -214,6 +222,8 @@ int main( int argc, char** argv )
 				r.sumCell, r.sumHull, r.sumShape, r.sumBond, r.sumSplit, (double)r.worst.fractureMs, (double)r.worst.cellMs,
 				(double)r.worst.hullMs, (double)r.worst.shapeMs, (double)r.worst.bondMs, (double)r.worst.splitMs,
 				r.worst.fracturesThisStep, r.worst.cellsThisStep );
+		printf( "        box3d: shapes max %d, contacts max %d, awake contacts avg %.0f max %d\n", r.maxShapes, r.maxContacts,
+				r.sumAwakeContacts, r.maxAwakeContacts );
 	}
 	printf( "impacts %d, fractures %d, cells %d\n", results[0].impacts, results[0].fractures, results[0].cells );
 	printf( "deterministic across worker counts: %s\n", deterministic ? "yes" : "NO" );

@@ -150,7 +150,7 @@ int lpBuildFacetMesh( const lpShape* shape, const lpFacetParams* params, lpVerte
 		}
 
 		uint32_t rgb;
-		if ( face->tag < 0 )
+		if ( face->tag == LP_TAG_EXTERIOR )
 		{
 			// Authored surface: a small per-plane brightness jitter gives the faceted look. Keyed by the plane, not
 			// the piece, so coplanar faces of neighbouring cells match and intact surfaces stay seamless.
