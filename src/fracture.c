@@ -840,3 +840,95 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 	}
 	return kept;
 }
+
+int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
+				lpShape** chips, int capacity )
+{
+	enum
+	{
+		lp_maxChips = 4
+	};
+	splits = splits < lp_maxChips - 1 ? splits : lp_maxChips - 1;
+	if ( splits <= 0 || capacity < 2 || cell->volume < 2.0f * minVolume )
+	{
+		return 0;
+	}
+
+	lpPoly* polys = lpAlloc( ( lp_maxChips + 1 ) * sizeof( lpPoly ) );
+	lpPoly* scratch = polys + lp_maxChips;
+	float volumes[lp_maxChips];
+	b3Vec3 centroids[lp_maxChips];
+	lpShape_ToPoly( cell, polys );
+	volumes[0] = cell->volume;
+	centroids[0] = cell->centroid;
+	int count = 1;
+	bool grain = b3LengthSquared( grainAxis ) > 0.0f;
+
+	for ( int s = 0; s < splits && count < capacity && count < lp_maxChips; ++s )
+	{
+		// Always split the biggest chip so far (lowest index on ties)
+		int big = 0;
+		for ( int i = 1; i < count; ++i )
+		{
+			big = volumes[i] > volumes[big] ? i : big;
+		}
+		if ( volumes[big] < 2.0f * minVolume )
+		{
+			break;
+		}
+
+		b3Vec3 n = lpRandomUnitVector( rng );
+		if ( grain )
+		{
+			n = b3MulSub( n, b3Dot( n, grainAxis ), grainAxis );
+			if ( b3LengthSquared( n ) < 1e-4f )
+			{
+				continue;
+			}
+			n = b3Normalize( n );
+		}
+		float reach = 0.15f * cell->radius; // no cbrtf: C-library roots are not bit-identical everywhere
+		b3Plane plane = { n, b3Dot( n, centroids[big] ) + lpRandom_Range( rng, -reach, reach ) };
+		b3Plane flipped = { b3Neg( n ), -plane.offset };
+
+		lpClipResult below = lpPoly_Clip( polys + big, plane, material, LP_TAG_CUT, 1e-5f, scratch );
+		if ( below != lp_clipCut )
+		{
+			continue;
+		}
+		float va, vb;
+		b3Vec3 ca, cb;
+		lpPoly_ComputeMass( scratch, &va, &ca );
+		lpPoly* other = polys + count;
+		if ( lpPoly_Clip( polys + big, flipped, material, LP_TAG_CUT, 1e-5f, other ) != lp_clipCut )
+		{
+			continue;
+		}
+		lpPoly_ComputeMass( other, &vb, &cb );
+		if ( va < minVolume || vb < minVolume )
+		{
+			continue;
+		}
+		polys[big] = *scratch;
+		volumes[big] = va;
+		centroids[big] = ca;
+		volumes[count] = vb;
+		centroids[count] = cb;
+		count += 1;
+	}
+
+	int written = 0;
+	if ( count > 1 )
+	{
+		for ( int i = 0; i < count; ++i )
+		{
+			lpShape* chip = lpShape_Create( polys + i );
+			if ( chip != NULL )
+			{
+				chips[written++] = chip;
+			}
+		}
+	}
+	lpFree( polys );
+	return written;
+}

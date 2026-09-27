@@ -221,6 +221,47 @@ static int TestFractureFuzz( void )
 	return 0;
 }
 
+// Chips tile the cell they came from, and with a grain axis every chip cut contains the axis (splinters stay long)
+static int TestChipCell( void )
+{
+	lpPoly box;
+	lpPoly_MakeBox( &box, (b3Vec3){ 0.3f, 0.05f, 0.08f }, b3Transform_identity, 0 );
+	lpShape* cell = lpShape_Create( &box );
+	ENSURE( cell != NULL );
+	b3Vec3 grain = { 1.0f, 0.0f, 0.0f };
+	int total = 0;
+	for ( int trial = 0; trial < 40; ++trial )
+	{
+		lpRandom rng;
+		lpRandom_Seed( &rng, (uint64_t)trial, 5 );
+		int splits = 1 + trial % 3;
+		b3Vec3 axis = trial % 2 == 0 ? grain : b3Vec3_zero;
+		lpShape* chips[8];
+		int count = lpChipCell( cell, splits, axis, 0, 1e-6f, &rng, chips, 8 );
+		ENSURE( count == 0 || ( count >= 2 && count <= splits + 1 ) );
+		if ( count > 0 )
+		{
+			ENSURE( CheckTiling( &box, chips, count, 1e-3f ) == 0 );
+			for ( int i = 0; i < count && trial % 2 == 0; ++i )
+			{
+				for ( int f = 0; f < chips[i]->faceCount; ++f )
+				{
+					if ( chips[i]->faces[f].tag == LP_TAG_CUT )
+					{
+						ENSURE( fabsf( b3Dot( chips[i]->faces[f].plane.normal, grain ) ) < 1e-3f );
+					}
+				}
+			}
+		}
+		total += count;
+		FreeCells( chips, count );
+	}
+	lpShape_Destroy( cell );
+	printf( "  %d chips from 40 cells\n", total );
+	ENSURE( total > 60 );
+	return 0;
+}
+
 int FractureTest( void )
 {
 	RUN_TEST( TestImpactPattern );
@@ -228,5 +269,6 @@ int FractureTest( void )
 	RUN_TEST( TestRadialPattern );
 	RUN_TEST( TestFractureDeterminism );
 	RUN_TEST( TestFractureFuzz );
+	RUN_TEST( TestChipCell );
 	return 0;
 }

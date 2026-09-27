@@ -79,6 +79,13 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
 				  uint8_t interiorMaterial );
 
+// Splits a small ejecta cell into up to 1 + splits chips with random planes near its centroid: a blast throws a
+// dirtier spray of real fragments than the Voronoi budget alone gives, at the price of a few plane clips. With a
+// grain axis the planes contain it, so wood chips stay long splinters. Chips tile the cell and their new faces are
+// cut faces. Writes new shapes (caller owns them) and returns their count; 0 means the cell was left whole.
+int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
+				lpShape** chips, int capacity );
+
 // Building blocks, exposed for tests and benchmarks ------------------------------------------------------
 
 // Sites inside the parent: dense near the impact (density ~ 1/distance, the ejecta), 4-6 ring sites around the
