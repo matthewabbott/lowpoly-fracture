@@ -1,0 +1,5 @@
+add_executable(lpf_bench main.c)
+target_link_libraries(lpf_bench PRIVATE lpf lpf_scenes)
+set_target_properties(lpf_bench PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
+target_compile_definitions(lpf_bench PRIVATE _CRT_SECURE_NO_WARNINGS)
+lpf_warnings(lpf_bench)

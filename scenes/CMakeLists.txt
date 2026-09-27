@@ -1,0 +1,5 @@
+add_library(lpf_scenes STATIC scenes.c scenes.h)
+target_include_directories(lpf_scenes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(lpf_scenes PUBLIC lpf)
+set_target_properties(lpf_scenes PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
+lpf_warnings(lpf_scenes)
