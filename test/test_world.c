@@ -182,6 +182,43 @@ static int TestDetonator( void )
 	return 0;
 }
 
+// A detonated body whose slot is freed and reused before its blast step must not take the new body with it
+static int TestDetonatorIndexReuse( void )
+{
+	Sim s = CreateSimWorkers( -1, 1 );
+	lpPartDef part = lpDefaultPartDef();
+	part.halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+	part.material = lp_metal; // does not fracture, so the blast only sets it off
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ 0.0f, 0.2f, 0.0f };
+	def.parts = &part;
+	def.partCount = 1;
+	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
+	int armed = lpCreateObject( s.world, &def );
+
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.5f, 0.2f, 0.0f };
+	im.radius = 1.4f;
+	im.energy = 80000.0f;
+	im.explosion = true;
+	lpWorld_AddImpact( s.world, &im );
+	Run( &s, 1 );
+	ENSURE( s.world->pendingDestroy.count == 1 );
+
+	// Its slot is freed (as when its own fracture empties it) and taken by a new object far away
+	lpDestroyBody( s.world, armed, false );
+	def.detonator = (lpDetonatorDef){ 0 };
+	def.transform.p = (b3Pos){ 30.0f, 0.2f, 0.0f };
+	int other = lpCreateObject( s.world, &def );
+	ENSURE( other == armed );
+	Run( &s, 2 );
+	ENSURE( s.world->bodies.data[other].alive );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
 // Pulling a loose crate lifts it toward the target
 static int TestPull( void )
 {
@@ -275,6 +312,7 @@ int WorldTest( void )
 {
 	RUN_TEST( TestRefractureBonds );
 	RUN_TEST( TestDetonator );
+	RUN_TEST( TestDetonatorIndexReuse );
 	RUN_TEST( TestPull );
 	RUN_TEST( TestWallDamage );
 	RUN_TEST( TestDeterminism );

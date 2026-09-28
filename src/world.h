@@ -138,6 +138,13 @@ typedef struct lpBond
 	bool alive;
 } lpBond;
 
+// A body named for good: its slot index plus the generation of that slot (indices are reused)
+typedef struct lpBodyRef
+{
+	int body;
+	uint32_t generation;
+} lpBodyRef;
+
 typedef struct lpBody
 {
 	b3BodyId id; // null for ghost and scrap
@@ -146,6 +153,7 @@ typedef struct lpBody
 	float volume;
 	int nextFree;
 	int stamp;
+	uint32_t generation; // bumped each time the slot is reused: (index, generation) names one body for good
 	uint8_t kind;
 	uint8_t tier;
 	bool alive;
@@ -296,7 +304,7 @@ struct lpWorld
 	LP_ARRAY( b3ContactData ) scratchContacts;
 	LP_ARRAY( lpVec6 ) scratchLoads;
 	int stressWork; // bond-iterations used this step, over all structures
-	LP_ARRAY( int ) pendingDestroy; // detonated bodies, removed at the start of the next step
+	LP_ARRAY( lpBodyRef ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;
 	LP_ARRAY( lpDeferredJob ) deferred;
@@ -342,6 +350,7 @@ void lpQueryPieces( lpWorld* w, b3AABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
 b3WorldTransform lpGetTransform( const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
+int lpCompareBodyRef( const void* a, const void* b ); // by body, then generation
 
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale
 // bonds and dirty bodies (world.c)

@@ -235,9 +235,11 @@ int lpAllocBody( lpWorld* w )
 		lpBody* b = w->bodies.data + index;
 		int* data = b->pieces.data;
 		int capacity = b->pieces.capacity;
+		uint32_t generation = b->generation;
 		memset( b, 0, sizeof( lpBody ) );
 		b->pieces.data = data;
 		b->pieces.capacity = capacity;
+		b->generation = generation + 1;
 	}
 	else
 	{
@@ -779,6 +781,17 @@ int lpCompareInt( const void* a, const void* b )
 	int x = *(const int*)a;
 	int y = *(const int*)b;
 	return ( x > y ) - ( x < y );
+}
+
+int lpCompareBodyRef( const void* a, const void* b )
+{
+	const lpBodyRef* x = a;
+	const lpBodyRef* y = b;
+	if ( x->body != y->body )
+	{
+		return ( x->body > y->body ) - ( x->body < y->body );
+	}
+	return ( x->generation > y->generation ) - ( x->generation < y->generation );
 }
 
 // Pieces whose shapes overlap the box, sorted and unique (query order must not leak into results).

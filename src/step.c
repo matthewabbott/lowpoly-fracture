@@ -111,7 +111,7 @@ b3Vec3 lpWorld_ToBodyFrame( const lpWorld* w, int piece, b3Pos worldPoint )
 	{
 		return b3Vec3_zero;
 	}
-	return b3InvTransformWorldPoint( b3Body_GetTransform( w->bodies.data[p->body].id ), worldPoint );
+	return b3InvTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), worldPoint );
 }
 
 b3Pos lpWorld_ToWorldFrame( const lpWorld* w, int piece, b3Vec3 localPoint )
@@ -121,7 +121,7 @@ b3Pos lpWorld_ToWorldFrame( const lpWorld* w, int piece, b3Vec3 localPoint )
 	{
 		return b3ToPos( localPoint );
 	}
-	return b3TransformWorldPoint( b3Body_GetTransform( w->bodies.data[p->body].id ), localPoint );
+	return b3TransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), localPoint );
 }
 
 // Spring-damper toward the target, mass-normalized and clamped, with gravity compensation up to maxMass
@@ -197,17 +197,19 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 
 	uint64_t ticks = b3GetTicks();
 
-	// Bodies that detonated last step are consumed by their own blast
+	// Bodies that detonated last step are consumed by their own blast. One that is already gone may have had its slot
+	// reused since, so the generation must match too.
 	if ( w->pendingDestroy.count > 1 )
 	{
-		qsort( w->pendingDestroy.data, (size_t)w->pendingDestroy.count, sizeof( int ), lpCompareInt );
+		qsort( w->pendingDestroy.data, (size_t)w->pendingDestroy.count, sizeof( lpBodyRef ), lpCompareBodyRef );
 	}
 	for ( int i = 0; i < w->pendingDestroy.count; ++i )
 	{
-		int bodyIndex = w->pendingDestroy.data[i];
-		if ( w->bodies.data[bodyIndex].alive && ( i == 0 || w->pendingDestroy.data[i - 1] != bodyIndex ) )
+		lpBodyRef ref = w->pendingDestroy.data[i];
+		const lpBody* b = w->bodies.data + ref.body;
+		if ( b->alive && b->generation == ref.generation )
 		{
-			lpDestroyBody( w, bodyIndex, true );
+			lpDestroyBody( w, ref.body, true );
 		}
 	}
 	w->pendingDestroy.count = 0;

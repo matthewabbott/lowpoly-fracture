@@ -450,7 +450,8 @@ static void lpDetonate( lpWorld* w, int bodyIndex )
 	blast.impulse = b->detonator.speed;
 	blast.explosion = true;
 	lpArray_Push( w->nextImpacts, blast );
-	lpArray_Push( w->pendingDestroy, bodyIndex );
+	lpBodyRef ref = { bodyIndex, b->generation };
+	lpArray_Push( w->pendingDestroy, ref );
 }
 
 typedef struct lpFractureCandidate

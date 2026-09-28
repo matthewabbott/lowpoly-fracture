@@ -27,6 +27,27 @@ static float BodyY( const Sim* s, int body )
 	return (float)xf.p.y;
 }
 
+// Frame queries work on loose (ghost) pieces, which have no Box3D body
+static int TestLooseBodyFrame( void )
+{
+	Sim s = CreateSim( -1 );
+	int body = AddBox( &s, (b3Vec3){ 1.0f, 3.0f, -2.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, b3Vec3_zero );
+	Run( &s, 1 );
+	lpConvertToGhost( s.world, body );
+	ENSURE( s.world->bodies.data[body].kind == lp_kindGhost );
+	int piece = s.world->bodies.data[body].pieces.data[0];
+	b3Vec3 local = { 0.05f, -0.02f, 0.07f };
+	b3WorldTransform xf;
+	ENSURE( lpWorld_GetBodyTransform( s.world, body, &xf ) );
+	b3Pos expected = b3TransformWorldPoint( xf, local );
+	b3Pos world = lpWorld_ToWorldFrame( s.world, piece, local );
+	ENSURE( b3Length( b3SubPos( world, expected ) ) < 1e-5f );
+	b3Vec3 back = lpWorld_ToBodyFrame( s.world, piece, world );
+	ENSURE( b3Length( b3Sub( back, local ) ) < 1e-5f );
+	DestroySim( &s );
+	return 0;
+}
+
 static int TestSliverAbsorption( void )
 {
 	lpPoly slab;
@@ -350,6 +371,7 @@ static int TestDeferredFracture( void )
 
 int DebrisTest( void )
 {
+	RUN_TEST( TestLooseBodyFrame );
 	RUN_TEST( TestSliverAbsorption );
 	RUN_TEST( TestLogEnds );
 	RUN_TEST( TestGhostLanding );
