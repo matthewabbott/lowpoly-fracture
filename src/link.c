@@ -308,7 +308,17 @@ static void lpReleaseLink( lpWorld* w, int index )
 	{
 		if ( l->ends[k].piece >= 0 )
 		{
-			lpRemoveLinkFromPiece( w->pieces.data + l->ends[k].piece, index );
+			lpPiece* p = w->pieces.data + l->ends[k].piece;
+			lpRemoveLinkFromPiece( p, index );
+			lpBody* b = w->bodies.data + p->body;
+			if ( b->alive && b->kind == lp_kindStructure )
+			{
+				// Its pull is gone: check the structure again with fresh loads. Queued, not marked dirty now, since a
+				// link can break in the middle of the step's splits.
+				b->solving = false;
+				b->creaking = false;
+				lpArray_Push( w->stressAgain, p->body );
+			}
 		}
 		else if ( B3_IS_NON_NULL( l->anchor[k] ) )
 		{
@@ -464,6 +474,32 @@ bool lpBodyLinked( const lpWorld* w, const lpBody* b )
 	return b->linkStamp == w->tick + 1;
 }
 
+// A structure at either end carries the link's pull in its stress solve (sampled with its loads): check it again when
+// the pull has changed by a quarter since, at most every 30 steps (a swinging load pulls back and forth)
+static void lpRecheckStructures( lpWorld* w, lpLink* l )
+{
+	float pull = b3Length( l->force );
+	if ( b3AbsFloat( pull - l->stressForce ) <= 0.25f * b3MaxFloat( pull, l->stressForce ) + 10.0f ||
+		 ( l->recheckTick != 0 && w->tick + 1 < l->recheckTick + 30 ) )
+	{
+		return;
+	}
+	l->stressForce = pull; // with no structure at either end there is nothing to check: stop asking too
+	for ( int k = 0; k < 2; ++k )
+	{
+		int piece = l->ends[k].piece;
+		int bodyIndex = piece >= 0 ? w->pieces.data[piece].body : -1;
+		if ( bodyIndex >= 0 && w->bodies.data[bodyIndex].kind == lp_kindStructure )
+		{
+			lpBody* b = w->bodies.data + bodyIndex;
+			b->solving = false; // sample the new loads
+			b->creaking = false;
+			lpMarkDirty( w, bodyIndex );
+			l->recheckTick = w->tick + 1;
+		}
+	}
+}
+
 void lpPollLinks( lpWorld* w, float timeStep )
 {
 	for ( int i = 0; i < w->links.count; ++i )
@@ -477,6 +513,10 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		b3BodyId b = l->builtOn[1];
 		if ( b3Body_IsAwake( a ) == false && b3Body_IsAwake( b ) == false )
 		{
+			if ( l->settle == 0 )
+			{
+				lpRecheckStructures( w, l ); // one held back by the rate limit still gets through
+			}
 			continue; // asleep: nothing moved, nothing changed
 		}
 		l->points[0] = b3TransformWorldPoint( b3Body_GetTransform( a ), l->ends[0].frame.p );
@@ -488,6 +528,7 @@ void lpPollLinks( lpWorld* w, float timeStep )
 			l->settle -= 1;
 			continue;
 		}
+		lpRecheckStructures( w, l );
 
 		float u = 0.0f;
 		if ( l->def.maxForce > 0.0f )

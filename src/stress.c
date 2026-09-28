@@ -182,7 +182,8 @@ static lpVec6 lpPrecondition( lpVec6 r, const lpBlock6* block )
 }
 
 // What rests on a structure: dynamic bodies pressing on its pieces, from the last physics step's contact impulses
-// (rubble on a floor, a stone on a plank, a cart on a bridge), into each piece's stressLoad. Sampled when a solve
+// (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
+// stressLoad. Sampled when a solve
 // starts and kept, so the solve can continue across steps while the contacts jitter. Returns how much the loads
 // changed, relative to the structure's own weight.
 static float lpSampleLoads( lpWorld* w, int bodyIndex )
@@ -242,6 +243,24 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 					piece->stressLoad.t = b3Add( piece->stressLoad.t, b3Cross( b3Sub( point, piece->shape->centroid ), local ) );
 				}
 			}
+		}
+	}
+
+	// Links pull on it too (a sign on a beam, a drawbridge on its ropes), with the force they held at the last step
+	for ( int i = 0; i < n; ++i )
+	{
+		int pi = body->pieces.data[i];
+		lpPiece* piece = w->pieces.data + pi;
+		for ( int k = 0; k < piece->links.count && piece->anchored == false; ++k )
+		{
+			const lpLink* l = w->links.data + piece->links.data[k];
+			int end = l->ends[1].piece == pi ? 1 : 0;
+			float sign = end == 1 ? 1.0f : -1.0f; // the joint's force and torque are those on end B
+			b3Vec3 force = b3InvRotateVector( xf.q, b3MulSV( sign, l->force ) );
+			b3Vec3 torque = b3InvRotateVector( xf.q, b3MulSV( sign, l->torque ) );
+			b3Vec3 arm = b3Sub( l->ends[end].frame.p, piece->shape->centroid );
+			piece->stressLoad.f = b3Add( piece->stressLoad.f, force );
+			piece->stressLoad.t = b3Add( piece->stressLoad.t, b3Add( b3Cross( arm, force ), torque ) );
 		}
 	}
 

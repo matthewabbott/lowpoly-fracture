@@ -622,6 +622,63 @@ static int TestSetRopeLength( void )
 	return 0;
 }
 
+// Volume of everything still standing as structure, not counting the ground
+static float StructureVolume( const lpWorld* w )
+{
+	float v = 0.0f;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + i;
+		if ( p->body >= 0 && p->material != lp_ground && w->bodies.data[p->body].kind == lp_kindStructure )
+		{
+			v += p->shape->volume;
+		}
+	}
+	return v;
+}
+
+// A 1.2 m stone cantilever mortared to a fixed block stands on its own; with a 420 kg block hung from its tip by a
+// rope, the pull reaches its stress solve and the root joint gives
+static bool CantileverWithLoadFalls( bool hang )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef parts[2];
+	parts[0] = lpDefaultPartDef();
+	parts[0].halfExtents = (b3Vec3){ 0.5f, 0.5f, 0.5f };
+	parts[0].transform.p = (b3Vec3){ 0.0f, 1.5f, 0.0f };
+	parts[0].anchored = true;
+	parts[0].joint = lp_jointMortar;
+	parts[1] = lpDefaultPartDef();
+	parts[1].halfExtents = (b3Vec3){ 0.6f, 0.3f, 0.2f };
+	parts[1].transform.p = (b3Vec3){ 1.1f, 1.6f, 0.0f };
+	parts[1].joint = lp_jointMortar;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.parts = parts;
+	def.partCount = 2;
+	int cantilever = lpCreateObject( s.world, &def );
+	if ( hang )
+	{
+		int load = AddPart( &s, (b3Vec3){ 1.6f, 0.62f, 0.0f }, (b3Vec3){ 0.28f, 0.28f, 0.28f }, lp_stone, false );
+		ENSURE( Rope( &s, cantilever, (b3Vec3){ 1.6f, 1.3f, 0.0f }, load, (b3Vec3){ 1.6f, 0.9f, 0.0f }, 0.0f ) >= 0 );
+	}
+	float before = StructureVolume( s.world );
+	bool valid;
+	StepValidated( &s, 180, &valid );
+	bool fell = StructureVolume( s.world ) < before - 0.1f;
+	DestroySim( &s );
+	return valid && fell;
+}
+
+static int TestSignPullsBeam( void )
+{
+	bool alone = CantileverWithLoadFalls( false );
+	bool loaded = CantileverWithLoadFalls( true );
+	printf( "  1.2 m cantilever alone %s; with 420 kg hung from its tip %s\n", alone ? "fell" : "stands", loaded ? "fell" : "stands" );
+	ENSURE( alone == false );
+	ENSURE( loaded );
+	return 0;
+}
+
 // A little yard of linked things, knocked about by a blast
 static void BuildAssembly( Sim* s )
 {
@@ -710,6 +767,7 @@ int LinkTest( void )
 	RUN_TEST( TestBlastBreaksHinge );
 	RUN_TEST( TestDeferredNoDoubleDamage );
 	RUN_TEST( TestSetRopeLength );
+	RUN_TEST( TestSignPullsBeam );
 	RUN_TEST( TestLinkDeterminism );
 	return 0;
 }

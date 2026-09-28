@@ -114,6 +114,8 @@ typedef struct lpLink
 	b3Pos points[2];	 // world points of the ends, cached at the last step either end was awake
 	b3Vec3 force;		 // on end B, world, N
 	b3Vec3 torque;
+	float stressForce;	  // the pull its structure ends were last re-checked for
+	uint64_t recheckTick; // tick + 1 of that re-check (0: never)
 	float utilization; // load over limit, smoothed
 	float strain;	   // breaks at 1
 	float health;	   // of def.strength, after blasts
