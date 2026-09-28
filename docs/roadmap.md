@@ -5,13 +5,14 @@ several destructible cars, and containers of sloshing volatile reagents, all at 
 before/after numbers in [perf-log.md](perf-log.md).
 
 Order (one at a time):
-1. Chunky fracture + debris tiers (done; polish and prune pass in progress)
-2. Toppling and stress points
-3. Breakable joints and assemblies
-4. Destructible vehicles
-5. Large-map physics zones
-6. Networking
-7. Art polish
+1. Chunky fracture + debris tiers (done)
+2. Toppling and stress points (done)
+3. Breakable links and assemblies (done)
+4. Stress at scale (next)
+5. Destructible vehicles
+6. Large-map physics zones
+7. Networking
+8. Art polish
 
 ## 1. Chunky fracture + debris tiers
 
@@ -66,21 +67,45 @@ The idea is snapshotted stress that is checked only where things break.
   "one building at 60 fps", algorithm undisclosed; the solver is "inspired by Erin's work").
   https://x.com/voxagonlabs/status/2092992959507570923
 
-## 3. Breakable joints and assemblies
+## 3. Breakable links and assemblies
 
-Covers the rickety cart full of volatile crates and backpack contraptions.
+Done: links (`link.c`, see architecture.md; "links" because `lpJoint*` already names bond joints) are Box3D welds,
+hinges, ball joints and ropes between objects.
+- They tear under load, creaking first. Loads are polled after each step, not taken from Box3D's joint events, which
+  miss overflow-coloured and sleeping joints.
+- Blasts damage them; the rifle can cut a rope.
+- They outlive their pieces: through a split, the joint is rebuilt on the new body; through a fracture, the end
+  moves to the cell holding its anchor; if that cell is blown out, the link breaks.
+- Structures carry what hangs on them in their stress solve.
+- "Fairy dust" (`gravityScale`) survives breaking.
+- Linked bodies never freeze or count against the debris budgets, and neither does what rests on them.
+- The yard scene (`scripts/yard_demo.txt`): a cart of volatile crates rolls into a wall when its rope is cut; a sign
+  swings on its last rope; a drawbridge falls open; a door is blown off its hinge; a porter's rack of flasks is there
+  to carry.
 
-- **`lpJointDef`:** weld, hinge, rope or wheel between pieces of two objects, with force and torque break
-  thresholds. Box3D's `forceThreshold` / `torqueThreshold` emit joint events; `b3Joint_GetConstraintForce`
-  confirms, and we destroy the joint. Nothing breaks automatically in Box3D.
-- **Re-homing.** When a jointed piece fractures, the joint moves to the child cell containing the anchor, or breaks
-  if that cell became debris.
-- **Soft welds** (`linearHertz` / `angularHertz`) give wobbly assemblies. Chains of welds flex; that is a feature
-  for rickety carts.
-- **"Fairy dust":** per-object `b3Body_SetGravityScale` (cheap), later buoyancy. Joint forces tell you whether the
-  contraption can be carried.
+Open:
+- wheel and slider links, and driving (vehicles milestone; Box3D's wheel reaction force is marked "probably wrong");
+- segmented ropes and chains (one distance constraint per rope for now), buoyancy, link sounds;
+- a grab that follows its piece through a fracture (the sandbox's grab drops then).
 
-## 4. Destructible vehicles
+## 4. Stress at scale
+
+Why: the per-structure stress budget (10k bond-iterations per step) caps practical building size. Town's houses (up
+to about 160 pieces) finish a check in 1 to 3 steps; a 2000-piece building (about 6000 bonds) would get about one
+iteration per step, and its collapses would lag by hundreds of steps.
+
+In order, measuring first:
+1. A big-building bench rung (a 2000-piece block or cathedral).
+2. Nearby-location solves: solve the few-bond neighbourhood of the damage with the rest held at its last solution,
+   then one full K·x to measure the residual that leaked out; small, done; large, grow the region or continue the
+   full warm-started solve from the patched solution.
+3. A coarse far-field solve: aggregate pieces into clusters and solve that coarse system as a correction (a
+   two-level preconditioner), so iteration counts stop growing with building size.
+4. A watch list of critical joints (the most loaded bonds of the last full solve: keystones, loaded supports),
+   checked first after a local solve to decide whether a wider solve is needed.
+5. A parallel K·x within one solve (fixed partitions, fixed-order sums), for the biggest structures only.
+
+## 5. Destructible vehicles
 
 - **Driving:** raycast suspension and our own tyre friction; stable at racing speed and deterministic. When a wheel
   comes off, a physical wheel body spawns. Box3D's wheel joint (steering servo, spin motor, friction-only grip) is
@@ -96,7 +121,7 @@ Covers the rickety cart full of volatile crates and backpack contraptions.
 - **Fuel tank:** a detonator part. Leaking comes later with fluids.
 - **Materials:** sheet metal (dents), glass (shatters), rubber.
 
-## 5. Large-map physics zones
+## 6. Large-map physics zones
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
@@ -110,7 +135,7 @@ Covers the rickety cart full of volatile crates and backpack contraptions.
   `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 6. Networking
+## 7. Networking
 
 Options:
 - Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
@@ -120,7 +145,7 @@ Options:
 
 A two-process lockstep experiment comes first.
 
-## 7. Art polish
+## 8. Art polish
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public

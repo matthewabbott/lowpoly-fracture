@@ -424,6 +424,8 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece );
 void lpSyncLinks( lpWorld* w );
 void lpPollLinks( lpWorld* w, float timeStep );
 bool lpBodyLinked( const lpWorld* w, const lpBody* b );
+// Touching a linked body that moves (a crate in a cart): it must not freeze, or the assembly would jam on it
+bool lpTouchesLinked( lpWorld* w, const lpBody* b );
 uint64_t lpHashLinks( const lpWorld* w, uint64_t h );
 bool lpValidateLinks( const lpWorld* w );
 void lpFreeLinks( lpWorld* w, bool physicsAlive );

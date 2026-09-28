@@ -15,6 +15,7 @@ nothing much. The engine table lives in `src/world.c` (`lp_materials`); the stru
 | | `fractureEnergy` | J/m² that refractures a piece (how easily a chunk itself shatters) |
 | | `tensileStrength`, `compressiveStrength`, `shearStrength` | Pa limits of the solid material in the stress solve |
 | joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails or solid (table in `world.c`) |
+| links | `lpLinkDef` | joints between objects (weld, hinge, ball, rope): limits per link, see "Links" below |
 | | `breakable` | false for ground and metal today |
 | fracture shape | `pattern` | impact Voronoi, grain Voronoi (wood), radial (glass) |
 | | `grainStretch` | wood: splinters this many times longer along the grain |
@@ -52,7 +53,7 @@ does anything and how much it breaks. Real materials separate the two:
 **Deformation.**
 
 - `ductility`: bends and crumples instead of breaking (metal sheet, car panels). Needs the vehicle crumple lattice
-  (roadmap item 3).
+  (roadmap item 5, vehicles).
 - `brittleness`: whether a bend turns into a snap past a limit (cast iron vs steel).
 
 **Sound and effects.**
@@ -93,3 +94,20 @@ toughness are 0 to 5.
 | foliage (now) | 150 | 0.25 | 0 | 1 | impact | leaves and twigs: puffs of leaves |
 
 Glass flasks in the sandbox are the first alchemy object: a detonator part on a glass body.
+
+## Links
+
+Joints between objects (`lpLinkDef`, `src/link.c`). A link breaks when its load stays over `maxForce` or
+`maxTorque` (it creaks first; twice the limit snaps it within a few steps), or when blasts use up its `strength`
+(J/m², like a bond's). The defaults (`lpDefaultLinkDef`) are starting points:
+
+| link | maxForce (N) | maxTorque (N·m) | strength (J/m²) | as |
+|---|---|---|---|---|
+| rope | 8000 | none | 3000 | a thick hemp rope; the rifle cuts it within about 16 cm |
+| hinge | 40000 | 4000 | 6000 | an iron hinge or axle peg; a grenade within about 0.45 m breaks it |
+| ball | 30000 | 3000 | 6000 | an iron ball joint |
+| weld | 40000 | 8000 | 8000 | a bolted joint; soften it with `hertz` for wobbly assemblies |
+
+The yard's cart runs its wheels on 6000 N / 800 N·m axle pegs (a crash tears them off), and its flasks hang on
+400 N strings. `lpObjectDef.gravityScale` ("fairy dust") lightens a load to carry; everything that breaks off it
+keeps the scale.

@@ -18,6 +18,7 @@ typedef enum lpSceneId
 	lp_scenePile,  // loose crates and rocks dropped in a heap (physics stress)
 	lp_sceneLumber, // logs, a log bridge, a woodpile, trees and a timber shed
 	lp_sceneRuins,	// a dry-stone arch, a colonnade with lintels, balconies: structures that know where they are weak
+	lp_sceneYard,	// things joined by links: a cart of volatile crates on a ramp, a hanging sign, a door, a drawbridge
 	lp_sceneCount
 } lpSceneId;
 

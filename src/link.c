@@ -474,6 +474,32 @@ bool lpBodyLinked( const lpWorld* w, const lpBody* b )
 	return b->linkStamp == w->tick + 1;
 }
 
+bool lpTouchesLinked( lpWorld* w, const lpBody* b )
+{
+	int capacity = w->linkCount > 0 ? b3Body_GetContactCapacity( b->id ) : 0; // free in a world without links
+	if ( capacity == 0 )
+	{
+		return false;
+	}
+	lpArray_Reserve( w->scratchContacts, capacity );
+	int count = b3Body_GetContactData( b->id, w->scratchContacts.data, capacity );
+	for ( int k = 0; k < count; ++k )
+	{
+		const b3ContactData* c = w->scratchContacts.data + k;
+		for ( int side = 0; side < 2; ++side )
+		{
+			intptr_t data = (intptr_t)b3Shape_GetUserData( side == 0 ? c->shapeIdA : c->shapeIdB );
+			int body = data > 0 ? w->pieces.data[data - 1].body : -1;
+			if ( body >= 0 && w->bodies.data + body != b && w->bodies.data[body].kind == lp_kindDebris &&
+				 lpBodyLinked( w, w->bodies.data + body ) )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 // A structure at either end carries the link's pull in its stress solve (sampled with its loads): check it again when
 // the pull has changed by a quarter since, at most every 30 steps (a swinging load pulls back and forth)
 static void lpRecheckStructures( lpWorld* w, lpLink* l )
@@ -594,6 +620,7 @@ lpLinkState lpWorld_GetLinkState( const lpWorld* w, int link )
 	s.utilization = l->utilization;
 	s.strain = l->strain;
 	s.health = l->health;
+	s.length = l->def.length;
 	return s;
 }
 

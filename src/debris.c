@@ -813,7 +813,8 @@ void lpEnforceBudgets( lpWorld* w )
 			}
 			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow
 			if ( w->def.freezeRubble && w->tick - b->createdTick >= 240 && w->freezesThisStep < w->def.maxFreezesPerStep &&
-				 b3Length( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false )
+				 b3Length( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
+				 lpTouchesLinked( w, b ) == false )
 			{
 				b->kind = lp_kindRubble;
 				b->freezePending = false;

@@ -17,11 +17,12 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
 | Convex fracture core: clipping, impact / grain (splinter) / radial (glass) patterns | done, fuzz-tested |
 | Destructibles: bonds, damage, splitting, anchors, debris budget, rubble freezing | done, invariants validated every tick in tests |
 | Collision damage (Box3D hit events), explosions, detonating objects, pull/grab | done |
-| Weight check: undermined structures collapse progressively | done (vertical loads only, see limits) |
+| Stress solve: structures crack, hinge and topple where they are weak (joints, masonry, slender beams) | done |
 | Parallel fracture (3-phase, thread-count independent) | done |
 | Renderer: flat-shaded facets, procedural cut-face colours, shadows, fog, dust, retro render scale | done |
-| Sandbox: 5 scenes, 7 tools, record/replay, scripted runs, screenshots, hash logs | done |
-| Vehicles, cranes/ropes, characters, authored art | not started (next steps) |
+| Sandbox: 8 scenes, 8 tools, record/replay, scripted runs, screenshots, hash logs | done |
+| Links: breakable welds, hinges, ball joints and ropes between objects; winches | done |
+| Vehicles, characters, authored art | not started (next steps) |
 
 ## Measured performance (8 workers unless noted)
 
@@ -67,8 +68,8 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
 - **Determinism?** Achieved for same-binary play across thread counts, reruns and build configs. Cross-OS is designed
   for but unverified.
 - **Can it support Woo Has His Day?** The core pieces are there: blowing up walls, collapsing structures, hauling
-  objects (pull), explosive props (detonators), heavy impacts (cannonball). Missing: vehicles (raycast vehicle on
-  Box3D's wheel joint), cranes and ropes (joint chains with breakable joints), AI drivers, level tooling.
+  objects (pull), explosive props (detonators), heavy impacts (cannonball), breakable ropes, hinges and winches
+  (links). Missing: vehicles (raycast vehicle on Box3D's wheel joint), AI drivers, level tooling.
 - **And Alchemist Courier?** Detonators already model volatile flasks with a trigger speed. The "jostle" mechanic
   needs lower-threshold contact events and liquid state, which are gameplay code on top.
 
@@ -77,9 +78,9 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
 1. **Fracture spikes.** One blast that refractures 100+ pieces still costs 20 to 90 ms once. Fix: time-slice jobs
    across frames (the three-phase design allows it), cap cells per blast, or build hulls directly from cell topology
    instead of Box3D quickhull.
-2. **Weight check is vertical-only.** It crushes and cuts away supports but does not model overturning, so a tower
-   blasted on one side sags and sheds blocks rather than toppling. A per-component support-polygon/moment test is the
-   next step.
+2. **Stress at scale.** The stress solve's per-structure budget suits buildings of a few hundred pieces; a
+   2000-piece building would take hundreds of steps to decide. Local solves and a coarse far-field solve are the next
+   milestone (roadmap section 4).
 3. **Box3D is alpha.** It is pinned and vendored; upstream changes need re-validating with the hash tests.
 4. **Visual polish.** Glass cracks are invisible until pieces fall (plane-keyed colours hide them); foliage blasts
    into many small chunks; debris pops out of existence at the budget (fade or shrink instead).

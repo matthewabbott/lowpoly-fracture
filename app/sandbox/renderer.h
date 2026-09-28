@@ -31,6 +31,7 @@ struct Particle
 	int kind;		// lpParticleKind: the shape it is drawn with
 	V3 axis;		// spin axis, unit length
 	float seed;		// 0..1, picks the particle's lumpy shape and colour jitter
+	float stretch;	// a rope segment (kind 5): its length along the spun z axis, in multiples of size
 };
 
 struct RenderStats

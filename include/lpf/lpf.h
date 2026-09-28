@@ -258,6 +258,7 @@ typedef struct lpLinkState
 	float utilization; // load over limit, smoothed; over 1 the link strains
 	float strain;	   // it breaks at 1
 	float health;	   // what is left of its strength after blasts
+	float length;	   // a rope's longest length
 } lpLinkState;
 
 // Cached at the last step: safe at any time

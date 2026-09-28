@@ -957,7 +957,7 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
 	hit.body = -1;
 	hit.link = -1;
 	b3RayResult result = b3World_CastRayClosest( w->def.physics, origin, translation, b3DefaultQueryFilter() );
-	float nearest = result.hit ? result.fraction : 1.0f;
+	float nearest = result.hit ? result.fraction : 2.0f; // a rope at the very end of the ray still counts
 	if ( result.hit )
 	{
 		hit.hit = true;

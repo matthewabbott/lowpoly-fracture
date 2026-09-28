@@ -204,7 +204,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins] [--workers 1,4,8] [--ticks N] [--period N]\n"
+			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard] [--workers 1,4,8] [--ticks N] [--period N]\n"
 					"                 [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n" );
 			return 1;
 		}

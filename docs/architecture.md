@@ -2,7 +2,7 @@
 
 ```
 app/sandbox  (C++20, sokol D3D11 + Dear ImGui)   tools, camera, record/replay, renderer, screenshots
-scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins; scripted bombardment
+scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins, yard; scripted bombardment
 src/         (C17)  lpf: the destruction core               include/lpf/lpf.h is the whole public API
 extern/box3d (C17)  physics, pinned (extern/box3d/PATCHES.md)
 ```
@@ -14,7 +14,8 @@ face are joined by **bonds**. An **impact** (tool, blast, detonating flask, or a
 hit events) refractures the pieces it reaches into convex **cells** and damages bonds near it. A flood fill over
 the surviving bonds splits the body; components without an anchored piece become dynamic **debris** bodies. A
 **stress solve** finds the force in every bond under the structure's own weight and breaks the joints that cannot
-hold it, so undermined structures crack, hinge and topple where they are weak. New fragments are sorted into cheap **debris tiers** by volume (below), resting debris freezes
+hold it, so undermined structures crack, hinge and topple where they are weak. Objects can be joined by **links**
+(Box3D welds, hinges, ball joints, ropes) that break under load or blasts and outlive the pieces they hang on. New fragments are sorted into cheap **debris tiers** by volume (below), resting debris freezes
 into static **rubble** that wakes when something knocks it, and budgets move the oldest, smallest bodies down the
 tiers instead of popping them.
 
@@ -120,6 +121,31 @@ tiers instead of popping them.
 - Invariants are checked every tick in tests by `lpWorld_Validate` (every piece on one live body with one shape,
   bonds only within a body, counts consistent).
 
+## Links (`link.c`)
+
+- A link joins two objects (or an object and a fixed point) with a Box3D weld, revolute, spherical or distance joint.
+  Each end is a piece plus a frame in its body's frame. Body frames never change for a piece, so an end stays valid
+  through splits, tier changes and fracture; only the Box3D joint is rebuilt when an end's body changes.
+- Invariant (validated): a live link's ends are live pieces of live Box3D bodies, on two different bodies, and its
+  joint is on exactly those bodies. It is kept in three ways:
+  - an end whose piece leaves Box3D (freed, made a ghost or scrap) breaks the link at once;
+  - a fractured piece hands each end to the kept cell holding its anchor, or the link breaks (the cell was blown
+    out);
+  - `lpSyncLinks`, just before the physics step (after every split and new body of the step), rebuilds joints whose
+    ends changed body. A rebuilt link between two moving bodies tears if one is a chip (under 2% of the other's mass).
+- Loads: `lpPollLinks`, just after the physics step, reads each awake link's constraint force and torque (Box3D's
+  joint events miss joints in the overflow constraint colour and sleeping ones). Utilization, clamped to 3 and
+  smoothed, strains the link above 1 (10% over lasts about a second) and breaks it at twice the limit or strain 1.
+  A rebuilt joint starts cold, so it settles for 3 steps before it is judged. Nothing after the physics step touches
+  a joint: state queries and the hash read cached fields.
+- Blasts damage links like bonds, at the anchor or anywhere along a rope; `lpWorld_CastRay` hits ropes as thin
+  capsules. Health scales the load a link can take.
+- Structures carry what hangs on them: `lpSampleLoads` adds each link's force at its anchor, and a link whose pull
+  changed by a quarter re-checks its structures (at most every 30 steps).
+- Linked bodies, and bodies resting on moving linked ones (a crate in a cart), never freeze into rubble and are
+  outside the debris budgets: frozen, they would hold an assembly rigid or jam it. `maxLinks` caps the count.
+- Gravity scale ("fairy dust") lives on the body and passes to every body made from it (splits, ejecta, ghosts).
+
 ## Rendering (`facet.c`, `app/sandbox/renderer.cpp`)
 
 - The core builds flat-shaded triangle meshes per piece (`lpWorld_BuildPieceMesh`): authored faces get their colour
@@ -129,7 +155,8 @@ tiers instead of popping them.
   map piece to body and body to transform, so moving a piece or a body never re-uploads vertices. The whole world
   draws in one call per 131k-vertex page, plus a shadow pass, instanced particles and a nearest-filtered blit
   (render scale < 1 gives a chunky retro look). Particles are one instanced cube scaled per kind: long splinters,
-  flat leaves, thin glass shards that flash in the sun.
+  flat leaves, thin glass shards that flash in the sun. The sandbox draws ropes the same way, as short knotted
+  segments that sag when slack.
 
 ## Extension points already in the API
 
@@ -141,6 +168,8 @@ tiers instead of popping them.
 - `lpWorldDef`: fragment scale (main performance knob), debris scale (tier thresholds), per-tier caps, fracture
   jobs per step, stress scale and budgets, worker count, debug log (`LPF_DEBUG=1` in the sandbox).
 - `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
+- `lpCreateLink` (weld, hinge, ball, rope) with `lpWorld_GetLinkState` (force, utilization, strain, health) and
+  `lpWorld_SetRopeLength` (winches, cranes); `lpObjectDef.gravityScale` and `lpWorld_SetGravityScale`.
 
 ## Borrowed from Nebenan
 

@@ -559,7 +559,7 @@ void Renderer_SetParticles( const Particle* particles, int count )
 		int kind = p.kind >= 0 && p.kind < 5 ? p.kind : 0;
 		d.shape[0] = kShapes[kind][0];
 		d.shape[1] = kShapes[kind][1];
-		d.shape[2] = kShapes[kind][2];
+		d.shape[2] = p.kind == 5 ? p.stretch : kShapes[kind][2]; // a rope segment, knotted by the lumps
 		d.shape[3] = kShapes[kind][3];
 	}
 	s.particleCount = count;

@@ -20,7 +20,8 @@ keep the destruction layer (`src/`) and the app from breaking it.
 6. **Parallel work is pure.** A fracture job reads only its own snapshot and writes only its own output; results are
    integrated sequentially in job order (`impact.c`, "fracture jobs"). A stress job reads its own structure and writes
    only that structure's pieces and its own scratch; budgets are handed out before and joints judged after, both in
-   queue order (`stress.c`). Box3D's threading is deterministic by design.
+   queue order (`stress.c`). Links are synced, polled and damaged sequentially in link order (`link.c`), so Box3D
+   joint ids follow a deterministic create and destroy order. Box3D's threading is deterministic by design.
 7. **Nothing in the simulation looks at the camera or wall-clock time.** Debris budgets rank by volume, age and
    index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on. Every
    per-step cap (fracture jobs, freezes, ghost ray casts, demotions, stress bond-iterations) is a count taken in index
@@ -46,7 +47,9 @@ keep the destruction layer (`src/`) and the app from breaking it.
 - Cross-compiler and cross-OS determinism is designed for (rules 1 to 5, and Box3D's own guarantee) but only
   Windows/MSVC is exercised so far. Box3D's author calls cross-platform determinism "brittle" across compiler
   versions: pin the toolchain for any multiplayer build.
-- `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry and bonds. Rendering
-  and particles are deliberately excluded.
+- `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
+  gravity scales that are not 1: a world without either hashes as before). Rendering and particles are deliberately
+  excluded.
 - Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, ruins (its demo and under
-  bombardment) and town under a barrage (`-Bombard 3`, many structures solving at once), at 1, 4 and 8 workers.
+  bombardment), town under a barrage (`-Bombard 3`, many structures solving at once), and the yard (its demo and
+  under bombardment), at 1, 4 and 8 workers.

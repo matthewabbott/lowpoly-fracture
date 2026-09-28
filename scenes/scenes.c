@@ -65,15 +65,22 @@ static lpPartDef* lpHull( const b3Vec3* points, int count, int material, uint32_
 	return part;
 }
 
-static int lpCommit( lpWorld* world, b3Vec3 position, float yaw, bool isStatic )
+// Creates the object from the builder's parts, with the rest of its definition from `def` (velocity, detonator,
+// gravity scale)
+static int lpCommitDef( lpWorld* world, b3Vec3 position, b3Quat q, lpObjectDef def )
 {
-	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = position;
-	def.transform.q = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, yaw );
-	def.isStatic = isStatic;
+	def.transform.p = b3ToPos( position );
+	def.transform.q = q;
 	def.parts = lp_builder.parts;
 	def.partCount = lp_builder.partCount;
 	return lpCreateObject( world, &def );
+}
+
+static int lpCommit( lpWorld* world, b3Vec3 position, float yaw, bool isStatic )
+{
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = isStatic;
+	return lpCommitDef( world, position, b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, yaw ), def );
 }
 
 static b3Quat lpYaw( float angle )
@@ -131,6 +138,8 @@ const char* lpSceneName( int scene )
 			return "lumber";
 		case lp_sceneRuins:
 			return "ruins";
+		case lp_sceneYard:
+			return "yard";
 		default:
 			return "?";
 	}
@@ -635,6 +644,196 @@ static void lpAddTowerAt( lpWorld* world, b3Vec3 base, int levels )
 	lpCommit( world, base, 0.0f, true );
 }
 
+// ---- the yard: things joined by links ----
+
+static lpObjectDef lpDynamicDef( void )
+{
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	return def;
+}
+
+static lpLinkDef lpLinkBetween( int type, int bodyA, int bodyB, b3Vec3 anchorA, b3Vec3 anchorB )
+{
+	lpLinkDef def = lpDefaultLinkDef( type );
+	def.bodyA = bodyA;
+	def.bodyB = bodyB;
+	def.anchorA = b3ToPos( anchorA );
+	def.anchorB = b3ToPos( anchorB );
+	return def;
+}
+
+// A cart of volatile crates parked on a ramp and tied to a post at the top; a brick wall waits at the bottom. Cut the
+// rope and it rolls down into the wall: the crash tears wheels off their axles and sets the crates off.
+static void lpAddCartOnRamp( lpWorld* world, float z )
+{
+	float slope = 0.35f; // well past a 24-sided wheel's tipping angle (7.5 degrees), so it rolls, and fast
+	b3CosSin cs = b3ComputeCosSin( slope );
+	b3Quat tilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, -slope );
+	b3Vec3 down = { cs.cosine, -cs.sine, 0.0f }; // along the ramp, downhill
+	b3Vec3 normal = { cs.sine, cs.cosine, 0.0f };
+	b3Vec3 foot = { -5.0f, 0.0f, z }; // where the ramp's surface meets the ground
+	float length = 7.0f;
+
+	// The ramp: one anchored stone slab
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.5f * length, 0.1f, 1.2f }, b3Quat_identity, lp_stone, LP_STONE, true );
+	lpCommitDef( world, b3MulAdd( b3MulAdd( foot, -0.5f * length, down ), -0.1f, normal ), tilt, lpDefaultObjectDef() );
+
+	// The post at the top that the cart is tied to
+	b3Vec3 top = b3MulAdd( foot, -length, down );
+	lpBegin();
+	float postHalf = 0.5f * ( top.y + 0.9f );
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.1f, postHalf, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, true );
+	int post = lpCommit( world, (b3Vec3){ top.x - 0.5f, postHalf, z }, 0.0f, true );
+
+	// The cart: a plank bed with low sides, 1.5 m down the ramp, its wheels resting on the slab
+	b3Vec3 origin = b3MulAdd( b3MulAdd( top, 1.5f, down ), 0.5f, normal );
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.8f, 0.05f, 0.5f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		lpBox( (b3Vec3){ 0.0f, 0.2f, 0.47f * (float)side }, (b3Vec3){ 0.8f, 0.15f, 0.03f }, b3Quat_identity, lp_wood, LP_BEAM,
+			   false );
+		lpBox( (b3Vec3){ 0.77f * (float)side, 0.2f, 0.0f }, (b3Vec3){ 0.03f, 0.15f, 0.44f }, b3Quat_identity, lp_wood, LP_BEAM,
+			   false );
+	}
+	int cart = lpCommitDef( world, origin, tilt, lpDynamicDef() );
+
+	// Four 24-sided wheels on axle pegs (hinges): a hard crash tears them off
+	for ( int i = 0; i < 4; ++i )
+	{
+		b3Vec3 pts[48];
+		for ( int k = 0; k < 24; ++k )
+		{
+			b3CosSin c = b3ComputeCosSin( 0.2617994f * (float)k );
+			pts[k] = (b3Vec3){ 0.3f * c.cosine, 0.3f * c.sine, -0.05f };
+			pts[24 + k] = (b3Vec3){ 0.3f * c.cosine, 0.3f * c.sine, 0.05f };
+		}
+		lpBegin();
+		lpHull( pts, 48, lp_wood, LP_BARK, false );
+		b3Vec3 hub = b3Add( origin, b3RotateVector( tilt, (b3Vec3){ i < 2 ? -0.55f : 0.55f, -0.2f, i % 2 == 0 ? -0.62f : 0.62f } ) );
+		int wheel = lpCommitDef( world, hub, tilt, lpDynamicDef() );
+		lpLinkDef axle = lpLinkBetween( lp_linkHinge, cart, wheel, hub, hub );
+		axle.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+		axle.maxForce = 6000.0f;
+		axle.maxTorque = 800.0f;
+		lpCreateLink( world, &axle );
+	}
+
+	// Two crates of something volatile in the bed
+	for ( int k = 0; k < 2; ++k )
+	{
+		lpBegin();
+		lpBox( b3Vec3_zero, (b3Vec3){ 0.2f, 0.2f, 0.2f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+		lpObjectDef def = lpDynamicDef();
+		def.detonator = (lpDetonatorDef){ 3.5f, 1.6f, 70000.0f, 10.0f };
+		lpCommitDef( world, b3Add( origin, b3RotateVector( tilt, (b3Vec3){ k == 0 ? -0.35f : 0.3f, 0.26f, 0.0f } ) ), tilt, def );
+	}
+
+	// The rope, from the post to the back of the cart
+	b3Vec3 tie = b3Add( origin, b3RotateVector( tilt, (b3Vec3){ -0.8f, 0.2f, 0.0f } ) );
+	lpLinkDef rope = lpLinkBetween( lp_linkRope, post, cart, (b3Vec3){ top.x - 0.4f, top.y + 0.35f, z }, tie );
+	lpCreateLink( world, &rope );
+}
+
+// A sign hanging on two ropes from a gallows
+static void lpAddHangingSign( lpWorld* world, b3Vec3 base )
+{
+	lpBegin();
+	lpBox( (b3Vec3){ -1.1f, 1.6f, 0.0f }, (b3Vec3){ 0.1f, 1.6f, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, true );
+	lpBox( (b3Vec3){ 1.1f, 1.6f, 0.0f }, (b3Vec3){ 0.1f, 1.6f, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, true );
+	lpBox( (b3Vec3){ 0.0f, 3.3f, 0.0f }, (b3Vec3){ 1.3f, 0.1f, 0.12f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	int gallows = lpCommit( world, base, 0.0f, true );
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.6f, 0.35f, 0.03f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+	int sign = lpCommit( world, (b3Vec3){ base.x, base.y + 2.0f, base.z }, 0.0f, false );
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		float x = base.x + 0.5f * (float)side;
+		lpLinkDef rope = lpLinkBetween( lp_linkRope, gallows, sign, (b3Vec3){ x, base.y + 3.2f, base.z },
+										(b3Vec3){ x, base.y + 2.35f, base.z } );
+		lpCreateLink( world, &rope );
+	}
+}
+
+// A door on a hinge in its own frame (a hinge stops all collision between the door and the frame)
+static void lpAddDoorway( lpWorld* world, b3Vec3 base )
+{
+	lpBegin();
+	lpBox( (b3Vec3){ -0.7f, 1.15f, 0.0f }, (b3Vec3){ 0.1f, 1.15f, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, true );
+	lpBox( (b3Vec3){ 0.7f, 1.15f, 0.0f }, (b3Vec3){ 0.1f, 1.15f, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, true );
+	lpBox( (b3Vec3){ 0.0f, 2.4f, 0.0f }, (b3Vec3){ 0.8f, 0.1f, 0.1f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	int frame = lpCommit( world, base, 0.0f, true );
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.55f, 1.02f, 0.03f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+	int door = lpCommit( world, (b3Vec3){ base.x, base.y + 1.12f, base.z }, 0.0f, false );
+	lpLinkDef hinge = lpLinkBetween( lp_linkHinge, frame, door, (b3Vec3){ base.x - 0.575f, base.y + 1.12f, base.z }, b3Vec3_zero );
+	hinge.axis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	hinge.lowerAngle = -1.4f;
+	hinge.upperAngle = 1.4f;
+	lpCreateLink( world, &hinge );
+}
+
+// A raised drawbridge in a stone gatehouse: hinged at its foot on the sill, held up by two ropes from under the
+// lintel. It leans out a little, so when the ropes go it falls open.
+static void lpAddDrawbridge( lpWorld* world, b3Vec3 base )
+{
+	lpBegin();
+	lpBox( (b3Vec3){ -1.3f, 1.6f, -0.3f }, (b3Vec3){ 0.4f, 1.6f, 0.5f }, b3Quat_identity, lp_stone, LP_STONE, true );
+	lpBox( (b3Vec3){ 1.3f, 1.6f, -0.3f }, (b3Vec3){ 0.4f, 1.6f, 0.5f }, b3Quat_identity, lp_stone, LP_STONE, true );
+	lpBox( (b3Vec3){ 0.0f, 3.4f, -0.3f }, (b3Vec3){ 1.7f, 0.2f, 0.5f }, b3Quat_identity, lp_stone, LP_STONE_DARK, false );
+	lpBox( (b3Vec3){ 0.0f, 0.05f, -0.3f }, (b3Vec3){ 0.9f, 0.05f, 0.5f }, b3Quat_identity, lp_stone, LP_STONE_DARK, true );
+	int gate = lpCommit( world, base, 0.0f, true );
+
+	b3Quat lean = b3MakeQuatFromAxisAngle( (b3Vec3){ 1.0f, 0.0f, 0.0f }, 0.05f );
+	b3Vec3 foot = { base.x, base.y + 0.1f, base.z + 0.2f }; // the sill's front edge
+	b3Vec3 center = b3Add( foot, b3RotateVector( lean, (b3Vec3){ 0.0f, 1.4f, -0.06f } ) );
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.85f, 1.4f, 0.06f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+	int bridge = lpCommitDef( world, center, lean, lpDynamicDef() );
+	lpLinkDef hinge = lpLinkBetween( lp_linkHinge, gate, bridge, foot, b3Vec3_zero );
+	hinge.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	lpCreateLink( world, &hinge );
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		b3Vec3 hook = { base.x + 0.7f * (float)side, base.y + 3.2f, base.z - 0.3f };
+		b3Vec3 top = b3Add( center, b3RotateVector( lean, (b3Vec3){ 0.7f * (float)side, 1.4f, 0.0f } ) );
+		lpLinkDef rope = lpLinkBetween( lp_linkRope, gate, bridge, hook, top );
+		lpCreateLink( world, &rope );
+	}
+}
+
+// A porter's rack (a base board, two uprights and a top bar) with two flasks hung from the bar on strings. Dusted to
+// half its weight so the grab tool carries it; jostled too hard, the flasks swing into it and go off.
+static void lpAddPorterRack( lpWorld* world, b3Vec3 base )
+{
+	lpBegin();
+	lpBox( (b3Vec3){ 0.0f, 0.03f, 0.0f }, (b3Vec3){ 0.35f, 0.03f, 0.25f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+	lpBox( (b3Vec3){ -0.3f, 0.66f, 0.0f }, (b3Vec3){ 0.04f, 0.6f, 0.04f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	lpBox( (b3Vec3){ 0.3f, 0.66f, 0.0f }, (b3Vec3){ 0.04f, 0.6f, 0.04f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	lpBox( (b3Vec3){ 0.0f, 1.3f, 0.0f }, (b3Vec3){ 0.34f, 0.04f, 0.04f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	lpObjectDef def = lpDynamicDef();
+	def.gravityScale = 0.5f;
+	int rack = lpCommitDef( world, base, b3Quat_identity, def );
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		float x = base.x + 0.15f * (float)side;
+		b3Vec3 pts[12];
+		lpRing( pts, (b3Vec3){ 0.0f, -0.11f, 0.0f }, 0.06f, 6, 0.0f );
+		lpRing( pts + 6, (b3Vec3){ 0.0f, 0.11f, 0.0f }, 0.06f, 6, 0.0f );
+		lpBegin();
+		lpHull( pts, 12, lp_glass, LP_GLASS, false );
+		lpObjectDef flask = lpDynamicDef();
+		flask.detonator = (lpDetonatorDef){ 4.0f, 1.4f, 60000.0f, 10.0f };
+		int bottle = lpCommitDef( world, (b3Vec3){ x, base.y + 0.9f, base.z }, b3Quat_identity, flask );
+		lpLinkDef string = lpLinkBetween( lp_linkRope, rack, bottle, (b3Vec3){ x, base.y + 1.26f, base.z },
+										  (b3Vec3){ x, base.y + 1.01f, base.z } );
+		string.maxForce = 400.0f;
+		lpCreateLink( world, &string );
+	}
+}
+
 static void lpAddPile( lpWorld* world, b3Vec3 center, int count, uint64_t seed )
 {
 	uint64_t rng = seed;
@@ -729,6 +928,16 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddBalconies( world, (b3Vec3){ 12.0f, 0.0f, -6.0f } );
 			break;
 
+		case lp_sceneYard:
+			lpAddGround( world, 60.0f );
+			lpAddCartOnRamp( world, -8.0f );
+			lpAddWall( world, (b3Vec3){ -3.2f, 0.0f, -8.0f }, 0.5f * B3_PI, 3.0f, 1.4f, 0.3f, lp_brick, LP_BRICK, 1.0f );
+			lpAddPorterRack( world, (b3Vec3){ -0.6f, 0.0f, -6.0f } );
+			lpAddHangingSign( world, (b3Vec3){ 1.5f, 0.0f, -8.0f } );
+			lpAddDoorway( world, (b3Vec3){ 4.7f, 0.0f, -8.0f } );
+			lpAddDrawbridge( world, (b3Vec3){ 7.9f, 0.0f, -8.0f } );
+			break;
+
 		case lp_sceneLumber:
 		{
 			lpAddGround( world, 60.0f );
@@ -793,6 +1002,13 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			// Across the whole row: the arch, the colonnade and the balcony wall
 			origin = (b3Vec3){ 2.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
 			target = (b3Vec3){ -10.0f + 24.0f * lpUnit( &rng ), 0.3f + 3.7f * lpUnit( &rng ), -6.0f };
+			break;
+		}
+		case lp_sceneYard:
+		{
+			// Across the whole yard, from the cart's ramp to the gatehouse
+			origin = (b3Vec3){ -1.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
+			target = (b3Vec3){ -11.0f + 20.0f * lpUnit( &rng ), 0.3f + 3.2f * lpUnit( &rng ), -8.0f };
 			break;
 		}
 		default:

@@ -108,8 +108,11 @@ struct App
 	FILE* hashFile = nullptr;
 
 	std::vector<Particle> particles;
+	std::vector<Particle> drawn; // particles plus rope segments, rebuilt each frame
 	RenderSettings rs;
 	bool showUi = true;
+	bool showLinks = false; // overlay: every link, coloured by how close it is to its limit
+	lpMat4 viewProj = {};
 	int frame = 0;
 	bool wantScreenshot = false;
 	int screenshotCounter = 0;
@@ -166,6 +169,10 @@ void SetSceneCamera( int scene )
 		case lp_sceneRuins:
 			app.camPos = { 2.0f, 3.0f, 8.0f };
 			app.pitch = -0.08f;
+			break;
+		case lp_sceneYard:
+			app.camPos = { -1.3f, 2.8f, 3.5f };
+			app.pitch = -0.1f;
 			break;
 		default:
 			break;
@@ -504,6 +511,86 @@ void StepSimulation()
 	app.tick += 1;
 }
 
+// Ropes, drawn as short knotted segments of the particle shape, sagging when slack. Render only.
+void AppendRopes( std::vector<Particle>& out )
+{
+	int capacity = lpWorld_GetLinkCapacity( app.world );
+	for ( int i = 0; i < capacity; ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( app.world, i );
+		if ( st.alive == false || st.type != lp_linkRope )
+		{
+			continue;
+		}
+		V3 a = { (float)st.pointA.x, (float)st.pointA.y, (float)st.pointA.z };
+		V3 b = { (float)st.pointB.x, (float)st.pointB.y, (float)st.pointB.z };
+		V3 ab = b - a;
+		float span = sqrtf( Dot( ab, ab ) );
+		// A slack rope as a parabola whose arc is about the rope's length
+		float sag = st.length > span ? sqrtf( 3.0f * span * ( st.length - span ) / 8.0f ) : 0.0f;
+		int n = (int)ceilf( ( st.length > span ? st.length : span ) / 0.12f );
+		n = n < 1 ? 1 : ( n > 64 ? 64 : n );
+		const float thickness = 0.035f;
+		V3 prev = a;
+		for ( int k = 1; k <= n; ++k )
+		{
+			float t = (float)k / (float)n;
+			V3 p = a + t * ab;
+			p.y -= 4.0f * sag * t * ( 1.0f - t );
+			V3 seg = p - prev;
+			float len = sqrtf( Dot( seg, seg ) );
+			V3 dir = len > 1e-6f ? ( 1.0f / len ) * seg : V3{ 0.0f, 0.0f, 1.0f };
+			V3 axis = Cross( V3{ 0.0f, 0.0f, 1.0f }, dir );
+			float axisLength = sqrtf( Dot( axis, axis ) );
+			Particle q = {};
+			q.position = 0.5f * ( prev + p );
+			q.size = thickness;
+			q.color = 0xFF5E8AAEu; // hemp
+			q.kind = 5;
+			q.axis = axisLength > 1e-6f ? ( 1.0f / axisLength ) * axis : V3{ 1.0f, 0.0f, 0.0f };
+			q.spin = atan2f( axisLength, dir.z );
+			q.seed = fmodf( 0.618034f * (float)( 37 * i + k ), 1.0f );
+			q.stretch = 1.3f * len / thickness; // overlapping, so the lumps never open a gap
+			q.life = 1.0f;
+			out.push_back( q );
+			prev = p;
+		}
+	}
+}
+
+// Overlay: every link from end to end, green when easy, red at its limit
+void DrawLinks( ImDrawList* dl )
+{
+	ImVec2 size = ImGui::GetIO().DisplaySize;
+	auto project = [&]( b3Pos w, ImVec2* out ) {
+		const float* m = app.viewProj.m;
+		float x = (float)w.x, y = (float)w.y, z = (float)w.z;
+		float cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+		float cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+		float cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+		if ( cw <= 0.01f )
+		{
+			return false;
+		}
+		*out = ImVec2( ( 0.5f + 0.5f * cx / cw ) * size.x, ( 0.5f - 0.5f * cy / cw ) * size.y );
+		return true;
+	};
+	int capacity = lpWorld_GetLinkCapacity( app.world );
+	for ( int i = 0; i < capacity; ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( app.world, i );
+		ImVec2 a, b;
+		if ( st.alive == false || project( st.pointA, &a ) == false || project( st.pointB, &b ) == false )
+		{
+			continue;
+		}
+		float u = st.utilization < 1.0f ? st.utilization : 1.0f;
+		ImU32 col = IM_COL32( (int)( 255.0f * fminf( 1.0f, 2.0f * u ) ), (int)( 255.0f * fminf( 1.0f, 2.0f - 2.0f * u ) ), 40, 230 );
+		dl->AddLine( a, b, col, 2.0f );
+		dl->AddCircle( a, 4.0f, col, 8, 2.0f );
+	}
+}
+
 void UpdateParticles( float dt )
 {
 	size_t k = 0;
@@ -574,6 +661,14 @@ void DrawUi()
 	ImGui::Text( "stress %.2f ms  %d solves (%d waiting)  %d iterations  unsettled %d  joints broke %d", app.last.stressMs,
 				 app.last.stressSolves, app.last.stressWaiting, app.last.stressIterations, app.last.unsettledStructures,
 				 app.last.stressBreaks );
+	float peak = 0.0f;
+	for ( int i = 0; i < lpWorld_GetLinkCapacity( app.world ); ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( app.world, i );
+		peak = st.alive && st.utilization > peak ? st.utilization : peak;
+	}
+	ImGui::Text( "links %d  broke %d  rebuilt %d  peak load %.0f%% of limit (L: show)", app.last.linkCount, app.last.linkBreaks,
+				 app.last.linkRebuilds, 100.0f * peak );
 	ImGui::Text( "tiers: full %d  light %d  ghosts %d  scrap %d", app.last.fullDebris, app.last.lightDebris, app.last.ghostBodies,
 				 app.last.scrapBodies );
 	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );
@@ -613,11 +708,15 @@ void DrawUi()
 	ImGui::Checkbox( "paused (P)", &app.paused );
 	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-8 tools" );
 	ImGui::TextDisabled( "grab / blower: hold LMB, wheel changes grab distance" );
-	ImGui::TextDisabled( "R reload, B bombard, F1 ui, F12 screenshot" );
+	ImGui::TextDisabled( "R reload, B bombard, L links, F1 ui, F12 screenshot" );
 	ImGui::End();
 
 	// Crosshair
 	ImDrawList* dl = ImGui::GetForegroundDrawList();
+	if ( app.showLinks )
+	{
+		DrawLinks( dl );
+	}
 	ImVec2 c = ImVec2( 0.5f * ImGui::GetIO().DisplaySize.x, 0.5f * ImGui::GetIO().DisplaySize.y );
 	ImU32 col = app.grabPiece >= 0 ? IM_COL32( 255, 220, 80, 230 ) : IM_COL32( 255, 255, 255, 200 );
 	dl->AddLine( ImVec2( c.x - 8, c.y ), ImVec2( c.x - 3, c.y ), col, 2.0f );
@@ -717,13 +816,16 @@ void Frame()
 
 	uint64_t renderStart = b3GetTicks();
 	Renderer_Sync( app.world );
-	Renderer_SetParticles( app.particles.data(), (int)app.particles.size() );
+	app.drawn = app.particles;
+	AppendRopes( app.drawn );
+	Renderer_SetParticles( app.drawn.data(), (int)app.drawn.size() );
 
 	int width = sapp_width();
 	int height = sapp_height();
 	V3 f = Forward();
 	lpMat4 view = LookAt( app.camPos, app.camPos + f, V3{ 0.0f, 1.0f, 0.0f } );
 	lpMat4 proj = Perspective( 1.05f, (float)width / (float)( height > 0 ? height : 1 ), 0.1f, 400.0f );
+	app.viewProj = Mul( proj, view );
 
 	simgui_frame_desc_t fd = {};
 	fd.width = width;
@@ -813,6 +915,10 @@ void Event_( const sapp_event* ev )
 			if ( ev->key_code == SAPP_KEYCODE_F1 )
 			{
 				app.showUi = !app.showUi;
+			}
+			if ( ev->key_code == SAPP_KEYCODE_L )
+			{
+				app.showLinks = !app.showLinks;
 			}
 			if ( ev->key_code == SAPP_KEYCODE_F12 )
 			{
@@ -949,7 +1055,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber] [--workers N] [--frames N] [--screenshot out.png]\n"
+			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui]\n" );
 			return 1;

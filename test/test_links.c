@@ -679,6 +679,92 @@ static int TestSignPullsBeam( void )
 	return 0;
 }
 
+// The yard scene at rest: every link holds, nothing strains
+static int TestYardAtRest( void )
+{
+	Sim s = CreateSim( lp_sceneYard );
+	int links = s.world->linkCount;
+	bool valid;
+	int breaks = StepValidated( &s, 300, &valid );
+	float peak = 0.0f;
+	for ( int i = 0; i < lpWorld_GetLinkCapacity( s.world ); ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( s.world, i );
+		peak = st.alive && st.utilization > peak ? st.utilization : peak;
+	}
+	printf( "  %d links; after 300 steps %d broke, peak load %.0f%% of a limit\n", links, breaks, (double)( 100.0f * peak ) );
+	ENSURE( valid );
+	ENSURE( links >= 12 );
+	ENSURE( breaks == 0 && s.world->linkCount == links );
+	ENSURE( peak < 0.5f );
+	DestroySim( &s );
+	return 0;
+}
+
+// The yard demo's first shot: the rifle cuts the cart's rope, the cart rolls down the ramp into the brick wall and
+// its volatile crates go off
+static int TestYardCart( void )
+{
+	Sim s = CreateSim( lp_sceneYard );
+	Run( &s, 10 );
+	int rope = -1;
+	for ( int i = 0; i < lpWorld_GetLinkCapacity( s.world ); ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( s.world, i );
+		rope = st.alive && st.type == lp_linkRope && st.pointA.x < -11.0f ? i : rope;
+	}
+	ENSURE( rope >= 0 );
+	int cart = lpWorld_GetLinkState( s.world, rope ).bodyB;
+	int armed = 0;
+	int crates[4];
+	for ( int i = 0; i < s.world->bodies.count && armed < 4; ++i )
+	{
+		const lpBody* b = s.world->bodies.data + i;
+		if ( b->alive && b->armed && b->detonator.triggerSpeed < 3.8f ) // the crates, not the rack's flasks
+		{
+			crates[armed++] = i;
+		}
+	}
+	ENSURE( armed == 2 );
+	b3WorldTransform start;
+	lpWorld_GetBodyTransform( s.world, cart, &start );
+
+	lpRayHit hit = Fire( &s, (b3Vec3){ -1.3f, 2.8f, 3.5f }, b3Add( (b3Vec3){ -1.3f, 2.8f, 3.5f }, (b3Vec3){ -10.03f, -0.02f, -11.5f } ) );
+	ENSURE( hit.link == rope );
+	float farthest = 0.0f;
+	bool valid = true;
+	for ( int tick = 0; tick < 240; ++tick )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		b3WorldTransform xf;
+		if ( lpWorld_GetBodyTransform( s.world, cart, &xf ) && s.world->bodies.data[cart].generation == 0 )
+		{
+			farthest = fmaxf( farthest, (float)( xf.p.x - start.p.x ) );
+		}
+		valid = valid && ( tick % 10 != 0 || lpWorld_Validate( s.world ) );
+	}
+	int wentOff = 0;
+	for ( int k = 0; k < armed; ++k )
+	{
+		const lpBody* b = s.world->bodies.data + crates[k];
+		wentOff += b->alive == false || b->armed == false ? 1 : 0;
+	}
+	int ropes = 0, hinges = 0;
+	for ( int i = 0; i < lpWorld_GetLinkCapacity( s.world ); ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( s.world, i );
+		ropes += st.alive && st.type == lp_linkRope ? 1 : 0;
+		hinges += st.alive && st.type == lp_linkHinge ? 1 : 0;
+	}
+	printf( "  the cart rolled %.1f m; %d of 2 crates went off; left: %d ropes, %d hinges\n", (double)farthest, wentOff, ropes,
+			hinges );
+	ENSURE( valid );
+	ENSURE( farthest > 3.0f );
+	ENSURE( wentOff >= 1 );
+	DestroySim( &s );
+	return 0;
+}
+
 // A little yard of linked things, knocked about by a blast
 static void BuildAssembly( Sim* s )
 {
@@ -768,6 +854,8 @@ int LinkTest( void )
 	RUN_TEST( TestDeferredNoDoubleDamage );
 	RUN_TEST( TestSetRopeLength );
 	RUN_TEST( TestSignPullsBeam );
+	RUN_TEST( TestYardAtRest );
+	RUN_TEST( TestYardCart );
 	RUN_TEST( TestLinkDeterminism );
 	return 0;
 }

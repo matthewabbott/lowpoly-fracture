@@ -65,9 +65,9 @@ static void lpFreezeOrKill( lpWorld* w )
 		{
 			continue;
 		}
-		if ( b3Body_IsAwake( b->id ) || lpBodyLinked( w, b ) )
+		if ( b3Body_IsAwake( b->id ) || lpBodyLinked( w, b ) || lpTouchesLinked( w, b ) )
 		{
-			b->freezePending = false; // a linked body sleeps instead: a frozen one would hold its links rigid
+			b->freezePending = false; // linked bodies and what rests on them sleep instead: frozen, they would jam
 			continue;
 		}
 		uint64_t minAge = b->tier == lp_tierLight ? 6u : 30u;

@@ -8,7 +8,7 @@
 # After a behaviour change, a rung's timings can move because a different amount comes down (destruction is chaotic):
 # compare its pieces and contacts, or try other --period values with lpf_bench, before calling it a regression.
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'barrage'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'yard', 'barrage'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,

@@ -6,7 +6,7 @@ jagged low-poly shards (stone, brick, plaster), long splinters (wood) or radial 
 debris bodies.
 
 - `src/`, `include/lpf/lpf.h`: the destruction core (C17), engine-agnostic
-- `scenes/`: procedural low-poly test scenes (walls, house, town, tower, pile, lumber, ruins)
+- `scenes/`: procedural low-poly test scenes (walls, house, town, tower, pile, lumber, ruins, yard)
 - `app/sandbox/`: playable sandbox (sokol D3D11 + Dear ImGui)
 - `test/`, `bench/`: unit, fuzz and determinism tests; headless benchmark
 - `docs/`: [feasibility report](docs/feasibility.md), [roadmap](docs/roadmap.md), [architecture](docs/architecture.md),
@@ -32,10 +32,11 @@ pwsh tools/check-determinism.ps1 -Scene walls -Script scripts/walls_demo.txt
 
 Sandbox controls: hold right mouse to look, WASD/QE to move (shift is fast), left mouse fires.
 Tools 1-8: rifle, grenade, cannon blast, sledgehammer, cannonball, volatile flask, grab/pull (hold; the mouse wheel
-sets the distance), leaf blower (hold; pushes rubble and scrap off a road). R reloads, B toggles scripted bombardment, P pauses, F1 hides the UI, F12 takes a screenshot.
+sets the distance), leaf blower (hold; pushes rubble and scrap off a road). R reloads, B toggles scripted bombardment,
+P pauses, L shows every link coloured by its load, F1 hides the UI, F12 takes a screenshot.
 
 Automation (used by agents and CI): `--script file` replays tool events (see `scripts/`: walls, house flasks, tower
-collapse, tower topple, lumber, blower, ruins; a `blow` line's last number is how many ticks it is held), `--record file` writes them,
+collapse, tower topple, lumber, blower, ruins, yard; a `blow` line's last number is how many ticks it is held), `--record file` writes them,
 `--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame, `--hash-log file` writes the
 per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--hide-ui`, `--vsync 0`, `--workers N`,
 `--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves.

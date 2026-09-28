@@ -193,3 +193,20 @@ The ladder gains a `barrage` rung (town, a blast every 3 ticks).
 New baseline, best of 3, ms per step at 8 workers (1 worker): walls 0.48 (0.82), town 2.47 (5.61; the more destructive
 outcome above), pile 0.83 (2.38), lumber 0.20 (0.27), tower 1.94 (4.18), ruins 0.11 (0.13), barrage 4.82 (11.68) with
 stress at 0.99 (2.62) ms.
+
+## 2026-09-28 links
+
+Links (joints between objects) cost nothing in a world without them. The pre-milestone build (2dee624) and this one,
+run alternately under the same conditions, gave identical hashes and step times within noise, best of 3:
+
+| rung | before | after |
+|---|---|---|
+| barrage, 8 workers | 6.49 ms | 5.73 ms |
+| barrage, 1 worker | 13.59 ms | 13.62 ms |
+| walls, 8 workers | 0.66 ms | 0.57 ms |
+
+(The machine was slower than when the baseline was taken, so both sides read above the ladder's numbers.)
+
+The new yard rung (13 links: a cart on four axles, ropes, hinges) runs at about 0.12 ms per step at 8 workers. Per
+step, links cost one sync pass (a validity check and two id compares each) and one poll of each awake link (two Box3D
+getters). A joint is rebuilt only when an end's body changes.
