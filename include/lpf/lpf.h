@@ -147,6 +147,7 @@ typedef struct lpWorldDef
 	int maxStressBreaks;   // joints a structure may lose per check below twice their limit (worse ones go at once)
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
+	int maxLinks;		   // live links; bodies with links are exempt from freezing and the debris budgets
 } lpWorldDef;
 
 lpWorldDef lpDefaultWorldDef( void );
@@ -200,6 +201,69 @@ lpPartDef lpDefaultPartDef( void );
 // Returns the body index of the object.
 int lpCreateObject( lpWorld* world, const lpObjectDef* def );
 
+// ---- links ----
+//
+// Box3D joints between objects: a weld, a hinge, a ball joint or a rope. A link breaks when its load stays over its
+// limit (it creaks first), and it outlives the pieces it was made on: when they split off or fracture, it follows the
+// piece that holds its anchor, and breaks if that piece is lost.
+
+typedef enum lpLinkType
+{
+	lp_linkWeld,  // holds position and orientation (softened by hertz for wobbly assemblies)
+	lp_linkHinge, // turns about an axis, optionally between two angles
+	lp_linkBall,  // turns freely about a point, optionally within a cone
+	lp_linkRope,  // holds two points at most `length` apart
+	lp_linkTypeCount
+} lpLinkType;
+
+typedef struct lpLinkDef
+{
+	int type;					  // lpLinkType
+	int bodyA;					  // body index at creation (the piece nearest the anchor holds it); -1 = the world
+	int bodyB;					  // likewise; A != B
+	b3Pos anchorA;				  // world: the joint point, or the rope's end on A
+	b3Pos anchorB;				  // world: the rope's end on B (ropes only)
+	b3Vec3 axis;				  // hinge axis, ball cone axis (world, unit)
+	float length;				  // rope: longest length; 0 = the distance between its ends at creation
+	float lowerAngle, upperAngle; // hinge, radians from the pose at creation; equal = free
+	float coneAngle;			  // ball: 0 = free
+	float hertz, dampingRatio;	  // weld softness; 0 hertz = rigid
+	float maxForce;				  // N; 0 = no limit
+	float maxTorque;			  // N*m; 0 = no limit
+	float strength;				  // impact damage it takes, like a bond's (J/m^2); 0 = immune to blasts
+	bool collideConnected;		  // false stops ALL collision between the two bodies, not only near the link
+} lpLinkDef;
+
+// Defaults for a type: the limits of a hemp rope, an iron hinge or ball joint, a bolted weld
+lpLinkDef lpDefaultLinkDef( int type );
+
+// Returns the link index, or -1: the same body at both ends, a ghost or scrap end, no piece within 0.25 m of an
+// anchor, or maxLinks reached.
+int lpCreateLink( lpWorld* world, const lpLinkDef* def );
+void lpDestroyLink( lpWorld* world, int link );
+
+// Winches and cranes: a rope's longest length
+void lpWorld_SetRopeLength( lpWorld* world, int link, float length );
+
+typedef struct lpLinkState
+{
+	bool alive;
+	bool slack; // a rope whose ends are closer than its length
+	int type;
+	uint32_t generation;  // bumped each time the link slot is reused
+	int bodyA, bodyB;	  // current bodies of the two ends (-1: the world)
+	b3Pos pointA, pointB; // world points of the two ends
+	b3Vec3 force;		  // on B, world, N, at the last step either end was awake
+	b3Vec3 torque;
+	float utilization; // load over limit, smoothed; over 1 the link strains
+	float strain;	   // it breaks at 1
+	float health;	   // what is left of its strength after blasts
+} lpLinkState;
+
+// Cached at the last step: safe at any time
+lpLinkState lpWorld_GetLinkState( const lpWorld* world, int link );
+int lpWorld_GetLinkCapacity( const lpWorld* world ); // every link index is below this
+
 // ---- impacts ----
 
 typedef struct lpImpactDef
@@ -243,6 +307,9 @@ typedef struct lpStats
 {
 	int pieceCount;
 	int bondCount;
+	int linkCount;
+	int linkBreaks;	  // this step, by load, damage or a lost end
+	int linkRebuilds; // this step: links whose joint moved to a new body
 	int structureBodies;
 	int debrisBodies; // full + light
 	int awakeDebris;

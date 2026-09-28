@@ -124,6 +124,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxStressBreaks = 4;
 	def.stressPatience = 30;
 	def.strainRate = 1.0f;
+	def.maxLinks = 4096;
 	def.maxFractureJobsPerStep = 48;
 	def.maxFreezesPerStep = 64;
 	def.maxGhostCastsPerStep = 2048;
@@ -194,6 +195,7 @@ int lpAllocPiece( lpWorld* w )
 
 void lpFreePieceSlot( lpWorld* w, int index )
 {
+	lpBreakPieceLinks( w, index );
 	lpPiece* p = w->pieces.data + index;
 	lpShape_Destroy( p->shape );
 	if ( p->hull != NULL )
@@ -201,6 +203,7 @@ void lpFreePieceSlot( lpWorld* w, int index )
 		b3DestroyHull( p->hull );
 	}
 	lpArray_Free( p->bonds );
+	lpArray_Free( p->links );
 	p->shape = NULL;
 	p->hull = NULL;
 	p->body = -1;
@@ -270,6 +273,7 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	w->freePiece = -1;
 	w->freeBond = -1;
 	w->freeBody = -1;
+	w->freeLink = -1;
 	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
 	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
 	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
@@ -302,7 +306,9 @@ void lpDestroyWorld( lpWorld* w )
 			}
 		}
 		lpArray_Free( p->bonds );
+		lpArray_Free( p->links );
 	}
+	lpFreeLinks( w, physicsAlive );
 	lpArray_Free( w->pieces );
 	lpArray_Free( w->bonds );
 	lpArray_Free( w->bodies );
@@ -896,7 +902,7 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			h = lpHashBytes( h, &bond->health, sizeof( float ) );
 		}
 	}
-	return h;
+	return lpHashLinks( w, h );
 }
 
 // ---- queries ----
@@ -1091,7 +1097,7 @@ bool lpWorld_Validate( const lpWorld* w )
 	{
 		return lpFail( "bond count %d, live %d, refs %d", w->bondCount, liveBonds, bondRefs );
 	}
-	return true;
+	return lpValidateLinks( w );
 }
 
 bool lpWorld_ValidateBondGeometry( const lpWorld* w )

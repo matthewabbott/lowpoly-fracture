@@ -178,6 +178,7 @@ int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float
 
 void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 {
+	lpBreakPieceLinks( w, pieceIndex ); // a loose piece has no Box3D body to hold a joint
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
@@ -212,6 +213,7 @@ static void lpMakeLoose( lpWorld* w, int bodyIndex, uint8_t kind )
 	}
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
+		lpBreakPieceLinks( w, b->pieces.data[i] );
 		w->pieces.data[b->pieces.data[i]].shapeId = b3_nullShapeId; // destroyed with the body
 	}
 	b3DestroyBody( b->id );
@@ -772,14 +774,15 @@ static lpBudgetEntry* lpRankBodies( lpWorld* w, lpBodyPredicate* predicate, int*
 	int n = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
-		n += w->bodies.data[i].alive && predicate( w->bodies.data + i ) ? 1 : 0;
+		const lpBody* b = w->bodies.data + i;
+		n += b->alive && lpBodyLinked( w, b ) == false && predicate( b ) ? 1 : 0;
 	}
 	lpBudgetEntry* entries = lpAlloc( sizeof( lpBudgetEntry ) * (size_t)( n > 0 ? n : 1 ) );
 	int k = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive && predicate( b ) )
+		if ( b->alive && lpBodyLinked( w, b ) == false && predicate( b ) )
 		{
 			entries[k++] = (lpBudgetEntry){ b->volume, b->createdTick, i };
 		}
@@ -797,9 +800,9 @@ void lpEnforceBudgets( lpWorld* w )
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive == false )
+		if ( b->alive == false || lpBodyLinked( w, b ) )
 		{
-			continue;
+			continue; // linked bodies are in use (a cart, a hanging sign): outside every budget
 		}
 		if ( b->kind == lp_kindDebris )
 		{
@@ -810,7 +813,7 @@ void lpEnforceBudgets( lpWorld* w )
 			}
 			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow
 			if ( w->def.freezeRubble && w->tick - b->createdTick >= 240 && w->freezesThisStep < w->def.maxFreezesPerStep &&
-				 b3Length( b3Body_GetLinearVelocity( b->id ) ) < 1.0f )
+				 b3Length( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false )
 			{
 				b->kind = lp_kindRubble;
 				b->freezePending = false;

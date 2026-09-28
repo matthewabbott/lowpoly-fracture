@@ -7,6 +7,7 @@ add_library(lpf STATIC
 	fracture.c
 	fracture.h
 	impact.c
+	link.c
 	poly.c
 	poly.h
 	split.c

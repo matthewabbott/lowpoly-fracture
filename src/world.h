@@ -95,12 +95,42 @@ typedef struct lpStressJob
 	LP_ARRAY( lpBlock6 ) blocks;
 } lpStressJob;
 
+// One end of a link: a piece and a frame in its body's frame, which never changes for the piece (new bodies are made
+// at their parent's transform). Piece -1 is a world end, held by a static body of its own.
+typedef struct lpLinkEnd
+{
+	int piece;
+	uint32_t generation;
+	b3Transform frame;
+} lpLinkEnd;
+
+typedef struct lpLink
+{
+	lpLinkDef def;
+	lpLinkEnd ends[2];
+	b3JointId joint;
+	b3BodyId builtOn[2]; // the Box3D bodies the joint was made on; when an end's body changes, it is rebuilt
+	b3BodyId anchor[2];	 // the static body of a world end
+	b3Pos points[2];	 // world points of the ends, cached at the last step either end was awake
+	b3Vec3 force;		 // on end B, world, N
+	b3Vec3 torque;
+	float utilization; // load over limit, smoothed
+	float strain;	   // breaks at 1
+	float health;	   // of def.strength, after blasts
+	uint32_t lastImpact;
+	uint32_t generation;
+	int settle; // steps before loads are judged: a rebuilt joint starts cold
+	int nextFree;
+	bool alive;
+} lpLink;
+
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
 	b3HullData* hull; // cached Box3D hull of the shape, reused when the piece changes body; NULL for ghost ejecta
 	b3ShapeId shapeId; // null while the piece is on a ghost or scrap body
 	LP_ARRAY( int ) bonds;
+	LP_ARRAY( int ) links; // links with an end on this piece
 	b3Plane anchorPlane;
 	b3Vec3 axis; // grain axis (wood) or pane normal (glass), body frame
 	uint32_t color;
@@ -155,6 +185,7 @@ typedef struct lpBody
 	int stamp;
 	uint32_t generation; // bumped each time the slot is reused: (index, generation) names one body for good
 	float gravityScale;	 // multiplies gravity on the body and on whatever breaks off it ("fairy dust")
+	uint64_t linkStamp;	 // tick + 1 when a link end was on it at this step's sync: never frozen or demoted
 	uint8_t kind;
 	uint8_t tier;
 	bool alive;
@@ -296,6 +327,9 @@ struct lpWorld
 	LP_ARRAY( lpForce ) forces;
 	LP_ARRAY( int ) dirtyBodies;
 	LP_ARRAY( int ) freezeCandidates;
+	LP_ARRAY( lpLink ) links;
+	int freeLink;
+	int linkCount;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
 	LP_ARRAY( int ) stressQueue; // structures updated this step, checked together after the splits (stress.c)
 	lpStressJob* stressJobs;	 // this step's solves; the first stressJobCount are in use
@@ -367,6 +401,17 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
 void lpCollectHits( lpWorld* w );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
+
+// links (link.c): an end's piece leaving Box3D breaks the link at once (lpBreakPieceLinks); lpSyncLinks rebuilds
+// joints whose ends changed body, just before the physics step; lpPollLinks judges their loads just after it
+void lpBreakLink( lpWorld* w, int index, bool dust );
+void lpBreakPieceLinks( lpWorld* w, int piece );
+void lpSyncLinks( lpWorld* w );
+void lpPollLinks( lpWorld* w, float timeStep );
+bool lpBodyLinked( const lpWorld* w, const lpBody* b );
+uint64_t lpHashLinks( const lpWorld* w, uint64_t h );
+bool lpValidateLinks( const lpWorld* w );
+void lpFreeLinks( lpWorld* w, bool physicsAlive );
 
 // stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
 // still solving or straining go to w->stressAgain

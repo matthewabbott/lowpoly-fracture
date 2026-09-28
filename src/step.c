@@ -65,9 +65,9 @@ static void lpFreezeOrKill( lpWorld* w )
 		{
 			continue;
 		}
-		if ( b3Body_IsAwake( b->id ) )
+		if ( b3Body_IsAwake( b->id ) || lpBodyLinked( w, b ) )
 		{
-			b->freezePending = false;
+			b->freezePending = false; // a linked body sleeps instead: a frozen one would hold its links rigid
 			continue;
 		}
 		uint64_t minAge = b->tier == lp_tierLight ? 6u : 30u;
@@ -188,6 +188,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.stressBreaks = 0;
 	w->stats.stressSolves = 0;
 	w->stats.stressWaiting = 0;
+	w->stats.linkBreaks = 0;
+	w->stats.linkRebuilds = 0;
 	w->stressWork = 0;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
@@ -256,11 +258,13 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpApplyForces( w );
 	lpApplyBlows( w );
 	lpApplyPulls( w );
+	lpSyncLinks( w ); // every body of this step exists now
 	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
 
 	b3World_Step( w->def.physics, timeStep, subStepCount );
 	w->lastTimeStep = timeStep;
 	w->stats.physicsMs = b3GetMillisecondsAndReset( &ticks );
+	lpPollLinks( w, timeStep ); // before anything below can destroy a body under a joint
 
 	lpStepGhosts( w, timeStep );
 	lpShove( w, timeStep );
@@ -314,6 +318,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	}
 	w->stats.pieceCount = pieceCount;
 	w->stats.bondCount = w->bondCount;
+	w->stats.linkCount = w->linkCount;
 	w->stats.deferredJobs = w->deferred.count;
 	w->stats.updateMs = b3GetMillisecondsAndReset( &ticks );
 
