@@ -908,24 +908,88 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 
 // ---- queries ----
 
+// Closest approach of the segment from the origin along d to the segment p-q: the fraction along d and the point on
+// p-q, if they pass within `radius`
+static bool lpRayNearSegment( b3Vec3 d, b3Vec3 p, b3Vec3 q, float radius, float* fraction, b3Vec3* point )
+{
+	b3Vec3 e = b3Sub( q, p );
+	b3Vec3 r = b3Neg( p );
+	float a = b3Dot( d, d ), ee = b3Dot( e, e ), f = b3Dot( e, r ), c = b3Dot( d, r ), b = b3Dot( d, e );
+	float s = 0.0f, t = 0.0f;
+	if ( a <= 1e-12f )
+	{
+		return false;
+	}
+	if ( ee <= 1e-12f )
+	{
+		s = b3ClampFloat( -c / a, 0.0f, 1.0f );
+	}
+	else
+	{
+		float denom = a * ee - b * b;
+		s = denom > 1e-12f ? b3ClampFloat( ( b * f - c * ee ) / denom, 0.0f, 1.0f ) : 0.0f;
+		t = ( b * s + f ) / ee;
+		if ( t < 0.0f )
+		{
+			t = 0.0f;
+			s = b3ClampFloat( -c / a, 0.0f, 1.0f );
+		}
+		else if ( t > 1.0f )
+		{
+			t = 1.0f;
+			s = b3ClampFloat( ( b - c ) / a, 0.0f, 1.0f );
+		}
+	}
+	b3Vec3 onRope = b3MulAdd( p, t, e );
+	if ( b3Length( b3Sub( b3MulSV( s, d ), onRope ) ) > radius )
+	{
+		return false;
+	}
+	*fraction = s;
+	*point = onRope;
+	return true;
+}
+
 lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
 {
 	lpRayHit hit = { 0 };
 	hit.piece = -1;
 	hit.body = -1;
+	hit.link = -1;
 	b3RayResult result = b3World_CastRayClosest( w->def.physics, origin, translation, b3DefaultQueryFilter() );
-	if ( result.hit == false )
+	float nearest = result.hit ? result.fraction : 1.0f;
+	if ( result.hit )
 	{
-		return hit;
+		hit.hit = true;
+		hit.point = result.point;
+		hit.normal = result.normal;
+		intptr_t data = (intptr_t)b3Shape_GetUserData( result.shapeId );
+		if ( data > 0 )
+		{
+			hit.piece = (int)( data - 1 );
+			hit.body = w->pieces.data[hit.piece].body;
+		}
 	}
-	hit.hit = true;
-	hit.point = result.point;
-	hit.normal = result.normal;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( result.shapeId );
-	if ( data > 0 )
+
+	// Ropes are no Box3D shapes: they are hit as thin capsules, when nearer than any shape
+	for ( int i = 0; i < w->links.count; ++i )
 	{
-		hit.piece = (int)( data - 1 );
-		hit.body = w->pieces.data[hit.piece].body;
+		const lpLink* l = w->links.data + i;
+		float fraction;
+		b3Vec3 point;
+		if ( l->alive && l->def.type == lp_linkRope &&
+			 lpRayNearSegment( translation, b3SubPos( l->points[0], origin ), b3SubPos( l->points[1], origin ), 0.05f,
+							   &fraction, &point ) &&
+			 fraction < nearest )
+		{
+			nearest = fraction;
+			hit.hit = true;
+			hit.point = b3OffsetPos( origin, point );
+			hit.normal = b3Normalize( b3Neg( translation ) );
+			hit.piece = -1;
+			hit.body = -1;
+			hit.link = i;
+		}
 	}
 	return hit;
 }

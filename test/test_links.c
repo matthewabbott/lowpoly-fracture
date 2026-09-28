@@ -461,6 +461,167 @@ static int TestTinyEndTears( void )
 	return 0;
 }
 
+// A rifle round (a ray, then its impact where it hits)
+static lpRayHit Fire( Sim* s, b3Vec3 from, b3Vec3 to )
+{
+	b3Pos origin = { from.x, from.y, from.z };
+	lpRayHit hit = lpWorld_CastRay( s->world, origin, b3Sub( to, from ) );
+	if ( hit.hit )
+	{
+		lpImpactDef im = { 0 };
+		im.point = hit.point;
+		im.direction = b3Normalize( b3Sub( to, from ) );
+		im.radius = 0.35f;
+		im.energy = 4000.0f;
+		im.impulse = 20.0f;
+		lpWorld_AddImpact( s->world, &im );
+	}
+	return hit;
+}
+
+// The rifle can hit a rope: one round cuts it, the sign swings on the other, and a second round drops it
+static int TestRopeShotSnaps( void )
+{
+	Sim s = CreateSim( -1 );
+	int beam = AddPart( &s, (b3Vec3){ 0.0f, 4.0f, 0.0f }, (b3Vec3){ 1.0f, 0.1f, 0.1f }, lp_wood, true );
+	int sign = AddPart( &s, (b3Vec3){ 0.0f, 2.5f, 0.0f }, (b3Vec3){ 0.6f, 0.3f, 0.025f }, lp_wood, false );
+	int left = Rope( &s, beam, (b3Vec3){ -0.5f, 3.9f, 0.0f }, sign, (b3Vec3){ -0.5f, 2.8f, 0.0f }, 1000.0f );
+	int right = Rope( &s, beam, (b3Vec3){ 0.5f, 3.9f, 0.0f }, sign, (b3Vec3){ 0.5f, 2.8f, 0.0f }, 1000.0f );
+	bool valid;
+	StepValidated( &s, 10, &valid );
+
+	lpRayHit hit = Fire( &s, (b3Vec3){ -0.5f, 3.35f, 5.0f }, (b3Vec3){ -0.5f, 3.35f, -5.0f } );
+	ENSURE( hit.hit && hit.link == left && hit.piece == -1 );
+	StepValidated( &s, 30, &valid );
+	ENSURE( valid );
+	ENSURE( lpWorld_GetLinkState( s.world, left ).alive == false );
+	ENSURE( lpWorld_GetLinkState( s.world, right ).alive );
+	ENSURE( PieceY( &s, s.world->bodies.data[sign].pieces.data[0] ) > 1.5f ); // swinging on the right rope
+
+	lpLinkState r = lpWorld_GetLinkState( s.world, right );
+	b3Vec3 mid = b3MulSV( 0.5f, b3Add( b3ToVec3( r.pointA ), b3ToVec3( r.pointB ) ) );
+	hit = Fire( &s, (b3Vec3){ mid.x, mid.y, 5.0f }, (b3Vec3){ mid.x, mid.y, -5.0f } );
+	ENSURE( hit.link == right );
+	StepValidated( &s, 90, &valid );
+	float y = PieceY( &s, s.world->bodies.data[sign].pieces.data[0] );
+	printf( "  both ropes shot through; the sign fell to y %.2f\n", (double)y );
+	ENSURE( valid );
+	ENSURE( s.world->linkCount == 0 );
+	ENSURE( y < 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A metal door on its hinge (metal does not fracture, so only damage can break it): a rifle round 2 m away leaves
+// the hinge alone, a grenade next to it tears it off
+static int TestBlastBreaksHinge( void )
+{
+	Sim s = CreateSim( -1 );
+	int post = AddPart( &s, (b3Vec3){ 0.0f, 1.1f, 0.0f }, (b3Vec3){ 0.1f, 1.1f, 0.1f }, lp_metal, true );
+	int door = AddPart( &s, (b3Vec3){ 0.65f, 1.1f, 0.0f }, (b3Vec3){ 0.5f, 1.0f, 0.025f }, lp_metal, false );
+	lpLinkDef def = lpDefaultLinkDef( lp_linkHinge );
+	def.bodyA = post;
+	def.bodyB = door;
+	def.anchorA = (b3Pos){ 0.125f, 1.1f, 0.0f };
+	def.axis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	def.maxForce = 0.0f; // no load limit: only damage breaks it here
+	def.maxTorque = 0.0f;
+	int hinge = lpCreateLink( s.world, &def );
+	bool valid;
+	StepValidated( &s, 10, &valid );
+	Shoot( &s, (b3Vec3){ 2.125f, 1.1f, 0.0f }, 0.35f, 4000.0f );
+	StepValidated( &s, 10, &valid );
+	float afterRifle = lpWorld_GetLinkState( s.world, hinge ).health;
+	ENSURE( lpWorld_GetLinkState( s.world, hinge ).alive && afterRifle == def.strength );
+
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.425f, 1.1f, 0.3f };
+	im.radius = 1.4f;
+	im.energy = 80000.0f;
+	im.impulse = 12.0f;
+	im.explosion = true;
+	lpWorld_AddImpact( s.world, &im );
+	StepValidated( &s, 10, &valid );
+	printf( "  hinge after a rifle round 2 m away: health %.0f of %.0f; after a grenade 0.42 m away: %s\n",
+			(double)afterRifle, (double)def.strength, lpWorld_GetLinkState( s.world, hinge ).alive ? "holds" : "torn off" );
+	ENSURE( valid );
+	ENSURE( lpWorld_GetLinkState( s.world, hinge ).alive == false );
+	(void)door;
+	DestroySim( &s );
+	return 0;
+}
+
+// A grenade among four stone blocks, with only one fracture job per step: the rest of its work is deferred to later
+// steps, but a rope passing by takes its damage once
+static int TestDeferredNoDoubleDamage( void )
+{
+	lpWorldDef ld = lpDefaultWorldDef();
+	ld.maxFractureJobsPerStep = 1;
+	Sim s = CreateSimDef( ld, -1 );
+	for ( int k = 0; k < 4; ++k )
+	{
+		float x = k == 0 ? -0.7f : k == 1 ? 0.7f : 0.0f;
+		float z = k == 2 ? -0.7f : k == 3 ? 0.7f : 0.0f;
+		AddPart( &s, (b3Vec3){ x, 0.3f, z }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, lp_stone, false );
+	}
+	int postA = AddPart( &s, (b3Vec3){ -2.0f, 0.5f, 0.4f }, (b3Vec3){ 0.1f, 0.5f, 0.1f }, lp_wood, true );
+	int postB = AddPart( &s, (b3Vec3){ 2.0f, 0.5f, 0.4f }, (b3Vec3){ 0.1f, 0.5f, 0.1f }, lp_wood, true );
+	lpLinkDef def = lpDefaultLinkDef( lp_linkRope );
+	def.bodyA = postA;
+	def.bodyB = postB;
+	def.anchorA = (b3Pos){ -2.0f, 1.0f, 0.4f };
+	def.anchorB = (b3Pos){ 2.0f, 1.0f, 0.4f };
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.0f, 0.3f, 0.0f };
+	im.radius = 1.4f;
+	im.energy = 80000.0f;
+	im.impulse = 12.0f;
+	im.explosion = true;
+	float d = sqrtf( 0.7f * 0.7f + 0.4f * 0.4f ); // from the blast to the rope
+	float x = 1.0f - d / im.radius;
+	float once = im.energy * x * x / ( B3_PI * im.radius * im.radius );
+	def.strength = 1.5f * once; // survives one dose, not two
+	int rope = lpCreateLink( s.world, &def );
+	ENSURE( rope >= 0 );
+	lpWorld_AddImpact( s.world, &im );
+	bool valid;
+	int deferred = 0;
+	for ( int tick = 0; tick < 6; ++tick )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		deferred += lpWorld_GetStats( s.world ).deferredJobs;
+		valid = lpWorld_Validate( s.world );
+		ENSURE( valid );
+	}
+	lpLinkState st = lpWorld_GetLinkState( s.world, rope );
+	printf( "  %d deferred job-steps; rope health %.0f (expected %.0f after one dose)\n", deferred, (double)st.health,
+			(double)( def.strength - once ) );
+	ENSURE( deferred > 0 );
+	ENSURE( st.alive );
+	ENSURE_NEAR( st.health, def.strength - once, 0.01f * once );
+	DestroySim( &s );
+	return 0;
+}
+
+// A winch: shortening the rope lifts its load
+static int TestSetRopeLength( void )
+{
+	Sim s = CreateSim( -1 );
+	int beam = AddPart( &s, (b3Vec3){ 0.0f, 4.0f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.1f }, lp_wood, true );
+	int block = AddPart( &s, (b3Vec3){ 0.0f, 2.0f, 0.0f }, (b3Vec3){ 0.2f, 0.2f, 0.2f }, lp_stone, false );
+	int rope = Rope( &s, beam, (b3Vec3){ 0.0f, 3.9f, 0.0f }, block, (b3Vec3){ 0.0f, 2.2f, 0.0f }, 0.0f );
+	bool valid;
+	StepValidated( &s, 20, &valid );
+	lpWorld_SetRopeLength( s.world, rope, 1.2f );
+	StepValidated( &s, 90, &valid );
+	float y = PieceY( &s, s.world->bodies.data[block].pieces.data[0] );
+	printf( "  rope shortened from 1.7 m to 1.2 m: the block rose from 2.00 to %.3f\n", (double)y );
+	ENSURE( valid );
+	ENSURE_NEAR( y, 2.5f, 0.05f );
+	DestroySim( &s );
+	return 0;
+}
+
 // A little yard of linked things, knocked about by a blast
 static void BuildAssembly( Sim* s )
 {
@@ -545,6 +706,10 @@ int LinkTest( void )
 	RUN_TEST( TestLinkBreaksWhenAnchorEjected );
 	RUN_TEST( TestLinkToGhostBreaks );
 	RUN_TEST( TestTinyEndTears );
+	RUN_TEST( TestRopeShotSnaps );
+	RUN_TEST( TestBlastBreaksHinge );
+	RUN_TEST( TestDeferredNoDoubleDamage );
+	RUN_TEST( TestSetRopeLength );
 	RUN_TEST( TestLinkDeterminism );
 	return 0;
 }

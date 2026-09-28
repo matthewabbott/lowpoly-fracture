@@ -563,6 +563,45 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 
 // Damage bonds near an impact (including fresh ones). Each bond takes each impact at most once, even when part of
 // the impact's fracture work was deferred to a later step.
+// Distance from the origin to the segment a-b
+static float lpSegmentDistance( b3Vec3 a, b3Vec3 b )
+{
+	b3Vec3 ab = b3Sub( b, a );
+	float length2 = b3Dot( ab, ab );
+	float t = length2 > 0.0f ? b3ClampFloat( -b3Dot( a, ab ) / length2, 0.0f, 1.0f ) : 0.0f;
+	return b3Length( b3MulAdd( a, t, ab ) );
+}
+
+// Blasts and shots damage links like bonds, by the energy density at the anchor, or anywhere along a rope (a shot
+// through a rope cuts it). Each link takes each impact at most once, even when its fracture work was deferred.
+static void lpDamageLinks( lpWorld* w, const lpImpactDef* impact, uint32_t serial )
+{
+	for ( int i = 0; i < w->links.count; ++i )
+	{
+		lpLink* l = w->links.data + i;
+		if ( l->alive == false || l->def.strength <= 0.0f || l->lastImpact == serial )
+		{
+			continue;
+		}
+		l->lastImpact = serial;
+		b3Vec3 a = b3SubPos( l->points[0], impact->point );
+		float d = b3Length( a );
+		if ( l->def.type == lp_linkRope )
+		{
+			d = lpSegmentDistance( a, b3SubPos( l->points[1], impact->point ) );
+		}
+		float density = lpImpactDensity( impact, d );
+		if ( density > 0.0f )
+		{
+			l->health -= density;
+			if ( l->health <= 0.0f )
+			{
+				lpBreakLink( w, i, true );
+			}
+		}
+	}
+}
+
 static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t serial )
 {
 	lpQueryPieces( w, lpInflatedBox( impact->point, impact->radius ) );
@@ -641,6 +680,7 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 	lpFractureCandidates( w, impact, serial, candidates, candidateCount, false );
 	lpFree( candidates );
 	lpDamageBonds( w, impact, serial );
+	lpDamageLinks( w, impact, serial );
 
 	w->stats.impactsThisStep += 1;
 	if ( w->def.debugLog )
@@ -690,6 +730,7 @@ void lpProcessDeferred( lpWorld* w )
 		if ( pending[first].snap == false )
 		{
 			lpDamageBonds( w, &impact, pending[first].impactSerial );
+			lpDamageLinks( w, &impact, pending[first].impactSerial );
 		}
 		first = last + 1;
 	}

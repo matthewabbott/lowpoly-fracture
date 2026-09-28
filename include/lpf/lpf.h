@@ -361,6 +361,7 @@ typedef struct lpRayHit
 	b3Vec3 normal;
 	int piece;
 	int body;
+	int link; // a rope was hit first (piece and body are -1 then); -1 otherwise
 	bool hit;
 } lpRayHit;
 
