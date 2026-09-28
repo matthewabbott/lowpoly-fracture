@@ -309,6 +309,7 @@ void lpDestroyWorld( lpWorld* w )
 		lpArray_Free( p->links );
 	}
 	lpFreeLinks( w, physicsAlive );
+	lpArray_Free( w->scratchLinkMoves );
 	lpArray_Free( w->pieces );
 	lpArray_Free( w->bonds );
 	lpArray_Free( w->bodies );

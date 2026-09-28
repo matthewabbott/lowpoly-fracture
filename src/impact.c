@@ -275,6 +275,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		}
 	}
 	body->volume -= piece->shape->volume;
+	lpDetachLinks( w, pieceIndex, job->cells, job->cellCount );
 	lpFreePieceSlot( w, pieceIndex );
 	piece = NULL;
 
@@ -376,6 +377,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		body = w->bodies.data + bodyIndex; // the body array may have moved
 	}
 	job->cellCount = 0;
+	lpAttachLinks( w, cellToPiece );
 
 	// Impact dust in the colour of what broke. Cosmetic: it hashes its own randomness from the tick and the piece and
 	// never touches simulation state.

@@ -124,6 +124,14 @@ typedef struct lpLink
 	bool alive;
 } lpLink;
 
+// A link end waiting for its fractured piece's cells to be placed (see lpDetachLinks)
+typedef struct lpLinkMove
+{
+	int link;
+	int end;
+	int cell; // the cell that holds the anchor
+} lpLinkMove;
+
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
@@ -330,6 +338,7 @@ struct lpWorld
 	LP_ARRAY( lpLink ) links;
 	int freeLink;
 	int linkCount;
+	LP_ARRAY( lpLinkMove ) scratchLinkMoves;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
 	LP_ARRAY( int ) stressQueue; // structures updated this step, checked together after the splits (stress.c)
 	lpStressJob* stressJobs;	 // this step's solves; the first stressJobCount are in use
@@ -406,6 +415,10 @@ void lpUpdateBody( lpWorld* w, int bodyIndex );
 // joints whose ends changed body, just before the physics step; lpPollLinks judges their loads just after it
 void lpBreakLink( lpWorld* w, int index, bool dust );
 void lpBreakPieceLinks( lpWorld* w, int piece );
+// Fracture: a piece's link ends move to the cell holding their anchor (detach before the piece is freed; attach once
+// the cells are placed, cellToPiece giving each kept cell's piece or -1), or the links break
+void lpDetachLinks( lpWorld* w, int piece, lpShape* const* cells, int cellCount );
+void lpAttachLinks( lpWorld* w, const int* cellToPiece );
 void lpSyncLinks( lpWorld* w );
 void lpPollLinks( lpWorld* w, float timeStep );
 bool lpBodyLinked( const lpWorld* w, const lpBody* b );

@@ -28,6 +28,12 @@ static float BodyY( const Sim* s, int body )
 	return (float)xf.p.y;
 }
 
+// World height of a piece's centroid (a body's origin need not be anywhere near its pieces)
+static float PieceY( const Sim* s, int piece )
+{
+	return (float)lpWorld_ToWorldFrame( s->world, piece, s->world->pieces.data[piece].shape->centroid ).y;
+}
+
 static int Rope( Sim* s, int bodyA, b3Vec3 a, int bodyB, b3Vec3 b, float maxForce )
 {
 	lpLinkDef def = lpDefaultLinkDef( lp_linkRope );
@@ -254,6 +260,207 @@ static int TestKillBreaksLink( void )
 	return 0;
 }
 
+// A dynamic object of two bonded stone boxes; returns its body index
+static int AddPair( Sim* s, b3Vec3 centerA, float halfA, b3Vec3 centerB, float halfB )
+{
+	lpPartDef parts[2];
+	parts[0] = lpDefaultPartDef();
+	parts[0].halfExtents = (b3Vec3){ halfA, halfA, halfA };
+	parts[0].transform.p = centerA;
+	parts[1] = lpDefaultPartDef();
+	parts[1].halfExtents = (b3Vec3){ halfB, halfB, halfB };
+	parts[1].transform.p = centerB;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.parts = parts;
+	def.partCount = 2;
+	return lpCreateObject( s->world, &def );
+}
+
+// Break every bond of the smallest piece of a body, so it splits off at the next step; returns that piece
+static int SplitOffSmallest( Sim* s, int bodyIndex )
+{
+	const lpBody* b = s->world->bodies.data + bodyIndex;
+	int smallest = b->pieces.data[0];
+	for ( int k = 1; k < b->pieces.count; ++k )
+	{
+		int pi = b->pieces.data[k];
+		smallest = s->world->pieces.data[pi].shape->volume < s->world->pieces.data[smallest].shape->volume ? pi : smallest;
+	}
+	lpPiece* p = s->world->pieces.data + smallest;
+	while ( p->bonds.count > 0 )
+	{
+		lpBreakBond( s->world, p->bonds.data[p->bonds.count - 1] );
+	}
+	lpMarkDirty( s->world, bodyIndex );
+	return smallest;
+}
+
+// A small block bonded on top of a big one hangs by a rope on the small one. When the bond breaks, the small block
+// splits off onto a new body; the rope's joint is rebuilt there and still holds it while the big block falls.
+static int TestLinkSurvivesSplit( void )
+{
+	Sim s = CreateSim( -1 );
+	int beam = AddPart( &s, (b3Vec3){ 0.0f, 5.0f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.1f }, lp_wood, true );
+	int pair = AddPair( &s, (b3Vec3){ 0.0f, 3.0f, 0.0f }, 0.15f, (b3Vec3){ 0.0f, 2.45f, 0.0f }, 0.4f );
+	int rope = Rope( &s, beam, (b3Vec3){ 0.0f, 4.9f, 0.0f }, pair, (b3Vec3){ 0.0f, 3.15f, 0.0f }, 0.0f );
+	ENSURE( rope >= 0 );
+	bool valid;
+	StepValidated( &s, 30, &valid );
+	ENSURE( valid );
+	int small = SplitOffSmallest( &s, pair );
+	int big = s.world->bodies.data[pair].pieces.data[0] == small ? s.world->bodies.data[pair].pieces.data[1]
+																	: s.world->bodies.data[pair].pieces.data[0];
+	int rebuilds = 0;
+	for ( int tick = 0; tick < 90; ++tick )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		rebuilds += lpWorld_GetStats( s.world ).linkRebuilds;
+		valid = valid && lpWorld_Validate( s.world );
+	}
+	lpLinkState st = lpWorld_GetLinkState( s.world, rope );
+	float smallY = PieceY( &s, small ), bigY = PieceY( &s, big );
+	printf( "  rope rebuilt %d time(s); the small block hangs at y %.3f, the big one lies at y %.3f\n", rebuilds,
+			(double)smallY, (double)bigY );
+	ENSURE( valid );
+	ENSURE( st.alive && rebuilds >= 1 );
+	ENSURE( st.bodyB != pair && st.bodyB == s.world->pieces.data[small].body );
+	ENSURE_NEAR( smallY, 3.0f, 0.05f );
+	ENSURE( bigY < 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A stone beam on two ropes, one at each end, immune to blast damage themselves (thick enough to fracture: thinner
+// pieces snap under stress instead)
+static int HungPlank( Sim* s, int* left, int* right )
+{
+	int beam = AddPart( s, (b3Vec3){ 0.0f, 5.0f, 0.0f }, (b3Vec3){ 1.5f, 0.1f, 0.1f }, lp_wood, true );
+	int plank = AddPart( s, (b3Vec3){ 0.0f, 3.0f, 0.0f }, (b3Vec3){ 1.2f, 0.3f, 0.3f }, lp_stone, false );
+	for ( int k = 0; k < 2; ++k )
+	{
+		float x = k == 0 ? -1.1f : 1.1f;
+		lpLinkDef def = lpDefaultLinkDef( lp_linkRope );
+		def.bodyA = beam;
+		def.bodyB = plank;
+		def.anchorA = (b3Pos){ x, 4.9f, 0.0f };
+		def.anchorB = (b3Pos){ x, 3.3f, 0.0f };
+		def.strength = 0.0f;
+		def.maxForce = 0.0f; // two tonnes of stone
+		*( k == 0 ? left : right ) = lpCreateLink( s->world, &def );
+	}
+	return plank;
+}
+
+static int Shoot( Sim* s, b3Vec3 point, float radius, float energy )
+{
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ point.x, point.y, point.z };
+	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.radius = radius;
+	im.energy = energy;
+	im.impulse = 5.0f;
+	lpWorld_AddImpact( s->world, &im );
+	return 0;
+}
+
+// Shot between its ropes, the plank fractures; each rope's end moves to the cell that holds its anchor
+static int TestLinkRehomedOnFracture( void )
+{
+	Sim s = CreateSim( -1 );
+	int left, right;
+	HungPlank( &s, &left, &right );
+	bool valid;
+	StepValidated( &s, 20, &valid );
+	lpLinkEnd before = s.world->links.data[left].ends[1];
+	Shoot( &s, (b3Vec3){ 0.3f, 3.0f, 0.3f }, 0.35f, 4000.0f );
+	int breaks = StepValidated( &s, 60, &valid );
+	ENSURE( valid );
+	ENSURE( breaks == 0 );
+	for ( int k = 0; k < 2; ++k )
+	{
+		const lpLink* l = s.world->links.data + ( k == 0 ? left : right );
+		const lpPiece* p = s.world->pieces.data + l->ends[1].piece;
+		float d = lpShape_SignedDistance( p->shape, l->ends[1].frame.p );
+		printf( "  %s rope: end on piece %d (generation %u), anchor %.4f m from it\n", k == 0 ? "left" : "right",
+				l->ends[1].piece, p->generation, (double)d );
+		ENSURE( l->alive );
+		ENSURE( d < 0.01f );
+	}
+	lpLinkEnd after = s.world->links.data[left].ends[1];
+	ENSURE( after.piece != before.piece || after.generation != before.generation ); // it really moved to a new piece
+	DestroySim( &s );
+	return 0;
+}
+
+// A blast at one rope's anchor blows that end of the plank out: that rope breaks, and the plank swings on the other
+static int TestLinkBreaksWhenAnchorEjected( void )
+{
+	Sim s = CreateSim( -1 );
+	int left, right;
+	int plank = HungPlank( &s, &left, &right );
+	bool valid;
+	StepValidated( &s, 20, &valid );
+	Shoot( &s, (b3Vec3){ 1.1f, 3.3f, 0.0f }, 0.6f, 30000.0f );
+	StepValidated( &s, 90, &valid );
+	lpLinkState l = lpWorld_GetLinkState( s.world, left );
+	printf( "  left rope %s, right rope %s; the plank swings from it, its end at y %.2f\n", l.alive ? "holds" : "broke",
+			lpWorld_GetLinkState( s.world, right ).alive ? "holds" : "broke", (double)l.pointB.y );
+	ENSURE( valid );
+	ENSURE( lpWorld_GetLinkState( s.world, right ).alive == false );
+	ENSURE( l.alive );
+	ENSURE( b3Length( b3SubPos( l.pointB, l.pointA ) ) < 1.6f + 0.02f ); // held within the rope's length
+	ENSURE( l.pointB.y > 2.5f );
+	(void)plank;
+	DestroySim( &s );
+	return 0;
+}
+
+// A body made a ghost loses its links at once
+static int TestLinkToGhostBreaks( void )
+{
+	Sim s = CreateSim( -1 );
+	int beam = AddPart( &s, (b3Vec3){ 0.0f, 4.0f, 0.0f }, (b3Vec3){ 0.5f, 0.1f, 0.1f }, lp_wood, true );
+	int block = AddPart( &s, (b3Vec3){ 0.0f, 2.5f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, false );
+	int rope = Rope( &s, beam, (b3Vec3){ 0.0f, 3.9f, 0.0f }, block, (b3Vec3){ 0.0f, 2.6f, 0.0f }, 0.0f );
+	Run( &s, 5 );
+	lpConvertToGhost( s.world, block );
+	ENSURE( lpWorld_GetLinkState( s.world, rope ).alive == false );
+	ENSURE( s.world->linkCount == 0 );
+	ENSURE( lpWorld_Validate( s.world ) );
+	bool valid;
+	StepValidated( &s, 10, &valid );
+	ENSURE( valid );
+	DestroySim( &s );
+	return 0;
+}
+
+// A small block bonded to a larger one is welded to a heavy stone. When the small block splits off, it alone would
+// hang on a 1200 kg stone by the weld: under 2% of its mass, it tears off instead.
+static int TestTinyEndTears( void )
+{
+	Sim s = CreateSim( -1 );
+	int heavy = AddPart( &s, (b3Vec3){ 0.0f, 0.4f, 0.0f }, (b3Vec3){ 0.4f, 0.4f, 0.4f }, lp_stone, false );
+	int pair = AddPair( &s, (b3Vec3){ 0.5f, 0.4f, 0.0f }, 0.1f, (b3Vec3){ 0.8f, 0.4f, 0.0f }, 0.2f );
+	lpLinkDef def = lpDefaultLinkDef( lp_linkWeld );
+	def.bodyA = heavy;
+	def.bodyB = pair;
+	def.anchorA = (b3Pos){ 0.4f, 0.4f, 0.0f };
+	int weld = lpCreateLink( s.world, &def );
+	ENSURE( weld >= 0 );
+	bool valid;
+	int breaks = StepValidated( &s, 10, &valid );
+	ENSURE( valid && breaks == 0 );
+	SplitOffSmallest( &s, pair );
+	breaks = StepValidated( &s, 2, &valid );
+	printf( "  after the split: weld %s\n", lpWorld_GetLinkState( s.world, weld ).alive ? "holds" : "tore" );
+	ENSURE( valid );
+	ENSURE( breaks == 1 );
+	ENSURE( lpWorld_GetLinkState( s.world, weld ).alive == false );
+	DestroySim( &s );
+	return 0;
+}
+
 // A little yard of linked things, knocked about by a blast
 static void BuildAssembly( Sim* s )
 {
@@ -333,6 +540,11 @@ int LinkTest( void )
 	RUN_TEST( TestHingeDoorSwings );
 	RUN_TEST( TestLinkedNeverDemoted );
 	RUN_TEST( TestKillBreaksLink );
+	RUN_TEST( TestLinkSurvivesSplit );
+	RUN_TEST( TestLinkRehomedOnFracture );
+	RUN_TEST( TestLinkBreaksWhenAnchorEjected );
+	RUN_TEST( TestLinkToGhostBreaks );
+	RUN_TEST( TestTinyEndTears );
 	RUN_TEST( TestLinkDeterminism );
 	return 0;
 }

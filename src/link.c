@@ -5,8 +5,10 @@
 // A link end is a piece and a frame in its body's frame. A piece's body frame never changes (new bodies are made at
 // their parent's transform), so an end stays valid through splits and tier changes; only the Box3D joint has to be
 // rebuilt when a piece's body changes, and lpSyncLinks does that just before the physics step, when every body of
-// the step exists. An end whose piece leaves Box3D (freed, or made a ghost or scrap) breaks its link at once, so a
-// live link always has both ends on live Box3D bodies.
+// the step exists. When a piece fractures, each link end on it moves to the kept cell holding its anchor, and the link
+// breaks if that cell was blown out. An end whose piece leaves Box3D (freed, or made a ghost or scrap) breaks its link
+// at once, so a live link always has both ends on live Box3D bodies. A rebuilt link between two moving bodies tears
+// when one of them is a chip next to the other.
 //
 // Loads are polled after the physics step (Box3D's joint events miss joints in the overflow constraint colour and
 // sleeping ones). A link over its limit strains and creaks; it breaks at strain 1, or at once when its smoothed load
@@ -22,6 +24,7 @@
 #define LP_LINK_REACH 0.25f	   // an anchor must be this close to a piece of its body
 #define LP_LINK_CLAMP 3.0f	   // utilization above this counts as this (one wild step cannot snap a link)
 #define LP_LINK_STRAIN 10.0f   // strain per second per unit of overload: 10% over lasts about a second
+#define LP_LINK_TEAR_RATIO 0.02f // a rebuilt link between two moving bodies tears when one is under 2% of the other
 
 lpLinkDef lpDefaultLinkDef( int type )
 {
@@ -347,6 +350,65 @@ void lpBreakPieceLinks( lpWorld* w, int piece )
 	}
 }
 
+void lpDetachLinks( lpWorld* w, int piece, lpShape* const* cells, int cellCount )
+{
+	lpPiece* p = w->pieces.data + piece;
+	w->scratchLinkMoves.count = 0;
+	for ( int n = 0; n < p->links.count; ++n )
+	{
+		int index = p->links.data[n];
+		lpLink* l = w->links.data + index;
+		int end = l->ends[0].piece == piece ? 0 : 1;
+		int cell = -1;
+		float nearest = FLT_MAX;
+		for ( int i = 0; i < cellCount; ++i )
+		{
+			float d = lpShape_SignedDistance( cells[i], l->ends[end].frame.p );
+			if ( d < nearest )
+			{
+				nearest = d;
+				cell = i;
+			}
+		}
+		l->ends[end].piece = -1; // detached until the cells are placed: on no piece and no anchor body
+		lpLinkMove move = { index, end, cell };
+		lpArray_Push( w->scratchLinkMoves, move );
+	}
+	p->links.count = 0; // so freeing the piece does not break them
+}
+
+void lpAttachLinks( lpWorld* w, const int* cellToPiece )
+{
+	for ( int n = 0; n < w->scratchLinkMoves.count; ++n )
+	{
+		lpLinkMove move = w->scratchLinkMoves.data[n];
+		int child = move.cell >= 0 ? cellToPiece[move.cell] : -1;
+		if ( child < 0 )
+		{
+			lpBreakLink( w, move.link, true ); // the cell holding the anchor was blown out
+			continue;
+		}
+		// Kept cells stay on the same body, and the frame is in its frame: the joint holds on unchanged
+		lpLinkEnd* e = w->links.data[move.link].ends + move.end;
+		e->piece = child;
+		e->generation = w->pieces.data[child].generation;
+		lpArray_Push( w->pieces.data[child].links, move.link );
+	}
+	w->scratchLinkMoves.count = 0;
+}
+
+// A chip left holding a much heavier body by a link would jitter on the joint (or blow it up): it tears off instead
+static bool lpTearsOff( b3BodyId a, b3BodyId b )
+{
+	if ( b3Body_GetType( a ) != b3_dynamicBody || b3Body_GetType( b ) != b3_dynamicBody )
+	{
+		return false;
+	}
+	float ma = b3Body_GetMass( a );
+	float mb = b3Body_GetMass( b );
+	return b3MinFloat( ma, mb ) < LP_LINK_TEAR_RATIO * b3MaxFloat( ma, mb );
+}
+
 void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
 {
 	if ( link < 0 || link >= w->links.count || w->links.data[link].alive == false || w->links.data[link].def.type != lp_linkRope )
@@ -386,6 +448,11 @@ void lpSyncLinks( lpWorld* w )
 		if ( b3Joint_IsValid( l->joint ) )
 		{
 			b3DestroyJoint( l->joint, false );
+		}
+		if ( lpTearsOff( bodies[0], bodies[1] ) )
+		{
+			lpBreakLink( w, i, true );
+			continue;
 		}
 		lpBuildJoint( w, i );
 		w->stats.linkRebuilds += 1;
