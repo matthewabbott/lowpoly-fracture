@@ -3,8 +3,12 @@
 #   pwsh tools/bench.ps1 -AcceptHashes   # compare timings only (after an intended behaviour change)
 #   pwsh tools/bench.ps1 -Update         # write the current numbers as the new baseline
 #   pwsh tools/bench.ps1 -Repeat 3       # best of 3 runs per scene (timings are noisy, about +-10% run to run)
+# A rung is a scene under the standard bombardment, or 'barrage': town with a blast every 3 ticks, many structures
+# breaking and re-solving at once (the stress solve's parallel case).
+# After a behaviour change, a rung's timings can move because a different amount comes down (destruction is chaotic):
+# compare its pieces and contacts, or try other --period values with lpf_bench, before calling it a regression.
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'barrage'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,
@@ -20,12 +24,16 @@ $exe = "build/$Preset/bin/lpf_bench.exe"
 $out = 'build/bench'
 New-Item -ItemType Directory -Force $out | Out-Null
 
+$rungs = @{ barrage = @{ scene = 'town'; period = 3 } }
 $current = [ordered]@{}
 foreach ($scene in $Scenes) {
+    $name = $scene
+    $every = $Period
+    if ($rungs.ContainsKey($scene)) { $name = $rungs[$scene].scene; $every = $rungs[$scene].period }
     $best = $null
     for ($r = 0; $r -lt $Repeat; ++$r) {
         $json = "$out/$scene.json"
-        & $exe --scene $scene --workers $Workers --ticks $Ticks --period $Period --json $json | Out-Null
+        & $exe --scene $name --workers $Workers --ticks $Ticks --period $every --json $json | Out-Null
         if ($LASTEXITCODE -eq 2) { Write-Host "NONDETERMINISTIC: $scene differs across worker counts"; exit 2 }
         if ($LASTEXITCODE -ne 0) { Write-Host "lpf_bench failed on $scene"; exit 1 }
         $runs = (Get-Content $json -Raw | ConvertFrom-Json).runs

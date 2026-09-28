@@ -192,7 +192,7 @@ static int TestStressBudget( void )
 	const int budget = 3000;
 	ENSURE( TowerWedge( 1, budget, &drift, &hash, &peak ) == 0 );
 	ENSURE( drift > 1.5f );
-	ENSURE( peak <= budget + 1000 ); // a single iteration may overshoot by one structure's bond count
+	ENSURE( peak <= budget ); // structures reserve their share before anything is built
 	return 0;
 }
 

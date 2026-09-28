@@ -157,4 +157,39 @@ entry (walls 0.54, town 1.97, pile 0.83, lumber 0.20, tower 2.00 ms at 8 workers
 Should structures be solved in parallel (milestone 2's optional step)? Measured on town with `--bombard 12`, 600
 ticks: 346 ticks finish a solve; 240 of them finish one structure, 78 two, 28 three or more. The heaviest ticks are
 one house (about 130 pieces) spending the whole 20k bond-iteration budget. Parallel solves per structure would save
-little, so they were not built. Solve time lives inside one structure's conjugate gradient.
+little, so they were not built. Solve time lives inside one structure's conjugate gradient. (Wrong conclusion: the
+bench's light bombardment hides the case they are for. See the next entry.)
+
+## 2026-09-28 parallel stress solves
+
+Structures are now checked together after the splits: each reserves its share of the budget before anything is built
+(at most `maxStressStructureWork` = 10k bond-iterations for itself, `maxStressWork` = 60k for all), then all reserved
+structures build and solve in parallel, and their joints are judged in queue order.
+
+Why: under heavy bombardment (town, a blast every 3 ticks) about 10 structures waited for budget every step, and
+each waiting one still sampled its loads and built its whole system before finding the budget spent (336 ms of the
+1.17 s of stress time over 600 ticks). Measured on the barrage, 8 workers, 600 ticks:
+
+| | before | after |
+|---|---|---|
+| stress avg / max | 1.93 / 3.16 ms | 1.00 / 2.26 ms |
+| structure-steps waiting for budget | 6204 | 197 |
+| structure-steps solved | 972 | 3005 |
+
+On the standard schedule the ladder's single town run is chaotic: a different collapse order brings down a different
+amount (its schedule now fractures 1185 pieces instead of 564). Over eight schedules (a blast every 8, 9, 10, 11, 12,
+13, 14 and 16 ticks), town's destruction is unchanged on average (9300 vs 9304 peak pieces) and:
+
+| mean over 8 schedules | step avg | stress avg | worst stress step |
+|---|---|---|---|
+| 8 workers, before | 2.73 ms | 0.92 ms | 3.34 ms |
+| 8 workers, after | 2.46 ms | 0.62 ms | 2.15 ms |
+| 1 worker, before | 5.06 ms | 0.92 ms | 3.05 ms |
+| 1 worker, after | 5.37 ms | 1.04 ms | 5.22 ms |
+
+One core pays for faster collapses with more stress CPU; set `maxStressWork` equal to `maxStressStructureWork` there.
+The ladder gains a `barrage` rung (town, a blast every 3 ticks).
+
+New baseline, best of 3, ms per step at 8 workers (1 worker): walls 0.48 (0.82), town 2.47 (5.61; the more destructive
+outcome above), pile 0.83 (2.38), lumber 0.20 (0.27), tower 1.94 (4.18), ruins 0.11 (0.13), barrage 4.82 (11.68) with
+stress at 0.99 (2.62) ms.

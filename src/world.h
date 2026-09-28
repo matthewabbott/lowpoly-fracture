@@ -74,6 +74,27 @@ typedef struct lpOverload
 	int bond;
 } lpOverload;
 
+// One structure's stress solve in a step. Structures are built and solved in parallel: a job reads only its own
+// structure's pieces and bonds and writes only their solve state. Its arrays are kept between steps for reuse.
+typedef struct lpStressJob
+{
+	int body;
+	b3WorldTransform xf;
+	b3Vec3 gravity;			  // body frame
+	int nodeCount, edgeCount; // counted before the build, for the budget
+	int budget;				  // iterations granted this step
+	bool continuing;		  // pick up the solve in progress (r, p on the pieces, rz here)
+	double tolerance;
+	double rz;
+	float forceScale;
+	int iterations;
+	bool converged;
+	LP_ARRAY( int ) nodes; // piece of each node
+	LP_ARRAY( lpStressEdge ) edges;
+	LP_ARRAY( lpVec6 ) vectors; // x, f, r, z, p, q: six per node
+	LP_ARRAY( lpBlock6 ) blocks;
+} lpStressJob;
+
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
@@ -267,14 +288,14 @@ struct lpWorld
 	LP_ARRAY( int ) dirtyBodies;
 	LP_ARRAY( int ) freezeCandidates;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
-	LP_ARRAY( int ) stressNodes; // stress solve scratch (stress.c)
-	LP_ARRAY( lpStressEdge ) stressEdges;
-	LP_ARRAY( lpVec6 ) stressVectors;
-	LP_ARRAY( lpBlock6 ) stressBlocks;
+	LP_ARRAY( int ) stressQueue; // structures updated this step, checked together after the splits (stress.c)
+	lpStressJob* stressJobs;	 // this step's solves; the first stressJobCount are in use
+	int stressJobCount;
+	int stressJobCapacity;
 	LP_ARRAY( lpOverload ) scratchOverloads;
 	LP_ARRAY( b3ContactData ) scratchContacts;
 	LP_ARRAY( lpVec6 ) scratchLoads;
-	int stressWork; // bond-iterations used this step
+	int stressWork; // bond-iterations used this step, over all structures
 	LP_ARRAY( int ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;
@@ -336,8 +357,9 @@ void lpApplyForces( lpWorld* w );
 void lpCollectHits( lpWorld* w );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
 
-// stress (stress.c): one solve step for a structure; returns the bonds it broke and sets body->unsettled
-int lpStressStep( lpWorld* w, int bodyIndex );
+// stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
+// still solving or straining go to w->stressAgain
+void lpCheckStructures( lpWorld* w );
 
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );

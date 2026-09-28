@@ -33,12 +33,12 @@ masonry pattern (brick walls are one solid piece until hit, then break along the
 structures failing where they are weak: a dry arch falls without its keystone, a colonnade drops the two lintels on a
 lost column, and a balcony near its limit breaks off after one round at its root (`scripts/ruins_demo.txt`).
 
+Structures solve in parallel, each within its own share of the step's budget (perf-log, "parallel stress solves"),
+so big events (buildings falling onto buildings, barrages) keep collapses prompt without stretching the step.
+
 Open, taken up when measurements call for them:
-- faster solves in town (about 0.7 ms of a 2 ms step re-solves houses). Solving structures in parallel would barely
-  help: under the bench bombardment most solve steps have one house solving, and the heaviest steps are one house
-  using the whole work budget (perf-log, "ruins scene"). The levers are within one solve: a parallel K·x with fixed
-  partitions, or the k-hop patch;
-- the k-hop patch (re-solve only near the damage) for structures of 1000+ pieces;
+- one very large structure (1000+ pieces) still solves on one thread within its share: the k-hop patch (re-solve only
+  near the damage) or a parallel K·x with fixed partitions;
 - ground joints, so whole walls can overturn off their foundations;
 - slump (a structure that sags into a new rest pose instead of cracking), mortar relief, creak sounds.
 

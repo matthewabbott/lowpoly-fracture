@@ -186,6 +186,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.stressMs = 0.0f;
 	w->stats.stressIterations = 0;
 	w->stats.stressBreaks = 0;
+	w->stats.stressSolves = 0;
+	w->stats.stressWaiting = 0;
 	w->stressWork = 0;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
@@ -240,6 +242,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		lpUpdateBody( w, w->dirtyBodies.data[i] );
 	}
 	w->dirtyBodies.count = 0;
+	lpCheckStructures( w ); // stress: the structures updated above, solved in parallel
 	for ( int i = 0; i < w->stressAgain.count; ++i )
 	{
 		lpMarkDirty( w, w->stressAgain.data[i] ); // still solving or straining: check again next step

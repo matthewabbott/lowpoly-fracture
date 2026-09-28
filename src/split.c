@@ -221,13 +221,14 @@ void lpUpdateBody( lpWorld* w, int bodyIndex )
 {
 	int moved = lpSplitBody( w, bodyIndex );
 
-	// What is still a structure is anchored: solve its stresses. Broken joints split it next step. What just came off
-	// may still rest on it; its weight shows up in the contacts after the next physics step, so check again then.
+	// What is still a structure is anchored: queue it for the stress check, which runs once every body is split
+	// (lpCheckStructures). What just came off may still rest on it; its weight shows up in the contacts after the next
+	// physics step, so check again then.
 	lpBody* body = w->bodies.data + bodyIndex;
 	if ( body->alive && body->kind == lp_kindStructure )
 	{
-		int broken = lpStressStep( w, bodyIndex );
-		if ( broken > 0 || body->unsettled || moved > 0 )
+		lpArray_Push( w->stressQueue, bodyIndex );
+		if ( moved > 0 )
 		{
 			lpArray_Push( w->stressAgain, bodyIndex );
 		}

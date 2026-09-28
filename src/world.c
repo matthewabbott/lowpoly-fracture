@@ -118,7 +118,8 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.killDepth = -50.0f;
 	def.workerCount = 1;
 	def.stressScale = 1.0f;
-	def.maxStressWork = 20000;
+	def.maxStressWork = 60000;
+	def.maxStressStructureWork = 10000;
 	def.maxStressIterations = 256;
 	def.maxStressBreaks = 4;
 	def.stressPatience = 30;
@@ -312,10 +313,16 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->pendingWakes );
 	lpArray_Free( w->freezeCandidates );
 	lpArray_Free( w->pendingDestroy );
-	lpArray_Free( w->stressNodes );
-	lpArray_Free( w->stressEdges );
-	lpArray_Free( w->stressVectors );
-	lpArray_Free( w->stressBlocks );
+	for ( int i = 0; i < w->stressJobCapacity; ++i )
+	{
+		lpStressJob* job = w->stressJobs + i;
+		lpArray_Free( job->nodes );
+		lpArray_Free( job->edges );
+		lpArray_Free( job->vectors );
+		lpArray_Free( job->blocks );
+	}
+	lpFree( w->stressJobs );
+	lpArray_Free( w->stressQueue );
 	lpArray_Free( w->scratchOverloads );
 	lpArray_Free( w->scratchContacts );
 	lpArray_Free( w->scratchLoads );

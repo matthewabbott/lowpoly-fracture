@@ -99,6 +99,15 @@ tiers instead of popping them.
 - K x = gravity by conjugate gradient with a block-Jacobi preconditioner (each piece's 6x6 block, Cholesky), warm
   started from the last solution. A solve continues across steps (residual and search direction live on the pieces)
   until the structure's topology stamp changes; a per-step work budget in bond-iterations slices big solves.
+- Every structure updated in a step is checked together, after the splits (`lpCheckStructures`), in three phases:
+  1. in queue order, the checks that need no solve finish (a creaking structure only adds strain; unchanged loads end
+     the check), and each remaining structure reserves its share of the budget before anything is built: at most
+     `maxStressStructureWork` bond-iterations for itself and `maxStressWork` for all. One that does not fit waits,
+     having cost nothing, and goes first next step;
+  2. the reserved structures build and solve in parallel, each job with its own scratch, writing only its own pieces;
+  3. in queue order, each solution is judged: strain, breaks, slender pieces.
+  The per-structure cap bounds the step's stress time on enough cores, the total bounds the CPU. Results do not
+  depend on the worker count.
 - Each bond's tension side (axial plus bending), compression side and shear (Coulomb: cohesion plus friction times
   compression) against its joint's limits, scaled by `stressScale` and the bond's health, give a utilization. Over
   1, strain accumulates each converged check (`strainRate`); at strain 1 the bond breaks, everything at twice its

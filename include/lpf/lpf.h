@@ -137,10 +137,13 @@ typedef struct lpWorldDef
 	float hitSpeed;		   // minimum approach speed for collision damage, m/s
 	float killDepth;	   // bodies falling below this height are removed
 	bool debugLog;		   // print every processed impact to stdout (for diagnosing tuning)
-	int workerCount;	   // threads for fracture work, including the caller (results do not depend on it)
+	int workerCount;	   // threads for fracture and stress work, including the caller (results do not depend on it)
 	float stressScale;	   // multiplies every strength in the stress solve; 0 disables collapse under weight
-	int maxStressWork;	   // bond-iterations of stress solving per step, over all structures (about 60 ns each)
-	int maxStressIterations; // per structure per step; a structure that needs more keeps creaking for a few steps
+	// Stress budgets, in bond-iterations (about 65 ns each). Structures solve in parallel, so the per-structure cap
+	// bounds the step's stress time on enough cores and the total bounds the CPU; on one core set them equal.
+	int maxStressWork;			// per step, over all structures; structures past it wait for the next step
+	int maxStressStructureWork; // per structure per step; a structure that needs more keeps creaking for a few steps
+	int maxStressIterations;	// per structure per step
 	int maxStressBreaks;   // joints a structure may lose per check below twice their limit (worse ones go at once)
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
@@ -271,6 +274,8 @@ typedef struct lpStats
 	float stressMs;
 	int stressIterations;
 	int stressBreaks;
+	int stressSolves;		 // structures solved this step (in parallel)
+	int stressWaiting;		 // structures that found this step's stress budget spent; they go first next step
 	int unsettledStructures; // structures still solving or creaking toward a break
 } lpStats;
 

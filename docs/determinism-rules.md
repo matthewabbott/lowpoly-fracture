@@ -18,11 +18,13 @@ keep the destruction layer (`src/`) and the app from breaking it.
 5. **Sorts use a total order.** Every comparator breaks ties by an index (`lpCompareHits`, `lpCompareBudget`,
    Voronoi neighbour keys embed the site index), so `qsort` instability cannot leak.
 6. **Parallel work is pure.** A fracture job reads only its own snapshot and writes only its own output; results are
-   integrated sequentially in job order (`impact.c`, "fracture jobs"). Box3D's threading is deterministic by design.
+   integrated sequentially in job order (`impact.c`, "fracture jobs"). A stress job reads its own structure and writes
+   only that structure's pieces and its own scratch; budgets are handed out before and joints judged after, both in
+   queue order (`stress.c`). Box3D's threading is deterministic by design.
 7. **Nothing in the simulation looks at the camera or wall-clock time.** Debris budgets rank by volume, age and
    index; rubble freezing uses Box3D sleep events and tick ages. Timing is measured but never branched on. Every
    per-step cap (fracture jobs, freezes, ghost ray casts, demotions, stress bond-iterations) is a count taken in index
-   order, never a time budget. The stress solve is sequential per structure with double accumulators.
+   order, never a time budget. Each structure's solve is sequential within its job, with double accumulators.
 8. **Ghosts are simulated by the core, not Box3D, and are part of the state.** Their integration copies Box3D's
    math; their landing ray casts are ordinary deterministic world queries whose callback keeps the closest hit
    (no dependence on callback order). Their state is in `lpWorld_Hash`.
@@ -46,5 +48,5 @@ keep the destruction layer (`src/`) and the app from breaking it.
   versions: pin the toolchain for any multiplayer build.
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry and bonds. Rendering
   and particles are deliberately excluded.
-- Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, and ruins (its demo and under
-  bombardment), at 1, 4 and 8 workers.
+- Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, ruins (its demo and under
+  bombardment) and town under a barrage (`-Bombard 3`, many structures solving at once), at 1, 4 and 8 workers.
