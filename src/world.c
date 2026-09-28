@@ -150,6 +150,7 @@ lpObjectDef lpDefaultObjectDef( void )
 	lpObjectDef def = { 0 };
 	def.transform = b3Transform_identity;
 	def.isStatic = true;
+	def.gravityScale = 1.0f;
 	return def;
 }
 
@@ -249,6 +250,7 @@ int lpAllocBody( lpWorld* w )
 	}
 	lpBody* b = w->bodies.data + index;
 	b->alive = true;
+	b->gravityScale = 1.0f;
 	b->nextFree = -1;
 	b->createdTick = w->tick;
 	b->gridSlot = -1;
@@ -596,7 +598,8 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	w->freeBody = bodyIndex;
 }
 
-int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega )
+int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega,
+						  float gravityScale )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
@@ -611,9 +614,11 @@ int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint
 	{
 		def.sleepThreshold = 0.3f; // light debris settles fast and freezes early
 	}
+	def.gravityScale = gravityScale;
 	b->id = b3CreateBody( w->def.physics, &def );
 	b->kind = kind;
 	b->tier = tier;
+	b->gravityScale = gravityScale;
 	return index;
 }
 
@@ -647,7 +652,8 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
-	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity );
+	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
+										  def->gravityScale );
 	w->bodies.data[bodyIndex].detonator = def->detonator;
 	w->bodies.data[bodyIndex].armed = def->detonator.radius > 0.0f;
 
@@ -848,6 +854,10 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		h = lpHashBytes( h, &b->tier, sizeof( b->tier ) );
 		h = lpHashBytes( h, &b->pieces.count, sizeof( int ) );
 		h = lpHashBytes( h, b->pieces.data, sizeof( int ) * (size_t)b->pieces.count );
+		if ( b->gravityScale != 1.0f )
+		{
+			h = lpHashBytes( h, &b->gravityScale, sizeof( b->gravityScale ) ); // only when set: old hashes stay valid
+		}
 		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 		{
 			h = lpHashBytes( h, &b->com, sizeof( b->com ) );

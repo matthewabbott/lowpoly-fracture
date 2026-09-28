@@ -154,6 +154,7 @@ typedef struct lpBody
 	int nextFree;
 	int stamp;
 	uint32_t generation; // bumped each time the slot is reused: (index, generation) names one body for good
+	float gravityScale;	 // multiplies gravity on the body and on whatever breaks off it ("fairy dust")
 	uint8_t kind;
 	uint8_t tier;
 	bool alive;
@@ -344,7 +345,8 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex );
 bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex );
 void lpDetachPieceShape( lpWorld* w, int pieceIndex );
 void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust );
-int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega );
+int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega,
+						  float gravityScale );
 void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint8_t material );
 void lpQueryPieces( lpWorld* w, b3AABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
@@ -377,7 +379,7 @@ float lpLightVolume( const lpWorld* w, int material );
 // ---- debris tiers (debris.c) ----
 
 // A new ghost body at a body-frame transform; add pieces with lpAddLoosePiece, then call lpFinishLoose.
-int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega );
+int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float gravityScale );
 void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex );
 void lpFinishLoose( lpWorld* w, int bodyIndex, b3WorldTransform xf );
 

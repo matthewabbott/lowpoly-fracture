@@ -157,11 +157,12 @@ static b3Vec3 lpVolumeCenter( const lpWorld* w, const lpBody* b )
 	return v > 0.0f ? b3MulSV( 1.0f / v, c ) : c;
 }
 
-int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega )
+int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float gravityScale )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
 	b->id = b3_nullBodyId;
+	b->gravityScale = gravityScale;
 	b->kind = lp_kindGhost;
 	b->tier = lp_tierLight;
 	b->com = xf.p;
@@ -309,6 +310,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 		def.rotation = xf.q;
 		def.linearVelocity = b->v;
 		def.angularVelocity = b->omega;
+		def.gravityScale = b->gravityScale;
 		def.userData = (void*)(intptr_t)( bodyIndex + 1 );
 		lpGridRemove( w, bodyIndex );
 		b->id = b3CreateBody( w->def.physics, &def );
@@ -453,6 +455,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 		{
 			continue;
 		}
+		b3Vec3 gb = b3MulSV( b->gravityScale, g );
 
 		// Flight plan: cast along the chord of the next few ticks of the ballistic arc. The arc bows off the chord by
 		// g T^2 / 8 (about 2 cm for 8 ticks), which is invisible. A hit gives the landing tick. The chord ends where
@@ -462,7 +465,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 		{
 			casts += 1;
 			float n = (float)LP_GHOST_PLAN_TICKS;
-			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), g ) );
+			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
 			lpStaticRay ray = { w, 2.0f, { 0 }, b3Vec3_zero, false };
 			b3World_CastRay( w->def.physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
 			b->planTicks = LP_GHOST_PLAN_TICKS;
@@ -476,7 +479,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			}
 		}
 
-		b->v = b3MulAdd( b->v, timeStep, g );
+		b->v = b3MulAdd( b->v, timeStep, gb );
 		b->com = b3OffsetPos( b->com, b3MulSV( timeStep, b->v ) );
 		b->q = lpIntegrateRotation( b->q, b3MulSV( timeStep, b->omega ) );
 		b->planTicks -= 1;
@@ -686,6 +689,29 @@ void lpWorld_PromoteBody( lpWorld* w, int body )
 	if ( body >= 0 && body < w->bodies.count && w->bodies.data[body].alive )
 	{
 		lpConvertToFull( w, body );
+	}
+}
+
+void lpWorld_SetGravityScale( lpWorld* w, int body, float scale )
+{
+	if ( body < 0 || body >= w->bodies.count || w->bodies.data[body].alive == false )
+	{
+		return;
+	}
+	lpBody* b = w->bodies.data + body;
+	b->gravityScale = scale;
+	if ( B3_IS_NON_NULL( b->id ) )
+	{
+		b3Body_SetGravityScale( b->id, scale );
+		if ( b3Body_GetType( b->id ) == b3_dynamicBody )
+		{
+			b3Body_SetAwake( b->id, true );
+		}
+	}
+	if ( b->kind == lp_kindStructure )
+	{
+		b->topology += 1; // its weight changed: solve it again
+		lpMarkDirty( w, body );
 	}
 }
 

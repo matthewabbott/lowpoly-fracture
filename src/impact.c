@@ -229,6 +229,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		lpFreeJobOutput( job );
 		return;
 	}
+	float gravityScale = w->bodies.data[piece->body].gravityScale; // ejecta keep it
 
 	int bodyIndex = piece->body;
 	lpBody* body = w->bodies.data + bodyIndex;
@@ -354,14 +355,14 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			// and a small kick away from the impact, so chips of one cell spread instead of flying as a clump
 			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
 			b3Vec3 kick = b3RotateVector( xf.q, b3MulSV( lpRandom_Range( &rng, 0.5f, 2.0f ), away ) );
-			int ghost = lpBeginGhost( w, xf, b3Add( cellV, kick ), b3Add( omega, spin ) );
+			int ghost = lpBeginGhost( w, xf, b3Add( cellV, kick ), b3Add( omega, spin ), gravityScale );
 			lpAddLoosePiece( w, ghost, childIndex );
 			lpFinishLoose( w, ghost, xf );
 		}
 		else
 		{
 			uint8_t tier = cls == lp_cellLight ? lp_tierLight : lp_tierFull;
-			int debris = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, cellV, omega );
+			int debris = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, cellV, omega, gravityScale );
 			if ( lpAttachPiece( w, childIndex, debris ) )
 			{
 				b3Body_ApplyMassFromShapes( w->bodies.data[debris].id );

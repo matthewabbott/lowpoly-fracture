@@ -66,8 +66,8 @@ static int TestStructuresStand( void )
 }
 
 // A stone block mortared to the side of an anchored cube: the root joint's tension is 3M/(A h) = 120 kPa L^2 against
-// mortar's 300 kPa, so 0.8 m stands and 2 m snaps off.
-static bool CantileverFalls( float length )
+// mortar's 300 kPa, so 0.8 m stands and 2 m snaps off. Gravity scale ("fairy dust") lightens what the joint carries.
+static bool CantileverFalls( float length, float gravityScale )
 {
 	Sim s = CreateSim( -1 );
 	lpPartDef parts[2];
@@ -84,6 +84,7 @@ static bool CantileverFalls( float length )
 	def.isStatic = true;
 	def.parts = parts;
 	def.partCount = 2;
+	def.gravityScale = gravityScale;
 	lpCreateObject( s.world, &def );
 	float before = StructureVolume( s.world );
 	Run( &s, 120 );
@@ -94,11 +95,14 @@ static bool CantileverFalls( float length )
 
 static int TestCantileverRoot( void )
 {
-	bool shortFalls = CantileverFalls( 0.8f );
-	bool longFalls = CantileverFalls( 2.0f );
-	printf( "  0.8 m cantilever %s, 2.0 m cantilever %s\n", shortFalls ? "fell" : "stands", longFalls ? "fell" : "stands" );
+	bool shortFalls = CantileverFalls( 0.8f, 1.0f );
+	bool longFalls = CantileverFalls( 2.0f, 1.0f );
+	bool dustedFalls = CantileverFalls( 2.0f, 0.1f );
+	printf( "  0.8 m cantilever %s, 2.0 m cantilever %s, 2.0 m at a tenth of its weight %s\n", shortFalls ? "fell" : "stands",
+			longFalls ? "fell" : "stands", dustedFalls ? "fell" : "stands" );
 	ENSURE( shortFalls == false );
 	ENSURE( longFalls );
+	ENSURE( dustedFalls == false );
 	return 0;
 }
 

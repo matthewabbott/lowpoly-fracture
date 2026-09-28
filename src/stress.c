@@ -192,7 +192,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	int n = body->pieces.count;
 	lpArray_Reserve( w->scratchLoads, n );
 	float weight = 0.0f;
-	float g = b3Length( b3World_GetGravity( w->def.physics ) );
+	float g = body->gravityScale * b3Length( b3World_GetGravity( w->def.physics ) );
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
@@ -944,7 +944,7 @@ void lpCheckStructures( lpWorld* w )
 		lpStressJob* job = lpAddStressJob( w );
 		job->body = bodyIndex;
 		job->xf = b3Body_GetTransform( body->id );
-		job->gravity = b3InvRotateVector( job->xf.q, gravity );
+		job->gravity = b3MulSV( body->gravityScale, b3InvRotateVector( job->xf.q, gravity ) );
 		job->nodeCount = nodes;
 		job->edgeCount = edges;
 		job->budget = budget;

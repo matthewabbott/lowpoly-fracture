@@ -191,6 +191,7 @@ typedef struct lpObjectDef
 	b3Vec3 linearVelocity;
 	b3Vec3 angularVelocity;
 	lpDetonatorDef detonator;
+	float gravityScale; // "fairy dust": 1 is normal weight, 0 floats; everything that breaks off keeps it
 } lpObjectDef;
 
 lpObjectDef lpDefaultObjectDef( void );
@@ -220,6 +221,10 @@ void lpWorld_Blow( lpWorld* world, b3Pos origin, b3Vec3 direction, float range, 
 
 // Make a body full physics again (a thrown or launched piece). Ghost and scrap bodies get a Box3D body back.
 void lpWorld_PromoteBody( lpWorld* world, int body );
+
+// Change how strongly gravity pulls a body and whatever later breaks off it ("fairy dust" on a load to carry). On a
+// structure it changes only the weight its stress solve carries.
+void lpWorld_SetGravityScale( lpWorld* world, int body, float scale );
 
 // Pull a piece toward a target like a spring (grab tool, winch). Call every tick while pulling; applied at the next
 // step. localPoint is in the piece's body frame (lpRayHit gives world points: convert with lpWorld_ToBodyFrame).

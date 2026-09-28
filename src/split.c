@@ -146,7 +146,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		}
 		else if ( comp->volume < lpGhostVolume( w, comp->material ) )
 		{
-			int ghost = lpBeginGhost( w, xf, compV, compOmega );
+			int ghost = lpBeginGhost( w, xf, compV, compOmega, w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex;
 			for ( int k = 0; k < comp->count; ++k )
 			{
@@ -159,7 +159,8 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		else
 		{
 			uint8_t tier = comp->volume < lpLightVolume( w, comp->material ) ? lp_tierLight : lp_tierFull;
-			int newIndex = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, compV, compOmega );
+			int newIndex = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, compV, compOmega,
+												 w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex; // array may have moved
 			lpBody* nb = w->bodies.data + newIndex;
 			for ( int k = 0; k < comp->count; ++k )

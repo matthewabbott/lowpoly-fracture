@@ -159,7 +159,7 @@ static void lpApplyPulls( lpWorld* w )
 		}
 		float mass = b3Body_GetMass( b->id );
 		float m = b3MinFloat( mass, pull.maxMass );
-		b3Vec3 g = b3World_GetGravity( w->def.physics );
+		b3Vec3 g = b3MulSV( b->gravityScale, b3World_GetGravity( w->def.physics ) );
 		b3Vec3 force = b3Sub( b3MulSV( m, accel ), b3MulSV( m, g ) );
 		b3Body_ApplyForce( b->id, force, point, true );
 		// A little angular damping so held things do not spin forever

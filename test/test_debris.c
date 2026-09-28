@@ -48,6 +48,75 @@ static int TestLooseBodyFrame( void )
 	return 0;
 }
 
+// "Fairy dust": a body with a quarter of its gravity falls a quarter as far; a weightless one floats as a ghost and
+// after promotion back to full physics; pieces that split off keep the scale
+static int TestGravityScale( void )
+{
+	Sim s = CreateSim( -1 );
+	int normal = AddBox( &s, (b3Vec3){ -2.0f, 10.0f, 0.0f }, (b3Vec3){ 0.2f, 0.2f, 0.2f }, lp_metal, b3Vec3_zero );
+	int dusted = AddBox( &s, (b3Vec3){ 2.0f, 10.0f, 0.0f }, (b3Vec3){ 0.2f, 0.2f, 0.2f }, lp_metal, b3Vec3_zero );
+	lpWorld_SetGravityScale( s.world, dusted, 0.25f );
+	int floating = AddBox( &s, (b3Vec3){ 6.0f, 5.0f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, b3Vec3_zero );
+	lpWorld_SetGravityScale( s.world, floating, 0.0f );
+	lpConvertToGhost( s.world, floating );
+
+	// Two bonded halves of a weightless-ish plank, to split apart
+	lpPartDef parts[2];
+	for ( int i = 0; i < 2; ++i )
+	{
+		parts[i] = lpDefaultPartDef();
+		parts[i].halfExtents = (b3Vec3){ 0.3f, 0.05f, 0.1f };
+		parts[i].transform.p = (b3Vec3){ i == 0 ? -0.3f : 0.3f, 0.0f, 0.0f };
+		parts[i].material = lp_wood;
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ -6.0f, 8.0f, 0.0f };
+	def.parts = parts;
+	def.partCount = 2;
+	def.gravityScale = 0.5f;
+	int plank = lpCreateObject( s.world, &def );
+	ENSURE( s.world->bodies.data[plank].pieces.count == 2 );
+	const lpPiece* half = s.world->pieces.data + s.world->bodies.data[plank].pieces.data[1];
+	ENSURE( half->bonds.count == 1 );
+	lpBreakBond( s.world, half->bonds.data[0] );
+	lpMarkDirty( s.world, plank );
+
+	Run( &s, 30 );
+	float dropNormal = 10.0f - BodyY( &s, normal );
+	float dropDusted = 10.0f - BodyY( &s, dusted );
+	float ghostY = BodyY( &s, floating );
+	printf( "  after 0.5 s: normal box fell %.3f m, dusted %.3f m, weightless ghost at %.4f m\n", (double)dropNormal,
+			(double)dropDusted, (double)ghostY );
+	ENSURE( dropNormal > 1.0f );
+	ENSURE_NEAR( dropDusted / dropNormal, 0.25f, 0.02f );
+	ENSURE( s.world->bodies.data[floating].kind == lp_kindGhost );
+	ENSURE_NEAR( ghostY, 5.0f, 1e-3f );
+
+	// Promoted back to full physics, it still floats
+	lpWorld_PromoteBody( s.world, floating );
+	ENSURE( b3Body_GetGravityScale( s.world->bodies.data[floating].id ) == 0.0f );
+	Run( &s, 30 );
+	ENSURE_NEAR( BodyY( &s, floating ), 5.0f, 1e-2f );
+
+	// The plank split in two; both halves keep its scale
+	int halves = 0;
+	for ( int i = 0; i < s.world->bodies.count; ++i )
+	{
+		const lpBody* b = s.world->bodies.data + i;
+		if ( b->alive && b->pieces.count > 0 && s.world->pieces.data[b->pieces.data[0]].material == lp_wood )
+		{
+			halves += 1;
+			ENSURE( b->gravityScale == 0.5f );
+			ENSURE( B3_IS_NULL( b->id ) || b3Body_GetGravityScale( b->id ) == 0.5f );
+		}
+	}
+	ENSURE( halves == 2 );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
 static int TestSliverAbsorption( void )
 {
 	lpPoly slab;
@@ -372,6 +441,7 @@ static int TestDeferredFracture( void )
 int DebrisTest( void )
 {
 	RUN_TEST( TestLooseBodyFrame );
+	RUN_TEST( TestGravityScale );
 	RUN_TEST( TestSliverAbsorption );
 	RUN_TEST( TestLogEnds );
 	RUN_TEST( TestGhostLanding );
