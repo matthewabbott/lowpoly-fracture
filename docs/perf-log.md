@@ -445,3 +445,12 @@ the object's sources by volume); fracture cells inherit them. Detonators moved f
 piece made from one: a fuel tank goes off alone and takes only its own pieces, a tank torn off stays volatile and goes
 off once. `lpPiece` grows from 264 to 288 bytes. Every ladder hash is the same, the yard's volatile crates included
 (their object detonators behave exactly as before).
+
+## 2026-09-28 articulated objects, step 4: channels and supply
+
+Supply per channel is a flood over carrier bonds and links from the sources, recomputed once a step and only when a
+carrier's connections changed, walking only carriers. Worlds without carriers never run it: every ladder hash is the
+same, and an interleaved A/B on the keep (1 worker) gives 7.08 ms before and 7.27 ms after, within the run-to-run noise
+(`lpPiece` grows 8 bytes more, to 296, for the supply). A recompute over 1000 carriers of all 8 channels welded in a
+10x10x10 block (10,476 bonds, the worst case: every channel, every piece) costs about 0.6 ms, all of it bond
+traversal; a car's twenty-odd carriers cost microseconds. No ladder scene has carriers yet (the car kit, step 5).

@@ -256,6 +256,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	}
 	lpBuildJoint( w, index );
 	w->linkCount += 1;
+	lpCarriersChanged( w, def->carries );
 	return index;
 }
 
@@ -359,6 +360,7 @@ static void lpReleaseLink( lpWorld* w, int index, bool broken )
 			b3DestroyBody( l->anchor[k] );
 		}
 	}
+	lpCarriersChanged( w, l->def.carries );
 	l->alive = false;
 	l->joint = b3_nullJointId;
 	l->nextFree = w->freeLink;
@@ -706,6 +708,10 @@ lpLinkState lpWorld_GetLinkState( const lpWorld* w, int link )
 	s.strain = l->strain;
 	s.health = l->health;
 	s.length = l->def.length;
+	for ( int k = 0; k < 2; ++k )
+	{
+		s.supplied |= l->ends[k].piece >= 0 ? lpSuppliedMask( w->pieces.data + l->ends[k].piece ) : (uint8_t)0;
+	}
 	return s;
 }
 

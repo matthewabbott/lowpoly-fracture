@@ -164,7 +164,8 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 2. A track scene, a drive mode in the sandbox (chase camera, recorded controls), scripted drivers for the bench
    (done: three box cars lap a ring road with kerbs, crates, a hump and a plank bridge in 22 s; the 'track' rung).
 3. Part identity and part detonators (done: a fuel tank goes off alone; objects' detonators and every hash as before).
-4. Channels and supply.
+4. Channels and supply (done: a cut line goes dry in the same step, an engine without fuel makes no power, half an
+   engine gives half, a hose carries fuel between objects, a car coasts once its engine is knocked off).
 5. A car kit (frame, sheet-metal panels on bolts, glass, engine, fuel tank, steering box) and crash calibration.
 6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path.
 7. Inertia relief: stress on moving bodies, triggered by load spikes (the cut line: it may move to milestone 6).

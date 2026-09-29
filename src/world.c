@@ -203,6 +203,7 @@ void lpFreePieceSlot( lpWorld* w, int index )
 {
 	lpBreakPieceLinks( w, index );
 	lpPiece* p = w->pieces.data + index;
+	lpCarriersChanged( w, p->carries );
 	lpShape_Destroy( p->shape );
 	if ( p->hull != NULL )
 	{
@@ -335,6 +336,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->freezeCandidates );
 	lpArray_Free( w->pendingDestroy );
 	lpArray_Free( w->detonators );
+	lpArray_Free( w->scratchCarriers );
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
 		lpArray_Free( w->stressJobs[i].slender );
@@ -476,6 +478,7 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 	}
 	lpRemoveBondFromPiece( w->pieces.data + bond->a, bondIndex );
 	lpRemoveBondFromPiece( w->pieces.data + bond->b, bondIndex );
+	lpCarriersChanged( w, w->pieces.data[bond->a].carries & w->pieces.data[bond->b].carries );
 	lpTouchPiece( w, bond->a );
 	lpTouchPiece( w, bond->b );
 	bond->alive = false;
@@ -514,6 +517,7 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	bond->alive = true;
 	lpArray_Push( pa->bonds, index );
 	lpArray_Push( pb->bonds, index );
+	lpCarriersChanged( w, pa->carries & pb->carries );
 	lpTouchPiece( w, a );
 	lpTouchPiece( w, b );
 	w->bondCount += 1;
@@ -884,6 +888,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 			total += q->sources == p->sources ? q->shape->volume : 0.0f;
 		}
 		p->sourceShare = total > 0.0f ? p->shape->volume / total : 0.0f;
+		lpCarriersChanged( w, p->carries );
 	}
 
 	lpBondParts( w, bodyIndex, first );
@@ -1025,6 +1030,7 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			uint8_t masks[3] = { p->carries, p->sources, p->needs }; // only when set: old hashes stay valid
 			h = lpHashBytes( h, masks, sizeof( masks ) );
 			h = lpHashBytes( h, &p->sourceShare, sizeof( float ) );
+			h = lpHashBytes( h, p->supply, sizeof( p->supply ) );
 		}
 	}
 	for ( int i = 0; i < w->bonds.count; ++i )
@@ -1187,7 +1193,8 @@ int lpWorld_GetPieceCapacity( const lpWorld* w )
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* w, int piece )
 {
 	const lpPiece* p = w->pieces.data + piece;
-	lpPieceInfo info = { p->body, p->generation, p->userId, p->part, p->tag, p->body >= 0 ? p->shape->volume : 0.0f };
+	lpPieceInfo info = { p->body, p->generation, p->userId, p->part, p->tag, p->body >= 0 ? p->shape->volume : 0.0f,
+						 p->body >= 0 ? lpSuppliedMask( p ) : (uint8_t)0 };
 	return info;
 }
 

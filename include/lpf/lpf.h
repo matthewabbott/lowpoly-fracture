@@ -254,6 +254,7 @@ typedef struct lpLinkDef
 	float maxTorque;			  // N*m; 0 = no limit
 	float strength;				  // impact damage it takes, like a bond's (J/m^2); 0 = immune to blasts
 	bool collideConnected;		  // false stops ALL collision between the two bodies, not only near the link
+	uint8_t carries;			  // supply channels it carries between its ends (a fuel hose, a power cable)
 } lpLinkDef;
 
 // Defaults for a type: the limits of a hemp rope, an iron hinge or ball joint, a bolted weld
@@ -281,6 +282,7 @@ typedef struct lpLinkState
 	float strain;	   // it breaks at 1
 	float health;	   // what is left of its strength after blasts
 	float length;	   // a rope's longest length
+	uint8_t supplied;  // supply channels fed at either end
 } lpLinkState;
 
 // Cached at the last step: safe at any time
@@ -309,6 +311,8 @@ typedef struct lpWheelDef
 	float brakeShare;  // of its brake force
 	float steerFactor; // of its steering angle (0: fixed; negative steers the other way)
 	bool handbrake;	   // locks under the handbrake, and slides sideways more easily then
+	uint8_t driveNeeds; // supply channels its drive needs at its mount (0: none): it drives as well as the worst is fed
+	uint8_t steerNeeds; // likewise its steering: unfed, it holds where it is
 	float maxForce;	   // N the mount carries before it strains; 0: no limit
 	float strength;	   // blast damage it takes, like a link's (J/m^2); 0: immune
 	uint8_t material;  // of the wheel once it comes off
@@ -495,9 +499,10 @@ typedef struct lpStats
 	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)
 	int settleIterations;
 
-	// Vehicles (wheel.c)
+	// Vehicles (wheel.c) and supply (supply.c)
 	float vehicleMs;
-	int wheelCasts; // this step
+	int wheelCasts;	   // this step
+	int supplyUpdates; // this step: 1 when a carrier's connections changed
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );
@@ -534,10 +539,13 @@ typedef struct lpPieceInfo
 	int part;			 // index of the part it came from in that object
 	uint16_t tag;		 // that part's system tag
 	float volume;
+	uint8_t supplied;	 // supply channels fed here
 } lpPieceInfo;
 
 int lpWorld_GetPieceCapacity( const lpWorld* world );
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* world, int piece );
+// How well a supply channel is fed at a piece, 0 to 1: the sum of the shares of the sources its carriers reach
+float lpWorld_GetPieceSupply( const lpWorld* world, int piece, int channel );
 
 int lpWorld_GetBodyCapacity( const lpWorld* world );
 bool lpWorld_GetBodyTransform( const lpWorld* world, int body, b3WorldTransform* transform );

@@ -216,11 +216,299 @@ static int TestTankTornOffStaysVolatile( void )
 	return 0;
 }
 
+enum
+{
+	Fuel = 0x1, // channel 0
+	Power = 0x2, // channel 1
+};
+
+// A dynamic row of 0.4 m boxes along x resting on the ground, one object; each part's system from `systems`
+static int AddRow( Sim* s, b3Vec3 at, const lpPartSystem* systems, int count, uint32_t userId )
+{
+	lpPartDef parts[16];
+	for ( int k = 0; k < count; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+		parts[k].transform.p = (b3Vec3){ 0.4f * (float)k, 0.0f, 0.0f };
+		parts[k].material = lp_metal;
+		parts[k].system = systems[k];
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ at.x, at.y, at.z };
+	def.parts = parts;
+	def.partCount = count;
+	def.userId = userId;
+	return lpCreateObject( s->world, &def );
+}
+
+// The piece of that object and part (-1 if none)
+static int PieceOf( const Sim* s, uint32_t userId, int part )
+{
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( s->world ); ++i )
+	{
+		lpPieceInfo info = lpWorld_GetPieceInfo( s->world, i );
+		if ( info.body >= 0 && info.userId == userId && info.part == part )
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+static float SupplyAt( const Sim* s, uint32_t userId, int part, int channel )
+{
+	return lpWorld_GetPieceSupply( s->world, PieceOf( s, userId, part ), channel );
+}
+
+// Cut every bond of a piece (it falls off its body at the next step)
+static void Unbolt( Sim* s, int piece )
+{
+	lpPiece* p = s->world->pieces.data + piece;
+	int body = p->body;
+	while ( p->bonds.count > 0 )
+	{
+		lpBreakBond( s->world, p->bonds.data[0] );
+	}
+	lpMarkDirty( s->world, body );
+}
+
+// A tank feeds fuel down a pipe to the end; cut the pipe and the far side goes dry in the same step
+static int TestSupplyCut( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartSystem row[7] = { { 0, 0, Fuel, 0 } };
+	for ( int k = 1; k < 7; ++k )
+	{
+		row[k] = (lpPartSystem){ 0, Fuel, 0, 0 };
+	}
+	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
+	Run( &s, 1 );
+	ENSURE( SupplyAt( &s, 1u, 6, 0 ) == 1.0f && SupplyAt( &s, 1u, 6, 1 ) == 0.0f );
+	ENSURE( lpWorld_GetPieceInfo( s.world, PieceOf( &s, 1u, 6 ) ).supplied == Fuel );
+
+	// Cut between parts 3 and 4
+	lpPiece* p3 = s.world->pieces.data + PieceOf( &s, 1u, 3 );
+	int p4 = PieceOf( &s, 1u, 4 );
+	for ( int k = 0; k < p3->bonds.count; ++k )
+	{
+		const lpBond* bond = s.world->bonds.data + p3->bonds.data[k];
+		if ( bond->a == p4 || bond->b == p4 )
+		{
+			lpBreakBond( s.world, p3->bonds.data[k] );
+			break;
+		}
+	}
+	lpMarkDirty( s.world, p3->body );
+	Run( &s, 1 );
+	printf( "  after the cut: part 3 %.2f, part 4 %.2f, the end %.2f\n", SupplyAt( &s, 1u, 3, 0 ), SupplyAt( &s, 1u, 4, 0 ),
+			SupplyAt( &s, 1u, 6, 0 ) );
+	ENSURE( SupplyAt( &s, 1u, 3, 0 ) == 1.0f && SupplyAt( &s, 1u, 4, 0 ) == 0.0f && SupplyAt( &s, 1u, 6, 0 ) == 0.0f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// An engine feeds power only while fuel reaches it
+static int TestSupplyNeeds( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartSystem row[4] = { { 0, 0, Fuel, 0 }, { 0, Fuel | Power, 0, 0 }, { 0, Fuel, Power, Fuel }, { 0, Power, 0, 0 } };
+	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 4, 2u );
+	Run( &s, 1 );
+	ENSURE( SupplyAt( &s, 2u, 3, 1 ) == 1.0f );
+	Unbolt( &s, PieceOf( &s, 2u, 0 ) ); // the tank comes off
+	Run( &s, 1 );
+	printf( "  without its tank: fuel at the engine %.2f, power at the end %.2f\n", SupplyAt( &s, 2u, 2, 0 ),
+			SupplyAt( &s, 2u, 3, 1 ) );
+	ENSURE( SupplyAt( &s, 2u, 2, 0 ) == 0.0f && SupplyAt( &s, 2u, 3, 1 ) == 0.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// An engine of two equal parts: lose one and half the power is left
+static int TestSupplyShare( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartSystem row[3] = { { 0, 0, Power, 0 }, { 0, 0, Power, 0 }, { 0, Power, 0, 0 } };
+	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 3, 3u );
+	Run( &s, 1 );
+	ENSURE_NEAR( s.world->pieces.data[PieceOf( &s, 3u, 0 )].sourceShare, 0.5f, 1e-4f );
+	ENSURE( SupplyAt( &s, 3u, 2, 1 ) == 1.0f );
+	Unbolt( &s, PieceOf( &s, 3u, 0 ) );
+	Run( &s, 1 );
+	printf( "  half an engine: %.3f\n", SupplyAt( &s, 3u, 2, 1 ) );
+	ENSURE_NEAR( SupplyAt( &s, 3u, 2, 1 ), 0.5f, 0.004f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A hose between two objects carries fuel; cut it and the far one goes dry
+static int TestSupplyOverLink( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartSystem tank = { 0, 0, Fuel, 0 };
+	lpPartSystem drum = { 0, Fuel, 0, 0 };
+	int a = AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, &tank, 1, 4u );
+	int b = AddRow( &s, (b3Vec3){ 2.0f, 0.2f, 0.0f }, &drum, 1, 5u );
+	lpLinkDef hose = lpDefaultLinkDef( lp_linkRope );
+	hose.bodyA = a;
+	hose.bodyB = b;
+	hose.anchorA = (b3Pos){ 0.2f, 0.2f, 0.0f };
+	hose.anchorB = (b3Pos){ 1.8f, 0.2f, 0.0f };
+	hose.carries = Fuel;
+	int link = lpCreateLink( s.world, &hose );
+	ENSURE( link >= 0 );
+	Run( &s, 1 );
+	ENSURE( SupplyAt( &s, 5u, 0, 0 ) == 1.0f && lpWorld_GetLinkState( s.world, link ).supplied == Fuel );
+	lpDestroyLink( s.world, link );
+	Run( &s, 1 );
+	ENSURE( SupplyAt( &s, 5u, 0, 0 ) == 0.0f && SupplyAt( &s, 4u, 0, 0 ) == 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A car whose wheels need power from an engine on its chassis: knock the engine off and it coasts
+static int AddPoweredCar( Sim* s, b3Vec3 at, uint32_t userId, int* vehicle )
+{
+	lpPartDef parts[2];
+	parts[0] = lpDefaultPartDef();
+	parts[0].halfExtents = (b3Vec3){ 0.9f, 0.15f, 2.0f };
+	parts[0].material = lp_wood;
+	parts[0].system.carries = Power;
+	parts[1] = lpDefaultPartDef();
+	parts[1].halfExtents = (b3Vec3){ 0.4f, 0.25f, 0.4f };
+	parts[1].transform.p = (b3Vec3){ 0.0f, 0.4f, 1.2f };
+	parts[1].material = lp_metal;
+	parts[1].system.sources = Power;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ at.x, at.y + 0.9f, at.z };
+	def.parts = parts;
+	def.partCount = 2;
+	def.userId = userId;
+	int body = lpCreateObject( s->world, &def );
+	lpWheelDef wheels[4];
+	for ( int i = 0; i < 4; ++i )
+	{
+		wheels[i] = lpDefaultWheelDef();
+		wheels[i].mount = (b3Pos){ at.x + ( ( i & 1 ) ? 0.78f : -0.78f ), at.y + 0.75f, at.z + ( ( i & 2 ) ? 1.4f : -1.4f ) };
+		wheels[i].driveShare = ( i & 2 ) ? 0.0f : 0.5f;
+		wheels[i].driveNeeds = Power;
+	}
+	lpVehicleDef vd = lpDefaultVehicleDef();
+	vd.body = body;
+	vd.wheels = wheels;
+	vd.wheelCount = 4;
+	*vehicle = lpCreateVehicle( s->world, &vd );
+	return body;
+}
+
+static int TestCutPowerCoasts( void )
+{
+	Sim s = CreateSim( -1 );
+	int car;
+	AddPoweredCar( &s, (b3Vec3){ 0.0f, 0.0f, -30.0f }, 6u, &car );
+	ENSURE( car >= 0 );
+	lpVehicleControl go = { 1.0f, 0.0f, 0.0f, false };
+	lpWorld_SetVehicleControl( s.world, car, &go );
+	Run( &s, 90 );
+	lpVehicleState before = lpWorld_GetVehicleState( s.world, car );
+	ENSURE( before.power == 1.0f && before.speed > 3.0f );
+	Unbolt( &s, PieceOf( &s, 6u, 1 ) );
+	Run( &s, 1 );
+	float cut = lpWorld_GetVehicleState( s.world, car ).speed;
+	Run( &s, 90 );
+	lpVehicleState after = lpWorld_GetVehicleState( s.world, car );
+	printf( "  powered: %.2f m/s (power %.2f); engine knocked off at %.2f m/s, 1.5 s later %.2f m/s (power %.2f)\n",
+			before.speed, before.power, cut, after.speed, after.power );
+	ENSURE( after.power == 0.0f && after.speed < cut );
+	DestroySim( &s );
+	return 0;
+}
+
+// Supply under fire is the same at any worker count
+static uint64_t SupplyUnderFire( int workers )
+{
+	Sim s = CreateSimWorkers( -1, workers );
+	int car;
+	AddPoweredCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 7u, &car );
+	lpPartSystem row[5] = { { 0, 0, Fuel, 0 }, { 0, Fuel | Power, 0, 0 }, { 0, Fuel, Power, Fuel }, { 0, Power, 0, 0 },
+							{ 0, Power, 0, 0 } };
+	AddRow( &s, (b3Vec3){ 4.0f, 0.2f, 0.0f }, row, 5, 8u );
+	lpVehicleControl go = { 1.0f, 0.0f, 0.3f, false };
+	lpWorld_SetVehicleControl( s.world, car, &go );
+	for ( int t = 0; t < 180; ++t )
+	{
+		if ( t == 40 || t == 100 )
+		{
+			lpImpactDef im = Blast( t == 40 ? (b3Vec3){ 4.8f, 0.3f, 0.5f } : (b3Vec3){ 0.5f, 1.2f, 3.0f }, 1.4f, 90000.0f );
+			lpWorld_AddImpact( s.world, &im );
+		}
+		Run( &s, 1 );
+	}
+	uint64_t h = lpWorld_Hash( s.world );
+	DestroySim( &s );
+	return h;
+}
+
+static int TestSupplyDeterminism( void )
+{
+	uint64_t a = SupplyUnderFire( 1 );
+	uint64_t b = SupplyUnderFire( 4 );
+	uint64_t c = SupplyUnderFire( 8 );
+	printf( "  hashes %016llx %016llx %016llx\n", (unsigned long long)a, (unsigned long long)b, (unsigned long long)c );
+	ENSURE( a == b && a == c );
+	return 0;
+}
+
+// What a recompute costs: 1000 carriers of all 8 channels in one object, sources in a corner
+static int TestSupplyCost( void )
+{
+	Sim s = CreateSim( -1 );
+	static lpPartDef parts[1000];
+	for ( int k = 0; k < 1000; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (b3Vec3){ 0.1f, 0.1f, 0.1f };
+		parts[k].transform.p = (b3Vec3){ 0.2f * (float)( k % 10 ), 0.2f * (float)( ( k / 10 ) % 10 ), 0.2f * (float)( k / 100 ) };
+		parts[k].material = lp_metal;
+		parts[k].system.carries = 0xFF;
+		parts[k].system.sources = k == 0 ? 0xFF : 0;
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ 0.0f, 0.1f, 0.0f };
+	def.parts = parts;
+	def.partCount = 1000;
+	lpCreateObject( s.world, &def );
+	Run( &s, 1 );
+	uint64_t ticks = b3GetTicks();
+	for ( int r = 0; r < 20; ++r )
+	{
+		s.world->supplyDirty = true;
+		lpUpdateSupply( s.world );
+	}
+	float us = 1000.0f * b3GetMilliseconds( ticks ) / 20.0f;
+	printf( "  1000 carriers, 8 channels: %.1f us per recompute (%d bonds)\n", us, s.world->bondCount );
+	ENSURE( lpWorld_GetPieceSupply( s.world, s.world->bodies.data[1].pieces.data[999], 7 ) == 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
 int SystemsTest( void )
 {
 	RUN_TEST( TestPartIdentitySurvivesFracture );
 	RUN_TEST( TestPartDetonatorBlowsOnlyItsPart );
 	RUN_TEST( TestObjectDetonatorUnchanged );
 	RUN_TEST( TestTankTornOffStaysVolatile );
+	RUN_TEST( TestSupplyCut );
+	RUN_TEST( TestSupplyNeeds );
+	RUN_TEST( TestSupplyShare );
+	RUN_TEST( TestSupplyOverLink );
+	RUN_TEST( TestCutPowerCoasts );
+	RUN_TEST( TestSupplyDeterminism );
+	RUN_TEST( TestSupplyCost );
 	return 0;
 }

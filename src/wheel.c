@@ -105,6 +105,12 @@ static int lpWheelMountBody( const lpWorld* w, const lpWheel* wh )
 	return w->pieces.data[w->links.data[wh->link].ends[0].piece].body;
 }
 
+// How well what the wheel's drive (or steering) needs is fed at its mount, 0 to 1
+static float lpWheelSupply( const lpWorld* w, const lpWheel* wh, uint8_t needs )
+{
+	return lpSupplyOf( w->pieces.data + w->links.data[wh->link].ends[0].piece, needs );
+}
+
 // The tyre's frame in the chassis body frame: x the axle (up x forward), y up, z forward, turned by steering and spin
 static b3Quat lpWheelRotation( const lpVehicle* v, const lpWheel* wh )
 {
@@ -493,7 +499,8 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 			float target = 0.0f;
 			float cap;
 			float brake = b3ClampFloat( control->brake, 0.0f, 1.0f ) * vehicle->def.maxBrakeForce * wh->def.brakeShare;
-			float drive = b3AbsFloat( control->throttle ) * vehicle->def.maxDriveForce * wh->def.driveShare;
+			float drive = b3AbsFloat( control->throttle ) * vehicle->def.maxDriveForce * wh->def.driveShare *
+						  lpWheelSupply( w, wh, wh->def.driveNeeds );
 			if ( locked )
 			{
 				cap = limit;
@@ -600,7 +607,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 			}
 			lpWheel* wh = w->wheels.data + w->links.data[v->links[k]].wheel;
 			float target = b3ClampFloat( v->control.steer, -1.0f, 1.0f ) * v->def.maxSteer * wh->def.steerFactor;
-			float turn = v->def.steerSpeed * timeStep;
+			float turn = v->def.steerSpeed * timeStep * lpWheelSupply( w, wh, wh->def.steerNeeds ); // unfed, it holds
 			wh->steer += b3ClampFloat( target - wh->steer, -turn, turn );
 			if ( wake )
 			{
@@ -741,8 +748,8 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 	s.alive = v->alive;
 	s.wheelCount = v->wheelCount;
 	s.control = v->control;
-	s.power = 1.0f;
 	int bodies[LP_MAX_VEHICLE_WHEELS];
+	float power = 0.0f;
 	for ( int k = 0; k < v->wheelCount; ++k )
 	{
 		bodies[k] = -1;
@@ -755,8 +762,10 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 		s.attached += 1;
 		s.grounded += wh->grounded ? 1 : 0;
 		s.driven += wh->def.driveShare > 0.0f ? 1 : 0;
+		power += wh->def.driveShare > 0.0f ? lpWheelSupply( w, wh, wh->def.driveNeeds ) : 0.0f;
 		s.steerable += wh->def.steerFactor != 0.0f ? 1 : 0;
 	}
+	s.power = s.driven > 0 ? power / (float)s.driven : 0.0f; // what its driven wheels still get, on average
 	int best = 0;
 	for ( int k = 0; k < v->wheelCount; ++k )
 	{

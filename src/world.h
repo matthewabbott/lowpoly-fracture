@@ -145,6 +145,7 @@ typedef struct lpLink
 } lpLink;
 
 #define LP_MAX_VEHICLE_WHEELS 16
+#define LP_CHANNELS 8 // supply channels (lpPartSystem)
 
 // A vehicle's wheel (wheel.c): a link with no joint, end 0 on the mount piece, end 1 on nothing. Its axes are the
 // vehicle's, in the chassis body frame, which every body split off the chassis shares.
@@ -260,6 +261,7 @@ typedef struct lpPiece
 	uint8_t needs;
 	float sourceShare; // of its object's sources of the same channels, by volume (split among its fracture cells)
 	int detonator;	   // its part's detonator, w->detonators + 1; 0: inert
+	uint8_t supply[LP_CHANNELS]; // how well each channel is fed here, of 255 (supply.c)
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
 	uint8_t depth;
@@ -504,6 +506,8 @@ struct lpWorld
 	int oracleJoints; // joints checked
 	LP_ARRAY( lpPendingBlast ) pendingDestroy; // detonated pieces, removed at the start of the next step
 	LP_ARRAY( lpDetonator ) detonators;
+	bool supplyDirty; // a carrier's connections changed: supply is recomputed before the next physics step
+	LP_ARRAY( int ) scratchCarriers;
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;
 	LP_ARRAY( lpDeferredJob ) deferred;
@@ -598,6 +602,15 @@ void lpReleaseWheel( lpWorld* w, int wheel, bool comesOff ); // its link is goin
 // Wheels standing on a structure load it (stress.c): force on the ground at the contact, world
 void lpAddWheelLoads( lpWorld* w, int bodyIndex, b3WorldTransform xf );
 uint64_t lpHashVehicles( const lpWorld* w, uint64_t h );
+
+// supply (supply.c): recomputed once a step, after lpSyncLinks, when a carrier's connections changed
+void lpUpdateSupply( lpWorld* w );
+uint8_t lpSuppliedMask( const lpPiece* p );			  // channels fed at all here
+float lpSupplyOf( const lpPiece* p, uint8_t channels ); // the worst of those channels here, 0 to 1 (1 for none)
+static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
+{
+	w->supplyDirty = w->supplyDirty || channels != 0;
+}
 bool lpValidateWheel( const lpWorld* w, int link );
 void lpFreeVehicles( lpWorld* w );
 

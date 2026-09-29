@@ -100,6 +100,13 @@ tiers instead of popping them.
   piece, sets its detonator off: it disarms (a tank torn in two goes off once) and its pieces on that body go up with
   the blast at their centre next step. When they are the whole body it goes as before, the blast at its centre of
   mass; otherwise only they go and the rest is split. Chips thrown clear by a fracture are no longer volatile.
+- Supply (`supply.c`): a bond between two pieces that carry a channel carries it, and so does a link that carries it
+  (`lpLinkDef.carries`, a fuel hose) between two pieces that do. The carriers a channel connects form a group; its
+  supply is the sum of its sources' feeds, capped at 1, where a source feeds its share times the worst supply among
+  what it needs. Needs are only on lower channels than sources, so the channels are settled in order, 0 to 7, in one
+  pass. It is recomputed once a step, after `lpSyncLinks`, and only when a carrier's connections changed (a bond or
+  link between carriers made or broken, a carrier made or freed); only carriers are walked. Wheels drive as well as
+  the worst of their `driveNeeds` is fed at their mount and steer at that rate for `steerNeeds` (unfed, they hold).
 
 ## Stress (`stress.c`, `solve.c`)
 

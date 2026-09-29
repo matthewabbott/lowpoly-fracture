@@ -27,6 +27,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/stress.c` | the stress check per structure: scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
+| `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track) and scripted bombardment and drivers (`lpSceneDrive`); `lpBuildScene` settles their structures |
