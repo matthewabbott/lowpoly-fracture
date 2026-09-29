@@ -1,0 +1,11 @@
+# The mech yard: the hexapod patrols on its own for 5 s, then the player takes it (walk events: rig forward strafe
+# turn crouch): on up the yard, a turn to the right with a sidestep, a crouch, standing still, and off again; a
+# grenade and a rifle shot at the rubble on the way.
+# Replay: sandbox --scene mech --script scripts/mech_demo.txt --follow
+300 walk 0 1.000000 0.000000 0.000000 0.000000
+420 grenade -3.0 1.8 -6.0 0.35 -0.25 0.9 -1
+480 walk 0 0.600000 0.600000 0.500000 0.000000
+600 walk 0 0.000000 0.000000 0.000000 1.000000
+720 walk 0 0.000000 0.000000 0.000000 0.000000
+780 rifle -3.0 1.6 -4.0 0.4 -0.2 0.9 -1
+840 walk 0 1.000000 0.000000 -0.400000 0.000000

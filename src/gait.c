@@ -434,6 +434,10 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			float rate = b3Length( drift );
 			float half = lpHalfStep( r, rate ); // it landed about this far ahead; it steps once about this far behind
 			urgency[i] = rate > 0.05f * r->def.maxSpeed ? b3Dot( off, drift ) / ( rate * b3MaxFloat( half, 0.02f ) ) : stretch[i];
+			if ( stretch[i] >= 1.0f )
+			{
+				urgency[i] = b3MaxFloat( urgency[i], 1.0f + stretch[i] ); // past its stride any way (a slip, a rock): due first
+			}
 			worst = limb->planted ? b3MaxFloat( worst, stretch[i] ) : worst;
 		}
 	}

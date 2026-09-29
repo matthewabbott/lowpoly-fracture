@@ -78,3 +78,67 @@ void Drive_Describe( const lpWorld* world, int vehicle, char* text, int size )
 			  vehicle, 3.6f * s.speed, s.attached, s.grounded, 100.0f * s.power, s.control.throttle, s.control.brake,
 			  s.control.steer, s.control.handbrake ? "  handbrake" : "" );
 }
+
+// ---- rigs ----
+
+int Walk_Nearest( const lpWorld* world, V3 point, float reach, float* distance )
+{
+	int best = -1;
+	float nearest = reach * reach;
+	for ( int r = 0; r < lpWorld_GetRigCapacity( world ); ++r )
+	{
+		lpRigState s = lpWorld_GetRigState( world, r );
+		if ( s.alive == false || s.body < 0 )
+		{
+			continue;
+		}
+		V3 d = V3{ (float)s.position.x, (float)s.position.y, (float)s.position.z } - point;
+		if ( Dot( d, d ) < nearest )
+		{
+			nearest = Dot( d, d );
+			best = r;
+		}
+	}
+	*distance = sqrtf( nearest );
+	return best;
+}
+
+lpRigControl Walk_Control( const WalkKeys& keys )
+{
+	lpRigControl c = {};
+	c.forward = ( keys.forward ? 1.0f : 0.0f ) - ( keys.back ? 0.5f : 0.0f );
+	c.turn = ( keys.right ? 1.0f : 0.0f ) - ( keys.left ? 1.0f : 0.0f );
+	c.strafe = ( keys.strafeRight ? 0.6f : 0.0f ) - ( keys.strafeLeft ? 0.6f : 0.0f );
+	c.crouch = keys.crouch ? 1.0f : 0.0f;
+	return c;
+}
+
+bool Walk_Same( const lpRigControl& a, const lpRigControl& b )
+{
+	return a.forward == b.forward && a.strafe == b.strafe && a.turn == b.turn && a.crouch == b.crouch;
+}
+
+void Walk_Camera( const lpWorld* world, int rig, float dt, V3* position, float* yaw, float* pitch )
+{
+	lpRigState s = lpWorld_GetRigState( world, rig );
+	if ( s.body < 0 )
+	{
+		return;
+	}
+	V3 torso = { (float)s.position.x, (float)s.position.y, (float)s.position.z };
+	V3 flat = Normalize( V3{ s.forward.x, 0.0f, s.forward.z } );
+	V3 want = torso - 11.0f * flat + V3{ 0.0f, 4.5f, 0.0f };
+	float ease = 1.0f - expf( -3.0f * dt );
+	*position = *position + ease * ( want - *position );
+	V3 look = torso + 3.0f * flat - *position;
+	*yaw = atan2f( look.x, -look.z );
+	*pitch = atan2f( look.y, sqrtf( look.x * look.x + look.z * look.z ) );
+}
+
+void Walk_Describe( const lpWorld* world, int rig, char* text, int size )
+{
+	lpRigState s = lpWorld_GetRigState( world, rig );
+	snprintf( text, (size_t)size, "mech %d: %.1f m/s  legs %d on, %d able, %d down  height %.2f m%s  forward %.1f turn %.1f strafe %.1f%s",
+			  rig, s.speed, s.attached, s.able, s.planted, s.height, s.idle ? " (idle)" : "", s.control.forward, s.control.turn,
+			  s.control.strafe, s.control.crouch > 0.0f ? "  crouched" : "" );
+}

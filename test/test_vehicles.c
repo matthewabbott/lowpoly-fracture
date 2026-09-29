@@ -471,7 +471,7 @@ static int TestTrackLap( void )
 	bool valid = true;
 	for ( int t = 0; t < 1800; ++t )
 	{
-		lpSceneDrive( s.world, lp_sceneTrack, t, -1 );
+		lpSceneDrive( s.world, lp_sceneTrack, t, -1, -1 );
 		Step( &s );
 		for ( int v = 0; v < count; ++v )
 		{

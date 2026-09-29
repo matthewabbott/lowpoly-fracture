@@ -95,7 +95,7 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
 		lpSceneBombard( world, scene, tick, period );
-		lpSceneDrive( world, scene, tick, -1 ); // the track's cars drive laps
+		lpSceneDrive( world, scene, tick, -1, -1 ); // the track's cars drive laps, the mech patrols
 		uint64_t t0 = b3GetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
 		total[tick] = b3GetMilliseconds( t0 );

@@ -692,6 +692,36 @@ static int TestRigModelBent( void )
 }
 
 // Diagnostic: one leg through a few strides
+// The mech yard's patrol: round the loop over the step, the rubble and the hump, past the crates, the wall and the car,
+// and back, in order, with every leg on
+static int TestRigPatrols( void )
+{
+	Sim s = CreateSim( lp_sceneMech );
+	static const float corners[4][2] = { { 0.0f, 20.0f }, { 16.0f, 20.0f }, { 16.0f, -20.0f }, { 0.0f, -20.0f } };
+	int reached = 0, lapTick = -1;
+	for ( int t = 0; t < 4800 && reached < 4; ++t )
+	{
+		lpSceneDrive( s.world, lp_sceneMech, t, -1, -1 );
+		Run( &s, 1 );
+		lpRigState st = lpWorld_GetRigState( s.world, 0 );
+		float dx = (float)st.position.x - corners[reached][0], dz = (float)st.position.z - corners[reached][1];
+		if ( dx * dx + dz * dz < 16.0f )
+		{
+			reached += 1;
+			lapTick = t;
+		}
+		if ( t % 300 == 0 )
+		{
+			ENSURE( lpWorld_Validate( s.world ) );
+		}
+	}
+	lpRigState st = lpWorld_GetRigState( s.world, 0 );
+	printf( "  round the yard (about 110 m) in %.1f s, %d legs able, torso %.2f m over its feet\n", (float)lapTick / 60.0f, st.able, st.height );
+	ENSURE( reached == 4 && st.able == 6 );
+	DestroySim( &s );
+	return 0;
+}
+
 int RigTest( void )
 {
 	RUN_TEST( TestKitStands );
@@ -710,5 +740,6 @@ int RigTest( void )
 	RUN_TEST( TestRigStops );
 	RUN_TEST( TestRigWalkDeterminism );
 	RUN_TEST( TestRigWalkCost );
+	RUN_TEST( TestRigPatrols );
 	return 0;
 }

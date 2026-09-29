@@ -21,6 +21,7 @@ typedef enum lpSceneId
 	lp_sceneYard,	// things joined by links: a cart of volatile crates on a ramp, a hanging sign, a door, a drawbridge
 	lp_sceneKeep,	// a mortared stone keep of about 2000 pieces with wooden floors: the stress solve at scale
 	lp_sceneTrack,	// a ring road with kerbs, a hump, a plank bridge and a brick wall, three cars that drive laps, a crane
+	lp_sceneMech,	// a hexapod mech on patrol round a yard: a step, rubble, a hump, crates, a brick wall, a parked car
 	lp_sceneCount
 } lpSceneId;
 
@@ -42,10 +43,10 @@ int lpAddKeep( lpWorld* world, b3Vec3 base, int floors );
 // Returns true if an impact was queued this tick.
 bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
 
-// Scripted drivers for scenes with vehicles (the track's cars drive laps), for benchmarks and demos: call every tick
-// before the step. They read only simulation state, so they are deterministic. skipVehicle (-1: none) is left alone,
-// for the player. Does nothing in scenes without vehicles.
-void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle );
+// Scripted drivers for scenes with vehicles and rigs (the track's cars drive laps, the mech patrols its yard), for
+// benchmarks and demos: call every tick before the step. They read only simulation state, so they are deterministic.
+// skipVehicle and skipRig (-1: none) are left alone, for the player. Does nothing in scenes without either.
+void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle, int skipRig );
 
 // The scenes' supply channels and part tags (the core never reads tags; these are the game's names)
 enum

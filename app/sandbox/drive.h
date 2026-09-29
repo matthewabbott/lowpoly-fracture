@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Driving a vehicle from the keyboard, and a camera that chases it. The controls become recorded drive events (the
-// simulation sees only those); the camera is render-only.
+// Driving a vehicle or walking a rig from the keyboard, and a camera that chases it. The controls become recorded drive
+// and walk events (the simulation sees only those); the camera is render-only.
 #pragma once
 
 #include "math3d.h"
@@ -26,3 +26,24 @@ void Drive_Camera( const lpWorld* world, int vehicle, float dt, V3* position, fl
 
 // One HUD line: speed, wheels, controls
 void Drive_Describe( const lpWorld* world, int vehicle, char* text, int size );
+
+// ---- rigs ----
+
+struct WalkKeys
+{
+	bool forward, back, left, right, strafeLeft, strafeRight, crouch;
+};
+
+// The rig whose torso is nearest the point, within reach; -1 if none
+int Walk_Nearest( const lpWorld* world, V3 point, float reach, float* distance );
+
+// W walks, S backs off at half speed, A and D turn, Q and E step sideways, C crouches
+lpRigControl Walk_Control( const WalkKeys& keys );
+
+bool Walk_Same( const lpRigControl& a, const lpRigControl& b );
+
+// Eases the camera toward a point behind and above the rig and aims it there
+void Walk_Camera( const lpWorld* world, int rig, float dt, V3* position, float* yaw, float* pitch );
+
+// One HUD line: speed, legs, height, controls
+void Walk_Describe( const lpWorld* world, int rig, char* text, int size );

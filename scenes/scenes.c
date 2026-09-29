@@ -2,6 +2,7 @@
 
 #include "scenes.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +145,8 @@ const char* lpSceneName( int scene )
 			return "keep";
 		case lp_sceneTrack:
 			return "track";
+		case lp_sceneMech:
+			return "mech";
 		default:
 			return "?";
 	}
@@ -1444,12 +1447,113 @@ static void lpDriveTrack( lpWorld* world, int skipVehicle )
 	}
 }
 
-void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle )
+// ---- the mech yard: a hexapod on patrol over rough ground ----
+
+#define LP_MECH_LOOKAHEAD 5.0f // m along the patrol the walkers steer for
+
+// The patrol: a loop round the yard, north up x = 0, east, south down x = 16, west
+static const b3Vec3 lp_mechPatrol[4] = { { 0.0f, 0.0f, -20.0f }, { 0.0f, 0.0f, 20.0f }, { 16.0f, 0.0f, 20.0f }, { 16.0f, 0.0f, -20.0f } };
+
+static void lpAddMechYard( lpWorld* world )
+{
+	lpAddGround( world, 50.0f );
+	uint64_t rng = 0x3EC4ull;
+
+	// North up x = 0: a 0.4 m concrete step, loose rubble, a hump up and down 15 degrees
+	lpBegin();
+	lpBox( (b3Vec3){ 0.0f, 0.2f, 0.0f }, (b3Vec3){ 5.0f, 0.2f, 3.0f }, b3Quat_identity, lp_concrete, LP_CONCRETE, true );
+	lpCommit( world, (b3Vec3){ 0.0f, 0.0f, -9.0f }, 0.0f, true );
+	for ( int k = 0; k < 14; ++k )
+	{
+		float size = 0.12f + 0.16f * lpUnit( &rng );
+		b3Vec3 at = { -3.0f + 6.0f * lpUnit( &rng ), size, -2.0f + 4.0f * lpUnit( &rng ) };
+		lpBegin();
+		lpBox( b3Vec3_zero, (b3Vec3){ size, 0.8f * size, 1.2f * size }, b3Quat_identity, lp_stone, LP_STONE_DARK, false );
+		lpCommit( world, at, 6.28f * lpUnit( &rng ), false );
+	}
+	lpBegin();
+	lpWedge( 5.0f, 6.0f, 10.0f, 1.07f, lp_stone, LP_STONE );
+	lpBox( (b3Vec3){ 0.0f, 0.535f, 11.0f }, (b3Vec3){ 5.0f, 0.535f, 1.0f }, b3Quat_identity, lp_stone, LP_STONE, true );
+	lpWedge( 5.0f, 16.0f, 12.0f, 1.07f, lp_stone, LP_STONE );
+	lpCommit( world, b3Vec3_zero, 0.0f, true );
+
+	// East along z = 20: loose crates to wade through
+	for ( int k = 0; k < 7; ++k )
+	{
+		lpBegin();
+		lpBox( b3Vec3_zero, (b3Vec3){ 0.4f, 0.4f, 0.4f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+		lpCommit( world, (b3Vec3){ 6.0f + 0.9f * (float)( k % 4 ), 0.4f + 0.8f * (float)( k / 4 ), 19.0f + 0.7f * (float)( k % 3 ) },
+				  0.4f * (float)k, false );
+	}
+
+	// South down x = 16: a brick wall on its right, a parked car on its left
+	lpAddWall( world, (b3Vec3){ 12.5f, 0.0f, 0.0f }, 0.5f * B3_PI, 8.0f, 2.0f, 0.3f, lp_brick, LP_BRICK, 1.0f );
+	lpAddCar( world, (b3Vec3){ 20.5f, 0.0f, -8.0f }, 0.0f, 3 );
+
+	// The mech, at the start of the patrol, facing north
+	lpAddHexapod( world, (b3Vec3){ 0.0f, 0.0f, -24.0f }, 0.0f, 0 );
+}
+
+// Each walker steers for a point a little further round the patrol than the nearest point on it, slowing to turn
+static void lpDriveMech( lpWorld* world, int skipRig )
+{
+	for ( int ri = 0; ri < lpWorld_GetRigCapacity( world ); ++ri )
+	{
+		lpRigState s = lpWorld_GetRigState( world, ri );
+		if ( ri == skipRig || s.alive == false || s.body < 0 )
+		{
+			continue;
+		}
+		b3Vec3 p = { (float)s.position.x, 0.0f, (float)s.position.z };
+		int segment = 0;
+		float along = 0.0f, nearest = FLT_MAX;
+		for ( int k = 0; k < 4; ++k )
+		{
+			b3Vec3 a = lp_mechPatrol[k], b = lp_mechPatrol[( k + 1 ) % 4];
+			b3Vec3 ab = b3Sub( b, a );
+			float t = b3ClampFloat( b3Dot( b3Sub( p, a ), ab ) / b3Dot( ab, ab ), 0.0f, 1.0f );
+			float d = b3Length( b3Sub( p, b3MulAdd( a, t, ab ) ) );
+			if ( d < nearest )
+			{
+				nearest = d;
+				segment = k;
+				along = t * b3Length( ab );
+			}
+		}
+		// Walk the lookahead along the loop
+		float left = along + LP_MECH_LOOKAHEAD;
+		b3Vec3 target = lp_mechPatrol[segment];
+		for ( int k = 0; k < 4; ++k )
+		{
+			b3Vec3 a = lp_mechPatrol[( segment + k ) % 4], b = lp_mechPatrol[( segment + k + 1 ) % 4];
+			float length = b3Length( b3Sub( b, a ) );
+			if ( left <= length )
+			{
+				target = b3MulAdd( a, left / length, b3Sub( b, a ) );
+				break;
+			}
+			left -= length;
+		}
+		float tx = target.x - p.x, tz = target.z - p.z;
+		// Signed angle from the heading to the target about +y: positive is to the left
+		float error = b3Atan2( s.forward.z * tx - s.forward.x * tz, s.forward.x * tx + s.forward.z * tz );
+		lpRigControl c = { 0 };
+		c.turn = b3ClampFloat( -1.5f * error, -1.0f, 1.0f );
+		c.forward = b3ClampFloat( 1.0f - b3AbsFloat( error ), 0.2f, 1.0f );
+		lpWorld_SetRigControl( world, ri, &c );
+	}
+}
+
+void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle, int skipRig )
 {
 	if ( scene == lp_sceneTrack )
 	{
 		lpDriveTrack( world, skipVehicle );
 		lpDriveCrane( world, tick );
+	}
+	else if ( scene == lp_sceneMech )
+	{
+		lpDriveMech( world, skipRig );
 	}
 }
 
@@ -1566,6 +1670,10 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddTrack( world );
 			break;
 
+		case lp_sceneMech:
+			lpAddMechYard( world );
+			break;
+
 		case lp_sceneLumber:
 		{
 			lpAddGround( world, 60.0f );
@@ -1645,6 +1753,25 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			// Across the keep's front, from the foot of the wall to the parapet
 			origin = (b3Vec3){ 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 14.0f };
 			target = (b3Vec3){ -7.0f + 14.0f * lpUnit( &rng ), 0.3f + 12.5f * lpUnit( &rng ), -2.5f };
+			break;
+		}
+		case lp_sceneMech:
+		{
+			// At the walker's legs in turn, from beside it (at the patrol's start once it is gone)
+			lpRigState rig = lpWorld_GetRigState( world, 0 );
+			lpLimbState leg = lpWorld_GetLimbState( world, 0, shot % 6 );
+			b3Vec3 at = { 0.0f, 0.8f, -20.0f };
+			if ( leg.footBody >= 0 )
+			{
+				at = (b3Vec3){ (float)leg.foot.x, (float)leg.foot.y + 0.9f, (float)leg.foot.z };
+			}
+			else if ( rig.body >= 0 )
+			{
+				at = (b3Vec3){ (float)rig.position.x, (float)rig.position.y, (float)rig.position.z };
+			}
+			target = b3Add( at, (b3Vec3){ 0.4f * ( lpUnit( &rng ) - 0.5f ), 0.3f * ( lpUnit( &rng ) - 0.5f ), 0.4f * ( lpUnit( &rng ) - 0.5f ) } );
+			float side = shot % 2 == 0 ? 1.0f : -1.0f;
+			origin = b3Add( target, (b3Vec3){ 9.0f * side, 0.8f, 3.0f * ( lpUnit( &rng ) - 0.5f ) } );
 			break;
 		}
 		case lp_sceneTrack:
