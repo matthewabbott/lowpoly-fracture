@@ -189,19 +189,47 @@ Open:
 ## 6. Creatures and mechs
 
 The hexapod mech first: statically stable, so losing a leg means planning a new gait, and a procedural gait looks
-right on a machine.
-- **Rigs:** a torso plus limbs, each a chain of muscle links. Each limb's capability is recomputed when its supply or
-  links change: attached, its reach, its strength (the weakest link: cap × health × supply), and its foot (the
-  lowest support point of whatever remains, so a stump walks as a peg).
-- **Gait:** tripod with six able legs, ripple or wave with fewer; a leg lifts only if the centre of mass stays over
-  the planted feet with a margin; the body lowers as strength drops. Footholds from the wheel cast, analytic leg IK.
-- **Impairment:** pools (blood, hydraulic fluid, fuel) drain through severed carriers and scale strength; nerve
-  channels paralyse what lies beyond a cut; damaged armor near a joint jams it (holding torque, lower speed).
-- **Maimed attacks:** IK targets within the remaining chain and its caps; a weak swing hits softer on its own, since
-  impacts take their damage from impulse. A grip is a link: lose the hand and the weapon drops.
-- **Bones:** inertia relief snaps a cracked leg under the mech's weight.
-- **Later:** bipeds (a capped upright assist whose cap shrinks with capability; hopping and crawling modes), a
-  repertoire of gaits searched offline in our own deterministic sim, learned policies trained with random damage.
+right on a machine. It is car-sized (a 2.5 x 1 x 3 m torso, about 3 t, 2 m legs, 2 to 3 m/s) and its front legs double
+as arms: they stomp, and a claw grabs what it touches. Everything it does adapts to damage by itself.
+
+- **Rigs, in the core like vehicles:** a rig creates no physics. The kit makes the leg segments and joins them with
+  motorised hinges; `lpCreateRig` takes limbs, each an ordered chain of 1 to 3 of those links from the torso outward
+  and a foot point. It never names a body (the torso is the body holding most root links). Controls go in as
+  persistent hashed state (`lpWorld_SetRigControl`, `lpWorld_SetLimbTarget`), a capability summary comes out.
+- **Kinematics:** from the links' end frames and measured angles, so it survives splits and joint rebuilds. IK is
+  damped least squares on the chain as it is (fixed iterations, warm-started, limits clamped): stumps and strikes need
+  nothing special. The servos get a feedforward speed from the next step's pose, so a clamped leg does not drag the
+  others.
+- **Capability per limb:** attached, the intact chain, its strength (the weakest link's cap over its maximum), its foot
+  (after a break, the far end of the last segment left: a stump walks as a peg), its reach.
+- **Gait:** stance feet stay where they actually are (slip is accepted, never fought) and the torso is pushed toward
+  its pose a step ahead, level, at a height that drops as strength does and as the shortest leg requires. A free gait:
+  the most stretched leg lifts if its neighbours are planted and the centre of mass stays over the other feet with a
+  margin, which makes a tripod on six legs, a ripple on five and a wave on four with no replanning. Below that every
+  lift fails the check, the body drops onto its belly skid and crawls. Footholds are cast like wheels. A standing mech
+  sleeps.
+- **Impairment:** pools (hydraulic fluid, blood, fuel) on source parts, drained by leaks in proportion to the carrier
+  volume lost (chips shot out of a line leak a little, a severed leg a lot), feed their channels in proportion; nerves
+  are a channel a motor needs (unfed, limp); damage at a joint jams it (slower, and it sticks).
+- **Maimed attacks:** a limb target takes a limb out of the gait only while the rest keeps it balanced, so a maimed
+  mech loses its strikes on its own; a weak swing hits softer on its own, since impacts take their damage from
+  impulse. A grab is a weld: lose the claw and the load drops.
+- **Bones:** the legs solve their stress; a cracked femur snaps on landing.
+- **Not doing:** collision groups (a mech's own debris would pass through it), phase tables, analytic IK.
+- **Later:** bipeds (a capped upright assist whose cap shrinks with capability; hopping), a repertoire of gaits
+  searched offline in our own deterministic sim, learned policies trained with random damage.
+
+Steps (each measured in [perf-log.md](perf-log.md)):
+0. This reshape.
+1. Kit physics and the rig core: the kit's bodies and servos standing (a substep sweep first), kinematics, IK,
+   capability, feedforward and a tear ratio per link.
+2. Gait: footholds, stance and swing, the free gait, the idle latch; walking straight, turning, slopes, steps, stopping.
+3. The mech scene, driving a rig in the sandbox (walk, reach and grab events), the 'mech' rung.
+4. Damage adaptation: lost legs, pegs, weak legs, crawling.
+5. Pools, nerves, jam.
+6. Strikes and grabs.
+7. Bones and landings.
+8. Wrap-up: docs, the agent map, the memory note.
 
 ## 7. Dents (cars and armor)
 
