@@ -238,7 +238,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 6. Strikes and grabs (done: a reaching limb leaves the gait only when the rest keep it balanced, reaches within 7 mm,
    stomps 4 times harder whole than at half health; a claw grabs and lifts 200 kg; F and G in the sandbox, reach and
    grab events).
-7. Bones and landings.
+7. Bones and landings (done: the kit solves its stress; femurs are welded halves (`lp_jointWeld`) a blast cracks and a
+   landing snaps; hard hits jolt the bodies linked to them; the torso is solved twice a second walking; a falling rig
+   follows its torso down instead of springing back up).
 8. Wrap-up: docs, the agent map, the memory note.
 
 ## 7. Dents (cars and armor)

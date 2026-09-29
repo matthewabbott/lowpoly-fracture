@@ -419,6 +419,10 @@ typedef struct lpBody
 
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
+	uint64_t loadCheckTick; // moving, solving its stress: tick + 1 a link's load last asked for a check (links ask one at
+							// most every 30 steps: a walker's legs swing their loads every stride)
+	uint64_t joltTick;		// moving, solving its stress: tick + 1 it or a body linked to it was hit hard; for 10 steps
+							// its links' loads are checked as they come (a landing's peak comes a step or two after it)
 	// A moving body whose stress is solved (lpObjectDef.solveStress): on request only, exactly, pinned at one piece
 	// (stressPin, the nearest its centre of mass) with its loads balanced by its own acceleration (inertia relief: a,
 	// alpha and omega in its frame, about reliefCenter), sampled with its loads

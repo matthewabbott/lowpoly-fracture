@@ -65,6 +65,8 @@ static const lpJointDef lp_joints[lp_jointCount] = {
 	[lp_jointNails] = { "nails", 0.5e6f, 20e6f, 1e6f, 0.5f },
 	[lp_jointBolts] = { "bolts", 3e6f, 50e6f, 2.5e6f, 0.6f }, // a few bolts, not the whole face: panels come off
 	[lp_jointMounts] = { "mounts", 1.5e6f, 30e6f, 1.5e6f, 0.6f },
+	// A seam around a shell: the parts are solid stand-ins, so the seam holds what the shell's wall would (a fifth)
+	[lp_jointWeld] = { "weld", 40e6f, 200e6f, 25e6f, 0.6f },
 };
 
 const lpJointDef* lpGetJoint( int jointId )

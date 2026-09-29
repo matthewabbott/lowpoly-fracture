@@ -45,6 +45,7 @@
 #define LP_GAIT_LAG 0.3f		// m it may fall behind (or away sideways): a torso that runs on is held back
 #define LP_GAIT_LEAD_TURN 0.3f	// rad its heading may (it keeps the heading it was given, not the torso's)
 #define LP_GAIT_CLIMB 0.5f		// m/s the desired height moves at
+#define LP_GAIT_FALLING 1.0f	// m/s: a torso sinking faster than this is falling
 #define LP_GAIT_CALM_TICKS 30
 #define LP_GAIT_CALM_HEIGHT 0.02f
 #define LP_GAIT_CALM_TILT 0.0175f // rad
@@ -716,7 +717,13 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	{
 		flat = b3MulAdd( flat, ( LP_GAIT_LEAD - forward ) / pull, velocity );
 	}
+	// Falling (dropped, or its legs knocked from under it), it follows the torso down: pushed back up to where it was, it
+	// would land and spring up again
 	float height = b3Dot( b3SubPos( old.p, xf.p ), up ) - support; // the desired pose's, over the feet
+	if ( b3Dot( b3Body_GetLinearVelocity( torso->id ), up ) < -LP_GAIT_FALLING )
+	{
+		height = b3MinFloat( height, r->height + LP_GAIT_LEAD );
+	}
 	float climb = b3ClampFloat( goal - height, -LP_GAIT_CLIMB * timeStep, LP_GAIT_CLIMB * timeStep );
 	height += climb;
 	r->desired.p = b3OffsetPos( xf.p, b3MulAdd( flat, support + height, up ) );

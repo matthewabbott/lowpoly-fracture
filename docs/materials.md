@@ -15,7 +15,7 @@ nothing much. The engine table lives in `src/world.c` (`lp_materials`); the stru
 | | `fractureEnergy` | J/m² that refractures a piece (how easily a chunk itself shatters) |
 | | `tensileStrength`, `compressiveStrength`, `shearStrength` | Pa limits of the solid material in the stress solve |
 | | `crush` | share of a collision's energy its crumpling soaks up before anything breaks (the more crushable of the two decides); a crushable hit is also centred on the contact face, not its first corner |
-| joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails, bolts (a few bolts: 3 MPa), mounts (an engine's: 1.5 MPa) or solid (table in `world.c`) |
+| joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails, bolts (a few bolts: 3 MPa), mounts (an engine's: 1.5 MPa), weld (a thin shell's seam: 40 MPa) or solid (table in `world.c`) |
 | links | `lpLinkDef` | joints between objects (weld, hinge, ball, rope): limits per link, see "Links" below |
 | | `breakable` | false for ground and metal today |
 | fracture shape | `pattern` | impact Voronoi, grain Voronoi (wood), radial (glass) |

@@ -653,3 +653,30 @@ loose before something fixed, then the nearest), and `lpRigGrab` (scenes) welds 
 - Bench: every other rung keeps its simulation and solver hashes. The mech rung's hash changes only because the rig
   hash now takes the reach fields (same pieces and contacts), so the baseline takes the new hash and keeps its timings:
   single-worker timings ran 10 to 15% slow on every rung today, on the previous commit too.
+
+## 2026-09-29 creatures and mechs, step 7: bones and landings
+
+The kit solves its stress: the torso and every leg segment are `solveStress`. A femur is two sheet-metal halves welded
+at the middle and the soles are welded on, with a new joint, `lp_jointWeld` (40 MPa: a thin shell's seam, a fifth of
+solid steel), which holds more than the servos can put on it. A blow under sheet metal's fracture energy (6 kJ/m^2)
+cracks a weld, and a landing snaps it. A sheet-metal femur could not crack instead: any fracture ejects everything
+within 1.5 fragment sizes (0.45 m) of the hit, and severs it.
+- Moving bodies that solve their stress: the links ask for their checks at most every 30 steps per body (a walker's
+  torso holds six legs whose loads swing every stride), and a link held back keeps asking. A hard hit on one jolts the
+  moving bodies its links join to it (a foot landing loads the femur through the knee): they are checked at once, and
+  for 10 steps their links' loads as they build (the peak comes a step or two after the contact).
+- The gait: falling (the torso sinking faster than 1 m/s), the desired pose follows it down. Dropped 1.5 m, it had
+  wound its pose a metre above the falling torso, and the servos flung it a metre back up when it landed (4.4 m/s).
+  Now it rebounds at 3.1 m/s, which is Box3D pushing the soles back out of the ground (`contactSpeed`, 3 m/s).
+- Dropped 1.5 m, landing at 5.6 m/s: nothing breaks, the worst joint at 0.72 of its limit; 228 small solves in 4 s.
+- A femur's weld cracked to 6% holds the mech up standing (0.20 of its limit) and snaps on landing, at the landing's
+  peak (the checks at the first contact and the peak judge it at 1.21 and 1.49 times its limit), and only that one:
+  the mech stands on five legs.
+- Walking 10 s: the torso solved 20 times, 260 solves in all (femurs and tibias), the worst joint at 0.44 of its
+  limit, stress 0.0007 ms a step.
+- The sole was first moulded on as a hull sharing the tibia's end face (the box's bond patch is a sliver, too weak
+  bolted); it changed the damaged gaits (a lighter foot; a wider one caught on the slope), so the box sole stays, welded.
+  Five legs now make 39 to 40% of the intact pace against half asked: the bar is 35% (it was 40%, against one 41% run).
+- Bench: every other rung keeps its simulation and solver hashes (the track's too, whose car solves its stress). The
+  mech rung takes new ones: 85 pieces, 20 contacts, 0.086 ms a step on one worker and 0.107 on eight (0.071 and 0.091
+  before; the machine ran 10 to 20% slow on every rung today). Only its entry in the baseline was measured again.

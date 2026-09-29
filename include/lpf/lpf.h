@@ -108,6 +108,7 @@ typedef enum lpJointId
 	lp_jointNails,
 	lp_jointBolts,	// sheet metal panels on a car
 	lp_jointMounts, // an engine on its mounts: tears off in a hard crash
+	lp_jointWeld,	// a welded seam of thin shell (a mech's leg): a fifth of solid steel; a blast cracks it
 	lp_jointCount
 } lpJointId;
 

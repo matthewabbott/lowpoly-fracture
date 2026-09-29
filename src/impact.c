@@ -860,6 +860,33 @@ static float lpShapeMass( b3ShapeId shapeId )
 	return b3Body_GetType( body ) == b3_dynamicBody ? b3Body_GetMass( body ) : 0.0f;
 }
 
+// A hard hit on a moving body that solves its stress jolts the moving bodies its links join to it, which solve theirs
+// too (a foot landing loads the femur through the knee): they are checked with it, each at most every 10 steps, and
+// their links' loads as they build (lpRecheckStructures)
+static void lpJoltLinked( lpWorld* w, int bodyIndex )
+{
+	const lpBody* body = w->bodies.data + bodyIndex;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + body->pieces.data[i];
+		for ( int k = 0; k < p->links.count; ++k )
+		{
+			const lpLink* l = w->links.data + p->links.data[k];
+			for ( int e = 0; e < 2; ++e )
+			{
+				int other = l->ends[e].piece >= 0 ? w->pieces.data[l->ends[e].piece].body : -1;
+				lpBody* b = other >= 0 && other != bodyIndex ? w->bodies.data + other : NULL;
+				if ( b != NULL && b->solveStress && b->kind == lp_kindDebris && w->tick >= b->hitCheckTick + 10 )
+				{
+					b->hitCheckTick = w->tick;
+					b->joltTick = w->tick + 1;
+					lpRequestStressCheck( w, other, false );
+				}
+			}
+		}
+	}
+}
+
 // Collisions hard enough to hurt become impacts for the next step
 void lpCollectHits( lpWorld* w )
 {
@@ -901,7 +928,9 @@ void lpCollectHits( lpWorld* w )
 					hit->hitPoint = b3InvTransformWorldPoint( b3Body_GetTransform( hit->id ), e->point );
 					hit->hitMaterial = w->pieces.data[data - 1].material;
 					hit->hitTick = w->tick + 1; // + 1: never 0 once set
+					hit->joltTick = w->tick + 1;
 					lpRequestStressCheck( w, bi, false );
+					lpJoltLinked( w, bi );
 				}
 			}
 		}

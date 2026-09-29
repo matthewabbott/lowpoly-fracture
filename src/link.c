@@ -733,29 +733,48 @@ bool lpTouchesLinked( lpWorld* w, const lpBody* b )
 
 // A structure at either end carries the link's pull in its stress solve (sampled with its loads): check it again when
 // its force or torque has changed by a quarter since (in direction too: a sign swung round pulls the other way), at
-// most every 30 steps (a swinging load pulls back and forth)
+// most every 30 steps (a swinging load pulls back and forth). A moving body that solves its stress is checked this way
+// at most every 30 steps whatever pulls on it (a walker's torso holds six legs); a link held back keeps asking, so a
+// landing is checked with the loads it has then. Jolted by a hard hit, it is checked as the loads come, for 10 steps.
 static void lpRecheckStructures( lpWorld* w, lpLink* l )
 {
 	float force = b3Length( b3Sub( l->force, l->stressForce ) );
 	float torque = b3Length( b3Sub( l->torque, l->stressTorque ) );
 	bool changed = force > 0.25f * b3MaxFloat( b3Length( l->force ), b3Length( l->stressForce ) ) + 10.0f ||
 				   torque > 0.25f * b3MaxFloat( b3Length( l->torque ), b3Length( l->stressTorque ) ) + 10.0f;
-	if ( changed == false || ( l->recheckTick != 0 && w->tick + 1 < l->recheckTick + 30 ) )
+	bool jolted[2] = { false, false };
+	for ( int k = 0; k < 2; ++k )
+	{
+		int piece = l->ends[k].piece;
+		const lpBody* b = piece >= 0 ? w->bodies.data + w->pieces.data[piece].body : NULL;
+		jolted[k] = b != NULL && b->solveStress && b->joltTick != 0 && w->tick + 1 < b->joltTick + 10;
+	}
+	if ( changed == false || ( l->recheckTick != 0 && w->tick + 1 < l->recheckTick + 30 && jolted[0] == false && jolted[1] == false ) )
 	{
 		return;
 	}
-	l->stressForce = l->force; // with no structure at either end there is nothing to check: stop asking too
-	l->stressTorque = l->torque;
+	bool heldBack = false;
 	for ( int k = 0; k < 2; ++k )
 	{
 		int piece = l->ends[k].piece;
 		int bodyIndex = piece >= 0 ? w->pieces.data[piece].body : -1;
-		const lpBody* b = bodyIndex >= 0 ? w->bodies.data + bodyIndex : NULL;
-		if ( b != NULL && ( b->kind == lp_kindStructure || ( b->solveStress && b->kind == lp_kindDebris ) ) )
+		lpBody* b = bodyIndex >= 0 ? w->bodies.data + bodyIndex : NULL;
+		bool moving = b != NULL && b->solveStress && b->kind == lp_kindDebris;
+		if ( moving && jolted[k] == false && b->loadCheckTick != 0 && w->tick + 1 < b->loadCheckTick + 30 )
+		{
+			heldBack = true;
+		}
+		else if ( b != NULL && ( b->kind == lp_kindStructure || moving ) )
 		{
 			lpRequestStressCheck( w, bodyIndex, false );
 			l->recheckTick = w->tick + 1;
+			b->loadCheckTick = moving ? w->tick + 1 : b->loadCheckTick;
 		}
+	}
+	if ( heldBack == false )
+	{
+		l->stressForce = l->force; // with no structure at either end there is nothing to check: stop asking too
+		l->stressTorque = l->torque;
 	}
 }
 

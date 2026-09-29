@@ -1215,28 +1215,48 @@ int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
 #define LP_HEX_SOLE 0.08f // the rubber foot's half height below the tibia's tip
 #define LP_HEX_RIDE 1.09f // the torso's centre above the ground, standing as built (the sole reaches 0.14 m below the tibia)
 
-// One leg segment: an object of a box along its local x (a sheet-metal part, and a rubber foot at the far end when
-// foot is set), centred at `center`, turned by q
-static int lpHexSegment( lpWorld* world, b3Vec3 center, b3Quat q, b3Vec3 half, uint32_t color, bool foot, b3Quat legQ )
+enum
+{
+	lp_hexBlock,
+	lp_hexFemur,
+	lp_hexTibia
+};
+
+// One leg segment: an object along its local x, centred at `center`, turned by q, of sheet metal: a box (the hip block),
+// two halves welded at the middle (the femur: its bone, where a blast weakens it and a landing snaps it), or a box with
+// a rubber sole welded to its far end (the tibia). The welds hold more than the servos can put on them.
+static int lpHexSegment( lpWorld* world, b3Vec3 center, b3Quat q, b3Vec3 half, uint32_t color, int kind, b3Quat legQ )
 {
 	const uint8_t lines = ( 1u << lp_channelPower ) | ( 1u << lp_channelHydraulics ) | ( 1u << lp_channelControl );
 	lpBegin();
-	lpPartDef* part = lpBox( b3Vec3_zero, half, b3Quat_identity, lp_sheetMetal, color, false );
-	if ( part != NULL )
+	int halves = kind == lp_hexFemur ? 2 : 1;
+	b3Vec3 partHalf = { half.x / (float)halves, half.y, half.z };
+	for ( int h = 0; h < halves; ++h )
 	{
-		part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
-		part->system = (lpPartSystem){ lp_tagLeg, lines, 0, 0 };
+		float x = halves == 2 ? ( h == 0 ? -partHalf.x : partHalf.x ) : 0.0f;
+		lpPartDef* part = lpBox( (b3Vec3){ x, 0.0f, 0.0f }, partHalf, b3Quat_identity, lp_sheetMetal, color, false );
+		if ( part != NULL )
+		{
+			part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+			part->system = (lpPartSystem){ lp_tagLeg, lines, 0, 0 };
+			part->joint = kind == lp_hexBlock ? part->joint : lp_jointWeld;
+		}
 	}
-	if ( foot )
+	if ( kind == lp_hexTibia )
 	{
-		// The sole sits square to the leg's plane (not tilted with the tibia), its top at the tibia's tip
+		// The sole sits square to the leg's plane (not tilted with the tibia), its top at the tibia's tip, welded on
 		b3Quat local = b3InvMulQuat( q, legQ );
 		b3Vec3 tip = { half.x, 0.0f, 0.0f };
-		lpBox( b3Add( tip, b3RotateVector( local, (b3Vec3){ 0.0f, -LP_HEX_SOLE + 0.02f, 0.0f } ) ), (b3Vec3){ 0.1f, LP_HEX_SOLE, 0.1f }, local,
-			   lp_rubber, 0x2A2A2Au, false );
+		lpPartDef* sole = lpBox( b3Add( tip, b3RotateVector( local, (b3Vec3){ 0.0f, -LP_HEX_SOLE + 0.02f, 0.0f } ) ),
+								 (b3Vec3){ 0.1f, LP_HEX_SOLE, 0.1f }, local, lp_rubber, 0x2A2A2Au, false );
+		if ( sole != NULL )
+		{
+			sole->joint = lp_jointWeld;
+		}
 	}
 	lpObjectDef def = lpDynamicDef();
 	def.inertiaRadius = 0.5f; // a slender leg on joints: Box3D holds them as stiffly as the leg's inertia allows
+	def.solveStress = true;	  // a landing loads its bones: a segment cracked by a hit snaps
 	return lpCommitDef( world, center, q, def );
 }
 
@@ -1270,7 +1290,9 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 		reservoir->system = (lpPartSystem){ lp_tagReservoir, hydraulics | power, hydraulics, power, 100.0f, 3.0f };
 		computer->system = (lpPartSystem){ lp_tagComputer, control | power, control, power };
 	}
-	int torso = lpCommitDef( world, origin, q, lpDynamicDef() );
+	lpObjectDef torsoDef = lpDynamicDef();
+	torsoDef.solveStress = true;
+	int torso = lpCommitDef( world, origin, q, torsoDef );
 
 	// Legs in order around the body (right front, middle, rear, then left rear, middle, front): each one's neighbours
 	// are the ones next to it in this list
@@ -1296,11 +1318,11 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 		b3Vec3 shin = { LP_HEX_FOOT_U - LP_HEX_KNEE_U, LP_HEX_FOOT_V - LP_HEX_KNEE_V, 0.0f };
 		float shinLength = b3Length( shin );
 		b3Quat tibiaTilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, b3Atan2( shin.y, shin.x ) );
-		int block = lpHexSegment( world, b3Lerp( hip, femurRoot, 0.5f ), legQ, (b3Vec3){ 0.22f, 0.15f, 0.15f }, steel, false, legQ );
+		int block = lpHexSegment( world, b3Lerp( hip, femurRoot, 0.5f ), legQ, (b3Vec3){ 0.22f, 0.15f, 0.15f }, steel, lp_hexBlock, legQ );
 		int femur = lpHexSegment( world, b3Lerp( femurRoot, knee, 0.5f ), b3MulQuat( legQ, femurTilt ), (b3Vec3){ 0.6f, 0.09f, 0.09f },
-								  paint, false, legQ );
+								  paint, lp_hexFemur, legQ );
 		int tibia = lpHexSegment( world, b3Lerp( knee, foot, 0.5f ), b3MulQuat( legQ, tibiaTilt ),
-								  (b3Vec3){ 0.5f * shinLength, 0.08f, 0.085f }, paint, true, legQ );
+								  (b3Vec3){ 0.5f * shinLength, 0.08f, 0.085f }, paint, lp_hexTibia, legQ );
 
 		// Motorised hinges: the hip turns the leg about the vertical, the femur and the knee lift it
 		int bodies[4] = { torso, block, femur, tibia };
