@@ -235,7 +235,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 5. Pools, nerves, jam (done: a cut line leaks its share of the pool a second until its seal closes, following the model
    to 0.01%; the mech loses a fifth of its fluid with a leg, and bleeds dry and collapses with its valves stuck open;
    a jammed joint turns at half speed at half health and holds unfed).
-6. Strikes and grabs.
+6. Strikes and grabs (done: a reaching limb leaves the gait only when the rest keep it balanced, reaches within 7 mm,
+   stomps 4 times harder whole than at half health; a claw grabs and lifts 200 kg; F and G in the sandbox, reach and
+   grab events).
 7. Bones and landings.
 8. Wrap-up: docs, the agent map, the memory note.
 

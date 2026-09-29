@@ -255,6 +255,11 @@ typedef struct lpLimb
 	b3Pos hold;		  // world: where a planted foot is kept
 	float holdClock;  // s since it was set down
 	bool arrived;	  // it got there: the hold is fixed
+	// Reaching (lpWorld_SetLimbTarget)
+	bool reachWanted; // told to reach
+	b3Pos reachPoint; // world
+	bool reaching;	  // out of the gait, reaching
+	int touching;	  // the piece its foot touches while reaching (-1: none)
 	int groundPiece;  // under the foothold (-1: none, or not a piece)
 	uint32_t groundGeneration;
 	uint64_t recheckTick; // tick + 1 it last asked its ground structure for a stress check

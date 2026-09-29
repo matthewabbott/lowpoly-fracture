@@ -630,3 +630,26 @@ channel its servos need, and unfed they go limp.
 - A jammed joint at half health turns at 1.00 rad/s where one that does not jam turns at 1.92; unfed it holds the arm
   where the other falls 2.2 rad.
 - Identical at 1, 4 and 8 workers (the mech yard under a shot every 3 ticks, the track).
+
+## 2026-09-29 creatures and mechs, step 6: strikes and grabs
+
+`lpWorld_SetLimbTarget` takes a limb out of the gait once the other feet hold the centre of mass by the margin (or the
+belly does, crawling); until then the body leans toward them. IK drives the foot at the point with a feedforward of 8/s
+times each joint's error, capped by its servo, so a weak leg swings slower and hits softer; damage comes from the
+impulses. A reaching limb reports the piece its foot touches (a contact of its tip within 0.35 m of the foot; something
+loose before something fixed, then the nearest), and `lpRigGrab` (scenes) welds the claw to it. The sandbox gets F
+(strike at the crosshair with the able leg nearest it; out of reach, the ground as far toward it as the leg goes) and G
+(grab and lift what the claw touches, G again to let go), recorded as `tick reach rig limb active x y z` and
+`tick grab rig limb`.
+
+- A reach 1 m up and out: out of the gait on the first step, the foot 7 mm from the point after 1 s, the torso level.
+  The rig step costs 11.8 us while reaching (11.3 standing awake).
+- With one right leg left the front leg does not lift (the body leans, 3 feet down, 0.7 degrees of tilt).
+- A stomp on a glass pane breaks off 213 pieces with the leg whole, 53 with its servos at half health.
+- A 200 kg metal crate: the claw grabs it on touching it, lifts it 0.85 m, and it drops back when the claw's knee goes.
+- `scripts/mech_arms.txt`: it stops by the yard's rubble, grabs a stone and lifts it to 0.93 m, lets it drop, stomps
+  another. The replay matches the headless run tick for tick; identical at 1, 4 and 8 workers over 1560 ticks, and the
+  mech demo under a shot every 3 ticks over 1200.
+- Bench: every other rung keeps its simulation and solver hashes. The mech rung's hash changes only because the rig
+  hash now takes the reach fields (same pieces and contacts), so the baseline takes the new hash and keeps its timings:
+  single-worker timings ran 10 to 15% slow on every rung today, on the previous commit too.

@@ -29,6 +29,7 @@
 #define LP_RIG_WEAK 0.2f		  // a limb whose weakest servo has less of its torque than this cannot stand
 #define LP_RIG_REACH 0.25f		 // the foot as created must be this close to a piece of its body
 #define LP_RIG_STUMP 0.6f		 // a limb that reaches less than this share of the stand height below the torso cannot stand
+#define LP_RIG_TOUCH 0.35f		 // m: a reaching foot touches what it is in contact with this near it
 
 lpRigDef lpDefaultRigDef( void )
 {
@@ -340,6 +341,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		limb->hold = limb->joints > 0 ? lpFootWorld( w, limb ) : xf.p;
 		limb->holdClock = 0.0f; // built above the ground, it is held where it lands
 		limb->arrived = false;
+		limb->touching = -1;
 		limb->groundPiece = -1;
 	}
 	if ( r.def.standHeight <= 0.0f )
@@ -362,6 +364,8 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 }
 
 // ---- the step ----
+
+static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb );
 
 void lpStepRigs( lpWorld* w, float timeStep )
 {
@@ -416,10 +420,86 @@ void lpStepRigs( lpWorld* w, float timeStep )
 		}
 		lpWalkRig( w, r, timeStep );
 		r->controlChanged = false;
+		for ( int i = 0; i < r->limbCount; ++i )
+		{
+			lpLimb* limb = r->limbs + i;
+			limb->touching = limb->reaching && limb->attached ? lpFindTouch( w, r, limb ) : -1;
+		}
 	}
 }
 
+// The piece a reaching limb's foot touches: a contact of its tip body within reach of the foot, on anything but the rig.
+// Something loose comes before something fixed (a crate before the ground it rests on), then the nearest.
+static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
+{
+	b3BodyId tip = w->bodies.data[limb->tipBody].id;
+	int capacity = b3Body_GetContactCapacity( tip );
+	if ( capacity == 0 )
+	{
+		return -1;
+	}
+	lpArray_Reserve( w->scratchContacts, capacity );
+	int count = b3Body_GetContactData( tip, w->scratchContacts.data, capacity );
+	b3Pos foot = lpFootWorld( w, limb );
+	int best = -1;
+	bool bestFixed = true;
+	float nearest = LP_RIG_TOUCH * LP_RIG_TOUCH;
+	for ( int k = 0; k < count; ++k )
+	{
+		const b3ContactData* c = w->scratchContacts.data + k;
+		b3ShapeId mine = B3_ID_EQUALS( b3Shape_GetBody( c->shapeIdA ), tip ) ? c->shapeIdA : c->shapeIdB;
+		b3ShapeId other = B3_ID_EQUALS( mine, c->shapeIdA ) ? c->shapeIdB : c->shapeIdA;
+		intptr_t data = (intptr_t)b3Shape_GetUserData( other );
+		int piece = data > 0 ? (int)( data - 1 ) : -1;
+		if ( piece < 0 || w->pieces.data[piece].body == r->body )
+		{
+			continue;
+		}
+		bool ours = false;
+		for ( int i = 0; i < r->limbCount; ++i )
+		{
+			ours = ours || w->pieces.data[piece].body == r->limbs[i].tipBody || w->pieces.data[piece].body == r->limbs[i].rootBody;
+		}
+		bool fixed = b3Body_GetType( b3Shape_GetBody( other ) ) == b3_staticBody;
+		b3Pos a = b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) );
+		for ( int m = 0; m < c->manifoldCount && ours == false; ++m )
+		{
+			for ( int n = 0; n < c->manifolds[m].pointCount; ++n )
+			{
+				b3Pos point = b3OffsetPos( a, c->manifolds[m].points[n].anchorA );
+				b3Vec3 d = b3SubPos( point, foot );
+				float d2 = b3Dot( d, d );
+				bool closer = d2 < nearest || ( d2 == nearest && piece < best );
+				bool better = best < 0 ? d2 < nearest : ( fixed != bestFixed ? bestFixed : closer );
+				if ( c->manifolds[m].points[n].separation < 0.05f && d2 < LP_RIG_TOUCH * LP_RIG_TOUCH && better )
+				{
+					nearest = d2;
+					best = piece;
+					bestFixed = fixed;
+				}
+			}
+		}
+	}
+	return best;
+}
+
 // ---- API ----
+
+void lpWorld_SetLimbTarget( lpWorld* w, int rig, int limb, bool active, b3Pos point )
+{
+	if ( rig < 0 || rig >= w->rigs.count || limb < 0 || limb >= w->rigs.data[rig].limbCount )
+	{
+		return;
+	}
+	lpRig* r = w->rigs.data + rig;
+	lpLimb* l = r->limbs + limb;
+	if ( l->reachWanted != active || ( active && ( point.x != l->reachPoint.x || point.y != l->reachPoint.y || point.z != l->reachPoint.z ) ) )
+	{
+		l->reachWanted = active;
+		l->reachPoint = active ? point : l->reachPoint;
+		r->controlChanged = true; // wakes it from idle
+	}
+}
 
 void lpWorld_SetRigControl( lpWorld* w, int rig, const lpRigControl* control )
 {
@@ -493,6 +573,8 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 	s.strength = l->strength;
 	s.reach = l->reach;
 	s.depth = l->depth;
+	s.reaching = l->reaching;
+	s.touching = l->touching;
 	if ( l->tipBody >= 0 && w->bodies.data[l->tipBody].alive )
 	{
 		s.footBody = l->tipBody;
@@ -524,8 +606,9 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 		{
 			const lpLimb* limb = r->limbs + i;
 			int ints[3] = { limb->joints, limb->tipBody, limb->groundPiece };
-			uint8_t limbFlags[7] = { limb->attached ? 1 : 0, limb->able ? 1 : 0,	limb->planted ? 1 : 0, limb->swinging ? 1 : 0,
-									 limb->castLate ? 1 : 0, limb->grounded ? 1 : 0, limb->arrived ? 1 : 0 };
+			uint8_t limbFlags[9] = { limb->attached ? 1 : 0, limb->able ? 1 : 0,	   limb->planted ? 1 : 0,
+									 limb->swinging ? 1 : 0, limb->castLate ? 1 : 0, limb->grounded ? 1 : 0,
+									 limb->arrived ? 1 : 0,	 limb->reachWanted ? 1 : 0,	   limb->reaching ? 1 : 0 };
 			h = lpHashBytes( h, ints, sizeof( ints ) );
 			h = lpHashBytes( h, limbFlags, sizeof( limbFlags ) );
 			h = lpHashBytes( h, &limb->foot, sizeof( limb->foot ) );
@@ -535,6 +618,8 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 			h = lpHashBytes( h, &limb->landing, sizeof( limb->landing ) );
 			h = lpHashBytes( h, &limb->hold, sizeof( limb->hold ) );
 			h = lpHashBytes( h, &limb->holdClock, sizeof( limb->holdClock ) );
+			h = lpHashBytes( h, &limb->reachPoint, sizeof( limb->reachPoint ) );
+			h = lpHashBytes( h, &limb->touching, sizeof( limb->touching ) );
 		}
 	}
 	return h;

@@ -61,6 +61,7 @@
 #define LP_GAIT_TUCK 0.4f		  // share of its stand height below the torso an unable limb's foot is held at
 #define LP_GAIT_STALL_PACE 0.1f	  // told to move, making less than this share of the speed asked...
 #define LP_GAIT_STALL_TICKS 90	  // ...for this long, it is stuck: it crawls
+#define LP_GAIT_STRIKE 8.0f	  // 1/s: a reaching limb's joints go at full speed until this near their target (4 rad/s: 0.5 rad)
 
 static bool lpControlStill( const lpRigControl* c )
 {
@@ -354,6 +355,24 @@ static void lpLiftFoot( lpWorld* w, lpRig* r, int index, b3Pos foot, b3WorldTran
 	}
 }
 
+// The body leans toward the planted feet but `skip` (the one that waits to lift), to bring its centre of mass over them
+static b3Vec3 lpLean( const lpRig* r, const b3Pos* feet, const bool* planted, int skip, b3Pos center, b3Vec3 up, float timeStep )
+{
+	b3Vec3 sum = b3Vec3_zero;
+	int n = 0;
+	for ( int i = 0; i < r->limbCount; ++i )
+	{
+		if ( planted[i] && i != skip )
+		{
+			sum = b3Add( sum, b3SubPos( feet[i], center ) );
+			n += 1;
+		}
+	}
+	b3Vec3 toward = n > 0 ? lpFlatten( b3MulSV( 1.0f / (float)n, sum ), up ) : b3Vec3_zero;
+	float distance = b3Length( toward );
+	return distance > 1e-3f ? b3MulSV( b3MinFloat( LP_GAIT_SHIFT, distance / timeStep ) / distance, toward ) : b3Vec3_zero;
+}
+
 // ---- the step ----
 
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
@@ -408,7 +427,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		const lpLimb* limb = r->limbs + i;
-		if ( limb->able )
+		if ( limb->able && limb->reaching == false ) // a reaching limb is out of the gait
 		{
 			able += 1;
 			shortest = b3MinFloat( shortest, limb->depth );
@@ -549,6 +568,39 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	// inside the other planted feet by the margin, now and where the torso will be when it lands
 	b3Pos center = lpRigCenter( w, r );
 	b3Pos later = b3OffsetPos( center, b3MulSV( r->def.swingTime, moving ) );
+
+	// Limbs told to reach leave the gait once the others hold the centre of mass by the margin (crawling, its belly does);
+	// until then the body leans toward them. Told to stop, a limb steps back in (below: a limb neither planted nor
+	// swinging swings to a foothold).
+	b3Vec3 reachLean = b3Vec3_zero;
+	for ( int i = 0; i < r->limbCount; ++i )
+	{
+		lpLimb* limb = r->limbs + i;
+		if ( limb->reachWanted == false || limb->able == false )
+		{
+			limb->reaching = false;
+			continue;
+		}
+		if ( limb->reaching )
+		{
+			continue;
+		}
+		if ( limb->planted )
+		{
+			planted[i] = false;
+			bool steady = r->crawling || lpSupportMargin( feet, planted, r->limbCount, center, up ) >= r->def.margin;
+			planted[i] = steady == false; // it stays down until the others can hold the body without it
+			if ( steady == false )
+			{
+				reachLean = lpLean( r, feet, planted, i, center, up, timeStep );
+				continue;
+			}
+			lpFootMoved( w, limb );
+		}
+		limb->planted = false;
+		limb->swinging = false;
+		limb->reaching = true;
+	}
 	float threshold = still ? LP_GAIT_TIDY : LP_GAIT_DUE;
 	b3Vec3 shift = b3Vec3_zero;
 	bool waited = false;
@@ -559,7 +611,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	int ring = 0, group = -1;
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
-		place[i] = r->limbs[i].able ? ring++ : -1;
+		place[i] = r->limbs[i].able && r->limbs[i].reaching == false ? ring++ : -1;
 		group = r->limbs[i].swinging && place[i] >= 0 ? place[i] % 2 : group;
 	}
 	for ( ;; )
@@ -586,7 +638,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			for ( int step = 1; step < r->limbCount; ++step )
 			{
 				int j = ( pick + dir * step + r->limbCount ) % r->limbCount;
-				if ( r->limbs[j].able )
+				if ( r->limbs[j].able && r->limbs[j].reaching == false )
 				{
 					neighbours = neighbours && r->limbs[j].planted;
 					break;
@@ -612,22 +664,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			{
 				// The first foot that waits for balance leans the body toward the feet that would hold it
 				waited = true;
-				b3Vec3 sum = b3Vec3_zero;
-				int n = 0;
-				for ( int i = 0; i < r->limbCount; ++i )
-				{
-					if ( planted[i] && i != pick )
-					{
-						sum = b3Add( sum, b3SubPos( feet[i], center ) );
-						n += 1;
-					}
-				}
-				b3Vec3 toward = n > 0 ? lpFlatten( b3MulSV( 1.0f / (float)n, sum ), up ) : b3Vec3_zero;
-				float distance = b3Length( toward );
-				if ( distance > 1e-3f )
-				{
-					shift = b3MulSV( b3MinFloat( LP_GAIT_SHIFT, distance / timeStep ) / distance, toward );
-				}
+				shift = lpLean( r, feet, planted, pick, center, up, timeStep );
 			}
 			continue;
 		}
@@ -640,13 +677,14 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		lpLimb* limb = r->limbs + i;
-		if ( limb->able && limb->planted == false && limb->swinging == false )
+		if ( limb->able && limb->planted == false && limb->swinging == false && limb->reaching == false )
 		{
 			lpLiftFoot( w, r, i, feet[i], old, heading, side, velocity, spin, moving, turning, up );
 		}
 	}
 
-	r->waiting = waited;
+	shift = b3LengthSquared( shift ) > 0.0f ? shift : reachLean;
+	r->waiting = waited || b3LengthSquared( reachLean ) > 0.0f;
 	// Told to move and getting nowhere (its feet may still step: one leg left on a side lifts nothing and the others
 	// shuffle) for a while, it is stuck
 	float asked = b3Length( wanted );
@@ -712,11 +750,11 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		lpLimb* limb = r->limbs + i;
-		if ( limb->planted == false && limb->swinging == false )
+		if ( limb->planted == false && limb->swinging == false && limb->reaching == false )
 		{
 			continue;
 		}
-		b3Pos foot = limb->hold;
+		b3Pos foot = limb->reaching ? limb->reachPoint : limb->hold;
 		b3Vec3 motion = b3Vec3_zero; // of the foot in the world
 		if ( limb->swinging )
 		{
@@ -733,6 +771,17 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		b3Vec3 relative = b3InvRotateVector( r->desired.q, b3Sub( motion, b3Add( linear, b3Cross( angular, arm ) ) ) );
 		float feed[LP_MAX_LIMB_JOINTS];
 		lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
+		if ( limb->reaching )
+		{
+			// A strike: its joints go at full speed until they are nearly there (a servo alone slows as it closes in, and a
+			// stomp would land too gently to break anything)
+			for ( int k = 0; k < limb->joints; ++k )
+			{
+				const lpLink* l = w->links.data + limb->def.links[k];
+				float fastest = l->def.motor.maxSpeed;
+				feed[k] = b3ClampFloat( LP_GAIT_STRIKE * ( limb->q[k] - l->angle ), -fastest, fastest );
+			}
+		}
 		for ( int k = 0; k < limb->joints; ++k )
 		{
 			lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
@@ -744,7 +793,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	bool swinging = false;
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
-		swinging = swinging || r->limbs[i].swinging;
+		swinging = swinging || r->limbs[i].swinging || r->limbs[i].reaching;
 	}
 	bool settled = b3AbsFloat( height - goal ) < 0.001f && b3AbsFloat( r->height - goal ) < LP_GAIT_CALM_HEIGHT &&
 				   tilt < LP_GAIT_CALM_TILT && swinging == false && waited == false;

@@ -108,6 +108,10 @@ enum
 // later. The femur and knee jam as they are damaged. style picks the paint. Returns the rig.
 int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
 
+// A grab: welds a reaching limb's foot (a claw) to the piece it touches (lpLimbState.touching). Returns the link, or -1
+// if it touches nothing. Destroy the link to let go; lose the claw and the load drops with it.
+int lpRigGrab( lpWorld* world, int rig, int limb );
+
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );
 

@@ -932,6 +932,163 @@ static int TestRigWeakAndLimpLegs( void )
 	return 0;
 }
 
+// ---- strikes and grabs ----
+
+static b3Pos Offset( b3Pos p, float x, float y, float z )
+{
+	return b3OffsetPos( p, (b3Vec3){ x, y, z } );
+}
+
+// A front leg reaches up and ahead: out of the gait at once, its foot there within a second, to 5 cm; let go, it steps
+// back in and the mech stands on six again
+static int TestRigReaches( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
+	Run( &s, 60 );
+	b3Pos target = Offset( lpWorld_GetLimbState( s.world, rig, 0 ).foot, -0.4f, 0.8f, 0.5f );
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, target );
+	int reachingAt = -1;
+	float rigMs = 0.0f;
+	for ( int t = 0; t < 60; ++t )
+	{
+		Run( &s, 1 );
+		reachingAt = reachingAt < 0 && lpWorld_GetLimbState( s.world, rig, 0 ).reaching ? t : reachingAt;
+		rigMs += lpWorld_GetStats( s.world ).rigMs;
+	}
+	float off = b3Length( b3SubPos( lpWorld_GetLimbState( s.world, rig, 0 ).foot, target ) );
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	float tilt = b3Atan2( sqrtf( st.up.x * st.up.x + st.up.z * st.up.z ), st.up.y );
+	lpWorld_SetLimbTarget( s.world, rig, 0, false, target );
+	Run( &s, 120 );
+	lpRigState after = lpWorld_GetRigState( s.world, rig );
+	printf( "  reaching from step %d, the foot %.3f m from its target after 1 s, tilt %.1f deg, rig %.4f ms a step; let go: %d planted\n",
+			reachingAt, off, 57.29578f * tilt, rigMs / 60.0f, after.planted );
+	ENSURE( reachingAt >= 0 && reachingAt < 10 && off < 0.05f && tilt < 0.05f && after.planted == 6 );
+	DestroySim( &s );
+	return 0;
+}
+
+// Its right middle and rear legs gone, the right front cannot lift without tipping it over: told to reach, it leans,
+// waits, and stays on its feet
+static int TestRigStrikeWaitsForBalance( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
+	Run( &s, 30 );
+	LoseLeg( &s, rig, 1 );
+	LoseLeg( &s, rig, 2 );
+	Run( &s, 120 );
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, Offset( lpWorld_GetLimbState( s.world, rig, 0 ).foot, 0.0f, 0.8f, 0.5f ) );
+	bool reached = false;
+	for ( int t = 0; t < 180; ++t )
+	{
+		Run( &s, 1 );
+		reached = reached || lpWorld_GetLimbState( s.world, rig, 0 ).reaching;
+	}
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	float tilt = b3Atan2( sqrtf( st.up.x * st.up.x + st.up.z * st.up.z ), st.up.y );
+	printf( "  one right leg left: reaching %d, %d planted, tilt %.1f deg, height %.2f m\n", reached, st.planted, 57.29578f * tilt, st.height );
+	ENSURE( reached == false && st.planted >= 3 && tilt < 0.15f ); // a foot may be stepping as it leans
+	DestroySim( &s );
+	return 0;
+}
+
+// A stomp onto a glass pane (a skylight 30 cm up, set on the ground at its edges): raised, then driven down through it.
+// Returns the pieces it broke off
+static int Stomp( float health )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
+	Run( &s, 30 );
+	b3Pos foot = lpWorld_GetLimbState( s.world, rig, 0 ).foot;
+	b3Vec3 at = { (float)foot.x - 0.3f, 0.3f, (float)foot.z + 1.0f };
+	lpPartDef slab = lpDefaultPartDef();
+	slab.halfExtents = (b3Vec3){ 0.6f, 0.03f, 0.6f };
+	slab.material = lp_glass;
+	slab.anchored = true;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.transform.p = (b3Pos){ at.x, at.y, at.z };
+	def.parts = &slab;
+	def.partCount = 1;
+	lpCreateObject( s.world, &def );
+	lpWorld_SettleStructures( s.world );
+	for ( int k = 0; k < 3; ++k )
+	{
+		lpLink* l = s.world->links.data + s.world->rigs.data[rig].limbs[0].def.links[k];
+		l->health = health * l->def.strength;
+	}
+	Run( &s, 30 );
+	int before = lpWorld_GetStats( s.world ).pieceCount;
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, (b3Pos){ at.x, at.y + 1.3f, at.z } );
+	Run( &s, 50 );
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, (b3Pos){ at.x, at.y - 0.6f, at.z } );
+	Run( &s, 40 );
+	int broke = lpWorld_GetStats( s.world ).pieceCount - before;
+	DestroySim( &s );
+	return broke;
+}
+
+// At full strength the stomp breaks at least half as much again as with its joints at half health (they jam: the leg
+// swings slower and drives with half the torque)
+static int TestRigStompsHarderWhole( void )
+{
+	int whole = Stomp( 1.0f );
+	int hurt = Stomp( 0.5f );
+	printf( "  a stomp on a glass pane broke off %d pieces whole, %d with its leg at half health\n", whole, hurt );
+	ENSURE( whole > 0 && (float)whole >= 1.5f * (float)hurt );
+	return 0;
+}
+
+// A claw grabs a 200 kg crate, lifts it half a metre, and drops it when the leg's tibia (the claw) is taken off
+static int TestRigGrabs( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
+	Run( &s, 30 );
+	b3Pos foot = lpWorld_GetLimbState( s.world, rig, 0 ).foot;
+	float half = 0.5f * cbrtf( 200.0f / lpGetMaterial( lp_metal )->density );
+	lpPartDef box = lpDefaultPartDef();
+	box.halfExtents = (b3Vec3){ half, half, half };
+	box.material = lp_metal;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = Offset( foot, 0.0f, half, 0.8f );
+	def.parts = &box;
+	def.partCount = 1;
+	int crate = lpCreateObject( s.world, &def );
+	Run( &s, 30 );
+	// Reach at the crate's near face, low: the claw comes to rest against it
+	b3Pos face = Offset( def.transform.p, 0.0f, 0.0f, -half + 0.05f );
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, face );
+	// Like a player: it grabs the moment the claw touches the crate (it touches the ground first, less than the crate)
+	int grip = -1;
+	lpLimbState st = { 0 };
+	for ( int t = 0; t < 60 && grip < 0; ++t )
+	{
+		Run( &s, 1 );
+		st = lpWorld_GetLimbState( s.world, rig, 0 );
+		grip = st.touching >= 0 && lpWorld_GetPieceInfo( s.world, st.touching ).body == crate ? lpRigGrab( s.world, rig, 0 ) : -1;
+	}
+	b3WorldTransform xf;
+	lpWorld_GetBodyTransform( s.world, crate, &xf );
+	float rest = (float)xf.p.y;
+	lpWorld_SetLimbTarget( s.world, rig, 0, true, Offset( st.foot, 0.0f, 0.8f, 0.0f ) );
+	Run( &s, 90 );
+	lpWorld_GetBodyTransform( s.world, crate, &xf );
+	float lifted = (float)xf.p.y;
+	lpDestroyLink( s.world, s.world->rigs.data[rig].limbs[0].def.links[2] ); // the claw's knee goes
+	Run( &s, 60 );
+	lpWorld_GetBodyTransform( s.world, crate, &xf );
+	float dropped = (float)xf.p.y;
+	printf( "  touching piece %d, grip link %d; the crate at %.2f m, lifted to %.2f, after the claw went %.2f\n", st.touching, grip, rest,
+			lifted, dropped );
+	ENSURE( st.touching >= 0 && grip >= 0 && lifted - rest > 0.4f && dropped < lifted - 0.3f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
 int RigTest( void )
 {
 	RUN_TEST( TestKitStands );
@@ -955,5 +1112,9 @@ int RigTest( void )
 	RUN_TEST( TestRigWalksOnAPeg );
 	RUN_TEST( TestRigWeakAndLimpLegs );
 	RUN_TEST( TestRigBleedsOut );
+	RUN_TEST( TestRigReaches );
+	RUN_TEST( TestRigStrikeWaitsForBalance );
+	RUN_TEST( TestRigStompsHarderWhole );
+	RUN_TEST( TestRigGrabs );
 	return 0;
 }

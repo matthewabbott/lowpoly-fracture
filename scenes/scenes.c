@@ -1465,6 +1465,23 @@ static void lpDriveTrack( lpWorld* world, int skipVehicle )
 	}
 }
 
+int lpRigGrab( lpWorld* world, int rig, int limb )
+{
+	lpLimbState st = lpWorld_GetLimbState( world, rig, limb );
+	if ( st.reaching == false || st.touching < 0 || st.footBody < 0 )
+	{
+		return -1;
+	}
+	lpLinkDef grip = lpDefaultLinkDef( lp_linkWeld );
+	grip.bodyA = st.footBody;
+	grip.bodyB = lpWorld_GetPieceInfo( world, st.touching ).body;
+	grip.anchorA = st.foot;
+	grip.maxForce = 40000.0f; // a claw's grip
+	grip.maxTorque = 15000.0f;
+	grip.strength = 5000.0f;
+	return lpCreateLink( world, &grip );
+}
+
 // ---- the mech yard: a hexapod on patrol over rough ground ----
 
 #define LP_MECH_LOOKAHEAD 5.0f // m along the patrol the walkers steer for

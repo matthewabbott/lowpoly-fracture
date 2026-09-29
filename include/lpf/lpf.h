@@ -540,9 +540,17 @@ typedef struct lpLimbState
 	float depth;	// how far below the torso's frame the foot reaches at its rest point (a stump reaches less), m
 	b3Pos foot;		// world
 	int footBody;	// the body its foot is on (-1: detached)
+	bool reaching;	// out of the gait, reaching for its target
+	int touching;	// reaching: the piece its foot touches (-1: none), for a grab
 } lpLimbState;
 
 lpLimbState lpWorld_GetLimbState( const lpWorld* world, int rig, int limb );
+
+// A limb reaching for a world point (a strike, a stomp, a grab): it leaves the gait once the others keep the centre of
+// mass over their feet by the margin (until then the body leans toward them, and the limb's state says it is not
+// reaching yet), and IK drives its foot at the point within what is left of its chain and its servos' caps: a weak limb
+// swings slower and hits softer. Persistent and hashed, like the controls; turned off, the limb steps back into the gait.
+void lpWorld_SetLimbTarget( lpWorld* world, int rig, int limb, bool active, b3Pos point );
 
 // ---- impacts ----
 

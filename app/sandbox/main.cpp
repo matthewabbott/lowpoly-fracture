@@ -46,20 +46,25 @@ const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledg
 									  "Grab / pull", "Leaf blower" };
 
 // Not tools: a vehicle's controls changed (recorded as `tick drive vehicle throttle brake steer handbrake`), a rig's
-// (`tick walk rig forward strafe turn crouch`)
+// (`tick walk rig forward strafe turn crouch`), a rig's limb strikes at a point or steps back into the gait
+// (`tick reach rig limb active x y z`), its claw grabs what it touches or lets go (`tick grab rig limb`)
 constexpr int kDrive = ToolCount;
 constexpr int kWalk = ToolCount + 1;
+constexpr int kReach = ToolCount + 2;
+constexpr int kGrab = ToolCount + 3;
 
 // A sim input: applied at the start of `tick`, before the step. Recorded and replayed as text.
 struct Event
 {
 	int64_t tick;
-	int tool;  // or kDrive, kWalk
-	V3 origin; // pull: target point
+	int tool;  // or kDrive, kWalk, kReach, kGrab
+	V3 origin; // pull: target point; reach: the point
 	V3 dir;	   // pull: grabbed point in the body frame
-	int piece; // pull: the piece; drive: the vehicle; walk: the rig
+	int piece; // pull: the piece; drive: the vehicle; walk, reach, grab: the rig
 	lpVehicleControl control; // drive only
 	lpRigControl walk;		  // walk only
+	int limb;				  // reach, grab
+	bool active;			  // reach: strike, or step back
 };
 
 struct Options
@@ -113,6 +118,11 @@ struct App
 	int playerRig = -1;
 	int walking = -1;
 	lpRigControl walkSent = {};
+	// its arms: the leg F strikes with (-1: none), and the claw's grip (a weld made by a grab event; -1: none)
+	int striking = -1;
+	int grip = -1;
+	uint32_t gripGeneration = 0;
+	int gripLimb = -1;
 
 	// grab tool
 	int grabPiece = -1;
@@ -254,6 +264,10 @@ void LoadScene( int scene )
 	app.playerRig = -1;
 	app.walking = -1;
 	app.walkSent = {};
+	app.striking = -1;
+	app.grip = -1;
+	app.gripGeneration = 0;
+	app.gripLimb = -1;
 	app.live.clear();
 	app.particles.clear();
 	Renderer_Reset();
@@ -297,6 +311,29 @@ void LoadScript( const std::string& path )
 			}
 			continue;
 		}
+		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "reach" ) == 0 )
+		{
+			int active = 0;
+			if ( sscanf( line, "%lld %31s %d %d %d %f %f %f", &t, name, &e.piece, &e.limb, &active, &e.origin.x, &e.origin.y,
+						 &e.origin.z ) == 8 )
+			{
+				e.tick = t;
+				e.tool = kReach;
+				e.active = active != 0;
+				app.script.push_back( e );
+			}
+			continue;
+		}
+		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "grab" ) == 0 )
+		{
+			if ( sscanf( line, "%lld %31s %d %d", &t, name, &e.piece, &e.limb ) == 4 )
+			{
+				e.tick = t;
+				e.tool = kGrab;
+				app.script.push_back( e );
+			}
+			continue;
+		}
 		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "drive" ) == 0 )
 		{
 			if ( sscanf( line, "%lld %31s %d %f %f %f %d", &t, name, &e.piece, &e.control.throttle, &e.control.brake,
@@ -323,7 +360,7 @@ void LoadScript( const std::string& path )
 			}
 			if ( e.tool < 0 )
 			{
-				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk)\n",
+				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk, reach, grab)\n",
 						 name );
 				continue;
 			}
@@ -362,6 +399,32 @@ void ApplyEvent( const Event& e )
 	if ( e.tool == kWalk )
 	{
 		lpWorld_SetRigControl( app.world, e.piece, &e.walk );
+		app.playerRig = e.piece;
+		return;
+	}
+
+	if ( e.tool == kReach )
+	{
+		lpWorld_SetLimbTarget( app.world, e.piece, e.limb, e.active, b3Pos{ e.origin.x, e.origin.y, e.origin.z } );
+		app.playerRig = e.piece;
+		return;
+	}
+
+	if ( e.tool == kGrab )
+	{
+		// Lets go of the grip it holds (if it has not broken), else grabs what the claw touches
+		lpLinkState held = app.grip >= 0 ? lpWorld_GetLinkState( app.world, app.grip ) : lpLinkState{};
+		if ( app.grip >= 0 && held.alive && held.generation == app.gripGeneration )
+		{
+			lpDestroyLink( app.world, app.grip );
+			app.grip = -1;
+		}
+		else
+		{
+			app.grip = lpRigGrab( app.world, e.piece, e.limb );
+			app.gripGeneration = app.grip >= 0 ? lpWorld_GetLinkState( app.world, app.grip ).generation : 0;
+			app.gripLimb = e.limb;
+		}
 		app.playerRig = e.piece;
 		return;
 	}
@@ -490,6 +553,18 @@ void RecordAndQueue( const Event& e )
 				 e.walk.turn, e.walk.crouch );
 		fflush( app.recordFile );
 	}
+	else if ( app.recordFile != nullptr && e.tool == kReach )
+	{
+		// %.9g: a float's exact value, so the replay strikes where this run did
+		fprintf( app.recordFile, "%lld reach %d %d %d %.9g %.9g %.9g\n", (long long)e.tick, e.piece, e.limb, e.active ? 1 : 0,
+				 e.origin.x, e.origin.y, e.origin.z );
+		fflush( app.recordFile );
+	}
+	else if ( app.recordFile != nullptr && e.tool == kGrab )
+	{
+		fprintf( app.recordFile, "%lld grab %d %d\n", (long long)e.tick, e.piece, e.limb );
+		fflush( app.recordFile );
+	}
 	else if ( app.recordFile != nullptr && e.tool == kDrive )
 	{
 		fprintf( app.recordFile, "%lld drive %d %.6f %.6f %.6f %d\n", (long long)e.tick, e.piece, e.control.throttle, e.control.brake,
@@ -528,6 +603,8 @@ void QueueWalk( const lpRigControl& control )
 	app.walkSent = control;
 }
 
+void StrikeKey( bool down );
+
 // V: get into the nearest vehicle or rig, or out of the one being driven (a car brakes and parks, a rig stands)
 void ToggleDriving()
 {
@@ -543,6 +620,7 @@ void ToggleDriving()
 	if ( app.walking >= 0 )
 	{
 		QueueWalk( lpRigControl{} );
+		StrikeKey( false ); // a striking leg steps back; a claw keeps its grip
 		app.walking = -1;
 		return;
 	}
@@ -559,6 +637,73 @@ void ToggleDriving()
 		app.walking = rig;
 		QueueWalk( lpRigControl{} );
 	}
+}
+
+void QueueReach( int limb, bool active, V3 point )
+{
+	Event e = {};
+	e.tick = app.tick;
+	e.tool = kReach;
+	e.piece = app.walking;
+	e.limb = limb;
+	e.active = active;
+	e.origin = point;
+	RecordAndQueue( e );
+}
+
+// F held: the walked rig strikes at what the crosshair is on, with the leg nearest it; let go, the leg steps back into
+// the gait (unless its claw holds something: G lets go)
+void StrikeKey( bool down )
+{
+	if ( app.walking < 0 )
+	{
+		return;
+	}
+	int limb = -1;
+	V3 point = {};
+	if ( down && Walk_Aim( app.world, app.walking, app.camPos, Forward(), &limb, &point ) )
+	{
+		if ( app.striking >= 0 && app.striking != limb && app.grip < 0 )
+		{
+			QueueReach( app.striking, false, V3{} );
+		}
+		app.striking = app.grip >= 0 ? app.gripLimb : limb;
+		QueueReach( app.striking, true, point );
+	}
+	else if ( down == false && app.striking >= 0 && app.grip < 0 )
+	{
+		QueueReach( app.striking, false, V3{} );
+		app.striking = -1;
+	}
+}
+
+// G: the striking leg's claw grabs what it touches and lifts it; G again lets go, and the leg steps back into the gait
+void ClawKey()
+{
+	if ( app.walking < 0 )
+	{
+		return;
+	}
+	Event e = {};
+	e.tick = app.tick;
+	e.tool = kGrab;
+	e.piece = app.walking;
+	if ( app.grip >= 0 )
+	{
+		e.limb = app.gripLimb;
+		RecordAndQueue( e );
+		QueueReach( app.gripLimb, false, V3{} );
+		app.striking = -1;
+		return;
+	}
+	lpLimbState st = app.striking >= 0 ? lpWorld_GetLimbState( app.world, app.walking, app.striking ) : lpLimbState{};
+	if ( app.striking < 0 || st.touching < 0 )
+	{
+		return;
+	}
+	e.limb = app.striking;
+	RecordAndQueue( e );
+	QueueReach( app.striking, true, V3{ (float)st.foot.x, (float)st.foot.y + 0.8f, (float)st.foot.z } );
 }
 
 void QueueFire()
@@ -850,7 +995,7 @@ void DrawUi()
 		char line[256];
 		Walk_Describe( app.world, walker, line, (int)sizeof( line ) );
 		ImGui::Text( "rigs %.2f ms  foot casts %d", app.last.rigMs, app.last.footCasts );
-		ImGui::Text( "%s%s", app.walking >= 0 ? "walking " : "", line );
+		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, app.grip >= 0 ? "  gripping" : "" );
 	}
 	ImGui::Text( "tick %lld", (long long)app.tick );
 	ImGui::Separator();
@@ -888,8 +1033,8 @@ void DrawUi()
 	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-8 tools" );
 	ImGui::TextDisabled( "grab / blower: hold LMB, wheel changes grab distance" );
 	ImGui::TextDisabled( "R reload, B bombard, L links, F1 ui, F12 screenshot" );
-	ImGui::TextDisabled( "V drive the nearest car (WASD, space handbrake) or mech (WASD, QE sideways, C crouch)," );
-	ImGui::TextDisabled( "  V again to get out" );
+	ImGui::TextDisabled( "V drive the nearest car (WASD, space handbrake) or mech (WASD, QE sideways, C crouch," );
+	ImGui::TextDisabled( "  F strike at the crosshair, G grab and lift what the claw touches / let go), V again to get out" );
 	ImGui::End();
 
 	// Crosshair
@@ -1125,6 +1270,14 @@ void Event_( const sapp_event* ev )
 			{
 				ToggleDriving();
 			}
+			if ( ev->key_code == SAPP_KEYCODE_F && ev->key_repeat == false )
+			{
+				StrikeKey( true );
+			}
+			if ( ev->key_code == SAPP_KEYCODE_G && ev->key_repeat == false )
+			{
+				ClawKey();
+			}
 			if ( ev->key_code == SAPP_KEYCODE_F12 )
 			{
 				app.wantScreenshot = true;
@@ -1138,6 +1291,10 @@ void Event_( const sapp_event* ev )
 			if ( ev->key_code >= 0 && ev->key_code < 512 )
 			{
 				app.keys[ev->key_code] = false;
+			}
+			if ( ev->key_code == SAPP_KEYCODE_F )
+			{
+				StrikeKey( false );
 			}
 			break;
 		case SAPP_EVENTTYPE_MOUSE_DOWN:

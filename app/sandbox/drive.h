@@ -45,5 +45,10 @@ bool Walk_Same( const lpRigControl& a, const lpRigControl& b );
 // Eases the camera toward a point behind and above the rig and aims it there
 void Walk_Camera( const lpWorld* world, int rig, float dt, V3* position, float* yaw, float* pitch );
 
-// One HUD line: speed, legs, height, controls
+// One HUD line: speed, legs, height, controls, a leg that strikes or grips
 void Walk_Describe( const lpWorld* world, int rig, char* text, int size );
+
+// F: where the rig strikes, and with which leg. The crosshair ray hits something that is not the rig itself; the able
+// leg whose foot is nearest strikes it, a little past its surface. Out of that leg's reach, it strikes the ground (or
+// what is on it) as far toward it as it can. False if the ray hits nothing or no leg is able.
+bool Walk_Aim( const lpWorld* world, int rig, V3 origin, V3 dir, int* limb, V3* point );

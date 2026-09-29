@@ -1,0 +1,14 @@
+# The mech's arms (walk events: rig forward strafe turn crouch; reach: rig limb active x y z; grab: rig limb). It walks
+# up the yard past the step and stops by the rubble; its front left leg reaches for a stone, the claw grabs it the
+# moment it touches, lifts it 0.8 m and lets it drop; its front right leg stomps another; it walks on.
+# Replay: sandbox --scene mech --script scripts/mech_arms.txt --follow
+0 walk 0 0.600000 0.000000 0.000000 0.000000
+941 walk 0 0.000000 0.000000 0.000000 0.000000
+1031 reach 0 0 1 2.74098015 0.0964156836 -0.757381856
+1038 grab 0 0
+1038 reach 0 0 1 2.78879881 0.867968321 -0.982178628
+1159 grab 0 0
+1159 reach 0 0 0 0 0 0
+1249 reach 0 5 1 -1.38964856 -0.0337897912 -1.03207195
+1309 reach 0 5 0 0 0 0
+1369 walk 0 1.000000 0.000000 0.000000 0.000000
