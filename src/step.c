@@ -188,6 +188,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.stressBreaks = 0;
 	w->stats.stressSolves = 0;
 	w->stats.stressJudged = 0;
+	w->stats.stressReduced = 0;
+	w->stats.stressDissolved = 0;
 	w->stats.stressWaiting = 0;
 	w->stats.linkBreaks = 0;
 	w->stats.linkRebuilds = 0;

@@ -579,11 +579,13 @@ static void lpStressUtilizations( lpWorld* w, lpStressJob* job, const lpVec6* x 
 	job->peak = peak;
 }
 
-// A converged structure that has not changed since, but creaks (joints over their limit, none broken yet) or had
-// joints weakened by a blast: its joints are judged again from the forces of its last solve, with no solve. Creaking
-// only adds strain from the stored utilizations; after a blast (recompute) they are computed again from the stored
-// forces and the joints' new health.
-static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* strained )
+static int lpStrainSlender( lpWorld* w, b3WorldTransform xf, int pi, int* strained, int* slender );
+
+// A converged structure that has not changed since, but creaks (joints or slender pieces over their limit, none broken
+// yet) or had joints weakened by a blast: it is judged again from its last solve, with no solve. Creaking only adds
+// strain from the stored utilizations; after a blast (recompute) the joints' are computed again from the stored forces
+// and their new health.
+static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* strained, int* snapped )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
 	b3WorldTransform xf = b3Body_GetTransform( body->id );
@@ -613,7 +615,13 @@ static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* stra
 			}
 		}
 	}
-	return lpBreakOverloads( w, xf );
+	int broken = lpBreakOverloads( w, xf );
+	for ( int i = 0; i < body->pieces.count && broken == 0; ++i )
+	{
+		int slender = 0;
+		*snapped += lpStrainSlender( w, xf, body->pieces.data[i], strained, &slender );
+	}
+	return broken;
 }
 
 // Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. Phase 2, converged: from
@@ -716,47 +724,66 @@ static void lpStressSlender( lpWorld* w, lpStressJob* job, const lpVec6* x )
 	}
 }
 
-// Phase 3, once the joints hold: an overloaded slender piece strains, and at 1 a small synthetic impact at its worst
-// section snaps it through the normal fracture pipeline next step. Returns the number of pieces queued to break.
-static int lpStressSnap( lpWorld* w, const lpStressJob* job, int* strained, int* slender )
+// An overloaded slender piece strains a little more every check (from its worst section at the last judged solve),
+// and at 1 a small synthetic impact there snaps it through the normal fracture pipeline next step. Returns 1 if it was
+// queued to break.
+static int lpStrainSlender( lpWorld* w, b3WorldTransform xf, int pi, int* strained, int* slender )
 {
-	b3WorldTransform xf = job->xf;
+	lpPiece* p = w->pieces.data + pi;
+	if ( p->slenderRho <= 1.0f )
+	{
+		return 0;
+	}
+	*strained += 1;
+	*slender += 1;
+	p->strain += ( p->slenderRho - 1.0f ) * w->def.strainRate;
+	if ( p->strain < 1.0f )
+	{
+		return 0;
+	}
+
+	// Snap it where it is weakest: a blow sized to the section, through the normal fracture pipeline
+	const lpMaterialDef* m = lpGetMaterial( p->material );
+	p->strain = 0.0f;
+	lpImpactDef impact = { 0 };
+	impact.point = b3TransformWorldPoint( xf, b3MulAdd( p->shape->centroid, p->slenderAt, p->axis ) );
+	impact.direction = b3RotateVector( xf.q, p->axis );
+	impact.radius = 1.5f * p->slenderDepth;
+	impact.energy = 4.0f * b3MaxFloat( m->bondStrength, m->fractureEnergy ) * B3_PI * impact.radius * impact.radius;
+	w->impactSerial += 1;
+	lpDeferredJob snap = { pi, p->generation, w->impactSerial, impact, true };
+	lpArray_Push( w->deferred, snap );
+	lpStressDust( w, xf, w->bonds.data + p->bonds.data[0], p->bonds.data[0], 6 );
+	return 1;
+}
+
+// Phase 3, a judged solve: the slender pieces' worst sections are kept on the pieces (so creaking can strain them
+// without a solve), and once the joints hold, the overloaded ones strain. Returns the number of pieces queued to break.
+static int lpStressSnap( lpWorld* w, const lpStressJob* job, bool jointsHold, int* strained, int* slender )
+{
+	const lpStressSystem* s = job->system;
+	for ( int i = 0; i < s->nodes.count; ++i )
+	{
+		w->pieces.data[s->nodes.data[i]].slenderRho = 0.0f;
+	}
 	int queued = 0;
 	for ( int k = 0; k < job->slender.count; ++k )
 	{
 		const lpSlenderCut* cut = job->slender.data + k;
-		int pi = cut->piece;
-		lpPiece* p = w->pieces.data + pi;
-		const lpMaterialDef* m = lpGetMaterial( p->material );
+		lpPiece* p = w->pieces.data + cut->piece;
+		p->slenderRho = cut->worst;
+		p->slenderAt = cut->worstAt;
+		p->slenderDepth = cut->depth;
+		if ( jointsHold == false )
+		{
+			continue;
+		}
 		if ( w->def.debugLog )
 		{
-			printf( "[lpf]   slender piece %d: length %.2f, worst utilization %.2f at %.2f, strain %.2f\n", pi, (double)cut->length,
-					(double)cut->worst, (double)cut->worstAt, (double)p->strain );
+			printf( "[lpf]   slender piece %d: length %.2f, worst utilization %.2f at %.2f, strain %.2f\n", cut->piece,
+					(double)cut->length, (double)cut->worst, (double)cut->worstAt, (double)p->strain );
 		}
-		if ( cut->worst <= 1.0f )
-		{
-			continue;
-		}
-		*strained += 1;
-		*slender += 1;
-		p->strain += ( cut->worst - 1.0f ) * w->def.strainRate;
-		if ( p->strain < 1.0f )
-		{
-			continue;
-		}
-
-		// Snap it where it is weakest: a blow sized to the section, through the normal fracture pipeline
-		p->strain = 0.0f;
-		lpImpactDef impact = { 0 };
-		impact.point = b3TransformWorldPoint( xf, b3MulAdd( p->shape->centroid, cut->worstAt, p->axis ) );
-		impact.direction = b3RotateVector( xf.q, p->axis );
-		impact.radius = 1.5f * cut->depth;
-		impact.energy = 4.0f * b3MaxFloat( m->bondStrength, m->fractureEnergy ) * B3_PI * impact.radius * impact.radius;
-		w->impactSerial += 1;
-		lpDeferredJob snap = { pi, p->generation, w->impactSerial, impact, true };
-		lpArray_Push( w->deferred, snap );
-		lpStressDust( w, xf, w->bonds.data + p->bonds.data[0], p->bonds.data[0], 6 );
-		queued += 1;
+		queued += lpStrainSlender( w, job->xf, cut->piece, strained, slender );
 	}
 	return queued;
 }
@@ -870,9 +897,9 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	}
 	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;
-	int snapped = broken == 0 ? lpStressSnap( w, job, &strained, &slender ) : 0; // once the joints hold
+	int snapped = lpStressSnap( w, job, broken == 0, &strained, &slender ); // slender pieces strain once the joints hold
 	body->unsettled = broken > 0 || snapped > 0 || strained > 0;
-	body->creaking = broken == 0 && snapped == 0 && slender == 0 && strained > 0; // next checks only add strain
+	body->creaking = broken == 0 && snapped == 0 && strained > 0; // next checks only add strain, joints and slender pieces
 	body->strainedLastCheck = strained > 0;
 	w->stats.stressBreaks += broken;
 	if ( w->def.debugLog )
@@ -893,11 +920,11 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
-	int creaks = 0;
-	int broke = lpStressRejudge( w, bodyIndex, body->rejudge, &creaks );
+	int creaks = 0, snapped = 0;
+	int broke = lpStressRejudge( w, bodyIndex, body->rejudge, &creaks, &snapped );
 	body->rejudge = false;
-	body->creaking = broke == 0 && creaks > 0;
-	body->unsettled = broke > 0 || creaks > 0;
+	body->creaking = broke == 0 && snapped == 0 && creaks > 0;
+	body->unsettled = broke > 0 || snapped > 0 || creaks > 0;
 	body->strainedLastCheck = creaks > 0;
 	w->stats.stressBreaks += broke;
 	if ( body->unsettled )

@@ -159,6 +159,9 @@ typedef struct lpPiece
 	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
 	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
 	int cluster;	   // the rigid cluster it moves with in its structure's stress solve (from 1), 0: a node of its own
+	float slenderRho;  // slender pieces: the worst section's utilization at the last judged solve (0: not slender)
+	float slenderAt;   // where along its axis, from its centroid
+	float slenderDepth; // of the section
 	uint32_t changed;  // w->changeSerial when its bonds, their health or its load last changed
 	uint32_t accepted; // w->changeSerial when its structure's last solve was judged: changed after it, it is a seed
 	uint8_t material;
@@ -224,6 +227,8 @@ typedef struct lpBody
 	lpStressSystem* system; // structure: its stress system, kept between checks (NULL until the first)
 	lpStressReduced* reduced; // structure: its reduced system while parts of it move as rigid clusters
 	uint32_t clusterStamp;	  // structure: bumped whenever its pieces' clusters change
+	int clusters;			  // structure: clusters formed at its last exact solve (some may have dissolved since)
+	int meterRounds;		  // structure: clusters dissolved by the residual meter since its last judgement
 	int solveNodes, solveEdges;
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)

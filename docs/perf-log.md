@@ -318,3 +318,12 @@ each slender plank that snaps restarts the solve. Found on the way, for step 4:
 - A structure straining only in slender pieces is re-solved every step instead of creaking from stored values.
 - A fresh build of the keep (two fine passes) costs more than the per-structure cap, so its first step gets one
   iteration.
+
+## 2026-09-28 slender pieces creak without a solve
+
+A structure whose only strain was in slender pieces (a sagging plank, a loaded lintel) used to be rebuilt and solved
+again every step until the piece snapped: creaking covered joints only. The worst section of each slender piece is now
+kept on the piece at every judged solve, and creaking strains it from there. Town and the barrage change outcome
+(chaotic: town peaks at 9980 pieces instead of 9017, the barrage at 18067 instead of 16334); the barrage's step
+drops from 4.63 to 3.99 ms at 8 workers even with more coming down. The clustered keep breach's stress time drops from
+536 to 212 ms.

@@ -145,6 +145,10 @@ typedef struct lpWorldDef
 	int maxStressStructureWork; // per structure per step; a structure that needs more keeps creaking for a few steps
 	int maxStressIterations;	// per structure per step
 	int maxSettleIterations;	// per structure in lpWorld_SettleStructures, which has no per-step budget
+	// Structures with more pieces than this solve changes on a reduced system: their lightly loaded parts, found by
+	// their last exact solve, move as rigid clusters, and only the correction to that solution is solved for
+	int stressLargeNodes;
+	float stressGlue; // a joint loaded to this share of its limit keeps both its pieces out of clusters
 	int maxStressBreaks;   // joints a structure may lose per check below twice their limit (worse ones go at once)
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
@@ -359,6 +363,9 @@ typedef struct lpStats
 	int stressBreaks;
 	int stressSolves;		 // structures solved this step (in parallel)
 	int stressJudged;		 // of those, the ones that converged and were judged
+	int stressReduced;		 // of those, the ones solved on a reduced system (rigid clusters)
+	int stressDissolved;	 // clusters dissolved because holding them rigid leaked too much load (the residual meter)
+	int clusteredPieces;	 // pieces in rigid clusters, over all structures
 	int stressWaiting;		 // structures that found this step's stress budget spent; they go first next step
 	int unsettledStructures; // structures still solving or creaking toward a break
 	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)
