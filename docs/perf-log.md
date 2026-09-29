@@ -572,3 +572,17 @@ Results (the kit, 4 substeps):
 - Identical at 1, 4 and 8 workers.
 - Cost: 12.7 us of rig per walker per step, 0.23 foothold casts per step; Box3D 0.055 ms per walker (1, 4, 16 walkers:
   0.055, 0.22, 0.81 ms).
+
+## 2026-09-29 creatures and mechs, step 3: the mech yard, walking a rig, the 'mech' rung
+
+A scene (`mech`): the hexapod patrols a loop round a yard, over a 0.4 m step, 14 loose stones and a 15 degree hump,
+past loose crates, a brick wall and a parked car, steering for a point 5 m ahead on the loop; its bombardment shoots
+at its legs in turn. The sandbox's V takes the nearest car or rig; walk events are recorded and replayed.
+
+- The patrol stalled in the rubble: a foot left ahead of its rest point on a stone (stretched past its stride, but not
+  behind along its drift) stopped the torso and never came due. A foot past its stride in any direction is now due
+  first. A lap of the yard (about 110 m, all of it) takes 58 s.
+- Its demo (`scripts/mech_demo.txt`: walk events, a crouch, shots at the rubble) is identical at 1, 4 and 8 workers,
+  and so is the yard under a shot at a leg every 20 ticks.
+- The 'mech' rung (a shot every 30 ticks): 0.07 ms a step on 1 worker (p95 0.13, max 0.30), 0.09 on 8; every other
+  rung's hash unchanged, solver hashes included.
