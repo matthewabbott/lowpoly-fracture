@@ -169,6 +169,7 @@ void lpSystemResize( lpStressSystem* s )
 	s->vectors.count = 6 * n;
 	lpArray_Reserve( s->blocks, n );
 	s->blocks.count = n;
+	s->factored = false;
 }
 
 void lpSystemFactor( lpStressSystem* s )
@@ -192,8 +193,13 @@ void lpSystemFactor( lpStressSystem* s )
 	{
 		lpFactorBlock( blocks + i );
 	}
+	s->factored = true;
+}
 
-	// Incident edges by counting sort, so each node's list is in edge order
+void lpSystemIncidence( lpStressSystem* s )
+{
+	// By counting sort, so each node's list is in edge order
+	int n = s->nodes.count;
 	lpArray_Reserve( s->incidentStart, n + 1 );
 	s->incidentStart.count = n + 1;
 	int* start = s->incidentStart.data;
@@ -306,7 +312,7 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 		}
 		rz = lpDot6( r, z, n );
 	}
-	double limit = tolerance * tolerance * lpDot6( f, f, n );
+	double limit = tolerance * tolerance * ( s->loadNorm2 > 0.0 ? s->loadNorm2 : lpDot6( f, f, n ) );
 	bool converged = false;
 	int it = 0;
 	for ( ; it < budget; ++it )
@@ -347,6 +353,86 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 	state->rz = rz;
 	state->iterations = it;
 	state->converged = converged;
+}
+
+void lpSystemReduce( const lpStressSystem* fine, const b3Vec3* nodeRef, const lpPartition* part, lpStressSystem* reduced )
+{
+	int groups = part->groupCount;
+	const int* group = part->group.data;
+	const b3Vec3* ref = part->ref.data;
+	lpArray_Reserve( reduced->nodes, groups );
+	reduced->nodes.count = groups;
+	for ( int g = 0; g < groups; ++g )
+	{
+		reduced->nodes.data[g] = -1;
+	}
+	for ( int i = 0; i < fine->nodes.count; ++i )
+	{
+		int g = group[i];
+		reduced->nodes.data[g] = reduced->nodes.data[g] < 0 ? fine->nodes.data[i] : reduced->nodes.data[g];
+	}
+
+	reduced->edges.count = 0;
+	lpArray_Reserve( reduced->edges, fine->edges.count );
+	for ( int k = 0; k < fine->edges.count; ++k )
+	{
+		lpStressEdge e = fine->edges.data[k];
+		int ga = e.a >= 0 ? group[e.a] : -1;
+		int gb = e.b >= 0 ? group[e.b] : -1;
+		if ( ga == gb )
+		{
+			continue; // inside one rigid group
+		}
+		if ( e.a >= 0 && part->members.data[ga] > 1 )
+		{
+			e.ra = b3Add( e.ra, b3Sub( nodeRef[e.a], ref[ga] ) );
+		}
+		if ( e.b >= 0 && part->members.data[gb] > 1 )
+		{
+			e.rb = b3Add( e.rb, b3Sub( nodeRef[e.b], ref[gb] ) );
+		}
+		e.a = ga;
+		e.b = gb;
+		reduced->edges.data[reduced->edges.count++] = e;
+	}
+	reduced->forceScale = fine->forceScale;
+	lpSystemResize( reduced );
+	lpSystemFactor( reduced );
+	lpSystemIncidence( reduced );
+}
+
+void lpPartitionRestrict( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced )
+{
+	for ( int g = 0; g < part->groupCount; ++g )
+	{
+		reduced[g] = lp_vec6Zero;
+	}
+	for ( int i = 0; i < nodeCount; ++i )
+	{
+		int g = part->group.data[i];
+		b3Vec3 d = b3Sub( nodeRef[i], part->ref.data[g] );
+		reduced[g].f = b3Add( reduced[g].f, fine[i].f );
+		reduced[g].t = b3Add( reduced[g].t, b3Add( fine[i].t, b3Cross( d, fine[i].f ) ) );
+	}
+}
+
+void lpPartitionProlong( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* y, int nodeCount, lpVec6* fine )
+{
+	for ( int i = 0; i < nodeCount; ++i )
+	{
+		int g = part->group.data[i];
+		b3Vec3 d = b3Sub( nodeRef[i], part->ref.data[g] );
+		fine[i].f = b3Add( fine[i].f, b3Add( y[g].f, b3Cross( y[g].t, d ) ) );
+		fine[i].t = b3Add( fine[i].t, y[g].t );
+	}
+}
+
+void lpPartitionFree( lpPartition* part )
+{
+	lpArray_Free( part->group );
+	lpArray_Free( part->ref );
+	lpArray_Free( part->members );
+	part->groupCount = 0;
 }
 
 void lpSystemFree( lpStressSystem* s )

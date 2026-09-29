@@ -331,12 +331,15 @@ void lpDestroyWorld( lpWorld* w )
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
 		lpArray_Free( w->stressJobs[i].slender );
+		lpArray_Free( w->stressJobs[i].clusterGroup );
+		lpArray_Free( w->stressJobs[i].groupMass );
 	}
 	lpFree( w->stressJobs );
 	lpArray_Free( w->stressQueue );
 	lpArray_Free( w->scratchOverloads );
 	lpArray_Free( w->scratchContacts );
 	lpArray_Free( w->scratchLoads );
+	lpArray_Free( w->scratchClusters );
 	lpArray_Free( w->stressAgain );
 	for ( int i = 0; i < w->jobCapacity; ++i )
 	{
@@ -421,6 +424,7 @@ bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
+	p->cluster = 0; // clusters are its old structure's
 	lpArray_Push( b->pieces, pieceIndex );
 	b->volume += p->shape->volume;
 	b->topology += 1;
@@ -1271,6 +1275,10 @@ bool lpWorld_Validate( const lpWorld* w )
 		if ( p->shape == NULL || ( p->shape->volume > 0.0f ) == false )
 		{
 			return lpFail( "piece %d degenerate", i, 0, 0 );
+		}
+		if ( p->cluster != 0 && ( p->anchored || kind != lp_kindStructure ) )
+		{
+			return lpFail( "piece %d is in cluster %d but anchored or not on a structure (kind %d)", i, p->cluster, kind );
 		}
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{

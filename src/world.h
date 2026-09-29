@@ -62,6 +62,19 @@ typedef struct lpSlenderCut
 	float depth;   // of the section
 } lpSlenderCut;
 
+// A structure whose parts move as rigid clusters is solved on its reduced system for the correction to its last
+// solution (the delta form: x = xOld + P y, P^T K P y = P^T (f - K xOld)), so the clusters bias only the change and
+// the bonds inside a cluster keep their last forces. Kept on the body while the solve continues.
+typedef struct lpStressReduced
+{
+	lpPartition partition;
+	LP_ARRAY( b3Vec3 ) nodeRef; // each fine node's reference point: its piece's centroid
+	lpStressSystem system;		// P^T K P; its x is the correction y
+	uint32_t topology;			// of the body when built
+	uint32_t clusterStamp;
+	bool built;
+} lpStressReduced;
+
 // One structure's stress check in a step. Structures are solved in parallel: a job reads only its own structure's
 // pieces and bonds and writes only their solve state, its body's system, and its own arrays (kept between steps).
 typedef struct lpStressJob
@@ -74,11 +87,14 @@ typedef struct lpStressJob
 	int budget;				  // iterations granted this step
 	bool continuing;		  // pick up the solve in progress (r, p and the system, rz in solve)
 	bool cached;			  // the body's system is still the structure's: no build
+	bool clustered;			  // solved on the body's reduced system for a correction
 	double tolerance;		  // of the whole residual, relative to the whole load
 	float nodeTolerance;	  // of each node's residual, relative to the forces through it
 	lpSolveState solve;
 	float peak;						  // converged: the highest joint utilization (in the system's rho)
 	LP_ARRAY( lpSlenderCut ) slender; // converged: the slender pieces' worst sections
+	LP_ARRAY( int ) clusterGroup;	  // scratch: the group of each cluster
+	LP_ARRAY( float ) groupMass;	  // scratch
 } lpStressJob;
 
 // One end of a link: a piece and a frame in its body's frame, which never changes for the piece (new bodies are made
@@ -142,6 +158,7 @@ typedef struct lpPiece
 	lpVec6 stressP;
 	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
 	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
+	int cluster;	   // the rigid cluster it moves with in its structure's stress solve (from 1), 0: a node of its own
 	uint32_t changed;  // w->changeSerial when its bonds, their health or its load last changed
 	uint32_t accepted; // w->changeSerial when its structure's last solve was judged: changed after it, it is a seed
 	uint8_t material;
@@ -161,7 +178,7 @@ typedef struct lpBond
 	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
 	float strain;		// stress overload accumulated over checks; the bond breaks at 1
 	float rho;			// utilization at the last converged check (1 = at its limit)
-	b3Vec3 force;		// on piece b at the last converged check (newtons, body frame; piece a gets the opposite)
+	b3Vec3 force;		// it carries at the last converged check (newtons, body frame, lpEdgeForce's sign: tension along +normal)
 	b3Vec3 moment;
 	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
@@ -205,6 +222,8 @@ typedef struct lpBody
 	uint32_t splitTopology; // topology at the last split that found nothing to split off
 	bool splitChecked;		// splitTopology is set
 	lpStressSystem* system; // structure: its stress system, kept between checks (NULL until the first)
+	lpStressReduced* reduced; // structure: its reduced system while parts of it move as rigid clusters
+	uint32_t clusterStamp;	  // structure: bumped whenever its pieces' clusters change
 	int solveNodes, solveEdges;
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
@@ -345,6 +364,7 @@ struct lpWorld
 	LP_ARRAY( lpOverload ) scratchOverloads;
 	LP_ARRAY( b3ContactData ) scratchContacts;
 	LP_ARRAY( lpVec6 ) scratchLoads;
+	LP_ARRAY( int ) scratchClusters;
 	int stressWork; // bond-iterations used this step, over all structures
 	LP_ARRAY( lpBodyRef ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;

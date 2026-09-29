@@ -479,16 +479,23 @@ typedef struct KeepRun
 	uint64_t hash, solverHash;
 	float stressMs; // summed over the steps
 	int iterations;
+	bool valid;
 } KeepRun;
 
 // Damage the keep, then watch what the stress solve makes of it: knock out the pieces in [lo, hi] (keep frame), or, with
 // an impact, blast it
-static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps )
+typedef void KeepPrepare( lpWorld* w, int keep );
+
+static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps, KeepPrepare* prepare )
 {
 	KeepRun r = { 0 };
 	Sim s = CreateSimDef( def, lp_sceneKeep );
 	Run( &s, 2 );
 	int keep = BiggestStructure( s.world );
+	if ( prepare != NULL )
+	{
+		prepare( s.world, keep );
+	}
 	if ( impact != NULL )
 	{
 		lpWorld_AddImpact( s.world, impact );
@@ -518,6 +525,7 @@ static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpa
 		}
 	}
 	r.after = BodyVolume( s.world, keep );
+	r.valid = lpWorld_Validate( s.world );
 	r.hash = lpWorld_Hash( s.world );
 	r.solverHash = lpWorld_HashStress( s.world );
 	DestroySim( &s );
@@ -528,7 +536,7 @@ static KeepRun KeepDamage( int workers, b3Vec3 lo, b3Vec3 hi, const lpImpactDef*
 {
 	lpWorldDef def = lpDefaultWorldDef();
 	def.workerCount = workers;
-	return KeepDamageDef( def, lo, hi, impact, steps );
+	return KeepDamageDef( def, lo, hi, impact, steps, NULL );
 }
 
 static lpImpactDef KeepCannon( void )
@@ -616,8 +624,336 @@ static int TestKeepDeterminism( void )
 	return 0;
 }
 
+// ---- the solver on its own (solve.h): hand-built systems, no world ----
+
+// A beam edge of a unit-square contact between node a (or the world) and node b, joined along +x
+static lpStressEdge ChainEdge( int a, int b )
+{
+	lpStressEdge e = { 0 };
+	e.a = a;
+	e.b = b;
+	e.bond = b;
+	e.ra = (b3Vec3){ 0.5f, 0.0f, 0.0f };
+	e.rb = (b3Vec3){ -0.5f, 0.0f, 0.0f };
+	e.n = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	lpContactBasis( e.n, &e.t1, &e.t2 );
+	e.kn = 1.0f;
+	e.ks = 0.4f;
+	e.kb1 = e.kb2 = 0.25f / 3.0f;
+	e.kt = 0.4f * ( e.kb1 + e.kb2 );
+	return e;
+}
+
+// A cantilever of unit cubes along +x from a wall at x = -0.5, node i at x = i, each weighing `weights[i]`
+static void BuildChain( lpStressSystem* s, int count, const float* weights )
+{
+	memset( s, 0, sizeof( *s ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		lpArray_Push( s->nodes, i );
+		lpArray_Push( s->edges, ChainEdge( i - 1, i ) );
+	}
+	s->forceScale = 1.0f;
+	lpSystemResize( s );
+	lpSystemFactor( s );
+	lpSystemIncidence( s );
+	lpVec6* x = s->vectors.data;
+	for ( int i = 0; i < count; ++i )
+	{
+		x[i] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
+		x[count + i] = (lpVec6){ { 0.0f, -weights[i], 0.0f }, b3Vec3_zero };
+	}
+}
+
+static void ChainEdgeForce( const lpStressSystem* s, const lpVec6* x, int edge, b3Vec3* force, b3Vec3* moment )
+{
+	lpEdgeForce( s->edges.data + edge, x, force, moment );
+}
+
+// Groups for the chain: nodes before `first` on their own, the rest one rigid cluster
+static void ChainPartition( lpPartition* part, const b3Vec3* nodeRef, int count, int first )
+{
+	memset( part, 0, sizeof( *part ) );
+	lpArray_Reserve( part->group, count );
+	part->group.count = count;
+	b3Vec3 sum = b3Vec3_zero;
+	for ( int i = 0; i < count; ++i )
+	{
+		part->group.data[i] = i < first ? i : first;
+		if ( i < first )
+		{
+			lpArray_Push( part->ref, nodeRef[i] );
+			lpArray_Push( part->members, 1 );
+		}
+		else
+		{
+			sum = b3Add( sum, nodeRef[i] );
+		}
+	}
+	lpArray_Push( part->ref, b3MulSV( 1.0f / (float)( count - first ), sum ) );
+	lpArray_Push( part->members, count - first );
+	part->groupCount = first + 1;
+}
+
+// A cantilever's root carries all the weight (8) and the moment of it about the wall (32); statically determinate, so a rigid
+// cluster at its tip changes nothing outside the cluster, and the delta form after a load change is exact everywhere
+static int TestSolveSystem( void )
+{
+	enum
+	{
+		count = 8
+	};
+	float weights[count];
+	b3Vec3 nodeRef[count];
+	for ( int i = 0; i < count; ++i )
+	{
+		weights[i] = 1.0f;
+		nodeRef[i] = (b3Vec3){ (float)i, 0.0f, 0.0f };
+	}
+	lpStressSystem fine;
+	BuildChain( &fine, count, weights );
+	lpSolveState state = { 0 };
+	lpSystemSolve( &fine, 1000, 1e-7, 0.05f, false, &state );
+	b3Vec3 force, moment;
+	ChainEdgeForce( &fine, fine.vectors.data, 0, &force, &moment );
+	printf( "  chain of %d: %d iterations, root force (%.4f %.4f %.4f), moment (%.4f %.4f %.4f)\n", count, state.iterations,
+			(double)force.x, (double)force.y, (double)force.z, (double)moment.x, (double)moment.y, (double)moment.z );
+	ENSURE( state.converged );
+	ENSURE_NEAR( force.y, -8.0f, 1e-3f ); // the bond's own force: it holds the chain up by the opposite
+	ENSURE_NEAR( moment.z, -32.0f, 1e-2f );
+
+	// The same chain with nodes 3 to 7 one rigid cluster, solved for its whole solution from zero
+	lpPartition part;
+	ChainPartition( &part, nodeRef, count, 3 );
+	lpStressSystem reduced = { 0 };
+	lpSystemReduce( &fine, nodeRef, &part, &reduced );
+	ENSURE( reduced.nodes.count == 4 && reduced.edges.count == 4 );
+	lpVec6* y = reduced.vectors.data;
+	for ( int g = 0; g < 4; ++g )
+	{
+		y[g] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
+	}
+	lpPartitionRestrict( &part, nodeRef, fine.vectors.data + count, count, y + 4 );
+	state = (lpSolveState){ 0 };
+	lpSystemSolve( &reduced, 1000, 1e-7, 0.05f, false, &state );
+	lpVec6 moved[count];
+	memset( moved, 0, sizeof( moved ) );
+	lpPartitionProlong( &part, nodeRef, y, count, moved );
+	for ( int k = 0; k < 4; ++k )
+	{
+		b3Vec3 fk, mk, clusteredF, clusteredM;
+		ChainEdgeForce( &fine, fine.vectors.data, k, &fk, &mk );
+		ChainEdgeForce( &fine, moved, k, &clusteredF, &clusteredM );
+		ENSURE_NEAR( clusteredF.y, fk.y, 1e-3f );
+		ENSURE_NEAR( clusteredM.z, mk.z, 1e-2f );
+	}
+
+	// The delta form: a new load on node 1, corrected from the exact old solution with the tip still clustered. Every
+	// edge's force matches a fresh solve under the new load, the cluster's inside ones by keeping their old forces.
+	weights[1] = 3.0f;
+	lpStressSystem fresh;
+	BuildChain( &fresh, count, weights );
+	state = (lpSolveState){ 0 };
+	lpSystemSolve( &fresh, 1000, 1e-7, 0.05f, false, &state );
+
+	lpVec6 residual[count], kx[count];
+	lpSystemApply( &fine, fine.vectors.data, kx );
+	for ( int i = 0; i < count; ++i )
+	{
+		residual[i].f = b3Sub( fresh.vectors.data[count + i].f, kx[i].f );
+		residual[i].t = b3Sub( fresh.vectors.data[count + i].t, kx[i].t );
+	}
+	for ( int g = 0; g < 4; ++g )
+	{
+		y[g] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
+	}
+	lpPartitionRestrict( &part, nodeRef, residual, count, y + 4 );
+	reduced.loadNorm2 = 0.0;
+	for ( int i = 0; i < count; ++i )
+	{
+		reduced.loadNorm2 += (double)b3Dot( fresh.vectors.data[count + i].f, fresh.vectors.data[count + i].f );
+	}
+	state = (lpSolveState){ 0 };
+	lpSystemSolve( &reduced, 1000, 1e-7, 0.05f, false, &state );
+	memcpy( moved, fine.vectors.data, sizeof( moved ) );
+	lpPartitionProlong( &part, nodeRef, y, count, moved );
+	float worst = 0.0f;
+	for ( int k = 0; k < count; ++k )
+	{
+		b3Vec3 fk, mk, deltaF, deltaM;
+		ChainEdgeForce( &fresh, fresh.vectors.data, k, &fk, &mk );
+		ChainEdgeForce( &fresh, moved, k, &deltaF, &deltaM );
+		worst = b3MaxFloat( worst, b3AbsFloat( deltaF.y - fk.y ) + b3AbsFloat( deltaM.z - mk.z ) / 8.0f );
+	}
+	printf( "  delta form after a load change, clustered tip: %d iterations, worst edge error %.2e\n", state.iterations,
+			(double)worst );
+	ENSURE( state.converged );
+	ENSURE( worst < 1e-3f );
+
+	lpSystemFree( &fine );
+	lpSystemFree( &fresh );
+	lpSystemFree( &reduced );
+	lpPartitionFree( &part );
+	return 0;
+}
+
+// The reduced assembly is exactly P^T K P (on a random system and partition), and with every node its own group it
+// is the fine system bit for bit
+static int TestReducedAssembly( void )
+{
+	enum
+	{
+		count = 40,
+		edgeCount = 120
+	};
+	lpRandom rng;
+	lpRandom_Seed( &rng, 7, 3 );
+	lpStressSystem fine = { 0 };
+	b3Vec3 nodeRef[count];
+	for ( int i = 0; i < count; ++i )
+	{
+		lpArray_Push( fine.nodes, i );
+		nodeRef[i] = (b3Vec3){ lpRandom_Range( &rng, -3.0f, 3.0f ), lpRandom_Range( &rng, 0.0f, 6.0f ), lpRandom_Range( &rng, -3.0f, 3.0f ) };
+	}
+	for ( int k = 0; k < edgeCount; ++k )
+	{
+		lpStressEdge e = { 0 };
+		e.a = k < 6 ? -1 : (int)( lpRandom_Next( &rng ) % count );
+		do
+		{
+			e.b = (int)( lpRandom_Next( &rng ) % count );
+		}
+		while ( e.b == e.a );
+		b3Vec3 pa = e.a >= 0 ? nodeRef[e.a] : (b3Vec3){ nodeRef[e.b].x, -0.5f, nodeRef[e.b].z };
+		b3Vec3 contact = b3Lerp( pa, nodeRef[e.b], lpRandom_Range( &rng, 0.3f, 0.7f ) );
+		e.bond = k;
+		e.ra = b3Sub( contact, pa );
+		e.rb = b3Sub( contact, nodeRef[e.b] );
+		e.n = b3Normalize( b3Sub( nodeRef[e.b], pa ) );
+		lpContactBasis( e.n, &e.t1, &e.t2 );
+		e.kn = lpRandom_Range( &rng, 0.2f, 2.0f );
+		e.ks = 0.4f * e.kn;
+		e.kb1 = lpRandom_Range( &rng, 0.02f, 0.2f );
+		e.kb2 = lpRandom_Range( &rng, 0.02f, 0.2f );
+		e.kt = 0.4f * ( e.kb1 + e.kb2 );
+		lpArray_Push( fine.edges, e );
+	}
+	fine.forceScale = 1.0f;
+	lpSystemResize( &fine );
+	lpSystemFactor( &fine );
+	lpSystemIncidence( &fine );
+
+	// Every node its own group: the same edges and factored blocks, bit for bit
+	lpPartition part = { 0 };
+	for ( int i = 0; i < count; ++i )
+	{
+		lpArray_Push( part.group, i );
+		lpArray_Push( part.ref, nodeRef[i] );
+		lpArray_Push( part.members, 1 );
+	}
+	part.groupCount = count;
+	lpStressSystem reduced = { 0 };
+	lpSystemReduce( &fine, nodeRef, &part, &reduced );
+	ENSURE( reduced.edges.count == fine.edges.count );
+	ENSURE( memcmp( reduced.edges.data, fine.edges.data, sizeof( lpStressEdge ) * (size_t)fine.edges.count ) == 0 );
+	ENSURE( memcmp( reduced.blocks.data, fine.blocks.data, sizeof( lpBlock6 ) * (size_t)count ) == 0 );
+
+	// Random groups (a third of the nodes on their own), random reduced motions: K_r y == P^T K (P y)
+	part.group.count = 0;
+	part.ref.count = 0;
+	part.members.count = 0;
+	part.groupCount = 0;
+	int groupOf[count];
+	for ( int i = 0; i < count; ++i )
+	{
+		groupOf[i] = i % 3 == 0 ? -1 : (int)( lpRandom_Next( &rng ) % 6 );
+	}
+	int clusterGroup[6] = { -1, -1, -1, -1, -1, -1 };
+	for ( int i = 0; i < count; ++i )
+	{
+		int g = groupOf[i] < 0 ? -1 : clusterGroup[groupOf[i]];
+		if ( g < 0 )
+		{
+			g = part.groupCount++;
+			lpArray_Push( part.ref, b3Vec3_zero );
+			lpArray_Push( part.members, 0 );
+			if ( groupOf[i] >= 0 )
+			{
+				clusterGroup[groupOf[i]] = g;
+			}
+		}
+		lpArray_Push( part.group, g );
+		part.members.data[g] += 1;
+		part.ref.data[g] = b3Add( part.ref.data[g], nodeRef[i] );
+	}
+	for ( int g = 0; g < part.groupCount; ++g )
+	{
+		part.ref.data[g] = b3MulSV( 1.0f / (float)part.members.data[g], part.ref.data[g] );
+	}
+	lpSystemReduce( &fine, nodeRef, &part, &reduced );
+	int m = part.groupCount;
+	lpVec6 y[count], kry[count], py[count], kpy[count], ptkpy[count];
+	for ( int g = 0; g < m; ++g )
+	{
+		y[g].f = (b3Vec3){ lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ) };
+		y[g].t = (b3Vec3){ lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ) };
+	}
+	lpSystemApply( &reduced, y, kry );
+	memset( py, 0, sizeof( py ) );
+	lpPartitionProlong( &part, nodeRef, y, count, py );
+	lpSystemApply( &fine, py, kpy );
+	lpPartitionRestrict( &part, nodeRef, kpy, count, ptkpy );
+	float worst = 0.0f, largest = 0.0f;
+	for ( int g = 0; g < m; ++g )
+	{
+		worst = b3MaxFloat( worst, b3Length( b3Sub( kry[g].f, ptkpy[g].f ) ) + b3Length( b3Sub( kry[g].t, ptkpy[g].t ) ) );
+		largest = b3MaxFloat( largest, b3Length( ptkpy[g].f ) + b3Length( ptkpy[g].t ) );
+	}
+	printf( "  %d nodes in %d groups, %d of %d edges left: |K_r y - P^T K P y| %.2e of %.2e\n", count, m, reduced.edges.count,
+			fine.edges.count, (double)worst, (double)largest );
+	ENSURE( m < count && reduced.edges.count < fine.edges.count );
+	ENSURE( worst <= 1e-5f * largest );
+
+	lpSystemFree( &fine );
+	lpSystemFree( &reduced );
+	lpPartitionFree( &part );
+	return 0;
+}
+
+// The keep's back half moves as rigid clusters, one per course
+static void ClusterBackHalf( lpWorld* w, int keep )
+{
+	lpBody* b = w->bodies.data + keep;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		lpPiece* p = w->pieces.data + b->pieces.data[k];
+		if ( p->anchored == false && p->shape->centroid.z < 0.0f )
+		{
+			p->cluster = 1 + (int)( p->shape->centroid.y / 0.6f );
+		}
+	}
+	b->clusterStamp += 1;
+}
+
+// The breach solved as a correction on the keep with its back half clustered: it is judged much sooner than the fine
+// solve, and what breaks stays close to what the fine solve breaks
+static int TestClusteredBreach( void )
+{
+	lpWorldDef def = lpDefaultWorldDef();
+	KeepRun fine = KeepDamageDef( def, lp_breachLo, lp_breachHi, NULL, 600, NULL );
+	KeepRun clustered = KeepDamageDef( def, lp_breachLo, lp_breachHi, NULL, 600, ClusterBackHalf );
+	PrintKeepRun( "breach, fine", fine, 600 );
+	PrintKeepRun( "breach, back half clustered", clustered, 600 );
+	ENSURE( fine.valid && clustered.valid );
+	ENSURE( clustered.decided > 0 && clustered.decided < fine.decided );
+	ENSURE( clustered.after > 0.95f * clustered.before );
+	return 0;
+}
+
 int StressTest( void )
 {
+	RUN_TEST( TestSolveSystem );
+	RUN_TEST( TestReducedAssembly );
 	RUN_TEST( TestStructuresStand );
 	RUN_TEST( TestScenesSettle );
 	RUN_TEST( TestCantileverRoot );
@@ -631,5 +967,6 @@ int StressTest( void )
 	RUN_TEST( TestKeepBreach );
 	RUN_TEST( TestKeepHole );
 	RUN_TEST( TestKeepDeterminism );
+	RUN_TEST( TestClusteredBreach );
 	return 0;
 }

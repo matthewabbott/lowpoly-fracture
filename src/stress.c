@@ -133,22 +133,159 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 }
 
 // Nodes and edges of a structure's system, counted the way lpStressBuild lays them out, so its budget is known before
-// anything is built
-static void lpStressCount( const lpWorld* w, const lpBody* body, int* nodes, int* edges )
+// anything is built; and the groups and edges of its reduced system (fewer groups than nodes: parts of it move as
+// rigid clusters)
+static void lpStressCount( lpWorld* w, const lpBody* body, int* nodes, int* edges, int* groups, int* reducedEdges )
 {
 	*nodes = 0;
 	*edges = 0;
+	*groups = 0;
+	*reducedEdges = 0;
+	int clusters = 0;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		int c = w->pieces.data[body->pieces.data[i]].cluster;
+		clusters = c > clusters ? c : clusters;
+	}
+	lpArray_Reserve( w->scratchClusters, clusters + 1 );
+	memset( w->scratchClusters.data, 0, sizeof( int ) * (size_t)( clusters + 1 ) );
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
 		int pi = body->pieces.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		*nodes += p->anchored ? 0 : 1;
+		if ( p->anchored == false )
+		{
+			*nodes += 1;
+			*groups += p->cluster == 0 || w->scratchClusters.data[p->cluster] == 0 ? 1 : 0;
+			w->scratchClusters.data[p->cluster] = 1;
+		}
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
-			*edges += bond->a == pi && ( p->anchored == false || w->pieces.data[bond->b].anchored == false ) ? 1 : 0;
+			const lpPiece* other = w->pieces.data + bond->b;
+			if ( bond->a == pi && ( p->anchored == false || other->anchored == false ) )
+			{
+				*edges += 1;
+				*reducedEdges += p->cluster != 0 && p->cluster == other->cluster ? 0 : 1;
+			}
 		}
 	}
+}
+
+// The reduced system of a structure moving partly as rigid clusters, and its right-hand side P^T (f - K xOld) from one
+// pass over the fine edges: what the last solution leaves unbalanced under the new loads and bonds. The groups are a
+// node of its own for each unclustered piece and one per cluster, in node order, its reference point at the
+// cluster's centre of mass. Runs inside the structure's parallel job.
+static void lpStressBuildReduced( lpWorld* w, lpStressJob* job )
+{
+	lpBody* body = w->bodies.data + job->body;
+	lpStressReduced* red = body->reduced;
+	lpStressSystem* s = job->system;
+	lpPartition* part = &red->partition;
+	int n = s->nodes.count;
+
+	int clusters = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		int c = w->pieces.data[s->nodes.data[i]].cluster;
+		clusters = c > clusters ? c : clusters;
+	}
+	lpArray_Reserve( job->clusterGroup, clusters + 1 );
+	for ( int c = 0; c <= clusters; ++c )
+	{
+		job->clusterGroup.data[c] = -1;
+	}
+	lpArray_Reserve( part->group, n );
+	part->group.count = n;
+	lpArray_Reserve( red->nodeRef, n );
+	red->nodeRef.count = n;
+	part->groupCount = 0;
+	part->ref.count = 0;
+	part->members.count = 0;
+	job->groupMass.count = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		const lpPiece* p = w->pieces.data + s->nodes.data[i];
+		red->nodeRef.data[i] = p->shape->centroid;
+		int g = p->cluster > 0 ? job->clusterGroup.data[p->cluster] : -1;
+		if ( g < 0 )
+		{
+			g = part->groupCount++;
+			lpArray_Push( part->ref, b3Vec3_zero );
+			lpArray_Push( part->members, 0 );
+			lpArray_Push( job->groupMass, 0.0f );
+			if ( p->cluster > 0 )
+			{
+				job->clusterGroup.data[p->cluster] = g;
+			}
+		}
+		part->group.data[i] = g;
+		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
+		part->members.data[g] += 1;
+		job->groupMass.data[g] += mass;
+		part->ref.data[g] = b3MulAdd( part->ref.data[g], mass, p->shape->centroid );
+	}
+	for ( int g = 0; g < part->groupCount; ++g )
+	{
+		if ( part->members.data[g] > 1 )
+		{
+			part->ref.data[g] = b3MulSV( 1.0f / job->groupMass.data[g], part->ref.data[g] );
+		}
+	}
+	for ( int i = 0; i < n; ++i )
+	{
+		int g = part->group.data[i];
+		if ( part->members.data[g] == 1 )
+		{
+			part->ref.data[g] = red->nodeRef.data[i]; // a node of its own keeps its reference exactly
+		}
+	}
+
+	// The last solution's residual under the new loads and bonds (x holds it; z is free in this form)
+	lpVec6* x = s->vectors.data;
+	lpVec6* f = x + n;
+	lpVec6* r = x + 2 * n;
+	lpVec6* q = x + 5 * n;
+	lpSystemApply( s, x, q );
+	double load2 = 0.0;
+	for ( int i = 0; i < n; ++i )
+	{
+		r[i].f = b3Sub( f[i].f, q[i].f );
+		r[i].t = b3Sub( f[i].t, q[i].t );
+		load2 += (double)b3Dot( f[i].f, f[i].f ) + (double)b3Dot( f[i].t, f[i].t );
+	}
+
+	lpStressSystem* rs = &red->system;
+	lpSystemReduce( s, red->nodeRef.data, part, rs );
+	int m = rs->nodes.count;
+	lpVec6* y = rs->vectors.data;
+	for ( int g = 0; g < m; ++g )
+	{
+		y[g] = lp_vec6Zero;
+	}
+	lpPartitionRestrict( part, red->nodeRef.data, r, n, y + m );
+	rs->loadNorm2 = load2; // tolerances are relative to the whole load, not to the correction
+
+	// Each group balances to the tolerance of its members together
+	lpArray_Reserve( rs->nodeScale, m );
+	rs->nodeScale.count = m;
+	lpArray_Reserve( rs->nodeArm, m );
+	rs->nodeArm.count = m;
+	for ( int g = 0; g < m; ++g )
+	{
+		rs->nodeScale.data[g] = 0.0f;
+		rs->nodeArm.data[g] = 0.0f;
+	}
+	for ( int i = 0; i < n; ++i )
+	{
+		int g = part->group.data[i];
+		float arm = b3Distance( red->nodeRef.data[i], part->ref.data[g] ) + s->nodeArm.data[i];
+		rs->nodeScale.data[g] += s->nodeScale.data[i];
+		rs->nodeArm.data[g] = b3MaxFloat( rs->nodeArm.data[g], arm );
+	}
+	red->topology = body->topology;
+	red->clusterStamp = body->clusterStamp;
+	red->built = true;
 }
 
 // Compact system for one structure: non-anchored pieces become nodes, bonds become edges; loads, preconditioner and
@@ -222,24 +359,32 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		}
 		LP_ASSERT( s->edges.count == job->edgeCount );
 		lpSystemResize( s );
-		lpSystemFactor( s );
+		if ( job->clustered == false )
+		{
+			lpSystemFactor( s ); // a correction is solved on the reduced system's blocks
+		}
+		lpSystemIncidence( s );
 		s->topology = body->topology;
 		s->built = true;
 	}
 
-	// Vectors: x (solution) and f (load); r, z, p and q are the solver's
+	// Vectors: x (solution) and f (load); r, z, p and q are the solver's. A correction keeps its x, the solution it
+	// corrects, until it is judged.
 	float scale = s->forceScale;
 	lpVec6* x = s->vectors.data;
 	lpVec6* f = x + n;
-	for ( int i = 0; i < n; ++i )
+	if ( job->clustered == false || job->cached == false )
 	{
-		const lpPiece* p = w->pieces.data + s->nodes.data[i];
-		x[i].f = b3MulSV( 1.0f / scale, p->stressX.f );
-		x[i].t = b3MulSV( 1.0f / scale, p->stressX.t );
+		for ( int i = 0; i < n; ++i )
+		{
+			const lpPiece* p = w->pieces.data + s->nodes.data[i];
+			x[i].f = b3MulSV( 1.0f / scale, p->stressX.f );
+			x[i].t = b3MulSV( 1.0f / scale, p->stressX.t );
+		}
 	}
 	if ( job->cached )
 	{
-		return; // loads, r and p are in the system as the last step left them
+		return; // loads, r and p are in the system (or the reduced one) as the last step left them
 	}
 	for ( int i = 0; i < n; ++i )
 	{
@@ -264,6 +409,11 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		s->nodeArm.data[i] = cbrtf( w->pieces.data[s->nodes.data[i]].shape->volume );
 	}
 	lpSystemNodeScales( s, 1e-3f );
+	if ( job->clustered )
+	{
+		lpStressBuildReduced( w, job );
+		return;
+	}
 
 	// A solve in progress continues from where the last step left it
 	if ( job->continuing )
@@ -408,10 +558,9 @@ static float lpBondUtilization( const lpWorld* w, const lpBond* bond, b3Vec3 t1,
 
 // Phase 2, converged: every bond's utilization from the solution (into the system's rho) and the force and moment it
 // carries (onto the bond), and the peak
-static void lpStressUtilizations( lpWorld* w, lpStressJob* job )
+static void lpStressUtilizations( lpWorld* w, lpStressJob* job, const lpVec6* x )
 {
 	lpStressSystem* s = job->system;
-	const lpVec6* x = s->vectors.data;
 	lpArray_Reserve( s->rho, s->edges.count );
 	s->rho.count = s->edges.count;
 	float peak = 0.0f;
@@ -470,10 +619,9 @@ static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* stra
 // Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. Phase 2, converged: from
 // the solved bond forces and the piece's own weight, find the bending moment along its axis at a few cuts between its
 // supports, and keep the worst (into the job). Phase 3 (lpStressSnap) strains the overloaded ones.
-static void lpStressSlender( lpWorld* w, lpStressJob* job )
+static void lpStressSlender( lpWorld* w, lpStressJob* job, const lpVec6* x )
 {
 	const lpStressSystem* s = job->system;
-	const lpVec6* x = s->vectors.data;
 	b3Vec3 g = job->gravity;
 	float forceScale = s->forceScale;
 	for ( int i = 0; i < s->nodes.count; ++i )
@@ -614,32 +762,44 @@ static int lpStressSnap( lpWorld* w, const lpStressJob* job, int* strained, int*
 }
 
 // Phase 2, one structure: build, solve, and keep the solution (in newtons of load) and the solve's state on the
-// pieces; converged, also the utilizations and the slender pieces' worst sections
+// pieces; converged, also the utilizations and the slender pieces' worst sections. A correction solved on the
+// reduced system moves each member with its group, on top of the solution it corrects.
 static void lpRunStressJob( int index, void* context )
 {
 	lpWorld* w = context;
 	lpStressJob* job = w->stressJobs + index;
 	lpStressBuild( w, job );
-	lpSystemSolve( job->system, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
-	const lpStressSystem* s = job->system;
+	lpStressSystem* s = job->system;
+	lpStressReduced* red = job->clustered ? w->bodies.data[job->body].reduced : NULL;
+	lpSystemSolve( red != NULL ? &red->system : s, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
 	int n = s->nodes.count;
-	const lpVec6* x = s->vectors.data;
-	const lpVec6* r = x + 2 * n;
-	const lpVec6* p = x + 4 * n;
+	lpVec6* x = s->vectors.data;
+	if ( red != NULL )
+	{
+		lpVec6* moved = x + 3 * n; // z: free in the delta form
+		memcpy( moved, x, sizeof( lpVec6 ) * (size_t)n );
+		lpPartitionProlong( &red->partition, red->nodeRef.data, red->system.vectors.data, n, moved );
+		x = moved;
+	}
+	const lpVec6* r = s->vectors.data + 2 * n;
+	const lpVec6* p = s->vectors.data + 4 * n;
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* piece = w->pieces.data + s->nodes.data[i];
 		piece->stressX.f = b3MulSV( s->forceScale, x[i].f );
 		piece->stressX.t = b3MulSV( s->forceScale, x[i].t );
-		piece->stressR = r[i];
-		piece->stressP = p[i];
+		if ( red == NULL )
+		{
+			piece->stressR = r[i];
+			piece->stressP = p[i];
+		}
 	}
 	job->peak = 0.0f;
 	job->slender.count = 0;
 	if ( job->solve.converged )
 	{
-		lpStressUtilizations( w, job );
-		lpStressSlender( w, job );
+		lpStressUtilizations( w, job, x );
+		lpStressSlender( w, job, x );
 	}
 }
 
@@ -663,7 +823,8 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	const lpStressSystem* s = job->system;
 	int n = s->nodes.count;
 	int edges = s->edges.count;
-	w->stressWork += ( job->solve.iterations + ( job->cached ? 0 : 2 ) ) * edges; // a build and a first residual
+	int solved = job->clustered ? body->reduced->system.edges.count : edges;
+	w->stressWork += job->solve.iterations * solved + ( job->cached ? 0 : 2 * edges ); // a build and a first residual
 	w->stats.stressIterations += job->solve.iterations;
 	w->stats.stressSolves += 1;
 	body->solving = job->solve.converged == false;
@@ -775,8 +936,8 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			continue;
 		}
 
-		int nodes, edges;
-		lpStressCount( w, body, &nodes, &edges );
+		int nodes, edges, groups, reducedEdges;
+		lpStressCount( w, body, &nodes, &edges, &groups, &reducedEdges );
 		if ( nodes == 0 || edges == 0 )
 		{
 			body->solving = false;
@@ -789,17 +950,25 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		// A solve in progress continues if the structure and its loads have not changed since the last step. It still has
 		// its system: no build, and it is charged only its iterations (a piece that left without a bond to break
 		// changes the counts, not the topology).
+		// Parts moving as rigid clusters: it is solved on its reduced system, for a correction to its last solution
+		bool clustered = groups < nodes && reducedEdges > 0;
 		const lpStressSystem* system = body->system;
+		const lpStressReduced* red = body->reduced;
 		bool continuing = body->solving && body->reloadLoads == false && body->solveTopology == body->topology &&
 						  body->solveNodes == nodes && body->solveEdges == edges;
 		bool cached = continuing && system != NULL && system->built && system->topology == body->topology &&
-					  system->nodes.count == nodes && system->edges.count == edges;
-		int overhead = cached ? 0 : 2; // a build and the first residual
+					  system->nodes.count == nodes && system->edges.count == edges &&
+					  ( clustered ? red != NULL && red->built && red->topology == body->topology &&
+									   red->clusterStamp == body->clusterStamp
+								  : system->factored );
+		continuing = continuing && ( cached || clustered == false ); // a correction continues only on its reduced system
+		int solvedEdges = clustered ? reducedEdges : edges;
+		int overhead = cached ? 0 : 2 * edges; // a build and the first residual
 
 		// Its share of the budget, reserved whole before anything is built. The first structure of a step always gets an
 		// iteration, so even one bigger than the budget makes progress. One that does not fit waits, having cost
 		// nothing, and goes first next step. Settling has no budget.
-		int room = b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) / edges - overhead;
+		int room = ( b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) - overhead ) / solvedEdges;
 		int budget = b3MinInt( room, w->def.maxStressIterations );
 		budget = budget < 1 && reserved == 0 ? 1 : budget;
 		budget = settle ? w->def.maxSettleIterations : budget;
@@ -830,11 +999,16 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		}
 		body->creaking = false;
 
-		reserved += ( budget + overhead ) * edges;
+		reserved += budget * solvedEdges + overhead;
 		if ( body->system == NULL )
 		{
 			body->system = lpAlloc( sizeof( lpStressSystem ) );
 			memset( body->system, 0, sizeof( lpStressSystem ) );
+		}
+		if ( clustered && body->reduced == NULL )
+		{
+			body->reduced = lpAlloc( sizeof( lpStressReduced ) );
+			memset( body->reduced, 0, sizeof( lpStressReduced ) );
 		}
 		lpStressJob* job = lpAddStressJob( w );
 		job->body = bodyIndex;
@@ -846,6 +1020,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		job->budget = budget;
 		job->continuing = continuing;
 		job->cached = cached;
+		job->clustered = clustered;
 		// Patience: after many steps without a judgement (restarts count too), the tolerances relax so it is judged
 		bool patient = body->stressSteps >= w->def.stressPatience;
 		job->tolerance = patient ? 1e-2 : 1e-3;
@@ -927,5 +1102,13 @@ void lpFreeStressSystem( lpBody* b )
 		lpSystemFree( b->system );
 		lpFree( b->system );
 		b->system = NULL;
+	}
+	if ( b->reduced != NULL )
+	{
+		lpPartitionFree( &b->reduced->partition );
+		lpArray_Free( b->reduced->nodeRef );
+		lpSystemFree( &b->reduced->system );
+		lpFree( b->reduced );
+		b->reduced = NULL;
 	}
 }

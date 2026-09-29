@@ -293,3 +293,28 @@ restarts its solve and at one iteration per step no tolerance is reachable in be
 first judgement after a cannon hole honest: 99 steps instead of 29 (the 29 was the global norm hiding the residual
 on the new cells). Steps 3 to 5 give it more iterations per step (reduced systems) and a guaranteed judgement
 (pressure allocation and audits).
+
+## 2026-09-28 stress at scale, step 3: the reduced assembly and the delta form
+
+Behaviour-preserving for everything that does not cluster, which is everything in play today: every rung's
+simulation and solver hashes are unchanged (`-StrictSolver`).
+- A partition of a structure's nodes into rigid groups (`lpPiece.cluster`).
+- Its reduced system `PᵀKP`: edges between groups keep their stiffness and axes, with arms moved to the groups'
+  centres of mass; edges inside a group are dropped.
+- The delta form: the right-hand side is `Pᵀ(f − K x_old)`, from one fine pass; each member moves by `P y` on top of
+  x_old.
+
+The tests, world-free:
+- `TestReducedAssembly`: 40 random nodes in 20 groups; `|K_r y − PᵀKPy|` is 9e-6 of 68. With every node its own
+  group, the reduced system equals the fine one bit for bit.
+- `TestSolveSystem`: a cantilever chain matches statics, clustered or not. After a load change near its root, the
+  delta form with its tip clustered is exact on every edge (2e-4, the tolerance) in 12 iterations, against 33 for a
+  fresh solve.
+
+On the keep, a hand-made partition in `TestClusteredBreach` (the back half, one cluster per course) decides the
+ground-floor breach in 67 steps instead of 153, and the same 12 joints break. It has not settled 600 steps later.
+Only half the keep is clustered, so the reduced system still has about 3000 edges (a few iterations per step), and
+each slender plank that snaps restarts the solve. Found on the way, for step 4:
+- A structure straining only in slender pieces is re-solved every step instead of creaking from stored values.
+- A fresh build of the keep (two fine passes) costs more than the per-structure cap, so its first step gets one
+  iteration.

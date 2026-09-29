@@ -133,6 +133,14 @@ tiers instead of popping them.
   structure to convergence with no per-step budget (up to `maxSettleIterations`), judges it, and repeats a few rounds
   while joints break, so a scene's first step solves nothing. Afterwards only topology changes (impacts, breaks),
   changed loads and weakened joints queue a check.
+- **Rigid clusters and the delta form** (the load-bearing skeleton, milestone 4): pieces of a structure can move as
+  rigid clusters (`lpPiece.cluster`). Its reduced system (`lpSystemReduce`) keeps each edge between two groups with
+  its arms moved to the groups' centres of mass and drops the edges inside one: exactly `PᵀKP`, so the same kernels,
+  preconditioner and conjugate gradient solve it. It is solved for the **correction** to the last solution, not the
+  whole state: one pass over the fine edges gives `Pᵀ(f − K x_old)`, the reduced solve finds y from zero, and each
+  member moves by its group's motion on top of x_old. Bonds inside a cluster keep their last forces, and the
+  clusters bias only the redistribution. Forces are evaluated on the fine edges. With no clusters a structure is
+  solved as before (hashes unchanged); `TestReducedAssembly` and `TestSolveSystem` check the algebra.
 - `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
   refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics
