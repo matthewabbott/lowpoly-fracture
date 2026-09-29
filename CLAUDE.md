@@ -5,7 +5,8 @@ then performance, then everything else. Determinism is mandatory (docs/determini
 
 ## Read this, skip that
 
-First-party code is about 90k tokens and fits in one context. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
+First-party code is about 240k tokens (the core, `src/` and `lpf.h`, about 130k; the tests 60k): read what a task
+needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
 `app/sandbox/shaders/generated/` are vendored or generated: never read them whole. The Box3D API is in
 `extern/box3d/include/box3d/*.h`; our patches and known Box3D issues are in `extern/box3d/PATCHES.md`.
 
@@ -13,7 +14,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 
 | path | what it is |
 |---|---|
-| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, impacts, pulls, blows, stats, queries |
+| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, blows, stats, queries |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64` |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
@@ -25,18 +26,20 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
-| `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply) |
+| `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
-| `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change |
+| `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, reaching and touching, state, hash |
+| `src/gait.c` | the gait (`lpWalkRig`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
+| `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track), the car kit (`lpAddCar`), a crane (`lpAddCrane`), scripted bombardment and drivers (`lpSceneDrive`); `lpBuildScene` settles their structures |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`, `lpRigGrab`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol); `lpBuildScene` settles their structures |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`), `lpf_test stress TestKeepBreach` one test |
-| `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving (`drive.cpp`: keys to recorded controls, chase camera), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test |
+| `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
-| `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`) |
+| `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`) |
 | `docs/` | feasibility, architecture, determinism rules, materials catalog, roadmap, perf log |
 
 ## Commands (PowerShell; run from the repo root)

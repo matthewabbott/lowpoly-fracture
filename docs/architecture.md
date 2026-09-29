@@ -2,7 +2,8 @@
 
 ```
 app/sandbox  (C++20, sokol D3D11 + Dear ImGui)   tools, camera, record/replay, renderer, screenshots
-scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins, yard, keep; scripted bombardment
+scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins, yard, keep, track, mech yard;
+                    the car, crane and hexapod kits; scripted bombardment and drivers
 src/         (C17)  lpf: the destruction core               include/lpf/lpf.h is the whole public API
 extern/box3d (C17)  physics, pinned (extern/box3d/PATCHES.md)
 ```
@@ -90,8 +91,10 @@ tiers instead of popping them.
   refractures above its material's `fractureEnergy`; a bond loses that much health and breaks at zero. Strengths
   are calibrated so a rifle chips brick and a grenade opens it (see the comment on the material table).
 - Joints: every part meets its neighbours with a joint (`lpJointId`: mortar for masonry and plaster, nails for wood,
-  dry, solid). A bond between parts takes the weaker joint; bonds between the cells of one broken piece are solid but
-  start with the damage the impact did at their location, so cracks near a hit barely hold.
+  bolts for sheet metal, dry, mounts, weld, solid). A bond between parts takes the weaker joint; bonds between the cells
+  of one broken piece are solid but start with the damage the impact did at their location, so cracks near a hit
+  barely hold. Sheet metal cannot crack that way (a fracture ejects everything within 1.5 fragment sizes of the hit):
+  a mech's femur is two halves welded together instead, and a blow under the metal's fracture energy cracks the weld.
 - Identity: every piece keeps the object's `userId`, its part index and the part's system (`lpPartSystem`: a tag the
   core never reads, the channels it carries, sources and needs, and its share of its object's sources by volume).
   Fracture cells inherit all of it (the share split by volume); splits move pieces as they are.
@@ -107,6 +110,12 @@ tiers instead of popping them.
   pass. It is recomputed once a step, after `lpSyncLinks`, and only when a carrier's connections changed (a bond or
   link between carriers made or broken, a carrier made or freed); only carriers are walked. Wheels drive as well as
   the worst of their `driveNeeds` is fed at their mount and steer at that rate for `steerNeeds` (unfed, they hold).
+- Pools (`lpPartSystem.pool`, `seal`): a source part's fluid (hydraulics, fuel, blood), shared by every piece made from
+  it (`w->pools`; cells kept on the body inherit it, chips thrown clear do not). Each supply update measures the
+  carrier volume the pool's lowest channel reaches; when that drops, a leak opens that drains the share lost per second
+  and closes over the seal time (0: it bleeds on). Pools drain before the supply update each step (`lpDrainPools`) and
+  ask for one only when a level crosses a sixteenth or runs dry. A source feeds fully down to 30% of its pool, then in
+  proportion (`lpSourceFeed`). A fracture that keeps every cell loses nothing.
 - Crashes: a collision's energy is reduced by the more crushable material's `crush` (sheet metal 0.7, rubber 0.6:
   crumple zones soak up most of it until dents come), and a crushable hit is centred on the mean of the contact's
   manifold points instead of its first corner. Materials without crush hit as before.
@@ -198,8 +207,14 @@ tiers instead of popping them.
 
 ### Stress on moving bodies (inertia relief)
 
-- An object made with `solveStress` (the car kit) keeps a stress solve while it moves. It is checked only when asked:
-  a hard hit (at most every 10 steps), a wheel bottoming out hard, a link's load changing by a quarter.
+- An object made with `solveStress` (the car kit; the hexapod's torso and leg segments) keeps a stress solve while it
+  moves. It is checked only when asked:
+  - a hard hit (at most every 10 steps). It jolts the moving bodies its links join to it too (a foot landing loads the
+    femur through the knee): they are checked with it, and for 10 steps their links' loads are checked as they build,
+    so a landing is judged at its peak, a step or two after the contact;
+  - a wheel bottoming out hard;
+  - a link's load changing by a quarter, at most every 30 steps per body whatever pulls on it (a walker's torso holds
+    six legs whose loads swing every stride); a link held back keeps asking.
 - Its solve is always exact (no clusters, no audits) and pinned at one piece: the one nearest where it was struck in
   the last step (the crash's force enters there; the struck piece itself may be broken by then), else the one nearest
   its centre of mass. Each piece carries its weight and its sampled loads (contacts, links, wheels) less what it takes
@@ -244,6 +259,11 @@ tiers instead of popping them.
   changed (and after a rebuild); a changed target or cap wakes the joint's bodies. The motor's own torque never counts
   against the link's `maxTorque`. A local patch fixes Box3D's revolute torque getter, which counted the axial torque
   twice (`extern/box3d/PATCHES.md`).
+- A hinge servo adds a feedforward speed (`lpLink.feed`, set by rigs from the pose a step ahead) to its gain times the
+  error. Jam (`lpMotorDef.jam`, opt-in): damage at a joint slows its top speed by jam times the damage and makes it
+  stick, holding unfed with the larger of `holdTorque` and jam times `maxTorque`; a piece at its end breaking up knocks
+  a quarter off its health. `lpLinkDef.tearRatio` sets when a rebuilt link tears off a chip (0 keeps 2%; the mech's
+  leg hinges tear off a stub of a segment, 10%).
 
 ## Vehicles (`wheel.c`)
 
@@ -277,6 +297,56 @@ tiers instead of popping them.
   controls change; scripted drivers (`lpSceneDrive`, the track's lap drivers) set controls from simulation state
   every tick, and leave alone the vehicle a drive event last steered.
 
+## Rigs (`rig.c`, `gait.c`)
+
+- A rig makes no physics: it steers the servos of motorised hinges that already exist. `lpCreateRig` takes limbs, each
+  an ordered chain of 1 to 3 hinge links from the torso outward and a foot point. It never names a body: the torso is
+  the body holding the most root links (the lowest index on a tie). Controls (`lpWorld_SetRigControl`: forward, strafe,
+  turn, crouch) and limb targets (`lpWorld_SetLimbTarget`) are persistent, hashed state; the state and each limb's
+  capability come out (`lpWorld_GetRigState`, `lpWorld_GetLimbState`). `lpStepRigs` runs after the supply update and
+  before `lpDriveMotors`, and costs about 12 us a rig awake, 2 asleep.
+- Kinematics: a model built from each link's end frames and its measured angle (its sign from which end is proximal),
+  the foot in the last segment's body frame. A piece's body frame never changes, so the model survives splits and joint
+  rebuilds. IK is damped least squares on the chain as it is (6 iterations, damping 0.05, warm-started, limits less
+  0.05 rad, b3 trig only), so stumps and strikes need nothing special. Box3D holds a joint only as stiffly as the lighter
+  body's inertia allows: the kit's leg segments pad theirs (`lpObjectDef.inertiaRadius`), or the model is off by a
+  quarter of a metre walking.
+- Capability per limb, each step: attached, the intact chain, its strength (the weakest link's cap over its maximum,
+  holds excluded), its foot (the def's, or after a break the far end of the last segment left, found again only when
+  that segment's pieces change: a stump walks as a peg), reach, depth, and able (it can lift its foot, strength 0.2 or
+  more, depth 0.6 of the stand height or more).
+- The desired pose (`lpWalkRig`): the torso's pose moved one step by the controls, level, at most 5 cm ahead and 0.3 m
+  behind, its heading at most 0.3 rad ahead. Its height over the planted feet climbs toward the goal at 0.5 m/s:
+  the crouch, lowered by up to 30% as the weakest able leg weakens, no deeper than the shortest leg reaches, no lower
+  than the belly. Falling (the torso sinking faster than 1 m/s) it follows the torso down, so a dropped mech is not
+  flung back up. The servos get the IK of every foot from the desired pose, and as feedforward only the commanded
+  motion (fed the pull toward the torso too, a torso running ahead would push itself on).
+- A free gait: a foot is due when its drift along the motion passes 0.6 of the half-step (0.2 when told to stand
+  still), or when it is overstretched any way. It lifts if its neighbours around the able ring are planted, if an even
+  number of able legs keeps to every other one (a tripod on six), and if the centre of mass stays inside the other
+  planted feet by the margin now and where the swing ends; the first that has to wait leans the body toward the
+  others. That makes a tripod on six legs, a ripple on five and a wave on four with no replanning. Speeds follow the
+  cadence (a half-step of min(0.7 stride, half the rate times the swing time)), and fewer legs are asked for less (five:
+  half, four: a third).
+- Swing and stance: a swing is aimed again every step from the torso's actual motion; footholds are sphere casts at
+  liftoff and at two thirds (`maxFootCastsPerStep`); the arc is a polynomial. A foot that got where it was set down
+  (3 cm, or 0.3 s) is held there, fixed in the world, eased toward the model's foot over 0.3 s (loaded joints give a
+  centimetre), and held where it is if it slips 0.1 m. Structures underfoot are re-checked like wheels.
+- After 30 calm steps the targets freeze (idle), and a sleeping torso with unchanged controls skips the step.
+- Damage: fewer than four able legs, or stuck (told to move, making under a tenth of it for 1.5 s: one leg left on a
+  side lifts nothing), it drops onto its belly and crawls; legs that cannot stand are tucked up. A weak leg lowers the
+  body, a limp one (unfed) is carried, a cut hydraulic line drains the pool until its valves close.
+- Reaching (`lpWorld_SetLimbTarget`): a limb leaves the gait once the others keep the centre of mass by the margin
+  (crawling, its belly does); until then the body leans. IK drives its foot at the point with a strike feedforward (8/s
+  times each joint's error, capped by its servo), so a weak limb hits softer. It reports the piece its foot touches (a
+  contact of its tip within 0.35 m of the foot, something loose before something fixed), and `lpRigGrab` (scenes)
+  welds the claw to it.
+- The hexapod kit (`lpAddHexapod` in `scenes.c`): an armored torso (frame and belly skid, a reactor feeding power, a
+  hydraulic reservoir with a pool of 100 and valves closing in 3 s, a computer feeding control, a deck), six sheet-metal
+  legs (a hip block, a femur of two welded halves, a tibia with a welded rubber sole), every body `solveStress`; hinges
+  capped at 10, 30 and 30 kN*m, needing hydraulics and control, the femur and knee jamming. It walks at 2.3 m/s on a
+  0.6 stride and 0.35 s swings. The mech yard (`lp_sceneMech`) has a patrol driver (`lpSceneDrive`) and a bench rung.
+
 ## Rendering (`facet.c`, `app/sandbox/renderer.cpp`)
 
 - The core builds flat-shaded triangle meshes per piece (`lpWorld_BuildPieceMesh`): authored faces get their colour
@@ -302,8 +372,9 @@ tiers instead of popping them.
 - `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
 - `lpCreateLink` (weld, hinge, ball, rope) with `lpWorld_GetLinkState` (force, utilization, strain, health) and
   `lpWorld_SetRopeLength` (winches, cranes); `lpObjectDef.gravityScale` and `lpWorld_SetGravityScale`.
-- Motors on hinges and ball joints (`lpMotorDef`, `lpWorld_SetLinkTarget`, `lpWorld_SetLinkTargetRotation`): what the
-  creatures milestone drives limbs with.
+- Motors on hinges and ball joints (`lpMotorDef`, `lpWorld_SetLinkTarget`, `lpWorld_SetLinkTargetRotation`), and rigs
+  on them (`lpCreateRig`, `lpWorld_SetRigControl`, `lpWorld_SetLimbTarget`, the rig and limb states); pools
+  (`lpPartSystem.pool`, `lpWorld_GetPiecePool`).
 - `lpCreateVehicle` with `lpWorld_SetVehicleControl` and the vehicle and wheel states; `lpPartSystem` (tags,
   channels) with `lpWorld_GetPieceSupply` and `lpPieceInfo.supplied`; part detonators; `lpObjectDef.userId` and
   `solveStress`.

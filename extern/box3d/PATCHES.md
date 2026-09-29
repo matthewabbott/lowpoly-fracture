@@ -26,6 +26,10 @@
 - `contact.c:248, 322-330`: contact-event, presolve and rolling-resistance settings are captured when a contact is
   created; toggling them on a shape only affects future contacts.
 - `joint.c:1432`: `b3Joint_GetAngularSeparation` asserts on wheel joints.
+- `joint.c:1379-1398`, `b3Joint_GetAngularSeparation` on a revolute joint: it takes the bodies' relative rotation, not
+  the joint frames', and removes its component about the bodies' z axis as "the hinge angle". A hinge whose axis is not
+  its bodies' z (a mech's knee) reads its own angle as separation, and the limit test measures the twist about the
+  wrong axis. Rigs measure their joints' give against their own model instead.
 - `joint.c:1114`: the wheel joint reaction force is marked "todo probably wrong".
 - `wheel_joint.c`, `b3GetWheelJointForce`: adds `lowerSuspensionLimit` (a length) to impulses, has the wrong sign on
   the upper limit and permutes the axes; `b3GetWheelJointTorque` returns only the spin impulse. Our wheels use no

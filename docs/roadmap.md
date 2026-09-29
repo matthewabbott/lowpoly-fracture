@@ -10,7 +10,7 @@ Order (one at a time):
 3. Breakable links and assemblies (done)
 4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Articulated objects and systems (vehicles first) (done)
-6. Creatures and mechs
+6. Creatures and mechs (done)
 7. Dents (cars and armor)
 8. Profiling and hot paths
 9. Large-map physics zones
@@ -241,7 +241,18 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 7. Bones and landings (done: the kit solves its stress; femurs are welded halves (`lp_jointWeld`) a blast cracks and a
    landing snaps; hard hits jolt the bodies linked to them; the torso is solved twice a second walking; a falling rig
    follows its torso down instead of springing back up).
-8. Wrap-up: docs, the agent map, the memory note.
+8. Wrap-up: docs, the agent map, the memory note (done).
+
+Deferred: cosmetic drips where a carrier link broke.
+
+Open:
+- a hard landing rebounds at up to Box3D's `contactSpeed` (3 m/s), which pushes sunken soles back out of the ground; a
+  lower world setting would change every scene's hashes, so it waits for a reason beyond the mech;
+- the damaged gaits move by about 5% with small changes to the kit (a sole's mass, its shape): their tests keep a
+  margin under what the gait asks (five legs make 70% of the half pace asked);
+- the sandbox's strike aims from the chase camera's fixed view, so a leg strikes the ground ahead of it or what the
+  crosshair is on; aiming belongs to the game;
+- the kit is placeholder art; bipeds, hopping and learned gaits are under "Later" above.
 
 ## 7. Dents (cars and armor)
 
