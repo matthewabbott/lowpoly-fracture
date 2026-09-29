@@ -11,11 +11,13 @@ Order (one at a time):
 4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Articulated objects and systems (vehicles first) (done)
 6. Creatures and mechs (done)
-7. Dents (cars and armor)
-8. Profiling and hot paths
-9. Large-map physics zones
-10. Networking
-11. Art polish
+7. Engine surface and diagnostics
+8. Independent review: simplicity
+9. Dents (cars and armor)
+10. Profiling and a performance review
+11. Large-map physics zones
+12. Networking
+13. Art polish and demo views
 
 ## 1. Chunky fracture + debris tiers
 
@@ -177,7 +179,7 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 
 8. Wrap-up: docs, the agent map, the memory note (done).
 
-Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to milestone 7.
+Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to dents (milestone 9).
 
 Open:
 - car-on-car crashes: Box3D sweeps only against static bodies, so two fast cars could pass through each other; not
@@ -254,25 +256,72 @@ Open:
   crosshair is on; aiming belongs to the game;
 - the kit is placeholder art; bipeds, hopping and learned gaits are under "Later" above.
 
-## 7. Dents (cars and armor)
+## 7. Engine surface and diagnostics
+
+The line between the engine and the games made on it: the core holds mechanisms and data-driven definitions; the kits
+in `scenes/` (the car, the crane, the hexapod) are example content, kept in the repo because the tests and the bench
+need realistic loads and because building them finds the engine's gaps (milestone 6 found four). A short pass where
+game policy leaked into the core:
+- `lpSetJoint`, as `lpSetMaterial` does for materials (the joint table is fixed today);
+- the gait as one replaceable walking policy: `rig.c` keeps the mechanism (the model, IK, capability, balance checks,
+  foothold casts, per-foot targets a game can drive itself), `gait.c` is the statically stable many-legged walker, its
+  tuning in a def instead of constants (the parity groups, the speed asked of five and four legs, crawling);
+- other constants that are game policy move into defs (a pool's leak rate, the strike speed);
+- the docs say what is engine and what is example content.
+
+Diagnostics for agents and tests (numbers, not pictures): queries for bonds (their pieces, position, load, utilization,
+health) and contacts (points and forces), and a sandbox `--dump` of the state at a tick (pieces, bonds, links, rigs)
+as JSON. Debugging milestone 6 ran on traces like these, written by hand each time; the reviewers below verify
+outcomes with them too.
+
+## 8. Independent review: simplicity
+
+The core grew by two large milestones of mechanisms tuned by iteration (special cases pile up: three tick fields decide
+when a moving body's stress is checked). Agent-friendliness comes first, and it depends on how small and plain the code
+is. Other models review it with the current engine as the source of truth:
+0. **An outcome catalogue:** every behaviour we like, each pinned by a test with a tolerance or by a scripted scene with
+   reference screenshots; the gaps found and filled first. The contract is the outcomes, not the bench hashes (a
+   simpler design may change the numerics).
+1. **Reviews:** independent reviewers (Fable, Astra, and the Codex and Kimi reviewers set up here), each given the
+   catalogue and the code, read-only, propose simpler or more concise ways to reach the same outcomes, per subsystem,
+   with the size they expect to save.
+2. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
+   bench does not regress beyond noise. The size of the core (tokens) is logged before and after.
+
+## 9. Dents (cars and armor)
 
 - a cage lattice in object space (about 4×3×6 nodes for a car) is dented by impacts, capped per node
 - render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
 - the hull is rebuilt from the lattice only occasionally (`b3Shape_SetHull` + `ApplyMassFromShapes`)
 - dented armor around a joint narrows its limits
 
-## 8. Profiling and hot paths
+## 10. Profiling and a performance review
 
 Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
-solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run), then the
-hottest paths first. Candidates logged so far:
+solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run) with a frame
+budget each, then the hottest paths first.
+
+Outcomes may change here, as long as the feel holds:
+- **The feel goals, written down** (from our discussions: plausible over causal, fidelity that may drop under load),
+  so a taste reviewer can judge against them.
+- **A survey for the unknown unknowns:** how other destruction engines buy their performance (NVIDIA Blast and its
+  stress solver, Unreal's Chaos Destruction and its cluster hierarchies, Red Faction: Guerrilla's structures,
+  Frostbite's destruction, Teardown's engine posts, Havok, Nebenan), each trick tagged: safe for the deterministic
+  simulation, cosmetic only, or off limits.
+- **The cosmetic layer as a lever:** determinism binds only what feeds back into play. Anything that never does (the
+  smallest debris, dust, far-off mess) may use what the simulation may not: camera distance, time budgets, the GPU, and
+  a different result on each machine. Moving more into it buys room.
+- **Reviews:** independent reviewers propose changes that trade fidelity for speed; before-and-after footage of the same
+  scripts goes to a taste reviewer (an Opus model) against the feel goals; what is kept is logged with its numbers.
+
+Candidates logged so far:
 - the stress system: the cost of an iteration (65 ns per bond: a structure of arrays for the 6-vectors, precomputed
   bond blocks instead of `lpAddBlock` per build), a parallel K·x for the biggest structures (one alone may now spend
   4 ms a step), a two-level preconditioner reusing the rigid clusters as its coarse space, a nested-iteration settle;
 - the creak loop over stored overloads only; budget units calibrated to time;
 - a spinning barrier in the task pool.
 
-## 9. Large-map physics zones
+## 11. Large-map physics zones
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
@@ -286,7 +335,7 @@ hottest paths first. Candidates logged so far:
   `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 10. Networking
+## 12. Networking
 
 Options:
 - Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
@@ -296,11 +345,17 @@ Options:
 
 A two-process lockstep experiment comes first.
 
-## 11. Art polish
+## 13. Art polish and demo views
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public
 demo; deliberately last.
+
+Demo views that make the forces legible, for short videos (the sandbox's L already colours links by load):
+- a stress heat map on the pieces, and the load paths drawn along the bond graph;
+- contact forces as arrows;
+- a rig's support polygon, centre of mass, foot targets and swing arcs;
+- supply and pools flowing, and draining through a cut.
 
 Effects and mess, noted while tuning debris:
 
