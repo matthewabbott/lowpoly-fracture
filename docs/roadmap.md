@@ -11,13 +11,14 @@ Order (one at a time):
 4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Articulated objects and systems (vehicles first) (done)
 6. Creatures and mechs (done)
-7. Engine surface and diagnostics
-8. Independent review: simplicity
-9. Dents (cars and armor)
-10. Profiling and a performance review
-11. Large-map physics zones
-12. Networking
-13. Art polish and demo views
+7. Deep research: destruction engine architecture
+8. Engine surface and diagnostics
+9. Independent review: simplicity
+10. Dents (cars and armor)
+11. Profiling and a performance review
+12. Large-map physics zones
+13. Networking
+14. Art polish and demo views
 
 ## 1. Chunky fracture + debris tiers
 
@@ -179,7 +180,7 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 
 8. Wrap-up: docs, the agent map, the memory note (done).
 
-Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to dents (milestone 9).
+Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to dents (milestone 10).
 
 Open:
 - car-on-car crashes: Box3D sweeps only against static bodies, so two fast cars could pass through each other; not
@@ -256,7 +257,47 @@ Open:
   crosshair is on; aiming belongs to the game;
 - the kit is placeholder art; bipeds, hopping and learned gaits are under "Later" above.
 
-## 7. Engine surface and diagnostics
+## 7. Deep research: destruction engine architecture
+
+Before building more: how others build destruction engines and what they give up for speed, to choose the
+architectural trade-offs worth making now. Each one made early saves reworking later, and performance outranks
+simplicity: a trade that complicates the engine is worth it if it buys bigger cities, hordes, and more debris.
+
+- **What must be bit-exact across machines?** The multiplayer model decides it, so it comes first. Teardown's (read
+  2026-09-29, https://blog.voxagon.se/2026/03/13/teardown-multiplayer.html): destruction is deterministic, rewritten in
+  fixed-point integer math (its voxels are discrete), and sent as commands on a reliable channel ("cut hole in this
+  shape at voxel coord x,y,z"); bodies are not simulated deterministically but synced from the server in floating
+  point (transforms and velocities, a priority queue favouring what each player sees, about 1 Mbit per client,
+  eventually consistent). Under such a hybrid, Box3D and a GPU solver may stay in float (only the host's result
+  counts), and only our destruction geometry must agree everywhere: fixed-point there is our own code, far smaller
+  than all of physics. Full lockstep needs every part of the simulation bit-exact on every machine: fixed-point
+  everywhere, which means a physics engine of our own. A cheap first experiment: the same scripts built with MSVC and
+  clang, hashes compared.
+- **Our destruction leans on physics more than Teardown's:** stress breaks joints from loads the physics produced. In a
+  hybrid, the host decides (these bonds break, this piece fractures here with this seed) and sends the decisions;
+  clients apply them identically. The research checks what else follows (links, supply, rigs).
+- **The GPU:** GPU rigid bodies (PhysX, the CUDA port of Box3D), what a fixed-point GPU solver would cost (integer
+  throughput, 64-bit products), and what can go to the GPU with no determinism at all (the cosmetic layer: dust, far
+  debris, mess).
+- **Parallel patterns that stay deterministic:** an order fixed by the data, never by the threads (graph-coloured
+  solvers as in Box2D and Box3D, Noita's checkerboard chunk updates, reductions over a tree shaped by the count alone,
+  deterministic sorts, no float atomics), or arithmetic whose order does not matter (integer or fixed-point sums,
+  binned "reproducible" float sums). GPUs round floats differently across vendors and drivers (fused multiply-adds,
+  transcendentals, denormals), so a GPU result is bit-exact only in integer or fixed-point math. Rounding a converged
+  result to a grid ("converging" to a shared answer) makes most runs agree but still flips values near a grid line:
+  it narrows desyncs without removing them.
+- **Destruction architectures to mine:** Teardown and Gustafsson's newer engine, NVIDIA Blast and its stress solver,
+  Unreal's Chaos Destruction and its cluster hierarchies, Red Faction: Guerrilla, Frostbite, Havok, Nebenan, Photon
+  Quantum's fixed-point physics, open fixed-point physics ports.
+- **Trade-offs to weigh:** destruction decided by the host and sent as commands; a harder split between simulation and
+  cosmetics, with most debris cosmetic (and on the GPU); systems at lower rates than physics (stress, supply, rigs),
+  staggered by count; precomputed fracture patterns; structures of arrays and a job graph across phases; physics
+  fidelity by distance from observers.
+
+Output: a report with each technique's gain, cost, determinism and fit, the trade-offs we take (each placed on the
+roadmap: a fixed-point destruction core, a GPU cosmetic layer, ...), and the multiplayer model chosen.
+
+## 8. Engine surface and diagnostics
 
 The line between the engine and the games made on it: the core holds mechanisms and data-driven definitions; the kits
 in `scenes/` (the car, the crane, the hexapod) are example content, kept in the repo because the tests and the bench
@@ -274,7 +315,7 @@ health) and contacts (points and forces), and a sandbox `--dump` of the state at
 as JSON. Debugging milestone 6 ran on traces like these, written by hand each time; the reviewers below verify
 outcomes with them too.
 
-## 8. Independent review: simplicity
+## 9. Independent review: simplicity
 
 The core grew by two large milestones of mechanisms tuned by iteration (special cases pile up: three tick fields decide
 when a moving body's stress is checked). Agent-friendliness comes first, and it depends on how small and plain the code
@@ -290,14 +331,14 @@ is. Other models review it with the current engine as the source of truth:
 2. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
    bench does not regress beyond noise. The size of the core (tokens) is logged before and after.
 
-## 9. Dents (cars and armor)
+## 10. Dents (cars and armor)
 
 - a cage lattice in object space (about 4×3×6 nodes for a car) is dented by impacts, capped per node
 - render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
 - the hull is rebuilt from the lattice only occasionally (`b3Shape_SetHull` + `ApplyMassFromShapes`)
 - dented armor around a joint narrows its limits
 
-## 10. Profiling and a performance review
+## 11. Profiling and a performance review
 
 Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
 solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run) with a frame
@@ -305,23 +346,13 @@ budget each, then the hottest paths first.
 
 Outcomes may change here, as long as the feel holds:
 - **The feel goals,** written down in [goals.md](goals.md), so a taste reviewer can judge against them.
-- **A survey for the unknown unknowns:** how other destruction engines buy their performance (NVIDIA Blast and its
-  stress solver, Unreal's Chaos Destruction and its cluster hierarchies, Red Faction: Guerrilla's structures,
-  Frostbite's destruction, Teardown's engine posts, Havok, Nebenan), each trick tagged: safe for the deterministic
-  simulation, cosmetic only, or off limits.
+- **The research's survey again, against profiles** (milestone 7 made it): which of the tricks it tagged pay off where
+  the time actually goes.
 - **The cosmetic layer as a lever:** determinism binds only what feeds back into play. Anything that never does (the
   smallest debris, dust, far-off mess) may use what the simulation may not: camera distance, time budgets, the GPU, and
   a different result on each machine. Moving more into it buys room.
-- **Parallelism and the GPU under determinism** (research first): what keeps a parallel result bit-exact is an order
-  fixed by the data, never by the threads (reductions over a tree shaped by the count alone, deterministic sorts and
-  scans, no float atomics), or arithmetic whose order does not matter (integer or fixed-point accumulation, binned
-  "reproducible" float sums). GPUs round differently across vendors and drivers (fused multiply-adds, transcendentals,
-  denormals), so a GPU result is bit-exact only in integer or fixed-point math, and otherwise belongs to the cosmetic
-  layer. "Converging" to a shared answer by rounding a converged result to a grid makes most runs agree but still
-  flips values that land near a grid line: it narrows desyncs without removing them, unless state sync repairs them.
-  Candidates: the stress solve's K·x and fracture's cell clipping on more threads, the GPU for dust, far debris and
-  rendering-side mess.
-- **Reviews:** independent reviewers (as in milestone 8) propose changes that trade fidelity for speed; before-and-after
+- **What the research chose** (milestone 7): the trade-offs taken, built and measured here if not before.
+- **Reviews:** independent reviewers (as in milestone 9) propose changes that trade fidelity for speed; before-and-after
   footage of the same scripts goes to a taste reviewer (an Opus model) against the feel goals; what is kept is logged
   with its numbers.
 
@@ -332,7 +363,7 @@ Candidates logged so far:
 - the creak loop over stored overloads only; budget units calibrated to time;
 - a spinning barrier in the task pool.
 
-## 11. Large-map physics zones
+## 12. Large-map physics zones
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
@@ -346,7 +377,7 @@ Candidates logged so far:
   `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 12. Networking
+## 13. Networking
 
 Options:
 - Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
@@ -354,9 +385,9 @@ Options:
   https://blog.voxagon.se/2026/03/13/teardown-multiplayer.html
 - Full lockstep on Box3D's determinism, if the toolchain is pinned.
 
-A two-process lockstep experiment comes first.
+The research (milestone 7) chooses the model; a two-process experiment of it comes first here.
 
-## 13. Art polish and demo views
+## 14. Art polish and demo views
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public
