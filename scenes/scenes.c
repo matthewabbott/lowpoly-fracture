@@ -1231,6 +1231,7 @@ static int lpHexSegment( lpWorld* world, b3Vec3 center, b3Quat q, b3Vec3 half, u
 			   lp_rubber, 0x2A2A2Au, false );
 	}
 	lpObjectDef def = lpDynamicDef();
+	def.inertiaRadius = 0.5f; // a slender leg on joints: Box3D holds them as stiffly as the leg's inertia allows
 	return lpCommitDef( world, center, q, def );
 }
 
@@ -1270,35 +1271,36 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 		b3Vec3 knee = b3Add( b3MulAdd( hip, LP_HEX_KNEE_U, d ), b3MulSV( LP_HEX_KNEE_V, up ) );
 		b3Vec3 foot = b3Add( b3MulAdd( hip, LP_HEX_FOOT_U, d ), b3MulSV( LP_HEX_FOOT_V, up ) );
 
-		// The hip block, the femur rising 30 degrees, the tibia down to the foot
+		// The hip block, the femur rising 30 degrees, the tibia down to the foot: slender, a third of the mech's weight (legs
+		// as heavy as the torso shove it about as they swing)
 		b3Quat femurTilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, 0.5236f );
 		b3Vec3 shin = { LP_HEX_FOOT_U - LP_HEX_KNEE_U, LP_HEX_FOOT_V - LP_HEX_KNEE_V, 0.0f };
 		float shinLength = b3Length( shin );
 		b3Quat tibiaTilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, b3Atan2( shin.y, shin.x ) );
-		int block = lpHexSegment( world, b3Lerp( hip, femurRoot, 0.5f ), legQ, (b3Vec3){ 0.22f, 0.22f, 0.22f }, steel, false, legQ );
-		int femur = lpHexSegment( world, b3Lerp( femurRoot, knee, 0.5f ), b3MulQuat( legQ, femurTilt ), (b3Vec3){ 0.6f, 0.13f, 0.13f },
+		int block = lpHexSegment( world, b3Lerp( hip, femurRoot, 0.5f ), legQ, (b3Vec3){ 0.22f, 0.15f, 0.15f }, steel, false, legQ );
+		int femur = lpHexSegment( world, b3Lerp( femurRoot, knee, 0.5f ), b3MulQuat( legQ, femurTilt ), (b3Vec3){ 0.6f, 0.09f, 0.09f },
 								  paint, false, legQ );
 		int tibia = lpHexSegment( world, b3Lerp( knee, foot, 0.5f ), b3MulQuat( legQ, tibiaTilt ),
-								  (b3Vec3){ 0.5f * shinLength, 0.11f, 0.12f }, paint, true, legQ );
+								  (b3Vec3){ 0.5f * shinLength, 0.08f, 0.085f }, paint, true, legQ );
 
 		// Motorised hinges: the hip turns the leg about the vertical, the femur and the knee lift it
 		int bodies[4] = { torso, block, femur, tibia };
 		b3Vec3 anchors[3] = { hip, femurRoot, knee };
 		b3Vec3 axes[3] = { b3RotateVector( q, up ), t, t };
 		float limits[3] = { 0.6f, 0.9f, 1.2f };
-		float caps[3] = { 10000.0f, 30000.0f, 30000.0f }; // a tripod stance loads the femur and knee about 15 kN*m
+		float caps[3] = { 10000.0f, 30000.0f, 30000.0f }; // a tripod stance loads the femur and knee about 15 kN*m, a swing the hip 12
 		for ( int j = 0; j < 3; ++j )
 		{
 			lpLinkDef hinge = lpLinkBetween( lp_linkHinge, bodies[j], bodies[j + 1], anchors[j], anchors[j] );
 			hinge.axis = axes[j];
 			hinge.lowerAngle = -limits[j];
 			hinge.upperAngle = limits[j];
-			hinge.maxForce = 60000.0f;
-			hinge.maxTorque = 60000.0f;
+			hinge.maxForce = 120000.0f; // walking loads them to about a third
+			hinge.maxTorque = 150000.0f;
 			hinge.strength = 20000.0f;
 			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, 0, 0.0f }; // gain 8 sways at 6 Hz on 4 substeps
 			hinge.userId = (uint32_t)( lp_linkHexapod + 16 * leg + j );
-			hinge.tearRatio = 0.1f; // a stub of a leg segment left on a joint tears off
+			hinge.tearRatio = j > 0 ? 0.1f : 0.0f; // a stub of a leg segment left on a joint tears off
 			limbs[leg].links[j] = lpCreateLink( world, &hinge );
 		}
 		limbs[leg].linkCount = 3;
@@ -1306,6 +1308,9 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 	}
 	lpRigDef def = lpDefaultRigDef();
 	def.body = torso;
+	def.stride = 0.6f;	   // a step of about 0.85 m
+	def.swingTime = 0.35f; // so a tripod keeps up 2.3 m/s
+	def.maxSpeed = 2.3f;
 	def.forward = b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } );
 	def.limbs = limbs;
 	def.limbCount = 6;

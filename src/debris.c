@@ -291,7 +291,7 @@ void lpConvertToLight( lpWorld* w, int bodyIndex )
 	b3Body_SetSleepThreshold( b->id, 0.3f );
 	if ( b->kind == lp_kindDebris )
 	{
-		b3Body_ApplyMassFromShapes( b->id );
+		lpApplyMass( b );
 	}
 }
 
@@ -323,7 +323,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 		{
 			lpCreatePieceShape( w, b->pieces.data[i], bodyIndex );
 		}
-		b3Body_ApplyMassFromShapes( b->id );
+		lpApplyMass( b );
 		return;
 	}
 
@@ -336,7 +336,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 	lpWakeRubble( w, bodyIndex );
 	if ( b->kind == lp_kindDebris )
 	{
-		b3Body_ApplyMassFromShapes( b->id );
+		lpApplyMass( b );
 	}
 }
 

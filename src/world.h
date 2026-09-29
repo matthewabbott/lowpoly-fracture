@@ -241,8 +241,22 @@ typedef struct lpLimb
 	bool attached;
 	bool able;
 	bool planted;
-	float residual; // how far its stance IK fell short, m
+	float residual; // how far its IK fell short, m
 	float q[LP_MAX_LIMB_JOINTS]; // the angles last given to its servos
+	// Gait (gait.c)
+	b3Vec3 neutral; // torso frame: where its foot rests under the torso, as created
+	bool swinging;
+	float swingClock; // s into its swing
+	bool castLate;	  // the second foothold cast (two thirds through) is done
+	bool grounded;	  // the last cast found ground
+	b3Pos liftoff;	  // world
+	b3Pos landing;
+	b3Pos hold;		  // world: where a planted foot is kept
+	float holdClock;  // s since it was set down
+	bool arrived;	  // it got there: the hold is fixed
+	int groundPiece;  // under the foothold (-1: none, or not a piece)
+	uint32_t groundGeneration;
+	uint64_t recheckTick; // tick + 1 it last asked its ground structure for a stress check
 } lpLimb;
 
 typedef struct lpRig
@@ -260,6 +274,8 @@ typedef struct lpRig
 	float height;			  // the torso's frame above its planted feet, this step
 	bool idle;				  // targets frozen: standing still, settled
 	int calm;				  // steps settled and still toward the idle latch
+	float pace;				  // share of the commanded motion its feet allowed this step (an overstretched foot slows it)
+	bool waiting;			  // a foot waited for balance this step
 } lpRig;
 
 // A wheel that came off, spawned as an object of its own at the start of the next step
@@ -361,6 +377,7 @@ typedef struct lpBody
 	int stamp;
 	uint32_t generation; // bumped each time the slot is reused: (index, generation) names one body for good
 	float gravityScale;	 // multiplies gravity on the body and on whatever breaks off it ("fairy dust")
+	float inertiaRadius; // m: rotational inertia added about every axis, as mass * r^2 (lpObjectDef.inertiaRadius)
 	uint64_t linkStamp;	 // tick + 1 when a link end was on it at this step's sync: never frozen or demoted
 	uint8_t kind;
 	uint8_t tier;
@@ -694,8 +711,30 @@ static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
 bool lpValidateWheel( const lpWorld* w, int link );
 void lpFreeVehicles( lpWorld* w );
 
-// rigs (rig.c): lpStepRigs after the supply update and before the servos are driven (capability, the stance, targets)
+// Box3D's mass from a body's shapes, plus its inertia padding (lpObjectDef.inertiaRadius): Box3D softens a joint by the
+// lighter body's inertia, and a slender limb has little about its long axis
+static inline void lpApplyMass( const lpBody* b )
+{
+	b3Body_ApplyMassFromShapes( b->id );
+	if ( b->inertiaRadius > 0.0f )
+	{
+		b3MassData md = b3Body_GetMassData( b->id );
+		float add = md.mass * b->inertiaRadius * b->inertiaRadius;
+		md.inertia.cx.x += add;
+		md.inertia.cy.y += add;
+		md.inertia.cz.z += add;
+		b3Body_SetMassData( b->id, md );
+	}
+}
+
+// rigs (rig.c): lpStepRigs after the supply update and before the servos are driven (capability, then the gait's
+// stance, swings and targets: lpWalkRig in gait.c)
 void lpStepRigs( lpWorld* w, float timeStep );
+void lpWalkRig( lpWorld* w, lpRig* r, float timeStep );
+b3Vec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, b3Quat torso ); // against gravity (the rig's own up without it)
+b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb );
+// Joint speeds that move a limb's foot at `velocity` (torso frame): damped least squares on its Jacobian
+void lpLimbSpeeds( int joints, const b3Vec3* axes, const b3Vec3* origins, b3Vec3 foot, b3Vec3 velocity, float* out );
 uint64_t lpHashRigs( const lpWorld* w, uint64_t h );
 bool lpValidateRigs( const lpWorld* w );
 void lpFreeRigs( lpWorld* w );

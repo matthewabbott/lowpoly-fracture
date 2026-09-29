@@ -6,6 +6,7 @@ add_library(lpf STATIC
 	facet.h
 	fracture.c
 	fracture.h
+	gait.c
 	impact.c
 	link.c
 	poly.c

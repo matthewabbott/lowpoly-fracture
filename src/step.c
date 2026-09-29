@@ -152,7 +152,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 	b->topology += 1;
 	if ( b3Body_GetType( b->id ) == b3_dynamicBody )
 	{
-		b3Body_ApplyMassFromShapes( b->id );
+		lpApplyMass( b );
 	}
 	lpMarkDirty( w, bodyIndex );
 }

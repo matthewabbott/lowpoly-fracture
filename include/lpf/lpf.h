@@ -163,6 +163,7 @@ typedef struct lpWorldDef
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
 	int maxLinks;		   // live links; bodies with links are exempt from freezing and the debris budgets
 	int maxWheelCastsPerStep; // wheel suspension casts per step; a wheel not cast keeps its last contact
+	int maxFootCastsPerStep;  // rig foothold casts per step; a foot not cast lands where it was planned
 } lpWorldDef;
 
 lpWorldDef lpDefaultWorldDef( void );
@@ -227,6 +228,10 @@ typedef struct lpObjectDef
 	// on hard hits and landings, against its loads less its own acceleration ("inertia relief"). What breaks off
 	// keeps it.
 	bool solveStress;
+	// m: rotational inertia added about every axis, as mass * r^2. Box3D holds a joint as stiffly as the lighter body's
+	// inertia allows, so a slender limb on joints (a mech's leg) gives a few degrees under load; padded, it holds. What
+	// breaks off in large parts keeps it.
+	float inertiaRadius;
 } lpObjectDef;
 
 lpObjectDef lpDefaultObjectDef( void );
@@ -463,6 +468,7 @@ typedef struct lpRigDef
 	float standHeight;	// of the torso's frame above its feet at full strength; 0: as created
 	float crouchDepth;	// share of standHeight a full crouch lowers it by
 	float stepHeight;	// a swinging foot's lift, m
+	float stride;		// m a planted foot drifts from where it rests before it steps (half a stride's length)
 	float maxSpeed;		// m/s
 	float maxTurn;		// rad/s
 	float swingTime;	// s a step takes
@@ -512,6 +518,7 @@ typedef struct lpLimbState
 	bool attached;	// its first link is still on the torso
 	bool able;		// it can lift its foot and carry its share
 	bool planted;
+	bool swinging;
 	int joints;		// links still on in a chain from the torso (0 to linkCount)
 	float strength; // of its weakest joint's servo: damage and supply, 0 to 1
 	float reach;	// from its first joint to its foot, m

@@ -325,15 +325,390 @@ static int TestRigCost( void )
 	return 0;
 }
 
+// ---- walking ----
+
+typedef struct WalkReport
+{
+	b3Vec3 start, end; // the torso's frame
+	float tiltRms;	   // radians, after the first second
+	float worstTilt;
+	float utilization; // peak over the rig's links, after the first second
+	float slip;		   // the most a planted foot moved before it lifted, m (after the first second)
+	int strides;	   // liftoffs
+	int worstJoint;	   // of the peak utilization
+	float yaw;		   // heading turned, radians (unwrapped, left positive)
+	bool valid;
+} WalkReport;
+
+static float Heading( const Sim* s, int rig )
+{
+	lpRigState st = lpWorld_GetRigState( s->world, rig );
+	return b3Atan2( st.forward.x, st.forward.z ); // turning left from +z (toward +x) is positive
+}
+
+static b3Vec3 ToVec( b3Pos p )
+{
+	return (b3Vec3){ (float)p.x, (float)p.y, (float)p.z };
+}
+
+// Walks the rig with a control for `ticks` steps
+static WalkReport Walk( Sim* s, int rig, lpRigControl control, int ticks )
+{
+	WalkReport r = { 0 };
+	lpWorld_SetRigControl( s->world, rig, &control );
+	lpRigState st = lpWorld_GetRigState( s->world, rig );
+	r.start = ToVec( st.position );
+	b3Pos plantedAt[LP_MAX_RIG_LIMBS];
+	float moved[LP_MAX_RIG_LIMBS] = { 0 };
+	bool wasPlanted[LP_MAX_RIG_LIMBS] = { 0 };
+	for ( int i = 0; i < st.limbCount; ++i )
+	{
+		lpLimbState ls = lpWorld_GetLimbState( s->world, rig, i );
+		wasPlanted[i] = ls.planted;
+		plantedAt[i] = ls.foot;
+	}
+	float heading = Heading( s, rig );
+	double tiltSum = 0.0;
+	int tiltCount = 0;
+	for ( int t = 0; t < ticks; ++t )
+	{
+		Run( s, 1 );
+		st = lpWorld_GetRigState( s->world, rig );
+		float h = Heading( s, rig );
+		float d = h - heading;
+		d = d > 3.14159265f ? d - 6.2831853f : ( d < -3.14159265f ? d + 6.2831853f : d );
+		r.yaw += d;
+		heading = h;
+		float tilt = b3Atan2( sqrtf( st.up.x * st.up.x + st.up.z * st.up.z ), st.up.y );
+		if ( t >= 60 )
+		{
+			tiltSum += (double)( tilt * tilt );
+			tiltCount += 1;
+			r.worstTilt = fmaxf( r.worstTilt, tilt );
+		}
+		for ( int i = 0; i < st.limbCount; ++i )
+		{
+			// Slip: how far a planted foot moves once it has settled (a foot that lands late finishes its landing first)
+			lpLimbState ls = lpWorld_GetLimbState( s->world, rig, i );
+			const lpLimb* inner = s->world->rigs.data[rig].limbs + i;
+			bool settled = ls.planted && inner->holdClock >= 0.3f;
+			if ( settled && wasPlanted[i] == false )
+			{
+				plantedAt[i] = ls.foot;
+				moved[i] = 0.0f;
+			}
+			else if ( settled )
+			{
+				b3Vec3 d3 = b3SubPos( ls.foot, plantedAt[i] );
+				moved[i] = fmaxf( moved[i], sqrtf( d3.x * d3.x + d3.z * d3.z ) );
+			}
+			else if ( wasPlanted[i] )
+			{
+				r.strides += 1;
+				r.slip = t >= 60 ? fmaxf( r.slip, moved[i] ) : r.slip;
+			}
+			ls.planted = settled;
+			wasPlanted[i] = ls.planted;
+			const lpLimb* limb = s->world->rigs.data[rig].limbs + i;
+			for ( int k = 0; k < limb->def.linkCount && t >= 60; ++k )
+			{
+				lpLinkState link = lpWorld_GetLinkState( s->world, limb->def.links[k] );
+				if ( link.alive && link.utilization > r.utilization )
+				{
+					r.utilization = link.utilization;
+					r.worstJoint = k;
+				}
+			}
+		}
+	}
+	r.end = ToVec( st.position );
+	r.tiltRms = tiltCount > 0 ? (float)sqrt( tiltSum / tiltCount ) : 0.0f;
+	r.valid = lpWorld_Validate( s->world );
+	return r;
+}
+
+// Forward at full speed on flat ground: it keeps most of its top speed, straight and level, its feet gripping
+static int TestRigWalksStraight( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -18.0f }, 0.0f, 0 );
+	Run( &s, 30 );
+	lpRigControl go = { 1.0f, 0.0f, 0.0f, 0.0f };
+	Walk( &s, rig, go, 120 ); // up to speed
+	WalkReport r = Walk( &s, rig, go, 600 );
+	float distance = r.end.z - r.start.z;
+	float speed = distance / 10.0f;
+	float drift = fabsf( r.end.x - r.start.x );
+	float top = s.world->rigs.data[rig].def.maxSpeed;
+	printf( "  %.2f m/s of %.2f, drift %.2f m over %.1f m, tilt rms %.2f deg (worst %.2f), slip %.3f m, %d strides, "
+			"utilization %.2f (joint %d)\n",
+			speed, top, drift, distance, r.tiltRms * 57.29578f, r.worstTilt * 57.29578f, r.slip, r.strides, r.utilization,
+			r.worstJoint );
+	ENSURE( r.valid );
+	ENSURE( speed >= 0.85f * top && drift < 0.5f );
+	ENSURE( r.tiltRms < 0.035f && r.slip < 0.12f && r.utilization < 0.5f ); // a toe drags a little as its load goes
+	ENSURE( lpWorld_GetRigState( s.world, rig ).able == 6 );
+	DestroySim( &s );
+	return 0;
+}
+
+// Turning in place at full rate
+static int TestRigTurns( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
+	Run( &s, 30 );
+	lpRigControl turn = { 0.0f, 0.0f, -1.0f, 0.0f }; // left
+	Walk( &s, rig, turn, 60 );
+	WalkReport r = Walk( &s, rig, turn, 240 );
+	float rate = r.yaw / 4.0f;
+	float moved = sqrtf( ( r.end.x - r.start.x ) * ( r.end.x - r.start.x ) + ( r.end.z - r.start.z ) * ( r.end.z - r.start.z ) );
+	printf( "  %.2f rad/s of %.2f, moved %.2f m, tilt rms %.2f deg, slip %.3f m, %d strides\n", rate,
+			s.world->rigs.data[rig].def.maxTurn, moved, r.tiltRms * 57.29578f, r.slip, r.strides );
+	ENSURE( r.valid && rate >= 0.5f && moved < 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A static concrete ramp rising along +z from z0 to z1 by `rise`, then a flat top to z2
+static void AddRamp( Sim* s, float z0, float z1, float z2, float rise )
+{
+	b3Vec3 points[8] = { { -5.0f, 0.0f, z0 }, { 5.0f, 0.0f, z0 }, { -5.0f, 0.0f, z2 }, { 5.0f, 0.0f, z2 },
+						 { -5.0f, rise, z1 }, { 5.0f, rise, z1 }, { -5.0f, rise, z2 }, { 5.0f, rise, z2 } };
+	lpPartDef part = lpDefaultPartDef();
+	part.points = points;
+	part.pointCount = 8;
+	part.material = lp_concrete;
+	part.anchored = true;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.parts = &part;
+	def.partCount = 1;
+	lpCreateObject( s->world, &def );
+	lpWorld_SettleStructures( s->world );
+}
+
+// Up a 15 degree slope at most of its flat speed
+static int TestRigClimbsSlope( void )
+{
+	Sim s = CreateSim( -1 );
+	AddRamp( &s, 0.0f, 12.0f, 20.0f, 12.0f * 0.2679f );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -10.0f }, 0.0f, 0 );
+	Run( &s, 30 );
+	lpRigControl go = { 1.0f, 0.0f, 0.0f, 0.0f };
+	float flatRun = 0.0f, slopeRun = 0.0f, worstTilt = 0.0f;
+	int flatTicks = 0, slopeTicks = 0;
+	for ( int t = 0; t < 900; ++t )
+	{
+		lpRigState before = lpWorld_GetRigState( s.world, rig );
+		Walk( &s, rig, go, 1 );
+		lpRigState st = lpWorld_GetRigState( s.world, rig );
+		float z = (float)st.position.z, dz = (float)( st.position.z - before.position.z );
+		if ( t > 90 && z > -7.0f && z < -3.0f )
+		{
+			flatRun += dz;
+			flatTicks += 1;
+		}
+		if ( z > 3.0f && z < 9.0f )
+		{
+			slopeRun += dz;
+			slopeTicks += 1;
+			worstTilt = fmaxf( worstTilt, b3Atan2( sqrtf( st.up.x * st.up.x + st.up.z * st.up.z ), st.up.y ) );
+		}
+	}
+	float flat = flatTicks > 0 ? 60.0f * flatRun / (float)flatTicks : 0.0f;
+	float slope = slopeTicks > 0 ? 60.0f * slopeRun / (float)slopeTicks : 0.0f;
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	printf( "  flat %.2f m/s, up the slope %.2f m/s (%.0f%%), worst tilt on it %.1f deg, ended at z %.1f\n", flat, slope,
+			100.0f * slope / fmaxf( flat, 1e-3f ), worstTilt * 57.29578f, (float)st.position.z );
+	ENSURE( slopeTicks > 0 && slope >= 0.6f * flat && st.able == 6 );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// Up onto a 0.4 m step and down off it again
+static int TestRigStepsUpAndDown( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef part = lpDefaultPartDef();
+	part.halfExtents = (b3Vec3){ 5.0f, 0.2f, 4.0f };
+	part.transform.p = (b3Vec3){ 0.0f, 0.2f, 4.0f };
+	part.material = lp_concrete;
+	part.anchored = true;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.parts = &part;
+	def.partCount = 1;
+	lpCreateObject( s.world, &def );
+	lpWorld_SettleStructures( s.world );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -6.0f }, 0.0f, 0 );
+	Run( &s, 30 );
+	lpRigControl go = { 0.6f, 0.0f, 0.0f, 0.0f };
+	float topHeight = 0.0f, worstTilt = 0.0f;
+	for ( int t = 0; t < 1200; ++t )
+	{
+		Walk( &s, rig, go, 1 );
+		lpRigState st = lpWorld_GetRigState( s.world, rig );
+		if ( st.position.z > 3.0f && st.position.z < 5.0f )
+		{
+			topHeight = fmaxf( topHeight, (float)st.position.y );
+		}
+		worstTilt = fmaxf( worstTilt, b3Atan2( sqrtf( st.up.x * st.up.x + st.up.z * st.up.z ), st.up.y ) );
+	}
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	float stand = s.world->rigs.data[rig].def.standHeight;
+	printf( "  on top the torso stood %.2f m up (%.2f over the step), worst tilt %.1f deg, ended at z %.1f\n", topHeight,
+			topHeight - 0.4f, worstTilt * 57.29578f, (float)st.position.z );
+	ENSURE( topHeight - 0.4f > stand - 0.1f && st.position.z > 10.0f && worstTilt < 0.2f && st.able == 6 );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// Stopped from full speed it pulls up within 1.5 m, tidies its feet and falls asleep
+static int TestRigStops( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -10.0f }, 0.0f, 0 );
+	Run( &s, 30 );
+	lpRigControl go = { 1.0f, 0.0f, 0.0f, 0.0f }, stop = { 0 };
+	Walk( &s, rig, go, 240 );
+	WalkReport r = Walk( &s, rig, stop, 60 );
+	int asleep = -1;
+	for ( int t = 0; t < 300 && asleep < 0; ++t )
+	{
+		Run( &s, 1 );
+		asleep = b3Body_IsAwake( s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) ? -1 : t + 60;
+	}
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	float ran = (float)st.position.z - r.start.z;
+	printf( "  ran on %.2f m after the stop, asleep %d steps after it, idle %d\n", ran, asleep, st.idle );
+	ENSURE( ran < 1.5f && asleep >= 0 && asleep < 240 );
+	DestroySim( &s );
+	return 0;
+}
+
+// Walking and turning: the same world at 1, 4 and 8 workers
+static int TestRigWalkDeterminism( void )
+{
+	uint64_t hashes[3];
+	int workers[3] = { 1, 4, 8 };
+	for ( int k = 0; k < 3; ++k )
+	{
+		Sim s = CreateSimWorkers( -1, workers[k] );
+		int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -5.0f }, 0.3f, 2 );
+		lpRigControl a = { 1.0f, 0.0f, 0.3f, 0.0f }, b = { 0.4f, 0.5f, -0.6f, 0.3f };
+		Walk( &s, rig, a, 150 );
+		Walk( &s, rig, b, 150 );
+		hashes[k] = lpWorld_Hash( s.world );
+		DestroySim( &s );
+	}
+	printf( "  hashes %016llx %016llx %016llx\n", (unsigned long long)hashes[0], (unsigned long long)hashes[1],
+			(unsigned long long)hashes[2] );
+	ENSURE( hashes[0] == hashes[1] && hashes[0] == hashes[2] );
+	return 0;
+}
+
+// What walking costs: the rig's step, foothold casts, and Box3D with 1, 4 and 16 walkers
+static int TestRigWalkCost( void )
+{
+	int counts[3] = { 1, 4, 16 };
+	for ( int k = 0; k < 3; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		int rigs[16];
+		for ( int n = 0; n < counts[k]; ++n )
+		{
+			rigs[n] = lpAddHexapod( s.world, (b3Vec3){ -12.0f + 8.0f * (float)( n % 4 ), 0.0f, -20.0f + 7.0f * (float)( n / 4 ) }, 0.0f, n );
+		}
+		lpRigControl go = { 0.8f, 0.0f, 0.2f, 0.0f };
+		for ( int n = 0; n < counts[k]; ++n )
+		{
+			lpWorld_SetRigControl( s.world, rigs[n], &go );
+		}
+		float rigMs = 0.0f, physicsMs = 0.0f;
+		int casts = 0;
+		for ( int t = 0; t < 300; ++t )
+		{
+			Run( &s, 1 );
+			lpStats st = lpWorld_GetStats( s.world );
+			if ( t >= 60 )
+			{
+				rigMs += st.rigMs;
+				physicsMs += st.physicsMs;
+				casts += st.footCasts;
+			}
+		}
+		printf( "  %2d walkers: rig %.4f ms (%.1f us each), Box3D %.3f ms, %.2f foot casts per step\n", counts[k], rigMs / 240.0f,
+				1000.0f * rigMs / 240.0f / (float)counts[k], physicsMs / 240.0f, (float)casts / 240.0f );
+		DestroySim( &s );
+	}
+	return 0;
+}
+
+// The model puts a bent leg's foot where the bodies have it (floating, so nothing loads the joints)
+static int TestRigModelBent( void )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 5.0f, 0.0f }, 0.4f, 0 );
+	for ( int b = 0; b < s.world->bodies.count; ++b )
+	{
+		if ( s.world->bodies.data[b].alive && B3_IS_NON_NULL( s.world->bodies.data[b].id ) &&
+			 b3Body_GetType( s.world->bodies.data[b].id ) == b3_dynamicBody )
+		{
+			lpWorld_SetGravityScale( s.world, b, 0.0f );
+		}
+	}
+	s.world->rigs.data[rig].alive = false; // hold the targets set here
+	float angles[3] = { 0.35f, -0.4f, 0.5f };
+	for ( int i = 0; i < 6; ++i )
+	{
+		for ( int k = 0; k < 3; ++k )
+		{
+			lpWorld_SetLinkTarget( s.world, s.world->rigs.data[rig].limbs[i].def.links[k], angles[k] * ( i % 2 == 0 ? 1.0f : -0.7f ) );
+		}
+	}
+	Run( &s, 120 );
+	const lpRig* r = s.world->rigs.data + rig;
+	b3WorldTransform xf = lpGetTransform( s.world->bodies.data + r->body );
+	float worst = 0.0f;
+	for ( int i = 0; i < 6; ++i )
+	{
+		const lpLimb* limb = r->limbs + i;
+		float q[3];
+		for ( int k = 0; k < 3; ++k )
+		{
+			q[k] = s.world->links.data[limb->def.links[k]].angle;
+		}
+		b3Vec3 axes[3], origins[3];
+		b3Pos model = b3TransformWorldPoint( xf, lpLimbForward( s.world, limb, 3, q, limb->foot, axes, origins ) );
+		b3Pos body = lpFootWorld( s.world, limb );
+		float off = b3Length( b3SubPos( model, body ) );
+		printf( "  leg %d angles %.2f %.2f %.2f: model foot %.3f m from the body's\n", i, q[0], q[1], q[2], off );
+		worst = fmaxf( worst, off );
+	}
+	ENSURE( worst < 0.02f );
+	DestroySim( &s );
+	return 0;
+}
+
+// Diagnostic: one leg through a few strides
 int RigTest( void )
 {
 	RUN_TEST( TestKitStands );
 	RUN_TEST( TestRigIKRoundTrip );
 	RUN_TEST( TestRigModelMatchesBodies );
+	RUN_TEST( TestRigModelBent );
 	RUN_TEST( TestRigStumpFoot );
 	RUN_TEST( TestRigStumpIK );
 	RUN_TEST( TestRigCrouch );
 	RUN_TEST( TestRigDeterminism );
 	RUN_TEST( TestRigCost );
+	RUN_TEST( TestRigWalksStraight );
+	RUN_TEST( TestRigTurns );
+	RUN_TEST( TestRigClimbsSlope );
+	RUN_TEST( TestRigStepsUpAndDown );
+	RUN_TEST( TestRigStops );
+	RUN_TEST( TestRigWalkDeterminism );
+	RUN_TEST( TestRigWalkCost );
 	return 0;
 }

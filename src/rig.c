@@ -11,12 +11,10 @@
 //   torque (damage and supply), and the foot: as created while it is still on a piece, else the far end of the last
 //   segment left along its axis (a stump stands on its end, as a peg);
 // - the torso is the body holding most limbs' first links (a rig never names a body);
-// - the stance: the planted feet stay where they actually are (slip is accepted, never fought), and the torso is pushed
-//   toward a desired pose, level, at its height above the feet, moving with the controls. Each planted limb's targets
-//   are the IK solution that puts its foot where it is from that pose (damped least squares, a fixed number of
-//   iterations warm-started from the measured angles, inside the hinges' limits), and its feedforward speeds the joint
-//   motion that the pose's motion asks for, so servos with different gains or speed caps still move together;
-// - standing still and settled for a moment, the targets freeze (the idle latch), so the rig can fall asleep.
+// - the gait (gait.c): which feet step and where, the torso's desired pose, and each limb's targets, the IK solution
+//   that puts its foot where the gait wants it from that pose (damped least squares, a fixed number of iterations
+//   warm-started from the measured angles, inside the hinges' limits), with feedforward speeds for the joint motion the
+//   pose and the swing ask for, so servos with different gains or speed caps still move together.
 // Everything is in index order with a fixed iteration count: it depends on nothing but the simulation state.
 
 #include "world.h"
@@ -29,11 +27,6 @@
 #define LP_RIG_IK_DAMPING 0.05f	 // m: damped least squares keeps a straight limb or an unreachable target calm
 #define LP_RIG_LIMIT_MARGIN 0.05f // rad: targets stay inside a hinge's limits (pressed on a limit reads as load)
 #define LP_RIG_WEAK 0.2f		  // a limb whose weakest servo has less of its torque than this cannot stand
-#define LP_RIG_LEAD 0.15f		  // m (and rad of heading) the desired pose may run ahead of the torso
-#define LP_RIG_CLIMB 0.5f		  // m/s the desired height moves at
-#define LP_RIG_CALM_TICKS 30	  // steps settled and still before the targets freeze
-#define LP_RIG_CALM_HEIGHT 0.02f
-#define LP_RIG_CALM_TILT 0.0175f // rad
 #define LP_RIG_REACH 0.25f		 // the foot as created must be this close to a piece of its body
 
 lpRigDef lpDefaultRigDef( void )
@@ -44,6 +37,7 @@ lpRigDef lpDefaultRigDef( void )
 	def.up = (b3Vec3){ 0.0f, 1.0f, 0.0f };
 	def.crouchDepth = 0.35f;
 	def.stepHeight = 0.35f;
+	def.stride = 0.5f;
 	def.maxSpeed = 2.5f;
 	def.maxTurn = 0.8f;
 	def.swingTime = 0.4f;
@@ -62,8 +56,7 @@ static bool lpIsServo( const lpLink* l )
 	return l->def.type == lp_linkHinge && ( l->def.motor.maxTorque > 0.0f || l->def.motor.holdTorque > 0.0f );
 }
 
-// World up: against gravity (the rig's own up without it)
-static b3Vec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, b3Quat torso )
+b3Vec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, b3Quat torso )
 {
 	b3Vec3 g = b3World_GetGravity( w->def.physics );
 	float length = b3Length( g );
@@ -95,8 +88,7 @@ b3Vec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const fl
 	return b3TransformPoint( x, foot );
 }
 
-// Joint speeds that move the foot at `velocity` (torso frame), by damped least squares on the Jacobian
-static void lpLimbSolve( int joints, const b3Vec3* axes, const b3Vec3* origins, b3Vec3 foot, b3Vec3 velocity, float* out )
+void lpLimbSpeeds( int joints, const b3Vec3* axes, const b3Vec3* origins, b3Vec3 foot, b3Vec3 velocity, float* out )
 {
 	b3Vec3 columns[LP_MAX_LIMB_JOINTS];
 	float d = LP_RIG_IK_DAMPING * LP_RIG_IK_DAMPING;
@@ -124,7 +116,7 @@ float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, b3Vec3 foot, b
 	{
 		b3Vec3 at = lpLimbForward( w, limb, joints, q, foot, axes, origins );
 		float dq[LP_MAX_LIMB_JOINTS];
-		lpLimbSolve( joints, axes, origins, at, b3Sub( target, at ), dq );
+		lpLimbSpeeds( joints, axes, origins, at, b3Sub( target, at ), dq );
 		for ( int k = 0; k < joints; ++k )
 		{
 			q[k] = b3ClampFloat( q[k] + dq[k], limb->lower[k], limb->upper[k] );
@@ -248,7 +240,7 @@ static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
 	return false;
 }
 
-static b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb )
+b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb )
 {
 	return b3TransformWorldPoint( lpGetTransform( w->bodies.data + limb->tipBody ), limb->foot );
 }
@@ -322,6 +314,16 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 	r.body = def->body;
 	r.limbCount = def->limbCount;
 	r.desired = xf;
+	for ( int i = 0; i < r.limbCount; ++i )
+	{
+		lpLimb* limb = r.limbs + i;
+		limb->neutral = limb->joints > 0 ? b3InvTransformWorldPoint( xf, lpFootWorld( w, limb ) ) : b3Vec3_zero;
+		limb->planted = limb->joints > 0; // standing as built
+		limb->hold = limb->joints > 0 ? lpFootWorld( w, limb ) : xf.p;
+		limb->holdClock = 0.0f; // built above the ground, it is held where it lands
+		limb->arrived = false;
+		limb->groundPiece = -1;
+	}
 	if ( r.def.standHeight <= 0.0f )
 	{
 		// As created: the torso's frame above its feet
@@ -338,147 +340,6 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 }
 
 // ---- the step ----
-
-static bool lpControlStill( const lpRigControl* c )
-{
-	return c->forward == 0.0f && c->strafe == 0.0f && c->turn == 0.0f;
-}
-
-// Level, with the rig's forward along `heading` (horizontal) and its up along worldUp
-static b3Quat lpLevelRotation( const lpRig* r, b3Vec3 heading, b3Vec3 worldUp )
-{
-	b3Matrix3 local = { b3Cross( r->up, r->forward ), r->up, r->forward };
-	b3Matrix3 world = { b3Cross( worldUp, heading ), worldUp, heading };
-	return b3MulQuat( b3MakeQuatFromMatrix( &world ), b3Conjugate( b3MakeQuatFromMatrix( &local ) ) );
-}
-
-static void lpStandRig( lpWorld* w, lpRig* r, float timeStep )
-{
-	const lpBody* torso = w->bodies.data + r->body;
-	b3WorldTransform xf = lpGetTransform( torso );
-	b3Vec3 worldUp = lpRigWorldUp( w, r, xf.q );
-
-	// The planted feet (this step: every able limb) and how high the torso stands over them. The feet are where the model
-	// has them at the measured angles: a loaded joint gives a centimetre or so, so a body's foot is a little off that,
-	// and aiming the model at it would push the foot on every step (and misjudge the height by the give)
-	b3Pos feet[LP_MAX_RIG_LIMBS];
-	float support = 0.0f;
-	int planted = 0;
-	for ( int i = 0; i < r->limbCount; ++i )
-	{
-		lpLimb* limb = r->limbs + i;
-		limb->planted = limb->able;
-		if ( limb->planted )
-		{
-			b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-			for ( int k = 0; k < limb->joints; ++k )
-			{
-				limb->q[k] = w->links.data[limb->def.links[k]].angle;
-			}
-			feet[i] = b3TransformWorldPoint( xf, lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins ) );
-			support += b3Dot( b3SubPos( feet[i], xf.p ), worldUp );
-			planted += 1;
-		}
-	}
-	if ( planted == 0 )
-	{
-		r->height = 0.0f;
-		return;
-	}
-	support /= (float)planted; // the feet's mean height, from the torso's frame
-	r->height = -support;
-	b3Vec3 torsoUp = b3RotateVector( xf.q, r->up );
-	float tilt = b3Atan2( b3Length( b3Cross( torsoUp, worldUp ) ), b3Dot( torsoUp, worldUp ) );
-	float goal = r->def.standHeight * ( 1.0f - r->def.crouchDepth * b3ClampFloat( r->control.crouch, 0.0f, 1.0f ) );
-
-	// Idle: the targets stay frozen until the controls change or something knocks it well off its stance
-	if ( r->idle )
-	{
-		bool knocked = b3AbsFloat( r->height - goal ) > 2.5f * LP_RIG_CALM_HEIGHT || tilt > 3.0f * LP_RIG_CALM_TILT;
-		if ( r->controlChanged == false && ( b3Body_IsAwake( torso->id ) == false || knocked == false ) )
-		{
-			return;
-		}
-		r->idle = false;
-		r->calm = 0;
-	}
-
-	// The desired pose: turned and moved by the controls, never far ahead of the torso, level, climbing toward its
-	// height over the feet
-	b3WorldTransform old = r->desired;
-	b3Vec3 heading = b3RotateVector( old.q, r->forward );
-	heading = b3Sub( heading, b3MulSV( b3Dot( heading, worldUp ), worldUp ) );
-	heading = b3LengthSquared( heading ) > 1e-8f ? b3Normalize( heading ) : b3RotateVector( xf.q, r->forward );
-	b3Vec3 measured = b3RotateVector( xf.q, r->forward );
-	float yawError = b3Atan2( b3Dot( b3Cross( measured, heading ), worldUp ), b3Dot( measured, heading ) );
-	float turn = -r->control.turn * r->def.maxTurn * timeStep; // the control turns right for positive
-	float yaw = b3ClampFloat( yawError + turn, -LP_RIG_LEAD, LP_RIG_LEAD ) - yawError; // the turn this step, bounded
-	b3CosSin cs = b3ComputeCosSin( yaw );
-	b3Vec3 side = b3Cross( worldUp, heading );
-	heading = b3Add( b3MulSV( cs.cosine, heading ), b3MulSV( cs.sine, side ) ); // turn left for positive yaw
-	side = b3Cross( worldUp, heading );
-
-	b3Vec3 velocity = b3MulSV( r->def.maxSpeed, b3Sub( b3MulSV( r->control.forward, heading ), b3MulSV( r->control.strafe, side ) ) );
-	b3Vec3 ahead = b3MulAdd( b3SubPos( old.p, xf.p ), timeStep, velocity ); // from the torso's frame
-	b3Vec3 flat = b3Sub( ahead, b3MulSV( b3Dot( ahead, worldUp ), worldUp ) );
-	float lead = b3Length( flat );
-	if ( lead > LP_RIG_LEAD )
-	{
-		flat = b3MulSV( LP_RIG_LEAD / lead, flat );
-	}
-	float height = b3Dot( b3SubPos( old.p, xf.p ), worldUp ) - support; // the desired pose's, over the feet
-	height += b3ClampFloat( goal - height, -LP_RIG_CLIMB * timeStep, LP_RIG_CLIMB * timeStep );
-	r->desired.p = b3OffsetPos( xf.p, b3MulAdd( flat, support + height, worldUp ) );
-	r->desired.q = lpLevelRotation( r, heading, worldUp );
-	b3Vec3 linear = b3MulSV( 1.0f / timeStep, b3SubPos( r->desired.p, old.p ) );
-	float fast = r->def.maxSpeed + LP_RIG_CLIMB; // a pose pulled back after a knock must not jerk the joints
-	if ( b3Length( linear ) > fast )
-	{
-		linear = b3MulSV( fast / b3Length( linear ), linear );
-	}
-	b3Vec3 angular = b3MulSV( yaw / timeStep, worldUp );
-
-	// Each planted foot stays where it is: its targets put it there from the desired pose, and its feedforward moves the
-	// joints as the pose moves
-	for ( int i = 0; i < r->limbCount; ++i )
-	{
-		lpLimb* limb = r->limbs + i;
-		if ( limb->planted == false )
-		{
-			continue;
-		}
-		b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-		b3Pos foot = feet[i];
-		b3Vec3 target = b3InvTransformWorldPoint( r->desired, foot );
-		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
-
-		b3Vec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
-		b3Vec3 arm = b3SubPos( foot, r->desired.p );
-		b3Vec3 drift = b3InvRotateVector( r->desired.q, b3Neg( b3Add( linear, b3Cross( angular, arm ) ) ) );
-		float feed[LP_MAX_LIMB_JOINTS];
-		lpLimbSolve( limb->joints, axes, origins, at, drift, feed );
-		for ( int k = 0; k < limb->joints; ++k )
-		{
-			lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
-			w->links.data[limb->def.links[k]].feed = feed[k];
-		}
-	}
-
-	// Still and settled for a moment: freeze the targets
-	bool settled = b3AbsFloat( height - goal ) < 0.001f && b3AbsFloat( r->height - goal ) < LP_RIG_CALM_HEIGHT && tilt < LP_RIG_CALM_TILT;
-	r->calm = lpControlStill( &r->control ) && settled ? r->calm + 1 : 0;
-	if ( r->calm >= LP_RIG_CALM_TICKS )
-	{
-		r->idle = true;
-		for ( int i = 0; i < r->limbCount; ++i )
-		{
-			for ( int k = 0; k < r->limbs[i].def.linkCount; ++k )
-			{
-				w->links.data[r->limbs[i].def.links[k]].feed = 0.0f;
-			}
-		}
-	}
-}
 
 void lpStepRigs( lpWorld* w, float timeStep )
 {
@@ -530,7 +391,7 @@ void lpStepRigs( lpWorld* w, float timeStep )
 				limb->reach = b3Length( b3SubPos( lpFootWorld( w, limb ), joint ) );
 			}
 		}
-		lpStandRig( w, r, timeStep );
+		lpWalkRig( w, r, timeStep );
 		r->controlChanged = false;
 	}
 }
@@ -603,6 +464,7 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 	s.attached = l->attached;
 	s.able = l->able;
 	s.planted = l->planted;
+	s.swinging = l->swinging;
 	s.joints = l->joints;
 	s.strength = l->strength;
 	s.reach = l->reach;
@@ -634,12 +496,18 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
 			const lpLimb* limb = r->limbs + i;
-			int ints[2] = { limb->joints, limb->tipBody };
-			uint8_t limbFlags[3] = { limb->attached ? 1 : 0, limb->able ? 1 : 0, limb->planted ? 1 : 0 };
+			int ints[3] = { limb->joints, limb->tipBody, limb->groundPiece };
+			uint8_t limbFlags[7] = { limb->attached ? 1 : 0, limb->able ? 1 : 0,	limb->planted ? 1 : 0, limb->swinging ? 1 : 0,
+									 limb->castLate ? 1 : 0, limb->grounded ? 1 : 0, limb->arrived ? 1 : 0 };
 			h = lpHashBytes( h, ints, sizeof( ints ) );
 			h = lpHashBytes( h, limbFlags, sizeof( limbFlags ) );
 			h = lpHashBytes( h, &limb->foot, sizeof( limb->foot ) );
 			h = lpHashBytes( h, limb->q, sizeof( limb->q ) );
+			h = lpHashBytes( h, &limb->swingClock, sizeof( limb->swingClock ) );
+			h = lpHashBytes( h, &limb->liftoff, sizeof( limb->liftoff ) );
+			h = lpHashBytes( h, &limb->landing, sizeof( limb->landing ) );
+			h = lpHashBytes( h, &limb->hold, sizeof( limb->hold ) );
+			h = lpHashBytes( h, &limb->holdClock, sizeof( limb->holdClock ) );
 		}
 	}
 	return h;

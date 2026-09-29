@@ -381,7 +381,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			int debris = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, cellV, omega, gravityScale );
 			if ( lpAttachPiece( w, childIndex, debris ) )
 			{
-				b3Body_ApplyMassFromShapes( w->bodies.data[debris].id );
+				lpApplyMass( w->bodies.data + debris );
 			}
 			else
 			{
@@ -444,7 +444,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 
 	if ( body->kind != lp_kindStructure && body->pieces.count > 0 )
 	{
-		b3Body_ApplyMassFromShapes( body->id );
+		lpApplyMass( body );
 	}
 
 	w->stats.fracturesThisStep += 1;

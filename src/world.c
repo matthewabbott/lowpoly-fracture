@@ -143,6 +143,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxFreezesPerStep = 64;
 	def.maxGhostCastsPerStep = 2048;
 	def.maxWheelCastsPerStep = 1024;
+	def.maxFootCastsPerStep = 256;
 	return def;
 }
 
@@ -272,6 +273,7 @@ int lpAllocBody( lpWorld* w )
 	lpBody* b = w->bodies.data + index;
 	b->alive = true;
 	b->gravityScale = 1.0f;
+	b->inertiaRadius = 0.0f;
 	b->nextFree = -1;
 	b->createdTick = w->tick;
 	b->gridSlot = -1;
@@ -907,9 +909,10 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 
 	lpBondParts( w, bodyIndex, first );
 
+	w->bodies.data[bodyIndex].inertiaRadius = b3MaxFloat( def->inertiaRadius, 0.0f );
 	if ( type == b3_dynamicBody )
 	{
-		b3Body_ApplyMassFromShapes( w->bodies.data[bodyIndex].id );
+		lpApplyMass( w->bodies.data + bodyIndex );
 	}
 	else
 	{
@@ -983,7 +986,7 @@ void lpWakeRubble( lpWorld* w, int bodyIndex )
 	}
 	b->kind = lp_kindDebris;
 	b3Body_SetType( b->id, b3_dynamicBody );
-	b3Body_ApplyMassFromShapes( b->id );
+	lpApplyMass( b );
 	b3Body_SetAwake( b->id, true );
 }
 
@@ -1011,6 +1014,10 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		if ( b->gravityScale != 1.0f )
 		{
 			h = lpHashBytes( h, &b->gravityScale, sizeof( b->gravityScale ) ); // only when set: old hashes stay valid
+		}
+		if ( b->inertiaRadius != 0.0f )
+		{
+			h = lpHashBytes( h, &b->inertiaRadius, sizeof( b->inertiaRadius ) );
 		}
 		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 		{

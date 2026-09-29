@@ -94,7 +94,7 @@ enum
 
 // A car-sized hexapod mech standing at base (its feet on the ground), facing local +z turned by yaw: a sheet-metal
 // torso (frame, deck, reactor, hydraulic reservoir, computer) of about 1.8 t and six legs of three segments (hip
-// block, femur, tibia with a rubber foot) on motorised hinges, about 3.6 t in all, standing on them as a rig (its limbs
+// block, femur, tibia with a rubber foot) on motorised hinges, about 2.7 t in all, standing on them as a rig (its limbs
 // in the order of the legs above). style picks the paint. Returns the rig.
 int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
 

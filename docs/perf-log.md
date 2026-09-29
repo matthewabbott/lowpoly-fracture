@@ -533,3 +533,42 @@ IK, a stance that pushes the torso toward a level pose over its feet, an idle la
 - A crouch to half its depth lowers the torso 19.1 cm (19.1 wanted); the feet move 9 mm.
 - A leg that loses its tibia stands on its femur's end (found 1.2 cm from it).
 - Cost: the rig's step 11 us awake, 2 us asleep; Box3D 0.05 ms a step for the awake mech (a car driving: 0.006 ms).
+
+## 2026-09-29 creatures and mechs, step 2: the gait
+
+A free gait (`gait.c`): a planted foot steps once it has drifted far enough behind its rest point, the most urgent
+first, if its nearest able neighbours are down and the centre of mass stays inside the other feet; feet swinging
+together are every other able leg around the body, so six legs make the two tripods. Footholds are cast for (a sole-
+sized sphere, through the rig's own bodies); a swing is re-aimed across the ground every step from the torso's actual
+motion, lifts and comes down on a polynomial arc, and a planted foot is held fixed in the world once it gets there,
+easing toward where the legs' geometry has it over 0.3 s. Steps are half the ground the torso covers in a swing on
+each side of the rest point, so the tripods take turns of the same length; the controls are capped at what that
+cadence keeps up (2.3 m/s for the kit).
+
+What it took, in order:
+- The model disagreed with the bodies' feet by up to 24 cm while walking (1 cm floating): Box3D softens a joint by the
+  lighter body's inertia and caps its stiffness at a quarter of the substep rate, and a slender leg segment has little
+  inertia about its long axis, so the hinges gave 3 degrees each under load. `lpObjectDef.inertiaRadius` pads every
+  axis with mass * r^2 (0.5 m on the kit's legs, re-applied wherever Box3D recomputes a mass): the model is now within
+  1 to 3 cm.
+- Anchors that followed the model's foot slid whenever the joints gave instead of moving the torso (0.55 m/s); anchors
+  fixed in the world once a foot arrives push it along.
+- The feedforward took the desired pose's motion, and the pose was dragged along by a torso running ahead of it, so
+  the torso pushed itself on to 4 m/s; it now carries only the commanded motion, and the pose may run 5 cm ahead but
+  30 cm behind.
+- Greedy "most stretched first" lifted opposite legs in pairs, which blocked the tripods; swinging legs share a parity
+  around the ring of able legs.
+- Legs half the mech's weight shoved the torso about as they swung (slimmed to a third: 2.7 t in all).
+- A planted foot left carrying nothing when the other tripod lands was dragged (up to 30 cm); feet step at 60% of their
+  half-step, as soon as their neighbours are down.
+
+Results (the kit, 4 substeps):
+- Straight: 2.27 m/s of 2.30, 1 cm of drift over 22.7 m, tilt 0.31 degrees rms, feet dragging at most 10 cm as their
+  load goes, link utilization 0.19.
+- Turning in place: 0.78 rad/s of 0.80, 3 cm of wander. A 15 degree slope: 82% of flat speed. A 0.4 m step: up and
+  down, the torso at its full height on top, 4.6 degrees of tilt at worst.
+- Stopped from full speed: it runs on 0.52 m, tidies its feet and sleeps 3.3 s later. Standing it sags 1 cm and sleeps
+  within a second.
+- Identical at 1, 4 and 8 workers.
+- Cost: 12.7 us of rig per walker per step, 0.23 foothold casts per step; Box3D 0.055 ms per walker (1, 4, 16 walkers:
+  0.055, 0.22, 0.81 ms).

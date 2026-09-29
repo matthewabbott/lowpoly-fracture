@@ -170,6 +170,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 			body = w->bodies.data + bodyIndex; // array may have moved
 			lpBody* nb = w->bodies.data + newIndex;
 			nb->solveStress = body->solveStress;
+			nb->inertiaRadius = body->inertiaRadius;
 			for ( int k = 0; k < comp->count; ++k )
 			{
 				int pi = w->scratchQueue.data[comp->first + k];
@@ -179,7 +180,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 				p->body = -1;
 				lpAttachPiece( w, pi, newIndex );
 			}
-			b3Body_ApplyMassFromShapes( nb->id );
+			lpApplyMass( nb );
 		}
 		body = w->bodies.data + bodyIndex;
 		body->volume -= comp->volume;
@@ -213,7 +214,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 	}
 	else if ( isDynamic )
 	{
-		b3Body_ApplyMassFromShapes( body->id );
+		lpApplyMass( body );
 		int material = w->pieces.data[body->pieces.data[0]].material;
 		if ( body->volume < lpGhostVolume( w, material ) )
 		{
