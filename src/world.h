@@ -75,6 +75,16 @@ typedef struct lpStressReduced
 	bool built;
 } lpStressReduced;
 
+// A set of pieces growing into a rigid cluster (stress.c, lpFormClusters): union-find over a structure's nodes
+typedef struct lpClusterSet
+{
+	int parent;
+	int size;
+	b3AABB box;
+	bool eligible;
+	int id;
+} lpClusterSet;
+
 // One structure's stress check in a step. Structures are solved in parallel: a job reads only its own structure's
 // pieces and bonds and writes only their solve state, its body's system, and its own arrays (kept between steps).
 typedef struct lpStressJob
@@ -91,6 +101,10 @@ typedef struct lpStressJob
 	double tolerance;		  // of the whole residual, relative to the whole load
 	float nodeTolerance;	  // of each node's residual, relative to the forces through it
 	lpSolveState solve;
+	int dissolved;					  // clusters the residual meter dissolved (then it is solved again)
+	float oracleWorst;				  // tests (lpWorld.stressOracle): the worst utilization difference from the exact solve
+	float meterWorst;				  // the meter's worst reading
+	int oracleFlips;
 	float peak;						  // converged: the highest joint utilization (in the system's rho)
 	LP_ARRAY( lpSlenderCut ) slender; // converged: the slender pieces' worst sections
 	LP_ARRAY( int ) clusterGroup;	  // scratch: the group of each cluster
@@ -157,6 +171,8 @@ typedef struct lpPiece
 	lpVec6 stressR; // stress solve: residual and search direction, so a solve continues across steps
 	lpVec6 stressP;
 	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
+	lpVec6 stressResidual; // newtons: what its structure's last judged solve left unbalanced at it, within its tolerance.
+						   // A correction solves only for what changed since, so it does not chase this everywhere.
 	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
 	int cluster;	   // the rigid cluster it moves with in its structure's stress solve (from 1), 0: a node of its own
 	float slenderRho;  // slender pieces: the worst section's utilization at the last judged solve (0: not slender)
@@ -230,6 +246,7 @@ typedef struct lpBody
 	int clusters;			  // structure: clusters formed at its last exact solve (some may have dissolved since)
 	int meterRounds;		  // structure: clusters dissolved by the residual meter since its last judgement
 	int solveNodes, solveEdges;
+	bool solveClustered; // the last solve ran on the reduced system
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
 	lpDetonatorDef detonator;
@@ -370,7 +387,16 @@ struct lpWorld
 	LP_ARRAY( b3ContactData ) scratchContacts;
 	LP_ARRAY( lpVec6 ) scratchLoads;
 	LP_ARRAY( int ) scratchClusters;
+	LP_ARRAY( lpClusterSet ) scratchSets;
 	int stressWork; // bond-iterations used this step, over all structures
+	// Tests: every solve on a reduced system is checked against an exact fine solve of the same change, and the worst
+	// joint utilization difference is kept (lpStressOracle)
+	bool stressOracle;
+	float oracleWorst;	// over the solves since it was reset
+	float oracleMeter;	// what the meter read at that solve
+	int oracleSolves;
+	int oracleFlips; // joints the exact solve would strain and the reduced one not, or the other way round
+	int oracleJoints; // joints checked
 	LP_ARRAY( lpBodyRef ) pendingDestroy; // detonated bodies, removed at the start of the next step
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;

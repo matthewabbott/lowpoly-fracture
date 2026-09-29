@@ -139,8 +139,28 @@ tiers instead of popping them.
   preconditioner and conjugate gradient solve it. It is solved for the **correction** to the last solution, not the
   whole state: one pass over the fine edges gives `Pᵀ(f − K x_old)`, the reduced solve finds y from zero, and each
   member moves by its group's motion on top of x_old. Bonds inside a cluster keep their last forces, and the
-  clusters bias only the redistribution. Forces are evaluated on the fine edges. With no clusters a structure is
-  solved as before (hashes unchanged); `TestReducedAssembly` and `TestSolveSystem` check the algebra.
+  clusters bias only the redistribution. Forces are evaluated on the fine edges. `TestReducedAssembly` and
+  `TestSolveSystem` check the algebra.
+- **The clusters in play** (structures past `stressLargeNodes`, 512 pieces):
+  - *Forming:* only after an exact solve, by union-find along bonds in edge order, at most 128 pieces within 12 mean
+    piece sizes. Pieces never clustered: both ends of any joint loaded past `stressGlue` (0.3), and slender pieces
+    loaded past it.
+  - *Seeds:* at every check, the pieces changed since the last judgement (bond set, bond health, load, from their
+    change stamps), and everything within 3 bonds of them, leave their clusters. A rigid cluster at the rim of a
+    hole would carry the arching load stiffly and wrongly.
+  - *What a correction solves:* the right-hand side subtracts the residual each piece's last judged solve was
+    accepted with (`lpPiece.stressResidual`), so it is exactly zero where nothing changed and the correction stays
+    local. A correction is written back to the pieces only once it has converged: a partial one moves clusters
+    rigidly out of balance, and a restart would chase that everywhere.
+  - *The residual meter:* on a converged correction it reads, per cluster, the load the correction brings each member
+    through its bonds (`K (x − x_old)`). A cluster dissolves, and the solve runs again (at most twice), if that could
+    carry a member's joints past 0.5, or if the cluster's load changed by more than a quarter of what its most loaded
+    member carries (then it is carrying a redistribution stiffly and biasing the fine joints around it). If most
+    clusters must go, the change is not local and they all go at once.
+  - *Invariants:* any joint loaded past the glue share has both pieces unclustered (`lpWorld_Validate`).
+  - *The oracle:* tests set `lpWorld.stressOracle` to check every judged correction against an exact fine solve of
+    the same change, with the worst joint error and the number of strain decisions that differ.
+    `TestKeepLocalHit`, `TestKeepBreach`, `TestKeepHole` and `TestDriftSmallStructures` hold these to bounds.
 - `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
   refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics

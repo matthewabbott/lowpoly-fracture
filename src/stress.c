@@ -22,6 +22,11 @@
 // 3. in queue order: judge each solution, strain and break joints
 // Results do not depend on the worker count. Settling (lpWorld_SettleStructures, at load) runs the same check with no
 // budget, so new structures start converged.
+//
+// Big structures (past stressLargeNodes) solve changes on their load-bearing skeleton: after an exact solve their
+// lightly loaded parts form rigid clusters, and a change is solved on the reduced system for the correction to the
+// last solution, with the pieces near the change resolved finely and a residual meter dissolving clusters that would
+// bias it (architecture.md, "Rigid clusters and the delta form").
 
 #include "tasks.h"
 #include "world.h"
@@ -31,6 +36,14 @@
 #include <stdio.h>
 
 static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
+
+// Rigid clusters (lpFormClusters, lpStressMeter)
+#define LP_CLUSTER_MEMBERS 128	   // pieces in a cluster at most
+#define LP_CLUSTER_RADIUS 12.0f	   // mean piece sizes from the middle of a cluster's bounds to its corners, at most
+#define LP_METER_ROUNDS 2		   // times a solve may dissolve clusters and run again before it is judged
+#define LP_SEED_HOPS 3			   // bonds from a changed piece within which pieces leave their clusters
+#define LP_METER_DISSOLVE 0.5f	   // a cluster whose joints could be carried to this utilization dissolves (above the glue)
+#define LP_METER_CHANGE 0.25f	   // or whose load changed by this share of what its most loaded member carries
 
 // What rests on a structure: dynamic bodies pressing on its pieces, from the last physics step's contact impulses
 // (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
@@ -241,17 +254,20 @@ static void lpStressBuildReduced( lpWorld* w, lpStressJob* job )
 		}
 	}
 
-	// The last solution's residual under the new loads and bonds (x holds it; z is free in this form)
+	// What changed since the last judged solve: its residual under the new loads and bonds, less the residual that solve
+	// was accepted with. Where no load or bond changed this is exactly zero, so the correction stays local.
 	lpVec6* x = s->vectors.data;
 	lpVec6* f = x + n;
 	lpVec6* r = x + 2 * n;
 	lpVec6* q = x + 5 * n;
 	lpSystemApply( s, x, q );
+	float inverse = 1.0f / s->forceScale;
 	double load2 = 0.0;
 	for ( int i = 0; i < n; ++i )
 	{
-		r[i].f = b3Sub( f[i].f, q[i].f );
-		r[i].t = b3Sub( f[i].t, q[i].t );
+		const lpVec6* accepted = &w->pieces.data[s->nodes.data[i]].stressResidual;
+		r[i].f = b3MulSub( b3Sub( f[i].f, q[i].f ), inverse, accepted->f );
+		r[i].t = b3MulSub( b3Sub( f[i].t, q[i].t ), inverse, accepted->t );
 		load2 += (double)b3Dot( f[i].f, f[i].f ) + (double)b3Dot( f[i].t, f[i].t );
 	}
 
@@ -266,7 +282,8 @@ static void lpStressBuildReduced( lpWorld* w, lpStressJob* job )
 	lpPartitionRestrict( part, red->nodeRef.data, r, n, y + m );
 	rs->loadNorm2 = load2; // tolerances are relative to the whole load, not to the correction
 
-	// Each group balances to the tolerance of its members together
+	// Each group balances to the tolerance of its most loaded member: the sum of its members' scales would count the
+	// forces inside it, which cancel, and let a big cluster sit out of balance by more than any one member carries
 	lpArray_Reserve( rs->nodeScale, m );
 	rs->nodeScale.count = m;
 	lpArray_Reserve( rs->nodeArm, m );
@@ -280,7 +297,7 @@ static void lpStressBuildReduced( lpWorld* w, lpStressJob* job )
 	{
 		int g = part->group.data[i];
 		float arm = b3Distance( red->nodeRef.data[i], part->ref.data[g] ) + s->nodeArm.data[i];
-		rs->nodeScale.data[g] += s->nodeScale.data[i];
+		rs->nodeScale.data[g] = b3MaxFloat( rs->nodeScale.data[g], s->nodeScale.data[i] );
 		rs->nodeArm.data[g] = b3MaxFloat( rs->nodeArm.data[g], arm );
 	}
 	red->topology = body->topology;
@@ -482,6 +499,18 @@ static void lpApplyStrain( lpWorld* w, b3WorldTransform xf, int bondIndex, float
 {
 	lpBond* bond = w->bonds.data + bondIndex;
 	bond->rho = rho;
+	if ( rho >= w->def.stressGlue )
+	{
+		// Loaded near its limit: both its pieces are resolved finely from now on
+		lpPiece* a = w->pieces.data + bond->a;
+		lpPiece* b = w->pieces.data + bond->b;
+		if ( a->cluster != 0 || b->cluster != 0 )
+		{
+			a->cluster = 0;
+			b->cluster = 0;
+			w->bodies.data[a->body].clusterStamp += 1;
+		}
+	}
 	if ( rho <= 1.0f )
 	{
 		return;
@@ -624,6 +653,42 @@ static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* stra
 	return broken;
 }
 
+// A long piece (beam, plank, column, lintel) of a breakable material: rigid in the solve, so its own check bends it from
+// its bonds' forces. Its extents along its axis (from its centroid) and across it, if it is.
+static bool lpSlenderExtents( const lpWorld* w, const lpPiece* p, float* lo, float* hi, float* w1, float* w2 )
+{
+	const lpMaterialDef* m = lpGetMaterial( p->material );
+	if ( m->breakable == false || m->pattern == lp_breakRadial )
+	{
+		return false;
+	}
+	b3Vec3 a = p->axis, t1, t2;
+	lpContactBasis( a, &t1, &t2 );
+	b3Vec3 c = p->shape->centroid;
+	*lo = FLT_MAX;
+	*hi = -FLT_MAX;
+	*w1 = 0.0f;
+	*w2 = 0.0f;
+	for ( int k = 0; k < p->shape->vertexCount; ++k )
+	{
+		b3Vec3 d = b3Sub( p->shape->vertices[k], c );
+		float along = b3Dot( d, a );
+		*lo = along < *lo ? along : *lo;
+		*hi = along > *hi ? along : *hi;
+		*w1 = b3MaxFloat( *w1, b3AbsFloat( b3Dot( d, t1 ) ) );
+		*w2 = b3MaxFloat( *w2, b3AbsFloat( b3Dot( d, t2 ) ) );
+	}
+	float length = *hi - *lo;
+	float fragment = m->fragmentSize * w->def.fragmentScale;
+	return length >= 2.5f * 2.0f * b3MaxFloat( *w1, *w2 ) && length >= 4.0f * fragment;
+}
+
+static bool lpIsSlender( const lpWorld* w, const lpPiece* p )
+{
+	float lo, hi, w1, w2;
+	return lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 );
+}
+
 // Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. Phase 2, converged: from
 // the solved bond forces and the piece's own weight, find the bending moment along its axis at a few cuts between its
 // supports, and keep the worst (into the job). Phase 3 (lpStressSnap) strains the overloaded ones.
@@ -637,31 +702,15 @@ static void lpStressSlender( lpWorld* w, lpStressJob* job, const lpVec6* x )
 		int pi = s->nodes.data[i];
 		const lpPiece* p = w->pieces.data + pi;
 		const lpMaterialDef* m = lpGetMaterial( p->material );
-		float fragment = m->fragmentSize * w->def.fragmentScale;
-		if ( m->breakable == false || m->pattern == lp_breakRadial || p->depth >= w->def.maxDepth || p->bonds.count < 2 )
-		{
-			continue;
-		}
-
-		// Extents along the axis and across it
-		b3Vec3 a = p->axis, t1, t2;
-		lpContactBasis( a, &t1, &t2 );
-		b3Vec3 c = p->shape->centroid;
-		float lo = FLT_MAX, hi = -FLT_MAX, w1 = 0.0f, w2 = 0.0f;
-		for ( int k = 0; k < p->shape->vertexCount; ++k )
-		{
-			b3Vec3 d = b3Sub( p->shape->vertices[k], c );
-			float along = b3Dot( d, a );
-			lo = along < lo ? along : lo;
-			hi = along > hi ? along : hi;
-			w1 = b3MaxFloat( w1, b3AbsFloat( b3Dot( d, t1 ) ) );
-			w2 = b3MaxFloat( w2, b3AbsFloat( b3Dot( d, t2 ) ) );
-		}
-		float length = hi - lo;
-		if ( length < 2.5f * 2.0f * b3MaxFloat( w1, w2 ) || length < 4.0f * fragment )
+		float lo, hi, w1, w2;
+		if ( p->depth >= w->def.maxDepth || p->bonds.count < 2 || lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 ) == false )
 		{
 			continue; // not slender: the joints decide
 		}
+		b3Vec3 a = p->axis, t1, t2;
+		lpContactBasis( a, &t1, &t2 );
+		b3Vec3 c = p->shape->centroid;
+		float length = hi - lo;
 
 		// Loads on the piece: each bond's force at its contact, and the moment it carries
 		float bondLo = FLT_MAX, bondHi = -FLT_MAX;
@@ -788,6 +837,162 @@ static int lpStressSnap( lpWorld* w, const lpStressJob* job, bool jointsHold, in
 	return queued;
 }
 
+// The residual meter (phase 2, a converged correction). Each cluster member's residual changes by the load the
+// correction brings it through its bonds, K (x - xOld): nodes of their own are solved for theirs, and over a cluster it
+// balances out, but a rigid cluster cannot share it among its members the way their bonds would. The joints inside a
+// cluster were all under stressGlue at its exact solve; if a member's load changed enough to carry one of its joints
+// past LP_METER_DISSOLVE (its utilization grown with the change, relative to the forces through the member), the
+// cluster dissolves and the solve runs again with its pieces resolved finely. Checked against an exact solve (lpStressOracle),
+// the rigid clusters' error lies near the change, where the seeds keep pieces fine, and is small elsewhere. (The
+// residual the last solution was accepted with is not the clusters' doing.) Returns the number of clusters dissolved.
+static int lpStressMeter( lpWorld* w, lpStressJob* job, const lpVec6* x )
+{
+	lpBody* body = w->bodies.data + job->body;
+	const lpStressReduced* red = body->reduced;
+	const lpPartition* part = &red->partition;
+	lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	const lpVec6* xOld = s->vectors.data;
+	lpVec6* change = s->vectors.data + 4 * n; // p and q: free in the delta form once solved
+	lpVec6* kx = s->vectors.data + 5 * n;
+	for ( int i = 0; i < n; ++i )
+	{
+		change[i].f = b3Sub( x[i].f, xOld[i].f );
+		change[i].t = b3Sub( x[i].t, xOld[i].t );
+	}
+	lpSystemApply( s, change, kx );
+
+	// Per cluster: the joints' growth (worst member), the largest load change, and its most loaded member's throughput
+	lpArray_Reserve( job->groupMass, 3 * part->groupCount );
+	job->groupMass.count = 3 * part->groupCount;
+	float* worst = job->groupMass.data;
+	float* leak = worst + part->groupCount;
+	float* carried = leak + part->groupCount;
+	for ( int g = 0; g < part->groupCount; ++g )
+	{
+		worst[g] = 0.0f;
+		leak[g] = 0.0f;
+		carried[g] = 0.0f;
+	}
+	for ( int i = 0; i < n; ++i )
+	{
+		int g = part->group.data[i];
+		if ( part->members.data[g] < 2 )
+		{
+			continue;
+		}
+		const lpPiece* p = w->pieces.data + s->nodes.data[i];
+		float rho = 0.0f;
+		for ( int k = 0; k < p->bonds.count; ++k )
+		{
+			rho = b3MaxFloat( rho, w->bonds.data[p->bonds.data[k]].rho );
+		}
+		float moved = b3Length( kx[i].f ) + b3Length( kx[i].t ) / s->nodeArm.data[i];
+		worst[g] = b3MaxFloat( worst[g], rho * ( 1.0f + moved / s->nodeScale.data[i] ) / LP_METER_DISSOLVE );
+		leak[g] = b3MaxFloat( leak[g], moved );
+		carried[g] = b3MaxFloat( carried[g], s->nodeScale.data[i] );
+	}
+	// Past 1: a joint could be carried past LP_METER_DISSOLVE, or the cluster's load changed by more than LP_METER_CHANGE
+	// of what its most loaded member carries: it is carrying a redistribution stiffly, biasing the fine joints around it
+	for ( int g = 0; g < part->groupCount; ++g )
+	{
+		worst[g] = carried[g] > 0.0f ? b3MaxFloat( worst[g], leak[g] / carried[g] / LP_METER_CHANGE ) : worst[g];
+	}
+	int dissolved = 0, clusters = 0;
+	for ( int g = 0; g < part->groupCount; ++g )
+	{
+		clusters += part->members.data[g] > 1 ? 1 : 0;
+		dissolved += worst[g] > 1.0f ? 1 : 0;
+		job->meterWorst = b3MaxFloat( job->meterWorst, worst[g] );
+	}
+	if ( 2 * dissolved > clusters )
+	{
+		// Most of it is carrying the change: it is not local, and the clusters all go at once rather than a round each
+		for ( int g = 0; g < part->groupCount; ++g )
+		{
+			worst[g] = part->members.data[g] > 1 ? 2.0f : worst[g];
+		}
+		dissolved = clusters;
+	}
+	if ( dissolved > 0 )
+	{
+		for ( int i = 0; i < n; ++i )
+		{
+			if ( worst[part->group.data[i]] > 1.0f )
+			{
+				w->pieces.data[s->nodes.data[i]].cluster = 0;
+			}
+		}
+		body->clusterStamp += 1;
+	}
+	return dissolved;
+}
+
+// Tests (lpWorld.stressOracle): the same change solved exactly on the fine system, from the same last solution and with
+// the same accepted residual, and the worst difference in any joint's utilization from the reduced solve's x
+static void lpStressOracle( lpWorld* w, lpStressJob* job, const lpVec6* x )
+{
+	const lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	lpStressSystem exact = { 0 };
+	for ( int i = 0; i < n; ++i )
+	{
+		lpArray_Push( exact.nodes, s->nodes.data[i] );
+	}
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		lpArray_Push( exact.edges, s->edges.data[k] );
+	}
+	exact.forceScale = s->forceScale;
+	lpSystemResize( &exact );
+	lpSystemFactor( &exact );
+	float inverse = 1.0f / s->forceScale;
+	for ( int i = 0; i < n; ++i )
+	{
+		const lpVec6* accepted = &w->pieces.data[s->nodes.data[i]].stressResidual;
+		exact.vectors.data[i] = s->vectors.data[i];
+		exact.vectors.data[n + i].f = b3MulSub( s->vectors.data[n + i].f, inverse, accepted->f );
+		exact.vectors.data[n + i].t = b3MulSub( s->vectors.data[n + i].t, inverse, accepted->t );
+	}
+	lpSolveState state = { 0 };
+	lpSystemSolve( &exact, 20000, 1e-6, 0.001f, false, &state );
+	// Where a decision is made: the error on joints both solves read within twice their limit (past that they break
+	// at once either way; a dry joint in the slightest tension reads in the tens), and the joints one would strain and
+	// the other not
+	float worst = 0.0f, worstExact = 0.0f, worstReduced = 0.0f;
+	int worstEdge = -1, flips = 0;
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		const lpStressEdge* e = s->edges.data + k;
+		const lpBond* bond = w->bonds.data + e->bond;
+		b3Vec3 f1, m1, f2, m2;
+		lpEdgeForce( e, exact.vectors.data, &f1, &m1 );
+		lpEdgeForce( e, x, &f2, &m2 );
+		float rho1 = lpBondUtilization( w, bond, e->t1, e->t2, b3MulSV( s->forceScale, f1 ), b3MulSV( s->forceScale, m1 ) );
+		float rho2 = lpBondUtilization( w, bond, e->t1, e->t2, b3MulSV( s->forceScale, f2 ), b3MulSV( s->forceScale, m2 ) );
+		float off = b3AbsFloat( rho1 - rho2 );
+		flips += ( rho1 > 1.0f ) != ( rho2 > 1.0f ) ? 1 : 0;
+		if ( b3MaxFloat( rho1, rho2 ) <= 2.0f && off > worst )
+		{
+			worst = off;
+			worstExact = rho1;
+			worstReduced = rho2;
+			worstEdge = k;
+		}
+	}
+	job->oracleWorst = worst;
+	job->oracleFlips = flips;
+	if ( w->def.debugLog && worstEdge >= 0 )
+	{
+		const lpStressEdge* e = s->edges.data + worstEdge;
+		const lpBond* bond = w->bonds.data + e->bond;
+		printf( "[lpf]   oracle: %d iterations; worst joint %d at %.1f %.1f %.1f: exact %.3f, reduced %.3f (clusters %d and %d)\n",
+				state.iterations, e->bond, (double)bond->centroid.x, (double)bond->centroid.y, (double)bond->centroid.z,
+				(double)worstExact, (double)worstReduced, w->pieces.data[bond->a].cluster, w->pieces.data[bond->b].cluster );
+	}
+	lpSystemFree( &exact );
+}
+
 // Phase 2, one structure: build, solve, and keep the solution (in newtons of load) and the solve's state on the
 // pieces; converged, also the utilizations and the slender pieces' worst sections. A correction solved on the
 // reduced system moves each member with its group, on top of the solution it corrects.
@@ -808,9 +1013,11 @@ static void lpRunStressJob( int index, void* context )
 		lpPartitionProlong( &red->partition, red->nodeRef.data, red->system.vectors.data, n, moved );
 		x = moved;
 	}
+	// Kept on the pieces: a solution continues from here after a restart. A correction is kept only once it has
+	// converged: a partial one moves clusters rigidly out of balance, and a restart would chase that everywhere.
 	const lpVec6* r = s->vectors.data + 2 * n;
 	const lpVec6* p = s->vectors.data + 4 * n;
-	for ( int i = 0; i < n; ++i )
+	for ( int i = 0; i < n && ( red == NULL || job->solve.converged ); ++i )
 	{
 		lpPiece* piece = w->pieces.data + s->nodes.data[i];
 		piece->stressX.f = b3MulSV( s->forceScale, x[i].f );
@@ -823,10 +1030,34 @@ static void lpRunStressJob( int index, void* context )
 	}
 	job->peak = 0.0f;
 	job->slender.count = 0;
+	job->dissolved = 0;
+	job->oracleWorst = -1.0f;
+	job->meterWorst = 0.0f;
+	if ( red != NULL && job->solve.converged && w->stressOracle )
+	{
+		lpStressOracle( w, job, x );
+	}
+	if ( red != NULL && job->solve.converged && w->bodies.data[job->body].meterRounds < LP_METER_ROUNDS )
+	{
+		job->dissolved = lpStressMeter( w, job, x );
+		job->solve.converged = job->dissolved == 0; // otherwise solved again, from here, with them resolved finely
+		job->oracleWorst = job->dissolved == 0 ? job->oracleWorst : -1.0f; // only what is judged counts
+	}
 	if ( job->solve.converged )
 	{
 		lpStressUtilizations( w, job, x );
 		lpStressSlender( w, job, x );
+
+		// The residual it is accepted with, for the corrections after it
+		lpVec6* kx = s->vectors.data + 5 * n; // q: free once solved
+		const lpVec6* f = s->vectors.data + n;
+		lpSystemApply( s, x, kx );
+		for ( int i = 0; i < n; ++i )
+		{
+			lpVec6* residual = &w->pieces.data[s->nodes.data[i]].stressResidual;
+			residual->f = b3MulSV( s->forceScale, b3Sub( f[i].f, kx[i].f ) );
+			residual->t = b3MulSV( s->forceScale, b3Sub( f[i].t, kx[i].t ) );
+		}
 	}
 }
 
@@ -840,6 +1071,108 @@ static lpStressJob* lpAddStressJob( lpWorld* w )
 		w->stressJobCapacity = capacity;
 	}
 	return w->stressJobs + w->stressJobCount++;
+}
+
+static int lpFindSet( lpClusterSet* sets, int i )
+{
+	while ( sets[i].parent != i )
+	{
+		sets[i].parent = sets[sets[i].parent].parent;
+		i = sets[i].parent;
+	}
+	return i;
+}
+
+// Rigid clusters from an exact solve of a big structure (phase 3). Its nodes are grouped along their bonds, in edge
+// order, except those a correction must resolve finely: slender pieces and both pieces of every joint loaded past
+// stressGlue (anchored pieces are not nodes). A cluster holds at most LP_CLUSTER_MEMBERS pieces within
+// LP_CLUSTER_RADIUS mean piece sizes of the middle of its bounds.
+static void lpFormClusters( lpWorld* w, const lpStressJob* job )
+{
+	lpBody* body = w->bodies.data + job->body;
+	const lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	lpArray_Reserve( w->scratchSets, n );
+	lpClusterSet* sets = w->scratchSets.data;
+	float meanSize = 0.0f;
+	for ( int i = 0; i < n; ++i )
+	{
+		lpPiece* p = w->pieces.data + s->nodes.data[i];
+		sets[i] = (lpClusterSet){ i, 1, p->shape->bounds, p->slenderRho < w->def.stressGlue, 0 };
+		meanSize += cbrtf( p->shape->volume );
+		p->cluster = 0;
+	}
+	float radius = LP_CLUSTER_RADIUS * meanSize / (float)n;
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		const lpStressEdge* e = s->edges.data + k;
+		if ( s->rho.data[k] >= w->def.stressGlue )
+		{
+			if ( e->a >= 0 )
+			{
+				sets[e->a].eligible = false;
+			}
+			if ( e->b >= 0 )
+			{
+				sets[e->b].eligible = false;
+			}
+		}
+	}
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		const lpStressEdge* e = s->edges.data + k;
+		if ( e->a < 0 || e->b < 0 || sets[e->a].eligible == false || sets[e->b].eligible == false ||
+			 w->bonds.data[e->bond].alive == false )
+		{
+			continue;
+		}
+		int ra = lpFindSet( sets, e->a );
+		int rb = lpFindSet( sets, e->b );
+		if ( ra == rb || sets[ra].size + sets[rb].size > LP_CLUSTER_MEMBERS )
+		{
+			continue;
+		}
+		b3AABB box = { b3Min( sets[ra].box.lowerBound, sets[rb].box.lowerBound ), b3Max( sets[ra].box.upperBound, sets[rb].box.upperBound ) };
+		if ( b3Length( b3AABB_Extents( box ) ) > radius )
+		{
+			continue;
+		}
+		int root = ra < rb ? ra : rb;
+		int child = ra < rb ? rb : ra;
+		sets[child].parent = root;
+		sets[root].size += sets[child].size;
+		sets[root].box = box;
+	}
+
+	// Cluster ids in node order; a set of one is a node of its own
+	int clusters = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		int r = lpFindSet( sets, i );
+		if ( sets[r].size < 2 )
+		{
+			continue;
+		}
+		if ( sets[r].id == 0 )
+		{
+			sets[r].id = ++clusters;
+		}
+		w->pieces.data[s->nodes.data[i]].cluster = sets[r].id;
+	}
+	body->clusters = clusters;
+	body->clusterStamp += 1;
+	if ( w->def.debugLog )
+	{
+		int eligible = 0, clustered = 0, largest = 0;
+		for ( int i = 0; i < n; ++i )
+		{
+			eligible += sets[i].eligible ? 1 : 0;
+			clustered += w->pieces.data[s->nodes.data[i]].cluster != 0 ? 1 : 0;
+			largest = sets[i].parent == i && sets[i].size > largest ? sets[i].size : largest;
+		}
+		printf( "[lpf] tick %llu stress: body %d, %d of %d nodes may cluster, %d in %d clusters (the largest %d), radius %.2f\n",
+				(unsigned long long)w->tick, job->body, eligible, n, clustered, clusters, largest, (double)radius );
+	}
 }
 
 // Phase 3, one structure: judge its solution. Converged: strain at every overloaded joint and the worst break, then
@@ -859,7 +1192,35 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	body->solveTopology = body->topology;
 	body->solveNodes = n;
 	body->solveEdges = edges;
+	body->solveClustered = job->clustered;
 
+	if ( job->oracleWorst >= 0.0f )
+	{
+		w->oracleSolves += 1;
+		w->oracleFlips += job->oracleFlips;
+		w->oracleJoints += job->system->edges.count;
+		if ( job->oracleWorst > w->oracleWorst )
+		{
+			w->oracleWorst = job->oracleWorst;
+			w->oracleMeter = job->meterWorst;
+		}
+		if ( w->def.debugLog )
+		{
+			printf( "[lpf] tick %llu stress: body %d, reduced solve against the exact one: worst joint utilization off by %.4f, "
+					"the meter read %.4f\n",
+					(unsigned long long)w->tick, job->body, (double)job->oracleWorst, (double)job->meterWorst );
+		}
+	}
+	if ( job->dissolved > 0 )
+	{
+		body->meterRounds += 1;
+		w->stats.stressDissolved += job->dissolved;
+		if ( w->def.debugLog )
+		{
+			printf( "[lpf] tick %llu stress: body %d, the residual meter dissolved %d clusters (round %d)\n",
+					(unsigned long long)w->tick, job->body, job->dissolved, body->meterRounds );
+		}
+	}
 	if ( job->solve.converged == false )
 	{
 		body->stressSteps += 1;
@@ -878,12 +1239,14 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	}
 
 	w->stats.stressJudged += 1;
+	w->stats.stressReduced += job->clustered ? 1 : 0;
+	body->meterRounds = 0;
 
 	// Accepted: the pieces changed since the last judgement were its seeds
 	int seeds = 0;
-	for ( int i = 0; i < n; ++i )
+	for ( int i = 0; i < body->pieces.count; ++i )
 	{
-		lpPiece* p = w->pieces.data + s->nodes.data[i];
+		lpPiece* p = w->pieces.data + body->pieces.data[i];
 		seeds += p->changed > p->accepted ? 1 : 0;
 		p->accepted = w->changeSerial;
 	}
@@ -898,6 +1261,10 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;
 	int snapped = lpStressSnap( w, job, broken == 0, &strained, &slender ); // slender pieces strain once the joints hold
+	if ( job->clustered == false && n > w->def.stressLargeNodes )
+	{
+		lpFormClusters( w, job ); // from an exact solve only: its next corrections move the unloaded parts rigidly
+	}
 	body->unsettled = broken > 0 || snapped > 0 || strained > 0;
 	body->creaking = broken == 0 && snapped == 0 && strained > 0; // next checks only add strain, joints and slender pieces
 	body->strainedLastCheck = strained > 0;
@@ -905,14 +1272,66 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	if ( w->def.debugLog )
 	{
 		printf( "[lpf] tick %llu stress: body %d, %d nodes (%d changed), %d bonds, %d iterations over %d steps, peak "
-				"utilization %.2f, %d strained, %d broke\n",
+				"utilization %.2f, %d strained, %d broke; solved on %d groups and %d bonds, %d clusters now\n",
 				(unsigned long long)w->tick, job->body, n, seeds, edges, job->solve.iterations, body->stressSteps + 1,
-				(double)job->peak, strained, broken );
+				(double)job->peak, strained, broken, job->clustered ? body->reduced->system.nodes.count : n,
+				job->clustered ? body->reduced->system.edges.count : edges, body->clusters );
 	}
 	body->stressSteps = 0;
 	if ( body->unsettled )
 	{
 		lpArray_Push( w->stressAgain, job->body ); // broken joints split it next step; strained ones creak on
+	}
+}
+
+// Seeds (phase 1): the pieces changed since the last judged solve (bonds, their health, loads), and everything within
+// LP_SEED_HOPS bonds of them, leave their clusters, so a correction resolves the change and the load finding its way
+// around it finely: a rigid cluster at the rim of a hole would carry the arching load stiffly and wrongly
+static void lpStressSeed( lpWorld* w, lpBody* body )
+{
+	w->stamp += 1;
+	int stamp = w->stamp;
+	w->scratchQueue.count = 0;
+	lpArray_Reserve( w->scratchQueue, body->pieces.count );
+	lpArray_Reserve( w->scratchClusters, body->pieces.count );
+	int* depth = w->scratchClusters.data; // hops from a seed, by queue position
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		int pi = body->pieces.data[i];
+		lpPiece* p = w->pieces.data + pi;
+		if ( p->changed > p->accepted )
+		{
+			p->mark = stamp;
+			depth[w->scratchQueue.count] = 0;
+			w->scratchQueue.data[w->scratchQueue.count++] = pi;
+		}
+	}
+	bool changed = false;
+	for ( int head = 0; head < w->scratchQueue.count; ++head )
+	{
+		int pi = w->scratchQueue.data[head];
+		lpPiece* p = w->pieces.data + pi;
+		changed = changed || p->cluster != 0;
+		p->cluster = 0;
+		if ( depth[head] == LP_SEED_HOPS )
+		{
+			continue;
+		}
+		for ( int k = 0; k < p->bonds.count; ++k )
+		{
+			const lpBond* bond = w->bonds.data + p->bonds.data[k];
+			int other = bond->a == pi ? bond->b : bond->a;
+			if ( w->pieces.data[other].mark != stamp )
+			{
+				w->pieces.data[other].mark = stamp;
+				depth[w->scratchQueue.count] = depth[head] + 1;
+				w->scratchQueue.data[w->scratchQueue.count++] = other;
+			}
+		}
+	}
+	if ( changed )
+	{
+		body->clusterStamp += 1;
 	}
 }
 
@@ -963,6 +1382,10 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			continue;
 		}
 
+		if ( body->clusters > 0 )
+		{
+			lpStressSeed( w, body );
+		}
 		int nodes, edges, groups, reducedEdges;
 		lpStressCount( w, body, &nodes, &edges, &groups, &reducedEdges );
 		if ( nodes == 0 || edges == 0 )
@@ -988,7 +1411,8 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 					  ( clustered ? red != NULL && red->built && red->topology == body->topology &&
 									   red->clusterStamp == body->clusterStamp
 								  : system->factored );
-		continuing = continuing && ( cached || clustered == false ); // a correction continues only on its reduced system
+		// A correction continues only on its reduced system, and a solve only in the mode it started in
+		continuing = continuing && body->solveClustered == clustered && ( cached || clustered == false );
 		int solvedEdges = clustered ? reducedEdges : edges;
 		int overhead = cached ? 0 : 2 * edges; // a build and the first residual
 

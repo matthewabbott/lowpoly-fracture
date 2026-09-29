@@ -5,6 +5,14 @@
 #include "scenes.h"
 #include "world.h"
 
+// Drift tests: every world clusters structures past this many pieces (0: the default), with each reduced solve checked
+// against an exact one; the worst joint utilization error over all of them is kept
+extern int lp_testLargeNodes;
+extern float lp_testOracleWorst;
+extern int lp_testOracleSolves;
+extern int lp_testOracleFlips;
+extern int lp_testOracleJoints;
+
 typedef struct Sim
 {
 	b3WorldId physics;
@@ -20,7 +28,9 @@ static inline Sim CreateSimDef( lpWorldDef ld, int scene )
 	Sim s;
 	s.physics = b3CreateWorld( &wd );
 	ld.physics = s.physics;
+	ld.stressLargeNodes = lp_testLargeNodes > 0 ? lp_testLargeNodes : ld.stressLargeNodes;
 	s.world = lpCreateWorld( &ld );
+	s.world->stressOracle = lp_testLargeNodes > 0;
 	if ( scene >= 0 )
 	{
 		lpBuildScene( s.world, scene );
@@ -46,6 +56,10 @@ static inline Sim CreateSimWorkers( int scene, int workers )
 
 static inline void DestroySim( Sim* s )
 {
+	lp_testOracleWorst = s->world->oracleWorst > lp_testOracleWorst ? s->world->oracleWorst : lp_testOracleWorst;
+	lp_testOracleSolves += s->world->oracleSolves;
+	lp_testOracleFlips += s->world->oracleFlips;
+	lp_testOracleJoints += s->world->oracleJoints;
 	lpDestroyWorld( s->world );
 	b3DestroyWorld( s->physics );
 }

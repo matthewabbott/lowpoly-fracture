@@ -327,3 +327,35 @@ kept on the piece at every judged solve, and creaking strains it from there. Tow
 (chaotic: town peaks at 9980 pieces instead of 9017, the barrage at 18067 instead of 16334); the barrage's step
 drops from 4.63 to 3.99 ms at 8 workers even with more coming down. The clustered keep breach's stress time drops from
 536 to 212 ms.
+
+## 2026-09-28 stress at scale, step 4: clusters in play, checked against an exact solve
+
+Structures past 512 pieces (today only the keep) form rigid clusters after every exact solve and solve changes as
+corrections on them. Tuning this took an **oracle**: tests can check every judged correction against an exact fine
+solve of the same change (the worst joint utilization error, and how many joints one would strain and the other not).
+It showed four things wrong with the first cut, each fixed:
+
+| found | fix |
+|---|---|
+| The right-hand side `Pᵀ(f − K x_old)` carried the residual the settle was accepted with (up to 5% per node), so every correction chased it across the whole keep | subtract each piece's accepted residual: zero where nothing changed |
+| Partial corrections were written back each step; a restart then took a rigid, unbalanced state as its baseline | write back only converged corrections |
+| Rigid clusters one bond from a hole carried the arching load stiffly: joints at the rim off by 0.62 | seeds reach 3 bonds out: 0.27 |
+| The meter normalized by each member's own load: a plank carrying only itself "changed 300%" and nothing survived | read the change against the joints (could it carry one past 0.5?) and against the cluster's most loaded member (is the cluster carrying a redistribution?) |
+
+Also: slender pieces may cluster while lightly loaded, clusters grew to 128 pieces, and a solve continues only in the
+mode (reduced or fine) it started in (a structure whose clusters all dissolved had continued a stale fine solve).
+
+The keep, one worker, under today's budget (10k bond-iterations per structure per step):
+
+| case | exact solves only | clustered | judged corrections vs exact |
+|---|---|---|---|
+| two stones out of the upper wall | decided after 41 steps | 12 steps | worst joint off by 0.13, no flips |
+| the ground floor of the front out | decided 153, settled 592, 12 joints break | decided 207, settled 378, the same 12 break | 0.008, no flips |
+| a cannon hole | decided 99, not settled in 600, 118 break | decided 26, settled 306, 122 break | 0.28, 2 of 65k flipped |
+| small structures with everything past 4 pieces clustered (arch, colonnade, tower, walls, beam) | | same outcomes | 0.81 on the dry-stacked tower, 4 of 2870 flipped |
+
+A local change is where clusters pay: the reduced system is a few thousand bonds instead of 6300. A breach
+redistributes the front wall's weight into the corners: the meter reads it as not local, every cluster dissolves after
+one round, and the fine solve that follows starts late. Under the ladder's constant bombardment the keep is never
+judged either way, and the corrections' extra fine passes cost 0.16 ms per step (stress 0.99 → 1.15 ms): step 5's
+ladder and audits are for that regime, and its budget allocation for the fine solves the budget starves.

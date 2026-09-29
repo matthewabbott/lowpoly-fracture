@@ -191,7 +191,7 @@ int lpAllocPiece( lpWorld* w )
 	p->body = -1;
 	p->nextFree = -1;
 	p->shapeId = b3_nullShapeId;
-	memset( &p->stressX, 0, 4 * sizeof( lpVec6 ) );
+	memset( &p->stressX, 0, 5 * sizeof( lpVec6 ) );
 	p->strain = 0.0f;
 	p->accepted = 0;
 	lpTouchPiece( w, index ); // a new piece is a seed of its structure's next solve
@@ -342,6 +342,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->scratchContacts );
 	lpArray_Free( w->scratchLoads );
 	lpArray_Free( w->scratchClusters );
+	lpArray_Free( w->scratchSets );
 	lpArray_Free( w->stressAgain );
 	for ( int i = 0; i < w->jobCapacity; ++i )
 	{
@@ -1316,6 +1317,10 @@ bool lpWorld_Validate( const lpWorld* w )
 		if ( bond->joint == lp_jointAuto || bond->joint >= lp_jointCount )
 		{
 			return lpFail( "bond %d has joint %d (piece %d)", i, bond->joint, bond->a );
+		}
+		if ( bond->rho >= w->def.stressGlue && ( w->pieces.data[bond->a].cluster != 0 || w->pieces.data[bond->b].cluster != 0 ) )
+		{
+			return lpFail( "bond %d is loaded past the glue share but piece %d or %d is in a rigid cluster", i, bond->a, bond->b );
 		}
 	}
 	if ( liveBonds != w->bondCount || bondRefs != 2 * liveBonds )

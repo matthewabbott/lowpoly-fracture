@@ -13,6 +13,11 @@ int StressTest( void );
 int LinkTest( void );
 
 const char* lp_testFilter = NULL;
+int lp_testLargeNodes = 0;
+float lp_testOracleWorst = 0.0f;
+int lp_testOracleSolves = 0;
+int lp_testOracleFlips = 0;
+int lp_testOracleJoints = 0;
 
 int main( int argc, char** argv )
 {

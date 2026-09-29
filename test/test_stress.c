@@ -480,6 +480,10 @@ typedef struct KeepRun
 	float stressMs; // summed over the steps
 	int iterations;
 	bool valid;
+	int oracleSolves; // with lpWorld.stressOracle: clustered solves checked, and the worst joint error among them
+	float oracleWorst;
+	float oracleMeter;
+	int oracleFlips, oracleJoints;
 } KeepRun;
 
 // Damage the keep, then watch what the stress solve makes of it: knock out the pieces in [lo, hi] (keep frame), or, with
@@ -526,6 +530,11 @@ static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpa
 	}
 	r.after = BodyVolume( s.world, keep );
 	r.valid = lpWorld_Validate( s.world );
+	r.oracleSolves = s.world->oracleSolves;
+	r.oracleWorst = s.world->oracleWorst;
+	r.oracleMeter = s.world->oracleMeter;
+	r.oracleFlips = s.world->oracleFlips;
+	r.oracleJoints = s.world->oracleJoints;
 	r.hash = lpWorld_Hash( s.world );
 	r.solverHash = lpWorld_HashStress( s.world );
 	DestroySim( &s );
@@ -551,6 +560,12 @@ static lpImpactDef KeepCannon( void )
 	return impact;
 }
 
+
+static void EnableOracle( lpWorld* w, int keep )
+{
+	(void)keep;
+	w->stressOracle = true;
+}
 
 static void PrintKeepRun( const char* name, KeepRun r, int steps )
 {
@@ -592,11 +607,15 @@ static const b3Vec3 lp_breachHi = { 7.6f, 3.6f, 7.6f };
 static int TestKeepBreach( void )
 {
 	const int steps = 900;
-	KeepRun r = KeepDamage( 1, lp_breachLo, lp_breachHi, NULL, steps );
+	KeepRun r = KeepDamageDef( lpDefaultWorldDef(), lp_breachLo, lp_breachHi, NULL, steps, EnableOracle );
 	PrintKeepRun( "breach", r, steps );
+	printf( "  reduced solves %d: worst joint off by %.3f against exact ones, %d of %d joints flipped\n", r.oracleSolves,
+			(double)r.oracleWorst, r.oracleFlips, r.oracleJoints );
+	ENSURE( r.valid );
 	ENSURE( r.removed > 60 );
 	ENSURE( r.after > 0.95f * r.before );
-	ENSURE( r.decided > 0 && r.settled > 0 ); // loose: today about 150 and 550 steps
+	ENSURE( r.decided > 0 && r.settled > 0 && r.settled < 600 ); // exact solves only: about 150 and 590 steps
+	ENSURE( r.breaks == 12 ); // as the exact solves break
 	return 0;
 }
 
@@ -606,10 +625,15 @@ static int TestKeepHole( void )
 {
 	const int steps = 600;
 	lpImpactDef impact = KeepCannon();
-	KeepRun r = KeepDamage( 1, b3Vec3_zero, b3Vec3_zero, &impact, steps );
+	KeepRun r = KeepDamageDef( lpDefaultWorldDef(), b3Vec3_zero, b3Vec3_zero, &impact, steps, EnableOracle );
 	PrintKeepRun( "cannon hole", r, steps );
+	printf( "  reduced solves %d: worst joint off by %.3f against exact ones, %d of %d joints flipped\n", r.oracleSolves,
+			(double)r.oracleWorst, r.oracleFlips, r.oracleJoints );
+	ENSURE( r.valid );
 	ENSURE( r.after > 0.95f * r.before );
-	ENSURE( r.decided > 0 );
+	ENSURE( r.decided > 0 && r.decided < 60 ); // exact solves only: about 100
+	ENSURE( r.settled > 0 );				   // exact solves only: not within 600 steps
+	ENSURE( 100 * r.oracleFlips < r.oracleJoints );
 	return 0;
 }
 
@@ -920,33 +944,61 @@ static int TestReducedAssembly( void )
 	return 0;
 }
 
-// The keep's back half moves as rigid clusters, one per course
-static void ClusterBackHalf( lpWorld* w, int keep )
-{
-	lpBody* b = w->bodies.data + keep;
-	for ( int k = 0; k < b->pieces.count; ++k )
-	{
-		lpPiece* p = w->pieces.data + b->pieces.data[k];
-		if ( p->anchored == false && p->shape->centroid.z < 0.0f )
-		{
-			p->cluster = 1 + (int)( p->shape->centroid.y / 0.6f );
-		}
-	}
-	b->clusterStamp += 1;
-}
+// A few stones knocked out of the keep's upper front wall, solved exactly (no clusters) and as a correction with the
+// keep's lightly loaded parts moving as rigid clusters: the clustered solve decides sooner, each of its judgements is
+// checked against an exact solve of the same change, and the same joints give
+static const b3Vec3 lp_localLo = { 2.9f, 7.1f, 6.2f };
+static const b3Vec3 lp_localHi = { 5.1f, 8.5f, 7.6f };
 
-// The breach solved as a correction on the keep with its back half clustered: it is judged much sooner than the fine
-// solve, and what breaks stays close to what the fine solve breaks
-static int TestClusteredBreach( void )
+static int TestKeepLocalHit( void )
 {
 	lpWorldDef def = lpDefaultWorldDef();
-	KeepRun fine = KeepDamageDef( def, lp_breachLo, lp_breachHi, NULL, 600, NULL );
-	KeepRun clustered = KeepDamageDef( def, lp_breachLo, lp_breachHi, NULL, 600, ClusterBackHalf );
-	PrintKeepRun( "breach, fine", fine, 600 );
-	PrintKeepRun( "breach, back half clustered", clustered, 600 );
+	def.stressLargeNodes = 1 << 30;
+	KeepRun fine = KeepDamageDef( def, lp_localLo, lp_localHi, NULL, 300, NULL );
+	def.stressLargeNodes = lpDefaultWorldDef().stressLargeNodes;
+	KeepRun clustered = KeepDamageDef( def, lp_localLo, lp_localHi, NULL, 300, EnableOracle );
+	PrintKeepRun( "local hit, exact", fine, 300 );
+	PrintKeepRun( "local hit, clustered", clustered, 300 );
+	printf( "  clustered solves %d, worst joint off by %.3f against the exact solve (the meter read %.3f)\n", clustered.oracleSolves,
+			(double)clustered.oracleWorst, (double)clustered.oracleMeter );
 	ENSURE( fine.valid && clustered.valid );
-	ENSURE( clustered.decided > 0 && clustered.decided < fine.decided );
-	ENSURE( clustered.after > 0.95f * clustered.before );
+	ENSURE( clustered.oracleSolves > 0 );
+	ENSURE( clustered.decided > 0 && 2 * clustered.decided < fine.decided );
+	ENSURE( clustered.oracleWorst < 0.3f );
+	ENSURE( clustered.breaks == fine.breaks );
+	return 0;
+}
+
+// The stress tests of small structures again, with everything past 4 pieces clustered (the arch, the colonnade, the
+// tower, the walls and the beam are all solved as corrections on rigid clusters after their first exact solve), and
+// each reduced solve checked against an exact one: the same things stand and fall, and the joints read close
+static int TestDriftSmallStructures( void )
+{
+	lp_testLargeNodes = 4;
+	lp_testOracleWorst = 0.0f;
+	lp_testOracleSolves = 0;
+	lp_testOracleFlips = 0;
+	lp_testOracleJoints = 0;
+	int failed = 0;
+	int ( *tests[] )( void ) = { TestArchKeystone, TestColonnade, TestTowerTopples, TestDamagedWallSettles, TestBeamMidspan, TestMasonryWallHole };
+	const char* names[] = { "arch", "colonnade", "tower", "wall", "beam", "masonry" };
+	for ( int i = 0; i < 6; ++i )
+	{
+		float worst = lp_testOracleWorst;
+		int solves = lp_testOracleSolves, flips = lp_testOracleFlips;
+		lp_testOracleWorst = 0.0f;
+		failed += tests[i]();
+		printf( "  %s: %d reduced solves, worst joint within twice its limit off by %.3f, %d joints flipped\n", names[i],
+				lp_testOracleSolves - solves, (double)lp_testOracleWorst, lp_testOracleFlips - flips );
+		lp_testOracleWorst = b3MaxFloat( worst, lp_testOracleWorst );
+	}
+	lp_testLargeNodes = 0;
+	printf( "  %d reduced solves checked, worst joint off by %.3f, %d of %d joints flipped\n", lp_testOracleSolves,
+			(double)lp_testOracleWorst, lp_testOracleFlips, lp_testOracleJoints );
+	ENSURE( failed == 0 );
+	ENSURE( lp_testOracleSolves > 0 );
+	ENSURE( lp_testOracleWorst < 1.0f ); // the dry-stacked tower: the slightest tension reads high
+	ENSURE( 100 * lp_testOracleFlips < lp_testOracleJoints );
 	return 0;
 }
 
@@ -967,6 +1019,7 @@ int StressTest( void )
 	RUN_TEST( TestKeepBreach );
 	RUN_TEST( TestKeepHole );
 	RUN_TEST( TestKeepDeterminism );
-	RUN_TEST( TestClusteredBreach );
+	RUN_TEST( TestKeepLocalHit );
+	RUN_TEST( TestDriftSmallStructures );
 	return 0;
 }
