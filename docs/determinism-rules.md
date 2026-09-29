@@ -49,7 +49,7 @@ keep the destruction layer (`src/`) and the app from breaking it.
   versions: pin the toolchain for any multiplayer build.
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
   gravity scales that are not 1: a world without either hashes as before). Rendering and particles are deliberately
-  excluded.
+  excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.
 - Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, ruins (its demo and under
-  bombardment), town under a barrage (`-Bombard 3`, many structures solving at once), and the yard (its demo and
-  under bombardment), at 1, 4 and 8 workers.
+  bombardment), town under a barrage (`-Bombard 3`, many structures solving at once), the yard (its demo and
+  under bombardment), and the keep (`scripts/keep_demo.txt`, one 2000-piece structure), at 1, 4 and 8 workers.

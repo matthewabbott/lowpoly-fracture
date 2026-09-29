@@ -8,11 +8,12 @@ Order (one at a time):
 1. Chunky fracture + debris tiers (done)
 2. Toppling and stress points (done)
 3. Breakable links and assemblies (done)
-4. Stress at scale (next)
+4. Stress at scale (in progress)
 5. Destructible vehicles
-6. Large-map physics zones
-7. Networking
-8. Art polish
+6. Profiling and hot paths
+7. Large-map physics zones
+8. Networking
+9. Art polish
 
 ## 1. Chunky fracture + debris tiers
 
@@ -90,20 +91,35 @@ Open:
 
 ## 4. Stress at scale
 
-Why: the per-structure stress budget (10k bond-iterations per step) caps practical building size. Town's houses (up
-to about 160 pieces) finish a check in 1 to 3 steps; a 2000-piece building (about 6000 bonds) would get about one
-iteration per step, and its collapses would lag by hundreds of steps.
+Why: the per-structure stress budget (10k bond-iterations per step) caps practical building size. The keep (1973
+pieces, 6296 bonds) gets one iteration per step: a hole in its wall takes about 1600 steps to settle, and every
+solving step rebuilds the whole system. The goal is that a big building decides a local hit in about 8 to 15 steps
+and degrades gracefully under a barrage, deterministically.
 
-In order, measuring first:
-1. A big-building bench rung (a 2000-piece block or cathedral).
-2. Nearby-location solves: solve the few-bond neighbourhood of the damage with the rest held at its last solution,
-   then one full K·x to measure the residual that leaked out; small, done; large, grow the region or continue the
-   full warm-started solve from the patched solution.
-3. A coarse far-field solve: aggregate pieces into clusters and solve that coarse system as a correction (a
-   two-level preconditioner), so iteration counts stop growing with building size.
-4. A watch list of critical joints (the most loaded bonds of the last full solve: keystones, loaded supports),
-   checked first after a local solve to decide whether a wider solve is needed.
-5. A parallel K·x within one solve (fixed partitions, fixed-order sums), for the biggest structures only.
+The idea (reviewed by GPT-6-Astra and Fable): reduce a structure to its load-bearing skeleton. Plausibility beats
+causal consistency: fidelity may vary with load, as long as the engine stays deterministic.
+- **Rigid clusters as super-nodes:** groups of lightly loaded pieces move as one; assembling their bonds gives
+  exactly `PᵀKP`, so the existing kernels, preconditioner and conjugate gradient run unchanged.
+- **Solve for the change, not the state (the Δ-form):** keep the last exact solution and solve only for the
+  correction, so rigid clusters bias the redistribution, never the far field.
+- **One residual pass as the meter and trigger:** after a reduced solve, one pass over all bonds gives each
+  cluster's leak; a cluster that leaks too much dissolves and the solve reruns.
+- **Who stays fine:** changed pieces and their neighbours, anchored and slender pieces, and both ends of any bond
+  near its limit (so a lintel is never swallowed).
+- **A fidelity ladder** chosen per structure from counts (L0 graph only, L1 local patch, L2 patch plus clusters,
+  L3 exact), with an **audit queue** that re-solves provisional structures exactly once things calm down, and an
+  age cap so chaos cannot starve it.
+
+Steps (each measured in [perf-log.md](perf-log.md)):
+0. The keep scene, settling at load, sweep bonding, the solver hash (done).
+1. Split the solver out of `stress.c`, cache each body's system while it solves, the slender check over incident
+   edges (behaviour-preserving: hashes identical).
+2. Change tracking per piece, warm starts for fracture children, liveness (a structure hit every few steps is still
+   judged).
+3. The reduced assembly and the Δ-form.
+4. Large structures take L2; clustering from exact results; drift tests against the fine solve.
+5. The ladder and audits under pressure.
+6. If settling or audits dominate: a nested-iteration settle and a two-level preconditioner.
 
 ## 5. Destructible vehicles
 
@@ -121,7 +137,17 @@ In order, measuring first:
 - **Fuel tank:** a detonator part. Leaking comes later with fluids.
 - **Materials:** sheet metal (dents), glass (shatters), rubber.
 
-## 6. Large-map physics zones
+## 6. Profiling and hot paths
+
+Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
+solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run), then the
+hottest paths first. Candidates logged so far:
+- the stress system: precomputed bond blocks instead of `lpAddBlock` per build, incremental updates, a structure of
+  arrays for the 6-vectors, a parallel K·x for the biggest structures;
+- the creak loop over stored overloads only; budget units calibrated to time;
+- a spinning barrier in the task pool.
+
+## 7. Large-map physics zones
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
@@ -135,7 +161,7 @@ In order, measuring first:
   `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 7. Networking
+## 8. Networking
 
 Options:
 - Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
@@ -145,7 +171,7 @@ Options:
 
 A two-process lockstep experiment comes first.
 
-## 8. Art polish
+## 9. Art polish
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public

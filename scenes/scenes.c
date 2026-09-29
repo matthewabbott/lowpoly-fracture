@@ -8,7 +8,7 @@
 
 enum
 {
-	lp_maxParts = 768,
+	lp_maxParts = 4096,
 	lp_maxPoints = 8192
 };
 
@@ -140,6 +140,8 @@ const char* lpSceneName( int scene )
 			return "ruins";
 		case lp_sceneYard:
 			return "yard";
+		case lp_sceneKeep:
+			return "keep";
 		default:
 			return "?";
 	}
@@ -644,6 +646,190 @@ static void lpAddTowerAt( lpWorld* world, b3Vec3 base, int levels )
 	lpCommit( world, base, 0.0f, true );
 }
 
+// ---- the keep: a mortared stone keep of about 2000 pieces, the stress solve's big-building case ----
+
+#define LP_KEEP_HALF 7.5f	// outer half-width
+#define LP_KEEP_WALL 1.2f	// wall thickness
+#define LP_KEEP_COURSE 0.6f // course height
+#define LP_KEEP_BLOCK 1.25f // stone length: twelve to a course across the front
+
+// An opening in a wall run: courses first..last are left open between s0 and s1, and the next course gets a lintel
+typedef struct lpKeepOpening
+{
+	float s0, s1;
+	int first, last;
+} lpKeepOpening;
+
+// A stone of a keep wall over [a, b] along the run (x when alongX, else z); `across` is the middle of the wall
+static void lpKeepStone( bool alongX, float across, float thickness, float a, float b, float y0, float y1, uint32_t color,
+						 bool anchored )
+{
+	float mid = 0.5f * ( a + b );
+	float hy = 0.5f * ( y1 - y0 );
+	b3Vec3 center = alongX ? (b3Vec3){ mid, y0 + hy, across } : (b3Vec3){ across, y0 + hy, mid };
+	b3Vec3 half = alongX ? (b3Vec3){ 0.5f * ( b - a ), hy, 0.5f * thickness } : (b3Vec3){ 0.5f * thickness, hy, 0.5f * ( b - a ) };
+	lpBox( center, half, b3Quat_identity, lp_stone, color, anchored );
+}
+
+// One course of a wall run over [a, b], in running bond: joints on a grid of stone lengths from the keep's corner,
+// shifted half a stone on odd courses, and a leftover shorter than a third of a stone joins its neighbour. Openings of
+// this course are left out; the course above an opening gets a lintel reaching half a stone past each side. A merlon
+// course keeps every other stone.
+static void lpKeepCourse( bool alongX, float across, float thickness, float a, float b, int course, const lpKeepOpening* openings,
+						  int openingCount, bool merlons, uint64_t* rng )
+{
+	float y0 = LP_KEEP_COURSE * (float)course;
+	float y1 = y0 + ( merlons ? 0.7f : LP_KEEP_COURSE );
+	bool anchored = course == 0;
+
+	float cut0[16], cut1[16];
+	int cuts = 0;
+	for ( int i = 0; i < openingCount && cuts < 16; ++i )
+	{
+		const lpKeepOpening* o = openings + i;
+		float s0 = o->s0, s1 = o->s1;
+		if ( course == o->last + 1 )
+		{
+			s0 -= 0.5f * LP_KEEP_BLOCK;
+			s1 += 0.5f * LP_KEEP_BLOCK;
+			lpKeepStone( alongX, across, thickness, s0, s1, y0, y1, LP_STONE_DARK, anchored );
+		}
+		else if ( course < o->first || course > o->last )
+		{
+			continue;
+		}
+		int j = cuts++;
+		for ( ; j > 0 && cut0[j - 1] > s0; --j )
+		{
+			cut0[j] = cut0[j - 1];
+			cut1[j] = cut1[j - 1];
+		}
+		cut0[j] = s0;
+		cut1[j] = s1;
+	}
+
+	float offset = ( course % 2 ) ? 0.5f * LP_KEEP_BLOCK : 0.0f;
+	float shortest = LP_KEEP_BLOCK / 3.0f;
+	int index = 0;
+	float s = a;
+	for ( int i = 0; i <= cuts; ++i )
+	{
+		float e = i < cuts ? cut0[i] : b;
+		if ( e - s > 0.05f )
+		{
+			float start = s;
+			for ( int k = (int)ceilf( ( s + shortest + LP_KEEP_HALF - offset ) / LP_KEEP_BLOCK );; ++k )
+			{
+				float joint = -LP_KEEP_HALF + offset + (float)k * LP_KEEP_BLOCK;
+				float end = joint < e - shortest ? joint : e;
+				if ( merlons == false || index % 2 == 0 )
+				{
+					uint32_t color = lpUnit( rng ) < 0.25f ? LP_STONE_DARK : LP_STONE;
+					lpKeepStone( alongX, across, thickness, start, end, y0, y1, color, anchored );
+				}
+				index += 1;
+				if ( end >= e )
+				{
+					break;
+				}
+				start = end;
+			}
+		}
+		if ( i < cuts )
+		{
+			s = cut1[i];
+		}
+	}
+}
+
+// A square keep, 15 m across, of mortared stone in running bond with interleaved corners: 1.2 m walls, a door and
+// windows with lintels, a cross wall with a doorway on every floor, and `floors` wooden floors (planks nailed to beams
+// that rest on stone corbels) under a crenellated parapet. Four floors make about 2000 pieces. Returns the body.
+int lpAddKeep( lpWorld* world, b3Vec3 base, int floors )
+{
+	floors = floors < 1 ? 1 : ( floors > 6 ? 6 : floors );
+	lpBegin();
+	uint64_t rng = 0x4B454550ull;
+	const float h = LP_KEEP_HALF, t = LP_KEEP_WALL, inner = LP_KEEP_HALF - LP_KEEP_WALL, cross = 0.45f;
+	int top = 5 * floors + 1; // the parapet course; the merlons stand on it
+
+	// The front (+z) has the door and a window each side on the upper floors, the back the same windows
+	lpKeepOpening front[16], back[16], doorways[8];
+	int frontCount = 0, backCount = 0, doorwayCount = 0;
+	front[frontCount++] = (lpKeepOpening){ -4.6f, -2.6f, 0, 4 };
+	for ( int f = 1; f < floors; ++f )
+	{
+		for ( int side = -1; side <= 1; side += 2 )
+		{
+			lpKeepOpening window = { 3.6f * (float)side - 0.5f, 3.6f * (float)side + 0.5f, 5 * f + 2, 5 * f + 3 };
+			front[frontCount++] = window;
+			back[backCount++] = window;
+		}
+	}
+	for ( int f = 0; f < floors; ++f )
+	{
+		doorways[doorwayCount++] = (lpKeepOpening){ -0.5f, 0.5f, f == 0 ? 0 : 5 * f + 1, 5 * f + 3 };
+	}
+
+	for ( int c = 0; c <= top + 1; ++c )
+	{
+		bool merlons = c == top + 1;
+		float along = c % 2 == 0 ? h : inner; // even courses: the front and back hold the corners
+		float side = c % 2 == 0 ? inner : h;
+		lpKeepCourse( true, h - 0.5f * t, t, -along, along, c, front, frontCount, merlons, &rng );
+		lpKeepCourse( true, -h + 0.5f * t, t, -along, along, c, back, backCount, merlons, &rng );
+		lpKeepCourse( false, -h + 0.5f * t, t, -side, side, c, NULL, 0, merlons, &rng );
+		lpKeepCourse( false, h - 0.5f * t, t, -side, side, c, NULL, 0, merlons, &rng );
+		if ( c <= 5 * floors )
+		{
+			lpKeepCourse( false, 0.0f, 2.0f * cross, -inner, inner, c, doorways, doorwayCount, false, &rng );
+		}
+	}
+
+	// Floors: eight beams each side of the cross wall, from wall to wall on corbels, and planks across them in
+	// staggered rows, their ends meeting on every other beam
+	for ( int f = 1; f <= floors; ++f )
+	{
+		float y = LP_KEEP_COURSE * (float)( 5 * f + 1 ); // top of the planks
+		for ( int side = -1; side <= 1; side += 2 )
+		{
+			float s = (float)side;
+			for ( int m = 0; m < 8; ++m )
+			{
+				float z = -4.9f + 1.4f * (float)m;
+				lpBox( (b3Vec3){ s * 0.5f * ( cross + inner ), y - 0.21f, z }, (b3Vec3){ 0.5f * ( inner - cross ), 0.15f, 0.125f },
+					   b3Quat_identity, lp_wood, LP_BEAM, false );
+				lpBox( (b3Vec3){ s * ( inner - 0.225f ), y - 0.51f, z }, (b3Vec3){ 0.225f, 0.15f, 0.175f }, b3Quat_identity, lp_stone,
+					   LP_STONE_DARK, false );
+				lpBox( (b3Vec3){ s * ( cross + 0.225f ), y - 0.51f, z }, (b3Vec3){ 0.225f, 0.15f, 0.175f }, b3Quat_identity, lp_stone,
+					   LP_STONE_DARK, false );
+			}
+			float x0 = cross + 0.04f;
+			float pitch = ( inner - x0 ) / 14.0f;
+			for ( int r = 0; r < 14; ++r )
+			{
+				float px0 = x0 + (float)r * pitch;
+				float px1 = px0 + pitch - 0.04f;
+				float z0 = -inner;
+				for ( int m = 1 - r % 2;; m += 2 )
+				{
+					bool last = m > 7;
+					float joint = -4.9f + 1.4f * (float)m;
+					float z1 = last ? inner : joint - 0.02f;
+					lpBox( (b3Vec3){ s * 0.5f * ( px0 + px1 ), y - 0.03f, 0.5f * ( z0 + z1 ) },
+						   (b3Vec3){ 0.5f * ( px1 - px0 ), 0.03f, 0.5f * ( z1 - z0 ) }, b3Quat_identity, lp_wood, LP_PLANK, false );
+					if ( last )
+					{
+						break;
+					}
+					z0 = joint + 0.02f;
+				}
+			}
+		}
+	}
+	return lpCommit( world, base, 0.0f, true );
+}
+
 // ---- the yard: things joined by links ----
 
 static lpObjectDef lpDynamicDef( void )
@@ -938,6 +1124,11 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddDrawbridge( world, (b3Vec3){ 7.9f, 0.0f, -8.0f } );
 			break;
 
+		case lp_sceneKeep:
+			lpAddGround( world, 60.0f );
+			lpAddKeep( world, (b3Vec3){ 0.0f, 0.0f, -10.0f }, 4 );
+			break;
+
 		case lp_sceneLumber:
 		{
 			lpAddGround( world, 60.0f );
@@ -969,6 +1160,7 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddGround( world, 60.0f );
 			break;
 	}
+	lpWorld_SettleStructures( world ); // every structure starts converged instead of creaking through its first seconds
 }
 
 bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
@@ -1009,6 +1201,13 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			// Across the whole yard, from the cart's ramp to the gatehouse
 			origin = (b3Vec3){ -1.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
 			target = (b3Vec3){ -11.0f + 20.0f * lpUnit( &rng ), 0.3f + 3.2f * lpUnit( &rng ), -8.0f };
+			break;
+		}
+		case lp_sceneKeep:
+		{
+			// Across the keep's front, from the foot of the wall to the parapet
+			origin = (b3Vec3){ 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 14.0f };
+			target = (b3Vec3){ -7.0f + 14.0f * lpUnit( &rng ), 0.3f + 12.5f * lpUnit( &rng ), -2.5f };
 			break;
 		}
 		default:

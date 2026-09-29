@@ -3,6 +3,10 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
+
+// lpf_test <suite> <test> runs only the test of that name
+extern const char* lp_testFilter;
 
 #define ENSURE( c )                                                                                                    \
 	do                                                                                                                 \
@@ -28,6 +32,17 @@
 	while ( 0 )
 
 #define RUN_TEST( t )                                                                                                  \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		if ( lp_testFilter == NULL || strcmp( lp_testFilter, #t ) == 0 )                                               \
+		{                                                                                                              \
+			RUN_SUITE( t );                                                                                            \
+		}                                                                                                              \
+	}                                                                                                                  \
+	while ( 0 )
+
+// A whole suite, whatever the filter
+#define RUN_SUITE( t )                                                                                                 \
 	do                                                                                                                 \
 	{                                                                                                                  \
 		int lpR_ = t();                                                                                                \

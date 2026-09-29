@@ -210,3 +210,31 @@ run alternately under the same conditions, gave identical hashes and step times 
 The new yard rung (13 links: a cart on four axles, ropes, hinges) runs at about 0.12 ms per step at 8 workers. Per
 step, links cost one sync pass (a validity check and two id compares each) and one poll of each awake link (two Box3D
 getters). A joint is rebuilt only when an end's body changes.
+
+## 2026-09-28 stress at scale, step 0: the keep, settling at load
+
+The keep (`lp_sceneKeep`, `lpAddKeep`): a 15 m mortared stone keep of 1973 pieces and 6296 bonds (walls in running
+bond, a cross wall, four wooden floors on corbels, lintels, merlons). It is the big-building case milestone 4 is for.
+Baseline, one worker:
+
+| | today |
+|---|---|
+| load (build and settle) | 152 ms: build 21 ms, settle 131 ms |
+| settle | 189 cold iterations to 1e-3 (1.19M bond-iterations, about 67 ns each), of which about 50 ms is the slender check |
+| without settling at load | 98 steps of one iteration each, then a 53 ms step judging it (the O(N·E) slender check) |
+| a solving step at one iteration | 1.4 to 1.9 ms, for 0.4 ms of iteration work: the rebuild costs 3 to 4 iterations, the budget charges 2 |
+| ground floor of the front knocked out (71 pieces) | decided after 153 steps, settled after 546; 12 joints break, the keep stands |
+| a cannon hole in the front wall | decided after 29 steps, settled after 1632 (61 with an unlimited budget); the cells around the hole crumble |
+
+Found while measuring: the relaxed tolerance (1e-2 of the whole structure's load, after `stressPatience` steps) lets
+the residual gather on small fracture cells, whose joints then read utilizations of 4000 to 1.5 million and break in
+dozens at once. The convergence test needs to be per node (the residual meter's normalization), not global.
+
+Settling at load (`lpWorld_SettleStructures`, called by `lpBuildScene`) solves every new structure to convergence with
+no per-step budget, in a few rounds while joints break (town's tower loses 10 dry joints at load). Every scene's first
+step now solves nothing (`TestScenesSettle`). Every rung's hash but the barrage's is unchanged: small structures used
+to converge in their first step with the same arithmetic, and nothing touches a static structure in between. The
+barrage's first shot lands before town's tower had finished its second-round solve.
+
+Object creation pairs parts by a sweep along x instead of testing every pair, and bonds them in the old order: every
+rung's hash was unchanged with settling turned off.

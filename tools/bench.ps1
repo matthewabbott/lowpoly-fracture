@@ -3,12 +3,14 @@
 #   pwsh tools/bench.ps1 -AcceptHashes   # compare timings only (after an intended behaviour change)
 #   pwsh tools/bench.ps1 -Update         # write the current numbers as the new baseline
 #   pwsh tools/bench.ps1 -Repeat 3       # best of 3 runs per scene (timings are noisy, about +-10% run to run)
+#   pwsh tools/bench.ps1 -StrictSolver   # also fail if a stress solver hash changed (for refactors of the solver)
 # A rung is a scene under the standard bombardment, or 'barrage': town with a blast every 3 ticks, many structures
-# breaking and re-solving at once (the stress solve's parallel case).
+# breaking and re-solving at once (the stress solve's parallel case). 'keep' is one 2000-piece structure under fire (the
+# stress solve at scale).
 # After a behaviour change, a rung's timings can move because a different amount comes down (destruction is chaotic):
 # compare its pieces and contacts, or try other --period values with lpf_bench, before calling it a regression.
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'yard', 'barrage'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'yard', 'keep', 'barrage'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,
@@ -16,7 +18,8 @@ param(
     [string]$Preset = 'msvc-release',
     [int]$Repeat = 1,
     [switch]$Update,
-    [switch]$AcceptHashes
+    [switch]$AcceptHashes,
+    [switch]$StrictSolver
 )
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -72,6 +75,10 @@ foreach ($scene in $Scenes) {
         $same = $old -and $old.hash -eq $run.hash
         if ($old -and -not $same) { $hashChanged = $true } # a scene new to the baseline is not a change
         $mark = if ($same) { 'same' } elseif ($old) { "CHANGED (was $($old.hash))" } else { 'new' }
+        if ($old -and $old.solverHash -and $old.solverHash -ne $run.solverHash) {
+            $mark += "; solver CHANGED (was $($old.solverHash))"
+            if ($StrictSolver) { $hashChanged = $true }
+        }
         $contacts = if ($null -ne $run.awakeContactsAvg) { Delta $run.awakeContactsAvg $old.awakeContactsAvg } else { '-' }
         Write-Host ('{0,-7} {1,3} | {2,-17} {3,-17} {4,-17} | {5,-8} {6,-15} | {7} {8}' -f $scene, $run.workers,
             (Delta $run.stepAvgMs $old.stepAvgMs), (Delta $run.stepP95Ms $old.stepP95Ms), (Delta $run.stepMaxMs $old.stepMaxMs),

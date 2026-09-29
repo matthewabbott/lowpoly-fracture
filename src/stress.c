@@ -18,7 +18,8 @@
 // 1. in queue order: the shortcuts that need no solve, and each structure's share of the step's budget
 // 2. in parallel: build and solve each structure (a pure function of its own pieces and bonds)
 // 3. in queue order: judge each solution, strain and break joints
-// Results do not depend on the worker count.
+// Results do not depend on the worker count. Settling (lpWorld_SettleStructures, at load) runs the same check with no
+// budget, so new structures start converged.
 
 #include "tasks.h"
 #include "world.h"
@@ -879,12 +880,8 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	}
 }
 
-void lpCheckStructures( lpWorld* w )
+static void lpRunStressChecks( lpWorld* w, bool settle )
 {
-	if ( w->stressQueue.count == 0 )
-	{
-		return;
-	}
 	uint64_t ticks = b3GetTicks();
 	b3Vec3 gravity = b3World_GetGravity( w->def.physics );
 	int reserved = 0;
@@ -928,10 +925,11 @@ void lpCheckStructures( lpWorld* w )
 
 		// Its share of the budget, reserved whole (the build, the first residual and the iterations), before anything
 		// is built. The first structure of a step always gets an iteration, so even one bigger than the budget makes
-		// progress. One that does not fit waits, having cost nothing, and goes first next step.
+		// progress. One that does not fit waits, having cost nothing, and goes first next step. Settling has no budget.
 		int room = b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) / edges - 2;
 		int budget = b3MinInt( room, w->def.maxStressIterations );
 		budget = budget < 1 && reserved == 0 ? 1 : budget;
+		budget = settle ? w->def.maxSettleIterations : budget;
 		if ( budget < 1 )
 		{
 			body->unsettled = true;
@@ -982,4 +980,45 @@ void lpCheckStructures( lpWorld* w )
 		lpStressJudge( w, w->stressJobs + i );
 	}
 	w->stats.stressMs += b3GetMilliseconds( ticks );
+}
+
+int lpCheckStructures( lpWorld* w, bool settle )
+{
+	int iterations = 0;
+	if ( w->stressQueue.count > 0 )
+	{
+		lpRunStressChecks( w, settle );
+		for ( int i = 0; i < w->stressJobCount; ++i )
+		{
+			iterations += w->stressJobs[i].iterations;
+		}
+	}
+	for ( int i = 0; i < w->stressAgain.count; ++i )
+	{
+		lpMarkDirty( w, w->stressAgain.data[i] ); // still solving or straining: check again next step
+	}
+	w->stressAgain.count = 0;
+	return iterations;
+}
+
+int lpWorld_SettleStructures( lpWorld* w )
+{
+	// A structure that loses joints to its own weight splits and is solved again, a few rounds, so what a scene does at
+	// load is over before its first step. One that only strains creaks on in the steps.
+	uint64_t ticks = b3GetTicks();
+	int iterations = 0;
+	for ( int round = 0; round < 8; ++round )
+	{
+		int breaks = w->stats.stressBreaks;
+		lpUpdateDirtyBodies( w );
+		iterations += lpCheckStructures( w, true );
+		if ( w->stats.stressBreaks == breaks )
+		{
+			break;
+		}
+	}
+	w->stats.settleMs = b3GetMilliseconds( ticks );
+	w->stats.settleIterations = iterations;
+	w->stats.bondCount = w->bondCount;
+	return iterations;
 }

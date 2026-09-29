@@ -368,10 +368,10 @@ static float BodyVolume( const lpWorld* w, int bodyIndex )
 // [lo, hi] lose their bonds and anchors, split off on the next step and are removed. Returns how many.
 static int KnockOut( Sim* s, int bodyIndex, b3Vec3 lo, b3Vec3 hi )
 {
-	int removed[16];
+	int removed[128];
 	int count = 0;
 	const lpBody* body = s->world->bodies.data + bodyIndex;
-	for ( int k = 0; k < body->pieces.count && count < 16; ++k )
+	for ( int k = 0; k < body->pieces.count && count < 128; ++k )
 	{
 		lpPiece* p = s->world->pieces.data + body->pieces.data[k];
 		b3Vec3 c = p->shape->centroid;
@@ -454,9 +454,172 @@ static int TestColonnade( void )
 	return 0;
 }
 
+// The structure with the most pieces
+static int BiggestStructure( const lpWorld* w )
+{
+	int best = -1;
+	for ( int i = 0; i < w->bodies.count; ++i )
+	{
+		const lpBody* b = w->bodies.data + i;
+		if ( b->alive && b->kind == lp_kindStructure && ( best < 0 || b->pieces.count > w->bodies.data[best].pieces.count ) )
+		{
+			best = i;
+		}
+	}
+	return best;
+}
+
+typedef struct KeepRun
+{
+	int removed;
+	float before, after; // keep volume just after the knockout, and at the end
+	int decided;		 // steps until the first judged solve (-1: never)
+	int settled;		 // steps until nothing is left to solve or strain (-1: never)
+	int breaks;			 // joints broken by stress
+	uint64_t hash, solverHash;
+	float stressMs; // summed over the steps
+	int iterations;
+} KeepRun;
+
+// Damage the keep, then watch what the stress solve makes of it: knock out the pieces in [lo, hi] (keep frame), or, with
+// an impact, blast it
+static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps )
+{
+	KeepRun r = { 0 };
+	Sim s = CreateSimDef( def, lp_sceneKeep );
+	Run( &s, 2 );
+	int keep = BiggestStructure( s.world );
+	if ( impact != NULL )
+	{
+		lpWorld_AddImpact( s.world, impact );
+	}
+	else
+	{
+		r.removed = KnockOut( &s, keep, lo, hi );
+	}
+	r.before = BodyVolume( s.world, keep );
+	r.decided = -1;
+	r.settled = -1;
+	for ( int step = 0; step < steps; ++step )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		lpStats st = lpWorld_GetStats( s.world );
+		r.breaks += st.stressBreaks;
+		r.stressMs += st.stressMs;
+		r.iterations += st.stressIterations;
+		const lpBody* b = s.world->bodies.data + keep;
+		if ( r.decided < 0 && st.stressSolves > 0 && b->solving == false )
+		{
+			r.decided = step + 1;
+		}
+		if ( r.decided >= 0 && r.settled < 0 && st.unsettledStructures == 0 && b->dirty == false )
+		{
+			r.settled = step + 1;
+		}
+	}
+	r.after = BodyVolume( s.world, keep );
+	r.hash = lpWorld_Hash( s.world );
+	r.solverHash = lpWorld_HashStress( s.world );
+	DestroySim( &s );
+	return r;
+}
+
+static KeepRun KeepDamage( int workers, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps )
+{
+	lpWorldDef def = lpDefaultWorldDef();
+	def.workerCount = workers;
+	return KeepDamageDef( def, lo, hi, impact, steps );
+}
+
+static lpImpactDef KeepCannon( void )
+{
+	lpImpactDef impact = { 0 };
+	impact.point = (b3Pos){ 2.0f, 6.0f, -2.5f };
+	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.radius = 2.0f;
+	impact.energy = 250000.0f;
+	impact.impulse = 18.0f;
+	impact.explosion = true;
+	return impact;
+}
+
+
+static void PrintKeepRun( const char* name, KeepRun r, int steps )
+{
+	printf( "  %s: %d pieces out, keep %.1f -> %.1f m^3, decided after %d steps, settled after %d, %d joints broke, "
+			"stress %.1f ms over %d steps, %d iterations\n",
+			name, r.removed, (double)r.before, (double)r.after, r.decided, r.settled, r.breaks, (double)r.stressMs, steps,
+			r.iterations );
+}
+
+// Every scene is settled at load: no structure is left solving or straining, and the first step solves nothing
+static int TestScenesSettle( void )
+{
+	for ( int scene = 0; scene < lp_sceneCount; ++scene )
+	{
+		Sim s = CreateSim( scene );
+		lpStats loaded = lpWorld_GetStats( s.world );
+		int solving = 0;
+		for ( int i = 0; i < s.world->bodies.count; ++i )
+		{
+			const lpBody* b = s.world->bodies.data + i;
+			solving += b->alive && b->kind == lp_kindStructure && ( b->solving || b->unsettled ) ? 1 : 0;
+		}
+		Run( &s, 1 );
+		lpStats first = lpWorld_GetStats( s.world );
+		printf( "  %-6s settled in %.1f ms, %d iterations; %d left solving; first step %d solves\n", lpSceneName( scene ),
+				(double)loaded.settleMs, loaded.settleIterations, solving, first.stressSolves );
+		ENSURE( solving == 0 );
+		ENSURE( first.stressSolves == 0 && first.stressIterations == 0 );
+		DestroySim( &s );
+	}
+	return 0;
+}
+
+// The whole ground floor of the keep's front knocked out: the wall above hangs from the corners and the cross wall,
+// some joints give, and the keep stands. Prints how long the stress solve takes to decide (the milestone's target).
+static const b3Vec3 lp_breachLo = { -7.6f, -1.0f, 6.2f };
+static const b3Vec3 lp_breachHi = { 7.6f, 3.6f, 7.6f };
+
+static int TestKeepBreach( void )
+{
+	const int steps = 900;
+	KeepRun r = KeepDamage( 1, lp_breachLo, lp_breachHi, NULL, steps );
+	PrintKeepRun( "breach", r, steps );
+	ENSURE( r.removed > 60 );
+	ENSURE( r.after > 0.95f * r.before );
+	ENSURE( r.decided > 0 && r.settled > 0 ); // loose: today about 150 and 550 steps
+	return 0;
+}
+
+// A cannon ball through the front wall: the cells around the hole crumble away and the keep holds. Today the solve
+// takes about 1600 steps to settle under its budget (61 with an unlimited one); milestone 4 brings that down.
+static int TestKeepHole( void )
+{
+	const int steps = 600;
+	lpImpactDef impact = KeepCannon();
+	KeepRun r = KeepDamage( 1, b3Vec3_zero, b3Vec3_zero, &impact, steps );
+	PrintKeepRun( "cannon hole", r, steps );
+	ENSURE( r.after > 0.95f * r.before );
+	ENSURE( r.decided > 0 );
+	return 0;
+}
+
+static int TestKeepDeterminism( void )
+{
+	KeepRun a = KeepDamage( 1, lp_breachLo, lp_breachHi, NULL, 300 );
+	KeepRun b = KeepDamage( 4, lp_breachLo, lp_breachHi, NULL, 300 );
+	printf( "  1 worker %016llx / %016llx, 4 workers %016llx / %016llx\n", (unsigned long long)a.hash,
+			(unsigned long long)a.solverHash, (unsigned long long)b.hash, (unsigned long long)b.solverHash );
+	ENSURE( a.hash == b.hash );
+	ENSURE( a.solverHash == b.solverHash );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestStructuresStand );
+	RUN_TEST( TestScenesSettle );
 	RUN_TEST( TestCantileverRoot );
 	RUN_TEST( TestBeamMidspan );
 	RUN_TEST( TestTowerTopples );
@@ -465,5 +628,8 @@ int StressTest( void )
 	RUN_TEST( TestMasonryWallHole );
 	RUN_TEST( TestArchKeystone );
 	RUN_TEST( TestColonnade );
+	RUN_TEST( TestKeepBreach );
+	RUN_TEST( TestKeepHole );
+	RUN_TEST( TestKeepDeterminism );
 	return 0;
 }

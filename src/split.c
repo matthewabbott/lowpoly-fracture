@@ -235,3 +235,13 @@ void lpUpdateBody( lpWorld* w, int bodyIndex )
 		}
 	}
 }
+
+void lpUpdateDirtyBodies( lpWorld* w )
+{
+	// lpUpdateBody may create bodies but never marks new ones dirty, so the list does not grow under the loop
+	for ( int i = 0; i < w->dirtyBodies.count; ++i )
+	{
+		lpUpdateBody( w, w->dirtyBodies.data[i] );
+	}
+	w->dirtyBodies.count = 0;
+}

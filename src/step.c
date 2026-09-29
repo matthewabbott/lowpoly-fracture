@@ -239,19 +239,10 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	}
 	w->impacts.count = 0;
 
-	// Split what came apart. lpUpdateBody may create bodies but never marks new ones dirty.
+	// Split what came apart, then the stress check of the structures updated, solved in parallel
 	uint64_t splitTicks = b3GetTicks();
-	for ( int i = 0; i < w->dirtyBodies.count; ++i )
-	{
-		lpUpdateBody( w, w->dirtyBodies.data[i] );
-	}
-	w->dirtyBodies.count = 0;
-	lpCheckStructures( w ); // stress: the structures updated above, solved in parallel
-	for ( int i = 0; i < w->stressAgain.count; ++i )
-	{
-		lpMarkDirty( w, w->stressAgain.data[i] ); // still solving or straining: check again next step
-	}
-	w->stressAgain.count = 0;
+	lpUpdateDirtyBodies( w );
+	lpCheckStructures( w, false );
 	w->stats.splitMs = b3GetMilliseconds( splitTicks );
 
 	lpApplyWakes( w );

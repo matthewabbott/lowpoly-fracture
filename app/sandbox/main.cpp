@@ -174,6 +174,10 @@ void SetSceneCamera( int scene )
 			app.camPos = { -1.3f, 2.8f, 3.5f };
 			app.pitch = -0.1f;
 			break;
+		case lp_sceneKeep:
+			app.camPos = { 0.0f, 7.0f, 19.0f };
+			app.pitch = -0.02f;
+			break;
 		default:
 			break;
 	}
@@ -1055,7 +1059,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard] [--workers N] [--frames N] [--screenshot out.png]\n"
+			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui]\n" );
 			return 1;

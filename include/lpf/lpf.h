@@ -144,6 +144,7 @@ typedef struct lpWorldDef
 	int maxStressWork;			// per step, over all structures; structures past it wait for the next step
 	int maxStressStructureWork; // per structure per step; a structure that needs more keeps creaking for a few steps
 	int maxStressIterations;	// per structure per step
+	int maxSettleIterations;	// per structure in lpWorld_SettleStructures, which has no per-step budget
 	int maxStressBreaks;   // joints a structure may lose per check below twice their limit (worse ones go at once)
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
@@ -301,8 +302,17 @@ b3Pos lpWorld_ToWorldFrame( const lpWorld* world, int piece, b3Vec3 localPoint )
 
 void lpWorld_Step( lpWorld* world, float timeStep, int subStepCount );
 
+// Solve every structure waiting for a stress check to convergence now, with no per-step budget (up to
+// maxSettleIterations each), and judge them as a step would. For loading: a new structure starts settled instead of
+// spending its first steps solving. lpBuildScene calls it. Returns the iterations spent (also in lpStats).
+int lpWorld_SettleStructures( lpWorld* world );
+
 // Hash of the full simulation state (bodies, pieces, bonds). Equal hashes after the same inputs prove determinism.
 uint64_t lpWorld_Hash( const lpWorld* world );
+
+// Hash of the stress solver's state (solutions, loads, utilizations, strains, solves in progress). A change to the
+// solver that is meant to change nothing keeps it equal, not only lpWorld_Hash.
+uint64_t lpWorld_HashStress( const lpWorld* world );
 
 typedef struct lpStats
 {
@@ -350,6 +360,8 @@ typedef struct lpStats
 	int stressSolves;		 // structures solved this step (in parallel)
 	int stressWaiting;		 // structures that found this step's stress budget spent; they go first next step
 	int unsettledStructures; // structures still solving or creaking toward a break
+	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)
+	int settleIterations;
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );

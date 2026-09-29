@@ -2,7 +2,7 @@
 
 ```
 app/sandbox  (C++20, sokol D3D11 + Dear ImGui)   tools, camera, record/replay, renderer, screenshots
-scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins, yard; scripted bombardment
+scenes/      (C17)  procedural low-poly kit: walls, houses, trees, fences, tower, pile, lumber, ruins, yard, keep; scripted bombardment
 src/         (C17)  lpf: the destruction core               include/lpf/lpf.h is the whole public API
 extern/box3d (C17)  physics, pinned (extern/box3d/PATCHES.md)
 ```
@@ -84,7 +84,8 @@ tiers instead of popping them.
   thread count.
 - Sibling bonds of Voronoi cells come from face tags (a lookup, no polygon clipping). Bonds to former neighbours
   use 2D polygon overlap of coplanar opposing faces; parts that meet at an angle (roof on gable) are welded if they
-  touch within 3 cm.
+  touch within 3 cm. A new object's parts are paired by a sweep along x and bonded in the order of a double loop over
+  its parts, so bond indices do not depend on the sweep.
 - Damage model: an impact of energy E and radius R delivers `E (1 - d/R)^2 / (pi R^2)` J/m^2 at distance d. A piece
   refractures above its material's `fractureEnergy`; a bond loses that much health and breaks at zero. Strengths
   are calibrated so a rifle chips brick and a grenade opens it (see the comment on the material table).
@@ -115,7 +116,12 @@ tiers instead of popping them.
   limit at once and otherwise the worst few per check, so failure cascades and a structure creaks before it gives.
 - Nothing is judged on an unconverged solution. Dry and mortar joints carry little or no tension, so an overhang's
   moment opens the tension side, the part above loses its anchor, and Box3D topples it.
-- New structures get one check when created; afterwards only topology changes (impacts, breaks) queue a solve.
+- New structures are **settled at load**: `lpWorld_SettleStructures` (called by `lpBuildScene`) solves every waiting
+  structure to convergence with no per-step budget (up to `maxSettleIterations`), judges it, and repeats a few rounds
+  while joints break, so a scene's first step solves nothing. Afterwards only topology changes (impacts, breaks) and
+  changed loads queue a solve.
+- `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
+  refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics
   and the solve cheap (no crumbs hanging on tiny bonds).
 - Invariants are checked every tick in tests by `lpWorld_Validate` (every piece on one live body with one shape,

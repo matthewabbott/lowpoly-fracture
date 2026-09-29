@@ -42,7 +42,9 @@ typedef struct Result
 	int workers;
 	Summary total, fracture, physics, update;
 	int maxPieces, maxBodies, maxAwakeDebris, maxRubble, impacts, fractures, cells;
-	uint64_t hash;
+	uint64_t hash, solverHash;
+	float loadMs, settleMs; // building the scene, and settling its structures within that
+	int settleIterations, pieces, bonds; // at load
 	lpStats worst; // stats of the step with the largest fracture time
 	double sumCell, sumHull, sumShape, sumBond, sumSplit;
 	double sumVoronoiCpu, sumMergeCpu, sumHullCpu;
@@ -70,15 +72,26 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	ld.maxStressWork = s_stressWork > 0 ? s_stressWork : ld.maxStressWork;
 	ld.maxStressStructureWork = s_stressStructureWork > 0 ? s_stressStructureWork : ld.maxStressStructureWork;
 	lpWorld* world = lpCreateWorld( &ld );
-	lpBuildScene( world, scene );
-
-	float* total = malloc( sizeof( float ) * (size_t)ticks );
-	float* fracture = malloc( sizeof( float ) * (size_t)ticks );
-	float* phys = malloc( sizeof( float ) * (size_t)ticks );
-	float* update = malloc( sizeof( float ) * (size_t)ticks );
-
 	Result r = { 0 };
 	r.workers = workers;
+	uint64_t loadTicks = b3GetTicks();
+	lpBuildScene( world, scene );
+	r.loadMs = b3GetMilliseconds( loadTicks );
+	lpStats loaded = lpWorld_GetStats( world );
+	r.settleMs = loaded.settleMs;
+	r.settleIterations = loaded.settleIterations;
+	r.bonds = loaded.bondCount;
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ); ++i )
+	{
+		r.pieces += lpWorld_GetPieceInfo( world, i ).body >= 0 ? 1 : 0;
+	}
+
+	int samples = ticks > 0 ? ticks : 1;
+	float* total = calloc( (size_t)samples, sizeof( float ) );
+	float* fracture = calloc( (size_t)samples, sizeof( float ) );
+	float* phys = calloc( (size_t)samples, sizeof( float ) );
+	float* update = calloc( (size_t)samples, sizeof( float ) );
+
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
 		lpSceneBombard( world, scene, tick, period );
@@ -121,12 +134,13 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.maxShapes = counters.shapeCount > r.maxShapes ? counters.shapeCount : r.maxShapes;
 		r.sumAwakeContacts += counters.awakeContactCount;
 	}
-	r.sumAwakeContacts /= (double)ticks;
+	r.sumAwakeContacts /= (double)samples;
 	r.hash = lpWorld_Hash( world );
-	r.total = Summarize( total, ticks );
-	r.fracture = Summarize( fracture, ticks );
-	r.physics = Summarize( phys, ticks );
-	r.update = Summarize( update, ticks );
+	r.solverHash = lpWorld_HashStress( world );
+	r.total = Summarize( total, samples );
+	r.fracture = Summarize( fracture, samples );
+	r.physics = Summarize( phys, samples );
+	r.update = Summarize( update, samples );
 
 	free( total );
 	free( fracture );
@@ -204,7 +218,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard] [--workers 1,4,8] [--ticks N] [--period N]\n"
+			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep] [--workers 1,4,8] [--ticks N] [--period N]\n"
 					"                 [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n" );
 			return 1;
 		}
@@ -224,7 +238,7 @@ int main( int argc, char** argv )
 				(double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg, (double)r.fracture.max,
 				(double)r.physics.avg, (double)r.physics.p95, (double)r.update.avg, r.maxPieces, r.maxBodies, r.maxAwakeDebris,
 				r.maxRubble, (unsigned long long)r.hash );
-		deterministic = deterministic && r.hash == results[0].hash;
+		deterministic = deterministic && r.hash == results[0].hash && r.solverHash == results[0].solverHash;
 		printf( "        fracture total ms: cells %.0f hulls %.0f shapes %.0f bonds %.0f split %.0f | worst step %.1f ms: cells %.1f hulls %.1f "
 				"shapes %.1f bonds %.1f split %.1f (%d fractures, %d cells)\n",
 				r.sumCell, r.sumHull, r.sumShape, r.sumBond, r.sumSplit, (double)r.worst.fractureMs, (double)r.worst.cellMs,
@@ -235,8 +249,11 @@ int main( int argc, char** argv )
 		double jobCpu = r.sumVoronoiCpu + r.sumMergeCpu + r.sumHullCpu;
 		printf( "        fracture job cpu ms: voronoi %.0f merge %.0f hulls %.0f (hulls %.0f%% of job time)\n", r.sumVoronoiCpu,
 				r.sumMergeCpu, r.sumHullCpu, jobCpu > 0.0 ? 100.0 * r.sumHullCpu / jobCpu : 0.0 );
-		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke, %d solves, %d waits for budget\n",
-				r.sumStress / (double)ticks, r.maxStress, r.stressIterations, r.stressBreaks, r.stressSolves, r.stressWaiting );
+		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke, %d solves, %d waits for budget; solver %016llx\n",
+				r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress, r.stressIterations, r.stressBreaks, r.stressSolves, r.stressWaiting,
+				(unsigned long long)r.solverHash );
+		printf( "        load: %.1f ms for %d pieces and %d bonds, settling %.1f ms of it (%d iterations)\n", (double)r.loadMs,
+				r.pieces, r.bonds, (double)r.settleMs, r.settleIterations );
 	}
 	printf( "impacts %d, fractures %d, cells %d\n", results[0].impacts, results[0].fractures, results[0].cells );
 	printf( "deterministic across worker counts: %s\n", deterministic ? "yes" : "NO" );
@@ -257,12 +274,14 @@ int main( int argc, char** argv )
 						 "\"maxAwakeDebris\": %d, \"maxRubble\": %d, \"impacts\": %d, \"fractures\": %d, \"cells\": %d, "
 						 "\"awakeContactsAvg\": %.0f, \"maxContacts\": %d, \"voronoiCpuMs\": %.1f, \"mergeCpuMs\": %.1f, "
 						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, "
-						 "\"stressWaits\": %d, \"hash\": \"%016llx\"}%s\n",
+						 "\"stressWaits\": %d, \"loadMs\": %.1f, \"settleMs\": %.1f, \"settleIterations\": %d, \"pieces\": %d, "
+						 "\"bonds\": %d, \"hash\": \"%016llx\", \"solverHash\": \"%016llx\"}%s\n",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
-						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)ticks, r.maxStress, r.stressSolves,
-						 r.stressWaiting, (unsigned long long)r.hash, w + 1 < workerCount ? "," : "" );
+						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
+						 r.stressSolves, r.stressWaiting, (double)r.loadMs, (double)r.settleMs, r.settleIterations, r.pieces, r.bonds,
+						 (unsigned long long)r.hash, (unsigned long long)r.solverHash, w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );
 			fclose( f );

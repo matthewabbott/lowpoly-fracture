@@ -412,6 +412,7 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
 void lpCollectHits( lpWorld* w );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
+void lpUpdateDirtyBodies( lpWorld* w ); // lpUpdateBody on every dirty body, in the order they were marked
 
 // links (link.c): an end's piece leaving Box3D breaks the link at once (lpBreakPieceLinks); lpSyncLinks rebuilds
 // joints whose ends changed body, just before the physics step; lpPollLinks judges their loads just after it
@@ -431,8 +432,9 @@ bool lpValidateLinks( const lpWorld* w );
 void lpFreeLinks( lpWorld* w, bool physicsAlive );
 
 // stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
-// still solving or straining go to w->stressAgain
-void lpCheckStructures( lpWorld* w );
+// still solving or straining are marked dirty for the next step. Settling solves each to convergence, with no budget.
+// Returns the iterations spent.
+int lpCheckStructures( lpWorld* w, bool settle );
 
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );

@@ -27,9 +27,9 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard) and scripted bombardment |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep) and scripted bombardment; `lpBuildScene` settles their structures |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; one argument (`poly`, `fracture`, `world`, `debris`, `stress`, `links`) runs one suite |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`), `lpf_test stress TestKeepBreach` one test |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, renderer (vertex pulling), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
@@ -44,6 +44,7 @@ pwsh tools/build.ps1 -Preset msvc-asan -Test    # ASan build and tests, with lpf
 pwsh tools/build.ps1 -Shaders                   # after editing app/sandbox/shaders/scene.glsl
 pwsh tools/check-determinism.ps1 -Scene walls -Script scripts/walls_demo.txt   # 1/4/8 workers must match
 pwsh tools/bench.ps1 -Repeat 3                  # perf ladder vs bench/baseline.json; exit 3 if a sim hash changed
+pwsh tools/bench.ps1 -StrictSolver              # also exit 3 if a stress solver hash changed (solver refactors)
 build/msvc-release/bin/lpf_bench.exe --scene pile --workers 1,8
 build/msvc-release/bin/sandbox.exe --scene lumber --script scripts/lumber_demo.txt --frames 120 --screenshot build/shots/x.png --hide-ui
 ```
@@ -55,7 +56,8 @@ and look at the PNG.
 
 - Determinism: no FMA or fast-math, no C-library trig in simulation code, PCG32 seeded from state, index-order
   iteration, total-order sorts, pure parallel jobs, nothing reads the camera or the clock. A refactor that is meant to
-  be behaviour-preserving must keep the `lpf_bench` hashes identical (`tools/bench.ps1` checks them).
+  be behaviour-preserving must keep the `lpf_bench` hashes identical (`tools/bench.ps1` checks them; `-StrictSolver`
+  for the stress solver's state too).
 - Performance: every per-step cap is a count, never a time budget. Log before and after numbers in docs/perf-log.md.
 - Gotchas: the agent harness turns `\n` inside Bash heredocs and inline python strings into real newlines, so write C
   string escapes with the Edit or Write tools. ASan binaries need the MSVC runtime on PATH: dot-source

@@ -121,6 +121,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxStressWork = 60000;
 	def.maxStressStructureWork = 10000;
 	def.maxStressIterations = 256;
+	def.maxSettleIterations = 4000;
 	def.maxStressBreaks = 4;
 	def.stressPatience = 30;
 	def.strainRate = 1.0f;
@@ -501,6 +502,8 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	return index;
 }
 
+static const float lp_weldMargin = 0.03f; // parts this close are welded when they share no face
+
 // Bond two pieces of one body if they share a face. Parts that meet at an angle (a roof plank on a gable) share no
 // coplanar face; if they touch or interpenetrate they are welded with a nominal area instead.
 void lpTryBond( lpWorld* w, int a, int b )
@@ -508,7 +511,7 @@ void lpTryBond( lpWorld* w, int a, int b )
 	lpPiece* pa = w->pieces.data + a;
 	lpPiece* pb = w->pieces.data + b;
 	const float tolerance = 2e-3f;
-	const float weldMargin = 0.03f;
+	const float weldMargin = lp_weldMargin;
 	if ( lpBoxesTouch( pa->shape->bounds, pb->shape->bounds, weldMargin ) == false )
 	{
 		return;
@@ -655,6 +658,86 @@ static b3Vec3 lpBoxAxis( b3Vec3 h, b3Quat q, bool longest )
 	return b3RotateVector( q, axis );
 }
 
+typedef struct lpSweepItem
+{
+	float lo, hi; // bounds along x
+	int slot;	  // in the body's piece list
+} lpSweepItem;
+
+typedef struct lpPiecePair
+{
+	int i, j;
+} lpPiecePair;
+
+static int lpCompareSweep( const void* a, const void* b )
+{
+	const lpSweepItem* x = a;
+	const lpSweepItem* y = b;
+	if ( x->lo != y->lo )
+	{
+		return x->lo < y->lo ? -1 : 1;
+	}
+	return ( x->slot > y->slot ) - ( x->slot < y->slot );
+}
+
+static int lpComparePair( const void* a, const void* b )
+{
+	const lpPiecePair* x = a;
+	const lpPiecePair* y = b;
+	if ( x->i != y->i )
+	{
+		return ( x->i > y->i ) - ( x->i < y->i );
+	}
+	return ( x->j > y->j ) - ( x->j < y->j );
+}
+
+// Bond the touching parts of a new object (the body's pieces from `first` on). A sweep along x finds the pairs whose
+// bounds touch, which are then tried in the order of a double loop over the piece list, so the bonds come out exactly
+// as if every pair had been tried.
+static void lpBondParts( lpWorld* w, int bodyIndex, int first )
+{
+	const lpBody* b = w->bodies.data + bodyIndex;
+	int n = b->pieces.count - first;
+	if ( n < 2 )
+	{
+		return;
+	}
+	lpSweepItem* items = lpAlloc( sizeof( lpSweepItem ) * (size_t)n );
+	for ( int k = 0; k < n; ++k )
+	{
+		b3AABB box = w->pieces.data[b->pieces.data[first + k]].shape->bounds;
+		items[k] = (lpSweepItem){ box.lowerBound.x, box.upperBound.x, first + k };
+	}
+	qsort( items, (size_t)n, sizeof( lpSweepItem ), lpCompareSweep );
+
+	LP_ARRAY( lpPiecePair ) pairs = { 0 };
+	for ( int k = 0; k < n; ++k )
+	{
+		const lpShape* a = w->pieces.data[b->pieces.data[items[k].slot]].shape;
+		for ( int m = k + 1; m < n && items[m].lo <= items[k].hi + lp_weldMargin; ++m )
+		{
+			const lpShape* c = w->pieces.data[b->pieces.data[items[m].slot]].shape;
+			if ( lpBoxesTouch( a->bounds, c->bounds, lp_weldMargin ) )
+			{
+				int i = items[k].slot, j = items[m].slot;
+				lpPiecePair pair = { i < j ? i : j, i < j ? j : i };
+				lpArray_Push( pairs, pair );
+			}
+		}
+	}
+	lpFree( items );
+	if ( pairs.count > 1 )
+	{
+		qsort( pairs.data, (size_t)pairs.count, sizeof( lpPiecePair ), lpComparePair );
+	}
+	for ( int k = 0; k < pairs.count; ++k )
+	{
+		lpTryBond( w, b->pieces.data[pairs.data[k].i], b->pieces.data[pairs.data[k].j] );
+		b = w->bodies.data + bodyIndex;
+	}
+	lpArray_Free( pairs );
+}
+
 int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
@@ -750,19 +833,11 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	}
 	lpFree( poly );
 
-	// Bond touching parts
-	lpBody* b = w->bodies.data + bodyIndex;
-	for ( int i = first; i < b->pieces.count; ++i )
-	{
-		for ( int j = i + 1; j < b->pieces.count; ++j )
-		{
-			lpTryBond( w, b->pieces.data[i], b->pieces.data[j] );
-		}
-	}
+	lpBondParts( w, bodyIndex, first );
 
 	if ( type == b3_dynamicBody )
 	{
-		b3Body_ApplyMassFromShapes( b->id );
+		b3Body_ApplyMassFromShapes( w->bodies.data[bodyIndex].id );
 	}
 	else
 	{
@@ -904,6 +979,53 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		}
 	}
 	return lpHashLinks( w, h );
+}
+
+uint64_t lpWorld_HashStress( const lpWorld* w )
+{
+	uint64_t h = LP_HASH_INIT;
+	for ( int i = 0; i < w->bodies.count; ++i )
+	{
+		const lpBody* b = w->bodies.data + i;
+		if ( b->alive == false || b->kind != lp_kindStructure )
+		{
+			continue;
+		}
+		bool flags[4] = { b->solving, b->creaking, b->unsettled, b->strainedLastCheck };
+		h = lpHashBytes( h, &i, sizeof( i ) );
+		h = lpHashBytes( h, flags, sizeof( flags ) );
+		h = lpHashBytes( h, &b->stressSteps, sizeof( b->stressSteps ) );
+		if ( b->solving )
+		{
+			h = lpHashBytes( h, &b->solveRz, sizeof( b->solveRz ) );
+		}
+	}
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + i;
+		if ( p->body < 0 )
+		{
+			continue;
+		}
+		h = lpHashBytes( h, &p->stressX, sizeof( lpVec6 ) );
+		h = lpHashBytes( h, &p->stressLoad, sizeof( lpVec6 ) );
+		h = lpHashBytes( h, &p->strain, sizeof( float ) );
+		if ( w->bodies.data[p->body].solving )
+		{
+			h = lpHashBytes( h, &p->stressR, sizeof( lpVec6 ) ); // a solve in progress continues from these
+			h = lpHashBytes( h, &p->stressP, sizeof( lpVec6 ) );
+		}
+	}
+	for ( int i = 0; i < w->bonds.count; ++i )
+	{
+		const lpBond* bond = w->bonds.data + i;
+		if ( bond->alive )
+		{
+			h = lpHashBytes( h, &bond->rho, sizeof( float ) );
+			h = lpHashBytes( h, &bond->strain, sizeof( float ) );
+		}
+	}
+	return h;
 }
 
 // ---- queries ----

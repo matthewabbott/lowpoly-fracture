@@ -19,6 +19,7 @@ typedef enum lpSceneId
 	lp_sceneLumber, // logs, a log bridge, a woodpile, trees and a timber shed
 	lp_sceneRuins,	// a dry-stone arch, a colonnade with lintels, balconies: structures that know where they are weak
 	lp_sceneYard,	// things joined by links: a cart of volatile crates on a ramp, a hanging sign, a door, a drawbridge
+	lp_sceneKeep,	// a mortared stone keep of about 2000 pieces with wooden floors: the stress solve at scale
 	lp_sceneCount
 } lpSceneId;
 
@@ -27,8 +28,13 @@ const char* lpSceneName( int scene );
 // Scene id from its name ("town") or number ("2")
 int lpSceneFromName( const char* name );
 
-// Adds everything for the scene to the world, including the ground.
+// Adds everything for the scene to the world, including the ground, then settles its structures
+// (lpWorld_SettleStructures).
 void lpBuildScene( lpWorld* world, int scene );
+
+// A square stone keep, 15 m across, with `floors` wooden floors (1 to 6; four make about 2000 pieces), its front door
+// facing +z. Returns its body.
+int lpAddKeep( lpWorld* world, b3Vec3 base, int floors );
 
 // Scripted bombardment for benchmarks and demos: at some ticks, casts a ray from a moving attacker into the scene
 // and queues a grenade (or every fourth time a cannon blast) where it hits. Deterministic for a deterministic world.
