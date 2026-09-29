@@ -355,6 +355,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->freezeCandidates );
 	lpArray_Free( w->pendingDestroy );
 	lpArray_Free( w->detonators );
+	lpArray_Free( w->pools );
 	lpArray_Free( w->scratchCarriers );
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
@@ -851,6 +852,13 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		uint8_t lowest = (uint8_t)( p->sources & ( ~p->sources + 1u ) );
 		p->needs = p->sources != 0 ? (uint8_t)( part->system.needs & ( lowest - 1u ) ) : part->system.needs;
 		p->detonator = part->detonator.radius > 0.0f ? lpAddDetonator( w, &part->detonator ) : objectDetonator;
+		p->pool = 0;
+		if ( part->system.pool > 0.0f && p->sources != 0 )
+		{
+			lpPool pool = { part->system.pool, part->system.pool, 0.0f, b3MaxFloat( part->system.seal, 0.0f ), -1.0f, 0.0f, 16 };
+			lpArray_Push( w->pools, pool );
+			p->pool = w->pools.count;
+		}
 
 		b3Quat q = part->pointCount == 0 ? part->transform.q : b3Quat_identity;
 		int pattern = lpGetMaterial( part->material )->pattern;

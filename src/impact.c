@@ -345,6 +345,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		child->needs = identity.needs;
 		child->sourceShare = identity.sourceShare * cell->volume / parentVolume;
 		child->detonator = cls == lp_cellKeep ? identity.detonator : 0; // a chip thrown clear is no longer volatile
+		child->pool = cls == lp_cellKeep ? identity.pool : 0;
 
 		if ( cls == lp_cellKeep )
 		{

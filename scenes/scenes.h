@@ -104,7 +104,8 @@ enum
 // block, femur, tibia with a rubber foot) on motorised hinges, about 2.7 t in all, standing on them as a rig (its limbs
 // in the order of the legs above). Its systems: the reactor feeds power, the reservoir hydraulics and the computer
 // control (both need power); the frame, the legs and their hinges carry all three, and every servo needs hydraulics
-// and control (unfed, it goes limp). style picks the paint. Returns the rig.
+// and control (unfed, it goes limp). The reservoir holds 100 of fluid: a cut line leaks until its valves close, 3 s
+// later. The femur and knee jam as they are damaged. style picks the paint. Returns the rig.
 int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
 
 // The ground plane, for tests that build their own scene

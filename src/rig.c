@@ -213,7 +213,7 @@ static void lpLimbCapability( const lpWorld* w, lpLimb* limb, b3Vec3 up )
 		{
 			limb->rootBody = in;
 		}
-		float cap = l->def.motor.maxTorque > 0.0f ? lpMotorCap( w, l ) / l->def.motor.maxTorque : 0.0f;
+		float cap = l->def.motor.maxTorque > 0.0f ? lpMotorDrive( w, l ) / l->def.motor.maxTorque : 0.0f; // not what brakes hold
 		limb->strength = b3MinFloat( limb->strength, cap );
 		inner = out;
 		limb->joints = k + 1;

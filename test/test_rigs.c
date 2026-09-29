@@ -741,16 +741,17 @@ typedef struct Hobble
 	bool crawling;
 	bool valid;
 	float pegDepth; // how far below the torso leg 1 reaches at the end
+	float fluid;	// what is left in its hydraulic reservoir, 0 to 1
 } Hobble;
 
-// The mech as built, damaged by `harm`, given two seconds to find its feet, then walked forward for `ticks`
-static Hobble WalkDamaged( void ( *harm )( Sim*, int ), int ticks )
+// The mech as built, damaged by `harm`, given `wait` steps to find its feet, then walked forward for `ticks`
+static Hobble WalkDamagedAfter( void ( *harm )( Sim*, int ), int wait, int ticks )
 {
 	Sim s = CreateSim( -1 );
 	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -15.0f }, 0.0f, 0 );
 	Run( &s, 30 );
 	harm( &s, rig );
-	Run( &s, 120 );
+	Run( &s, wait );
 	lpRigState st = lpWorld_GetRigState( s.world, rig );
 	b3Vec3 heading = b3Normalize( (b3Vec3){ st.forward.x, 0.0f, st.forward.z } );
 	lpRigControl go = { 1.0f, 0.0f, 0.0f, 0.0f };
@@ -768,8 +769,19 @@ static Hobble WalkDamaged( void ( *harm )( Sim*, int ), int ticks )
 	h.crawling = st.crawling;
 	h.valid = w.valid;
 	h.pegDepth = lpWorld_GetLimbState( s.world, rig, 1 ).depth;
+	h.fluid = -1.0f;
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( s.world ) && h.fluid < 0.0f; ++i )
+	{
+		lpPieceInfo info = lpWorld_GetPieceInfo( s.world, i );
+		h.fluid = info.body >= 0 && info.tag == lp_tagReservoir ? lpWorld_GetPiecePool( s.world, i, NULL ) : -1.0f;
+	}
 	DestroySim( &s );
 	return h;
+}
+
+static Hobble WalkDamaged( void ( *harm )( Sim*, int ), int ticks )
+{
+	return WalkDamagedAfter( harm, 120, ticks );
 }
 
 static void HarmNone( Sim* s, int rig )
@@ -884,6 +896,29 @@ static int TestRigWalksOnAPeg( void )
 	return 0;
 }
 
+static void HarmBleed( Sim* s, int rig )
+{
+	s->world->pools.data[0].seal = 0.0f; // its valves stuck open: the reservoir bleeds until it is dry
+	LoseLeg( s, rig, 1 );
+}
+
+// A leg shot off opens a leak in its hydraulics: the valves close it in a few seconds, and it walks on having lost part of
+// its fluid. With its valves stuck open it bleeds dry: its servos weaken below 30%, the body sinks, and it slows to a
+// stop
+static int TestRigBleedsOut( void )
+{
+	Hobble intact = WalkDamaged( HarmNone, 300 );
+	Hobble valved = WalkDamagedAfter( HarmOneLeg, 900, 300 ); // 15 s after the shot, walked for 5
+	Hobble bleeding = WalkDamagedAfter( HarmBleed, 900, 300 );
+	PrintHobble( "a leg off, valves shut", valved, intact.speed );
+	PrintHobble( "a leg off, bleeding", bleeding, intact.speed );
+	printf( "  fluid left: %.2f with its valves, %.2f bleeding\n", valved.fluid, bleeding.fluid );
+	ENSURE( valved.valid && bleeding.valid );
+	ENSURE( intact.fluid == 1.0f && valved.fluid > 0.6f && valved.fluid < 1.0f && valved.speed >= 0.4f * intact.speed );
+	ENSURE( bleeding.fluid < 0.05f && bleeding.height < intact.height - 0.3f && bleeding.speed < 0.5f * valved.speed );
+	return 0;
+}
+
 // A leg with 40% of its servos' torque: the body walks lower; a leg whose lines are cut goes limp and the others walk on
 static int TestRigWeakAndLimpLegs( void )
 {
@@ -919,5 +954,6 @@ int RigTest( void )
 	RUN_TEST( TestRigLosesLegs );
 	RUN_TEST( TestRigWalksOnAPeg );
 	RUN_TEST( TestRigWeakAndLimpLegs );
+	RUN_TEST( TestRigBleedsOut );
 	return 0;
 }

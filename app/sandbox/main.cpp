@@ -847,7 +847,7 @@ void DrawUi()
 	if ( lpWorld_GetRigCapacity( app.world ) > 0 )
 	{
 		int walker = app.walking >= 0 ? app.walking : ( app.playerRig >= 0 ? app.playerRig : 0 );
-		char line[192];
+		char line[256];
 		Walk_Describe( app.world, walker, line, (int)sizeof( line ) );
 		ImGui::Text( "rigs %.2f ms  foot casts %d", app.last.rigMs, app.last.footCasts );
 		ImGui::Text( "%s%s", app.walking >= 0 ? "walking " : "", line );

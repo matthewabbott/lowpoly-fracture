@@ -232,7 +232,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 4. Damage adaptation: lost legs, pegs, weak legs, crawling (done: on five legs 41% of its pace, on four 11%, on three
    or one leg left on a side it crawls; a peg walks level; a weak leg lowers the body; the kit gets its systems and an
    armored hull, `lp_armor`).
-5. Pools, nerves, jam.
+5. Pools, nerves, jam (done: a cut line leaks its share of the pool a second until its seal closes, following the model
+   to 0.01%; the mech loses a fifth of its fluid with a leg, and bleeds dry and collapses with its valves stuck open;
+   a jammed joint turns at half speed at half health and holds unfed).
 6. Strikes and grabs.
 7. Bones and landings.
 8. Wrap-up: docs, the agent map, the memory note.

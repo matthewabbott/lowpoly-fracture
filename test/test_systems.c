@@ -497,6 +497,164 @@ static int TestSupplyCost( void )
 	return 0;
 }
 
+// ---- pools ----
+
+// The piece of a row's part, and its pool's level (0 to 1)
+static float PoolAt( const Sim* s, uint32_t userId, int part )
+{
+	return lpWorld_GetPiecePool( s->world, PieceOf( s, userId, part ), NULL );
+}
+
+static void CutBetween( Sim* s, uint32_t userId, int a, int b )
+{
+	lpPiece* pa = s->world->pieces.data + PieceOf( s, userId, a );
+	int pb = PieceOf( s, userId, b );
+	for ( int k = 0; k < pa->bonds.count; ++k )
+	{
+		const lpBond* bond = s->world->bonds.data + pa->bonds.data[k];
+		if ( bond->a == pb || bond->b == pb )
+		{
+			lpBreakBond( s->world, pa->bonds.data[k] );
+			break;
+		}
+	}
+	lpMarkDirty( s->world, pa->body );
+}
+
+// A tank with a pool feeds fuel down a line of 7 parts; cut 3 of them off and a leak opens for 3/7 of the pool a second,
+// closing over its seal time: the level follows that, and the fuel still reaching the rest weakens once it is below 30%
+static int TestPoolLeaksWhenCut( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartSystem row[7] = { { 0, 0, Fuel, 0, 100.0f, 2.0f } };
+	for ( int k = 1; k < 7; ++k )
+	{
+		row[k] = (lpPartSystem){ 0, Fuel, 0, 0 };
+	}
+	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
+	Run( &s, 2 );
+	ENSURE( PoolAt( &s, 1u, 0 ) == 1.0f && lpWorld_GetStats( s.world ).leakingPools == 0 );
+	CutBetween( &s, 1u, 3, 4 );
+	Run( &s, 1 ); // the cut: the leak opens
+	float leak = 0.0f;
+	lpWorld_GetPiecePool( s.world, PieceOf( &s, 1u, 0 ), &leak );
+	int updates = 0;
+	float worst = 0.0f;
+	float dt = 1.0f / 60.0f, q = 1.0f - dt / 2.0f, r0 = 100.0f * 3.0f / 7.0f;
+	for ( int n = 1; n <= 360; ++n )
+	{
+		Run( &s, 1 );
+		updates += lpWorld_GetStats( s.world ).supplyUpdates;
+		float model = 100.0f - r0 * 2.0f * ( 1.0f - powf( q, (float)n ) );
+		worst = fmaxf( worst, fabsf( 100.0f * PoolAt( &s, 1u, 0 ) - model ) );
+	}
+	float level = PoolAt( &s, 1u, 0 );
+	float fuel = SupplyAt( &s, 1u, 3, 0 );
+	printf( "  leak %.3f of the pool a second (3/7 = %.3f), level %.3f after 6 s (model %.3f, worst off %.2f%%), fuel down the line %.2f, "
+			"%d supply updates\n",
+			leak, 3.0f / 7.0f, level, 1.0f - r0 * 2.0f * ( 1.0f - powf( q, 360.0f ) ) / 100.0f, worst, fuel, updates );
+	ENSURE_NEAR( leak, 3.0f / 7.0f, 0.01f );
+	ENSURE( worst < 1.0f && updates <= 17 );
+	ENSURE_NEAR( fuel, level / 0.3f, 0.02f ); // below 30%, the pool pushes in proportion
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// Four carriers in a ring round a pooled tank: cutting one bond of the ring leaves the line whole, and nothing leaks
+static int TestPoolRingDoesNotLeak( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef parts[4];
+	for ( int k = 0; k < 4; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+		parts[k].transform.p = (b3Vec3){ 0.4f * (float)( k % 2 ), 0.0f, 0.4f * (float)( k / 2 ) };
+		parts[k].material = lp_metal;
+		parts[k].system = (lpPartSystem){ 0, Fuel, 0, 0 };
+	}
+	parts[0].system = (lpPartSystem){ 0, 0, Fuel, 0, 100.0f, 0.0f };
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (b3Pos){ 0.0f, 0.2f, 0.0f };
+	def.parts = parts;
+	def.partCount = 4;
+	def.userId = 9u;
+	lpCreateObject( s.world, &def );
+	Run( &s, 2 );
+	CutBetween( &s, 9u, 0, 1 ); // the ring still joins them the other way round
+	Run( &s, 120 );
+	float leak = 0.0f;
+	float level = lpWorld_GetPiecePool( s.world, PieceOf( &s, 9u, 0 ), &leak );
+	printf( "  a cut ring: level %.4f, leak %.4f\n", level, leak );
+	ENSURE( level == 1.0f && leak == 0.0f && SupplyAt( &s, 9u, 1, 0 ) == 1.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A heavy round into a stone conduit knocks chips out of it: a small leak, most of the pool kept
+static int TestPoolChippedLineLeaksALittle( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef parts[6];
+	for ( int k = 0; k < 6; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (b3Vec3){ 0.5f, 0.3f, 0.3f };
+		parts[k].transform.p = (b3Vec3){ 1.0f * (float)k, 0.0f, 0.0f };
+		parts[k].material = lp_stone;
+		parts[k].system = (lpPartSystem){ 0, Fuel, 0, 0 };
+	}
+	parts[0].system = (lpPartSystem){ 0, 0, Fuel, 0, 100.0f, 1.0f };
+	lpObjectDef def = lpDefaultObjectDef();
+	def.transform.p = (b3Pos){ 0.0f, 0.3f, 0.0f };
+	def.parts = parts;
+	def.partCount = 6;
+	def.userId = 10u;
+	lpCreateObject( s.world, &def );
+	lpWorld_SettleStructures( s.world );
+	Run( &s, 2 );
+	lpImpactDef rifle = { 0 };
+	rifle.point = (b3Pos){ 3.0f, 0.6f, 0.0f };
+	rifle.direction = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+	rifle.radius = 0.4f;
+	rifle.energy = 20000.0f; // a heavy round: a rifle's only scratches plate this thick
+	int piecesBefore = lpWorld_GetStats( s.world ).pieceCount;
+	float reachBefore = s.world->pools.data[0].reach;
+	lpWorld_AddImpact( s.world, &rifle );
+	Run( &s, 300 );
+	float level = PoolAt( &s, 10u, 0 );
+	printf( "  a heavy round into the conduit: pieces %d -> %d, reach %.4f -> %.4f, level %.3f\n", piecesBefore,
+			lpWorld_GetStats( s.world ).pieceCount, reachBefore, s.world->pools.data[0].reach, level );
+	ENSURE( level < 1.0f && level > 0.8f );
+	DestroySim( &s );
+	return 0;
+}
+
+// Pools in the hash: the same cut at 1 and 4 workers leaks the same
+static int TestPoolDeterminism( void )
+{
+	uint64_t hashes[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSimWorkers( -1, k == 0 ? 1 : 4 );
+		lpPartSystem row[5] = { { 0, 0, Fuel, 0, 50.0f, 1.5f } };
+		for ( int j = 1; j < 5; ++j )
+		{
+			row[j] = (lpPartSystem){ 0, Fuel, 0, 0 };
+		}
+		AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 5, 11u );
+		Run( &s, 2 );
+		CutBetween( &s, 11u, 2, 3 );
+		Run( &s, 120 );
+		hashes[k] = lpWorld_Hash( s.world );
+		DestroySim( &s );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+	return 0;
+}
+
 int SystemsTest( void )
 {
 	RUN_TEST( TestPartIdentitySurvivesFracture );
@@ -510,5 +668,9 @@ int SystemsTest( void )
 	RUN_TEST( TestCutPowerCoasts );
 	RUN_TEST( TestSupplyDeterminism );
 	RUN_TEST( TestSupplyCost );
+	RUN_TEST( TestPoolLeaksWhenCut );
+	RUN_TEST( TestPoolRingDoesNotLeak );
+	RUN_TEST( TestPoolChippedLineLeaksALittle );
+	RUN_TEST( TestPoolDeterminism );
 	return 0;
 }

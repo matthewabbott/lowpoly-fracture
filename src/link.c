@@ -26,6 +26,7 @@
 #define LP_LINK_STRAIN 10.0f   // strain per second per unit of overload: 10% over lasts about a second
 #define LP_LINK_TEAR_RATIO 0.02f // a rebuilt link between two moving bodies tears when one is under 2% of the other
 #define LP_WHEEL_TEAR_RATIO 0.2f // a wheel tears off a mount body lighter than a fifth of its share of the chassis
+#define LP_JAM_KNOCK 0.25f		 // share of its strength a jamming motor loses when a piece at an end breaks up
 
 lpLinkDef lpDefaultLinkDef( int type )
 {
@@ -446,8 +447,14 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 			lpBreakLink( w, move.link, true ); // the cell holding the anchor was blown out
 			continue;
 		}
-		// Kept cells stay on the same body, and the frame is in its frame: the joint holds on unchanged
-		lpLinkEnd* e = w->links.data[move.link].ends + move.end;
+		// Kept cells stay on the same body, and the frame is in its frame: the joint holds on unchanged. A motor that jams
+		// takes a knock from the piece breaking up around it.
+		lpLink* l = w->links.data + move.link;
+		if ( l->def.motor.jam > 0.0f && l->def.strength > 0.0f )
+		{
+			l->health = b3MaxFloat( l->health - LP_JAM_KNOCK * l->def.strength, 0.1f * l->def.strength );
+		}
+		lpLinkEnd* e = l->ends + move.end;
 		e->piece = child;
 		e->generation = w->pieces.data[child].generation;
 		lpArray_Push( w->pieces.data[child].links, move.link );
@@ -528,12 +535,28 @@ static float lpMotorFeed( const lpWorld* w, const lpLink* l )
 	return fed;
 }
 
+// How jammed a motor is: its jam times the link's damage, 0 to 1
+static float lpMotorJam( const lpLink* l )
+{
+	if ( l->def.motor.jam <= 0.0f || l->def.strength <= 0.0f )
+	{
+		return 0.0f;
+	}
+	return l->def.motor.jam * b3ClampFloat( 1.0f - l->health / l->def.strength, 0.0f, 1.0f );
+}
+
+float lpMotorDrive( const lpWorld* w, const lpLink* l )
+{
+	float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
+	return l->def.motor.maxTorque * health * lpMotorFeed( w, l );
+}
+
 float lpMotorCap( const lpWorld* w, const lpLink* l )
 {
 	const lpMotorDef* m = &l->def.motor;
 	float fed = lpMotorFeed( w, l );
-	float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
-	return m->maxTorque * health * fed + m->holdTorque * ( 1.0f - fed );
+	float hold = b3MaxFloat( m->holdTorque, lpMotorJam( l ) * m->maxTorque ); // a jammed joint sticks
+	return lpMotorDrive( w, l ) + hold * ( 1.0f - fed );
 }
 
 // The servos: speed toward the target in proportion to how far off it is, torque up to the cap. Box3D's setters are
@@ -558,7 +581,8 @@ void lpDriveMotors( lpWorld* w )
 			{
 				speed += l->feed; // its rig's motion this step: servos with different gains or clamps still move together
 			}
-			speed = fed > 0.0f ? b3ClampFloat( speed, -m->maxSpeed, m->maxSpeed ) : 0.0f;
+			float top = m->maxSpeed * ( 1.0f - lpMotorJam( l ) ); // a jammed joint turns slower
+			speed = fed > 0.0f ? b3ClampFloat( speed, -top, top ) : 0.0f;
 			if ( l->motorApplied == false || speed != l->appliedSpeed )
 			{
 				b3RevoluteJoint_SetMotorSpeed( l->joint, speed );
@@ -581,7 +605,7 @@ void lpDriveMotors( lpWorld* w )
 			if ( sine > 1e-6f && fed > 0.0f )
 			{
 				float angle = 2.0f * b3Atan2( sine, error.s );
-				float speed = b3MinFloat( m->gain * angle, m->maxSpeed );
+				float speed = b3MinFloat( m->gain * angle, m->maxSpeed * ( 1.0f - lpMotorJam( l ) ) );
 				omega = b3RotateVector( qA, b3MulSV( speed / sine, error.v ) );
 			}
 			if ( l->motorApplied == false || b3Length( b3Sub( omega, l->appliedVelocity ) ) > 0.0f )
@@ -925,7 +949,8 @@ uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
 		}
 	}
 	h = w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
-	return w->rigs.count > 0 ? lpHashRigs( w, h ) : h;
+	h = w->rigs.count > 0 ? lpHashRigs( w, h ) : h;
+	return w->pools.count > 0 ? lpHashPools( w, h ) : h; // only with pools: old hashes stay valid
 }
 
 static bool lpLinkFail( const char* message, int a, int b )

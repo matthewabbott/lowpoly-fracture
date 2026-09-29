@@ -138,7 +138,19 @@ void Walk_Camera( const lpWorld* world, int rig, float dt, V3* position, float* 
 void Walk_Describe( const lpWorld* world, int rig, char* text, int size )
 {
 	lpRigState s = lpWorld_GetRigState( world, rig );
-	snprintf( text, (size_t)size, "mech %d: %.1f m/s  legs %d on, %d able, %d down  height %.2f m%s  forward %.1f turn %.1f strafe %.1f%s",
-			  rig, s.speed, s.attached, s.able, s.planted, s.height, s.idle ? " (idle)" : "", s.control.forward, s.control.turn,
-			  s.control.strafe, s.control.crouch > 0.0f ? "  crouched" : "" );
+	// The pool on its torso, if it has one (the mech's hydraulic reservoir)
+	float fluid = -1.0f, leak = 0.0f;
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ) && fluid < 0.0f && s.body >= 0; ++i )
+	{
+		lpPieceInfo info = lpWorld_GetPieceInfo( world, i );
+		fluid = info.body == s.body ? lpWorld_GetPiecePool( world, i, &leak ) : -1.0f;
+	}
+	char pool[48] = "";
+	if ( fluid >= 0.0f )
+	{
+		snprintf( pool, sizeof( pool ), "  fluid %.0f%%%s", 100.0f * fluid, leak > 0.0f ? " (leaking)" : "" );
+	}
+	snprintf( text, (size_t)size, "mech %d: %.1f m/s  legs %d on, %d able, %d down  height %.2f m%s%s%s  forward %.1f turn %.1f strafe %.1f%s",
+			  rig, s.speed, s.attached, s.able, s.planted, s.height, s.idle ? " (idle)" : "", s.crawling ? " crawling" : "", pool,
+			  s.control.forward, s.control.turn, s.control.strafe, s.control.crouch > 0.0f ? "  crouched" : "" );
 }

@@ -190,12 +190,19 @@ typedef struct lpDetonatorDef
 // names them (fuel, power, steering; blood, nerves). A bond between two parts that carry a channel carries it, and so
 // does a link that carries it; a part supplied with a channel is one its sources reach through carriers. Fracture
 // cells inherit all of it.
+//
+// A source can hold a pool (hydraulic fluid, blood, fuel): cut its lines and it leaks. When the carriers its lowest
+// channel reaches lose volume (a severed leg, chips shot out of a line), a leak opens in proportion, draining that share
+// of the pool every second and closing over `seal` seconds (valves, clotting). The source feeds fully while its pool
+// holds 30% or more, then less, down to nothing when it is empty.
 typedef struct lpPartSystem
 {
 	uint16_t tag;	 // the game's name for the part (an engine, a fuel tank, a heart); 0: none. The core never reads it.
 	uint8_t carries; // channels it carries
 	uint8_t sources; // channels it feeds (it carries them too)
 	uint8_t needs;	 // channels it must be fed before it feeds its own; only those below its lowest source count
+	float pool;		 // a source's pool (any unit; 0: none, it never runs dry)
+	float seal;		 // s a leak takes to close (0: it bleeds until the pool is empty)
 } lpPartSystem;
 
 // One convex part of an object, in object space. A box when pointCount is zero, else the hull of points.
@@ -261,6 +268,9 @@ typedef enum lpLinkType
 // (lpWorld_SetLinkTarget, lpWorld_SetLinkTargetRotation) with at most maxTorque, less as the link is damaged and as
 // what it needs is fed. It holds up to that torque and gives past it: a weak muscle sags. Unfed, it brakes with at most
 // holdTorque (a worm gear holds, a severed muscle does not). Its own torque never counts against the link's maxTorque.
+// A motor that jams (dented armor grinding on a knee): as the link is damaged (by blasts, and by the pieces at its ends
+// breaking up) it turns slower, by jam times the damage, and sticks, holding with jam times the damage of its
+// maxTorque even unfed.
 typedef struct lpMotorDef
 {
 	float maxTorque;  // N*m; 0 (and no holdTorque) = no motor
@@ -268,6 +278,7 @@ typedef struct lpMotorDef
 	float gain;		  // 1/s: turning speed per radian from its target
 	uint8_t needs;	  // supply channels it needs fed at either end (0: none)
 	float holdTorque; // N*m it brakes with when unfed
+	float jam;		  // 0 to 1: how much damage jams it (0: never)
 } lpMotorDef;
 
 typedef struct lpLinkDef
@@ -642,6 +653,7 @@ typedef struct lpStats
 	int wheelCasts;	   // this step
 	int supplyUpdates; // this step: 1 when a carrier's connections changed
 	int motorSets;	   // this step: Box3D motor setter calls (only when a servo's speed or cap changed)
+	int leakingPools;  // this step
 
 	// Rigs (rig.c)
 	float rigMs;
@@ -689,6 +701,8 @@ int lpWorld_GetPieceCapacity( const lpWorld* world );
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* world, int piece );
 // How well a supply channel is fed at a piece, 0 to 1: the sum of the shares of the sources its carriers reach
 float lpWorld_GetPieceSupply( const lpWorld* world, int piece, int channel );
+// What is left in the pool of the source part a piece came from, 0 to 1 (-1: no pool); leaking, how fast (share/s)
+float lpWorld_GetPiecePool( const lpWorld* world, int piece, float* leak );
 
 int lpWorld_GetBodyCapacity( const lpWorld* world );
 bool lpWorld_GetBodyTransform( const lpWorld* world, int body, b3WorldTransform* transform );

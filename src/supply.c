@@ -10,10 +10,19 @@
 // It is recomputed only when a carrier's connections changed (a bond or link between carriers made or broken, a
 // carrier freed or made), at most once per step, in piece index order. Integer groups and a fixed summation order: it
 // does not depend on anything but the simulation state.
+//
+// Pools: a source part may hold one (lpPartSystem.pool). Each update measures the carrier volume its lowest channel's
+// group reaches; when that drops, a leak opens in proportion to the share lost (a severed leg, chips shot out of a
+// line; a fracture that keeps every cell loses nothing), draining that share of the pool per second and closing over
+// the part's seal time. A source feeds fully while its pool holds 30% or more, then less. Draining happens before the
+// update each step; a pool that crosses a sixteenth of its capacity asks for one.
 
 #include "world.h"
 
 #include <string.h>
+
+#define LP_POOL_LEAK 1.0f	  // a leak drains this share of the pool per second for each share of its reach lost
+#define LP_POOL_PRESSURE 0.3f // a pool feeds fully down to this share of its capacity, then less, to nothing empty
 
 static uint8_t lpQuantize( float strength )
 {
@@ -21,10 +30,20 @@ static uint8_t lpQuantize( float strength )
 	return (uint8_t)( 255.0f * s + 0.5f );
 }
 
-// A source's feed: its share, times the worst supply among what it needs
-static float lpSourceFeed( const lpPiece* p )
+// How hard a pool still pushes, 0 to 1
+static float lpPoolPressure( const lpPool* pool )
+{
+	return b3ClampFloat( pool->level / ( LP_POOL_PRESSURE * pool->capacity ), 0.0f, 1.0f );
+}
+
+// A source's feed: its share, times the worst supply among what it needs, times its pool's pressure
+static float lpSourceFeed( const lpWorld* w, const lpPiece* p )
 {
 	float feed = p->sourceShare;
+	if ( p->pool != 0 )
+	{
+		feed *= lpPoolPressure( w->pools.data + p->pool - 1 );
+	}
 	for ( int n = 0; n < LP_CHANNELS; ++n )
 	{
 		if ( p->needs & ( 1u << n ) )
@@ -55,6 +74,10 @@ void lpUpdateSupply( lpWorld* w )
 	}
 	int count = w->scratchCarriers.count;
 	lpArray_Reserve( w->scratchQueue, count );
+	for ( int i = 0; i < w->pools.count; ++i )
+	{
+		w->pools.data[i].found = 0.0f;
+	}
 	for ( int c = 0; c < LP_CHANNELS; ++c )
 	{
 		uint8_t bit = (uint8_t)( 1u << c );
@@ -77,13 +100,17 @@ void lpUpdateSupply( lpWorld* w )
 			queue[tail++] = seed;
 			root->mark = stamp;
 			float strength = 0.0f;
+			float volume = 0.0f;
+			bool pooled = false;
 			while ( head < tail )
 			{
 				int pi = queue[head++];
 				const lpPiece* p = w->pieces.data + pi;
+				volume += p->shape->volume;
 				if ( p->sources & bit )
 				{
-					strength += lpSourceFeed( p );
+					strength += lpSourceFeed( w, p );
+					pooled = pooled || p->pool != 0;
 				}
 				for ( int k = 0; k < p->bonds.count; ++k )
 				{
@@ -115,10 +142,89 @@ void lpUpdateSupply( lpWorld* w )
 			uint8_t supply = lpQuantize( strength );
 			for ( int k = 0; k < tail; ++k )
 			{
-				w->pieces.data[queue[k]].supply[c] = supply;
+				lpPiece* p = w->pieces.data + queue[k];
+				p->supply[c] = supply;
+				// A pool's reach is its lowest channel's group (the most a severed line can take from it)
+				uint8_t lowest = (uint8_t)( p->sources & ( ~p->sources + 1u ) );
+				if ( pooled && p->pool != 0 && lowest == bit )
+				{
+					lpPool* pool = w->pools.data + p->pool - 1;
+					pool->found = b3MaxFloat( pool->found, volume );
+				}
 			}
 		}
 	}
+
+	// Lines that lost volume leak
+	for ( int i = 0; i < w->pools.count; ++i )
+	{
+		lpPool* pool = w->pools.data + i;
+		if ( pool->reach > 0.0f && pool->found < pool->reach )
+		{
+			pool->leak += LP_POOL_LEAK * pool->capacity * ( pool->reach - pool->found ) / pool->reach;
+		}
+		pool->reach = pool->found;
+	}
+}
+
+void lpDrainPools( lpWorld* w, float timeStep )
+{
+	for ( int i = 0; i < w->pools.count; ++i )
+	{
+		lpPool* pool = w->pools.data + i;
+		if ( pool->leak <= 0.0f )
+		{
+			continue;
+		}
+		w->stats.leakingPools += 1;
+		pool->level = b3MaxFloat( pool->level - pool->leak * timeStep, 0.0f );
+		if ( pool->seal > 0.0f )
+		{
+			pool->leak -= pool->leak * b3MinFloat( timeStep / pool->seal, 1.0f );
+			pool->leak = pool->leak < 1e-6f * pool->capacity ? 0.0f : pool->leak;
+		}
+		if ( pool->level <= 0.0f )
+		{
+			pool->leak = 0.0f; // empty: nothing left to push
+			w->supplyDirty = true;
+		}
+		int step = (int)( 16.0f * pool->level / pool->capacity );
+		if ( step != pool->step )
+		{
+			pool->step = step;
+			w->supplyDirty = true;
+		}
+	}
+}
+
+float lpWorld_GetPiecePool( const lpWorld* w, int piece, float* leak )
+{
+	if ( leak != NULL )
+	{
+		*leak = 0.0f;
+	}
+	if ( piece < 0 || piece >= w->pieces.count || w->pieces.data[piece].body < 0 || w->pieces.data[piece].pool == 0 )
+	{
+		return -1.0f;
+	}
+	const lpPool* pool = w->pools.data + w->pieces.data[piece].pool - 1;
+	if ( leak != NULL )
+	{
+		*leak = pool->leak / pool->capacity;
+	}
+	return pool->level / pool->capacity;
+}
+
+uint64_t lpHashPools( const lpWorld* w, uint64_t h )
+{
+	for ( int i = 0; i < w->pools.count; ++i )
+	{
+		const lpPool* pool = w->pools.data + i;
+		float state[3] = { pool->level, pool->leak, pool->reach };
+		h = lpHashBytes( h, state, sizeof( state ) );
+		h = lpHashBytes( h, &pool->step, sizeof( pool->step ) );
+	}
+	return h;
 }
 
 float lpWorld_GetPieceSupply( const lpWorld* w, int piece, int channel )

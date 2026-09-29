@@ -1266,7 +1266,8 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 	{
 		frame->system = (lpPartSystem){ lp_tagFrame, lines, 0, 0 };
 		reactor->system = (lpPartSystem){ lp_tagReactor, power, power, 0 };
-		reservoir->system = (lpPartSystem){ lp_tagReservoir, hydraulics | power, hydraulics, power }; // carries what it needs
+		// It carries what it needs; its fluid leaks from a cut line until the valves close (3 s)
+		reservoir->system = (lpPartSystem){ lp_tagReservoir, hydraulics | power, hydraulics, power, 100.0f, 3.0f };
 		computer->system = (lpPartSystem){ lp_tagComputer, control | power, control, power };
 	}
 	int torso = lpCommitDef( world, origin, q, lpDynamicDef() );
@@ -1316,7 +1317,8 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 			hinge.maxForce = 120000.0f; // walking loads them to about a third
 			hinge.maxTorque = 150000.0f;
 			hinge.strength = 20000.0f;
-			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, hydraulics | control, 0.0f }; // gain 8 sways at 6 Hz on 4 substeps
+			// Gain 8 sways at 6 Hz on 4 substeps. The femur and knee jam as they are damaged
+			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, hydraulics | control, 0.0f, j > 0 ? 0.6f : 0.0f };
 			hinge.carries = lines;
 			hinge.userId = (uint32_t)( lp_linkHexapod + 16 * leg + j );
 			hinge.tearRatio = j > 0 ? 0.1f : 0.0f; // a stub of a leg segment left on a joint tears off

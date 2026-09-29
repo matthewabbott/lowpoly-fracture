@@ -339,6 +339,7 @@ typedef struct lpPiece
 	uint8_t needs;
 	float sourceShare; // of its object's sources of the same channels, by volume (split among its fracture cells)
 	int detonator;	   // its part's detonator, w->detonators + 1; 0: inert
+	int pool;		   // its source part's pool, w->pools + 1; 0: none
 	uint8_t supply[LP_CHANNELS]; // how well each channel is fed here, of 255 (supply.c)
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
@@ -452,6 +453,18 @@ typedef struct lpBody
 	int gridPrev;
 	int gridNext;
 } lpBody;
+
+// A source part's pool (supply.c), shared by every piece made from it
+typedef struct lpPool
+{
+	float capacity;
+	float level;
+	float leak;	 // per second
+	float seal;	 // s a leak takes to close (0: never)
+	float reach; // carrier volume its lowest channel reached at the last supply update (-1: not yet)
+	float found; // this update's
+	int step;	 // level in sixteenths at the last supply update
+} lpPool;
 
 // A detonator of a part or an object, shared by every piece made from it: the first of them to go off disarms it
 typedef struct lpDetonator
@@ -607,6 +620,7 @@ struct lpWorld
 	int oracleJoints; // joints checked
 	LP_ARRAY( lpPendingBlast ) pendingDestroy; // detonated pieces, removed at the start of the next step
 	LP_ARRAY( lpDetonator ) detonators;
+	LP_ARRAY( lpPool ) pools;
 	bool supplyDirty; // a carrier's connections changed: supply is recomputed before the next physics step
 	LP_ARRAY( int ) scratchCarriers;
 	LP_ARRAY( lpPull ) pulls;
@@ -708,6 +722,9 @@ uint64_t lpHashVehicles( const lpWorld* w, uint64_t h );
 // supply (supply.c): recomputed once a step, after lpSyncLinks, when a carrier's connections changed
 void lpUpdateSupply( lpWorld* w );
 uint8_t lpSuppliedMask( const lpPiece* p );			  // channels fed at all here
+// Before the supply update: leaks drain their pools and close; a pool that crosses a sixteenth asks for an update
+void lpDrainPools( lpWorld* w, float timeStep );
+uint64_t lpHashPools( const lpWorld* w, uint64_t h );
 float lpSupplyOf( const lpPiece* p, uint8_t channels ); // the worst of those channels here, 0 to 1 (1 for none)
 static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
 {
@@ -748,8 +765,10 @@ void lpFreeRigs( lpWorld* w );
 // entry) that put the foot at target within the limits, returning how far short it falls
 b3Vec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, b3Vec3 foot, b3Vec3* axes, b3Vec3* origins );
 float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, b3Vec3 foot, b3Vec3 target, float* q );
-// What a motorised link's servo can put in now: its max torque by its health and supply, its hold torque unfed
+// What a motorised link's servo can put in now: its max torque by its health and supply, its hold torque (or what a
+// jam holds) unfed; and of that, what it can drive with
 float lpMotorCap( const lpWorld* w, const lpLink* l );
+float lpMotorDrive( const lpWorld* w, const lpLink* l );
 
 // stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
 // still solving or straining are marked dirty for the next step. Settling solves each to convergence, with no budget.

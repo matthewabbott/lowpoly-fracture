@@ -925,6 +925,45 @@ static int TestHingeTorqueAtLimit( void )
 	return 0;
 }
 
+// A joint that jams, damaged to half its health: it turns at half the speed of one that does not, and with its power cut
+// it sticks where it is, holding the arm, where the other goes limp and lets it fall
+static int TestMotorJams( void )
+{
+	float rates[2], falls[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		lpMotorDef m = Motor( 3000.0f, 0x2, 0.0f );
+		m.jam = k == 1 ? 1.0f : 0.0f;
+		Arm a = AddArm( &s, m, -1.2f, 1.2f, true, false );
+		Run( &s, 30 );
+		lpLink* l = s.world->links.data + a.link;
+		l->health = 0.5f * l->def.strength;
+		lpWorld_SetLinkTarget( s.world, a.link, 1.0f );
+		Run( &s, 5 );
+		float a0 = lpWorld_GetLinkState( s.world, a.link ).angle;
+		Run( &s, 10 );
+		rates[k] = ( lpWorld_GetLinkState( s.world, a.link ).angle - a0 ) * 6.0f;
+		Run( &s, 120 );
+		// The battery goes flat: nothing feeds the motor
+		const lpBody* post = s.world->bodies.data + a.post;
+		for ( int i = 0; i < post->pieces.count; ++i )
+		{
+			s.world->pieces.data[post->pieces.data[i]].sources = 0;
+		}
+		lpCarriersChanged( s.world, 0xFF );
+		float held = lpWorld_GetLinkState( s.world, a.link ).angle;
+		Run( &s, 120 );
+		falls[k] = held - lpWorld_GetLinkState( s.world, a.link ).angle;
+		DestroySim( &s );
+	}
+	printf( "  at half health: turns at %.2f rad/s, jammed %.2f; unfed it falls %.2f rad, jammed %.3f\n", rates[0], rates[1], falls[0],
+			falls[1] );
+	ENSURE( rates[1] <= 0.55f * rates[0] && rates[1] > 0.3f * rates[0] );
+	ENSURE( falls[0] > 1.0f && falls[1] < 0.05f );
+	return 0;
+}
+
 // A motor holds its target up to its torque and gives past it (it sags, it does not break)
 static int TestMotorHoldsUntilCap( void )
 {
@@ -1148,6 +1187,7 @@ int LinkTest( void )
 	RUN_TEST( TestLinkDeterminism );
 	RUN_TEST( TestHingeTorqueAtLimit );
 	RUN_TEST( TestMotorHoldsUntilCap );
+	RUN_TEST( TestMotorJams );
 	RUN_TEST( TestMotorLimpUnsupplied );
 	RUN_TEST( TestMotorSurvivesSplit );
 	RUN_TEST( TestBallServo );

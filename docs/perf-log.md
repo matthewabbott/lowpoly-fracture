@@ -610,3 +610,23 @@ Results (walking 10 s after the damage; intact 2.27 m/s):
   the other five walk at 33%.
 - Under a grenade at a leg every 45 ticks the hull holds; after 13 it hobbles on four legs, after 40 it is on its belly.
 - Identical at 1, 4 and 8 workers under a shot every 3 ticks.
+
+## 2026-09-29 creatures and mechs, step 5: pools, nerves, jam
+
+Pools (`lpPartSystem.pool`, `seal`): a source part's fluid, shared by the pieces made from it. Each supply update
+measures the carrier volume the pool's lowest channel reaches; when that drops, a leak opens draining the share lost
+per second, and closes over the seal time. A source feeds fully down to 30% of its pool, then in proportion. Pools
+drain before the supply update each step, and ask for one only when they cross a sixteenth (or run dry). Jam
+(`lpMotorDef.jam`): damage at a joint slows its servo by jam times the damage and makes it stick, holding with that share
+of its torque even unfed; a piece at its end breaking up knocks a quarter off its health. Nerves need nothing new: a
+channel its servos need, and unfed they go limp.
+
+- A line of 7 with its last 3 cut off leaks 3/7 of the pool a second, closing over 2 s: the level follows the model to
+  0.01% of the pool, with 14 supply updates in 6 s; fuel down the line follows the pool's pressure once it is below 30%.
+  A ring cut once still reaches everything and leaks nothing. A heavy round into a stone conduit chips 1.4% of it
+  away and the pool loses 1.4%.
+- The mech (100 of fluid, valves closing in 3 s): a leg shot off costs 22% of the fluid, and it walks on at 42% of its
+  pace. With its valves stuck open it bleeds dry in about 10 s: every servo goes limp and it lies flat.
+- A jammed joint at half health turns at 1.00 rad/s where one that does not jam turns at 1.92; unfed it holds the arm
+  where the other falls 2.2 rad.
+- Identical at 1, 4 and 8 workers (the mech yard under a shot every 3 ticks, the track).
