@@ -7,6 +7,7 @@
 // The simulation runs at a fixed 60 Hz. With --frames it advances exactly one tick per rendered frame, so scripted
 // runs are independent of machine speed and their hash logs are comparable across runs.
 
+#include "drive.h"
 #include "math3d.h"
 #include "renderer.h"
 
@@ -44,14 +45,18 @@ enum Tool
 const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledgehammer", "Cannonball", "Volatile flask",
 									  "Grab / pull", "Leaf blower" };
 
+// Not a tool: a vehicle's controls changed (recorded as `tick drive vehicle throttle brake steer handbrake`)
+constexpr int kDrive = ToolCount;
+
 // A sim input: applied at the start of `tick`, before the step. Recorded and replayed as text.
 struct Event
 {
 	int64_t tick;
-	int tool;
+	int tool;  // or kDrive
 	V3 origin; // pull: target point
 	V3 dir;	   // pull: grabbed point in the body frame
-	int piece; // pull only
+	int piece; // pull: the piece; drive: the vehicle
+	lpVehicleControl control; // drive only
 };
 
 struct Options
@@ -69,6 +74,7 @@ struct Options
 	float renderScale = 1.0f;
 	bool vsync = true;
 	bool hideUi = false;
+	bool follow = false; // the camera chases the vehicle the drive events steer
 	bool haveCamera = false;
 	float camera[5] = {};
 	int width = 1600;
@@ -94,6 +100,11 @@ struct App
 	int tool = ToolGrenade;
 	bool firing = false;
 	int fireCooldown = 0;
+
+	// driving: the vehicle the drive events steer (the scene's drivers leave it alone), the one the keys drive here
+	int playerVehicle = -1;
+	int driving = -1;
+	lpVehicleControl sent = {};
 
 	// grab tool
 	int grabPiece = -1;
@@ -178,6 +189,10 @@ void SetSceneCamera( int scene )
 			app.camPos = { 0.0f, 7.0f, 19.0f };
 			app.pitch = -0.02f;
 			break;
+		case lp_sceneTrack:
+			app.camPos = { 0.0f, 22.0f, 78.0f };
+			app.pitch = -0.3f;
+			break;
 		default:
 			break;
 	}
@@ -220,6 +235,9 @@ void LoadScene( int scene )
 	app.tick = 0;
 	app.accumulator = 0.0;
 	app.nextScript = 0;
+	app.playerVehicle = -1;
+	app.driving = -1;
+	app.sent = {};
 	app.live.clear();
 	app.particles.clear();
 	Renderer_Reset();
@@ -251,6 +269,19 @@ void LoadScript( const std::string& path )
 		long long t = 0;
 		char name[32] = {};
 		e.piece = -1;
+		int handbrake = 0;
+		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "drive" ) == 0 )
+		{
+			if ( sscanf( line, "%lld %31s %d %f %f %f %d", &t, name, &e.piece, &e.control.throttle, &e.control.brake,
+						 &e.control.steer, &handbrake ) == 7 )
+			{
+				e.tick = t;
+				e.tool = kDrive;
+				e.control.handbrake = handbrake != 0;
+				app.script.push_back( e );
+			}
+			continue;
+		}
 		if ( sscanf( line, "%lld %31s %f %f %f %f %f %f %d", &t, name, &e.origin.x, &e.origin.y, &e.origin.z, &e.dir.x, &e.dir.y,
 					 &e.dir.z, &e.piece ) >= 8 )
 		{
@@ -265,7 +296,8 @@ void LoadScript( const std::string& path )
 			}
 			if ( e.tool < 0 )
 			{
-				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow)\n", name );
+				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive)\n",
+						 name );
 				continue;
 			}
 			if ( e.tool != ToolPull )
@@ -292,6 +324,13 @@ void ApplyEvent( const Event& e )
 {
 	b3Vec3 origin = { e.origin.x, e.origin.y, e.origin.z };
 	b3Vec3 dir = { e.dir.x, e.dir.y, e.dir.z };
+
+	if ( e.tool == kDrive )
+	{
+		lpWorld_SetVehicleControl( app.world, e.piece, &e.control );
+		app.playerVehicle = e.piece; // from now on the scene's drivers leave it to the events
+		return;
+	}
 
 	if ( e.tool == ToolPull )
 	{
@@ -411,11 +450,48 @@ void ApplyEvent( const Event& e )
 void RecordAndQueue( const Event& e )
 {
 	app.live.push_back( e );
-	if ( app.recordFile != nullptr )
+	if ( app.recordFile != nullptr && e.tool == kDrive )
+	{
+		fprintf( app.recordFile, "%lld drive %d %.6f %.6f %.6f %d\n", (long long)e.tick, e.piece, e.control.throttle, e.control.brake,
+				 e.control.steer, e.control.handbrake ? 1 : 0 );
+		fflush( app.recordFile );
+	}
+	else if ( app.recordFile != nullptr )
 	{
 		fprintf( app.recordFile, "%lld %s %.6f %.6f %.6f %.6f %.6f %.6f %d\n", (long long)e.tick, ToolToken( e.tool ), e.origin.x,
 				 e.origin.y, e.origin.z, e.dir.x, e.dir.y, e.dir.z, e.piece );
 		fflush( app.recordFile );
+	}
+}
+
+// The keys drive `app.driving`: a drive event whenever the controls change
+void QueueDrive( const lpVehicleControl& control )
+{
+	Event e = {};
+	e.tick = app.tick;
+	e.tool = kDrive;
+	e.piece = app.driving;
+	e.control = control;
+	RecordAndQueue( e );
+	app.sent = control;
+}
+
+// V: get into the nearest vehicle, or out of the one being driven (it brakes and parks)
+void ToggleDriving()
+{
+	if ( app.driving >= 0 )
+	{
+		lpVehicleControl park = {};
+		park.brake = 1.0f;
+		park.handbrake = true;
+		QueueDrive( park );
+		app.driving = -1;
+		return;
+	}
+	app.driving = Drive_Nearest( app.world, app.camPos, 25.0f );
+	if ( app.driving >= 0 )
+	{
+		QueueDrive( lpVehicleControl{} );
 	}
 }
 
@@ -480,6 +556,7 @@ void StepSimulation()
 	{
 		lpSceneBombard( app.world, app.opt.scene, (int)app.tick, app.opt.bombard );
 	}
+	lpSceneDrive( app.world, app.opt.scene, (int)app.tick, app.playerVehicle );
 
 	uint64_t t0 = b3GetTicks();
 	lpWorld_Step( app.world, 1.0f / 60.0f, 4 );
@@ -630,6 +707,12 @@ void UpdateParticles( float dt )
 
 void UpdateCamera( float dt )
 {
+	int chase = app.driving >= 0 ? app.driving : ( app.opt.follow ? app.playerVehicle : -1 );
+	if ( chase >= 0 )
+	{
+		Drive_Camera( app.world, chase, dt, &app.camPos, &app.yaw, &app.pitch );
+		return; // the keys drive
+	}
 	V3 f = Forward();
 	V3 flat = Normalize( V3{ f.x, 0.0f, f.z } );
 	V3 right = Normalize( Cross( flat, V3{ 0.0f, 1.0f, 0.0f } ) );
@@ -679,6 +762,14 @@ void DrawUi()
 				 app.last.scrapBodies );
 	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );
 	ImGui::Text( "triangles %d  draws %d  pages %d  upload %d KB", r.triangles, r.drawCalls, r.pages, r.uploadKB );
+	ImGui::Text( "vehicles %.2f ms  wheel casts %d", app.last.vehicleMs, app.last.wheelCasts );
+	int shown = app.driving >= 0 ? app.driving : app.playerVehicle;
+	if ( shown >= 0 )
+	{
+		char line[160];
+		Drive_Describe( app.world, shown, line, (int)sizeof( line ) );
+		ImGui::Text( "%s%s", app.driving >= 0 ? "driving " : "", line );
+	}
 	ImGui::Text( "tick %lld", (long long)app.tick );
 	ImGui::Separator();
 
@@ -715,6 +806,7 @@ void DrawUi()
 	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-8 tools" );
 	ImGui::TextDisabled( "grab / blower: hold LMB, wheel changes grab distance" );
 	ImGui::TextDisabled( "R reload, B bombard, L links, F1 ui, F12 screenshot" );
+	ImGui::TextDisabled( "V drive the nearest car (WASD, space handbrake), V again to get out" );
 	ImGui::End();
 
 	// Crosshair
@@ -779,6 +871,16 @@ void Frame()
 	bool automated = app.opt.frames > 0;
 
 	UpdateCamera( automated ? 1.0f / 60.0f : dt );
+	if ( app.driving >= 0 )
+	{
+		DriveKeys keys = { app.keys[SAPP_KEYCODE_W], app.keys[SAPP_KEYCODE_S], app.keys[SAPP_KEYCODE_A], app.keys[SAPP_KEYCODE_D],
+						   app.keys[SAPP_KEYCODE_SPACE] };
+		lpVehicleControl control = Drive_Control( app.world, app.driving, keys );
+		if ( Drive_Same( control, app.sent ) == false )
+		{
+			QueueDrive( control );
+		}
+	}
 
 	if ( app.firing && app.tool == ToolRifle )
 	{
@@ -926,6 +1028,10 @@ void Event_( const sapp_event* ev )
 			{
 				app.showLinks = !app.showLinks;
 			}
+			if ( ev->key_code == SAPP_KEYCODE_V )
+			{
+				ToggleDriving();
+			}
 			if ( ev->key_code == SAPP_KEYCODE_F12 )
 			{
 				app.wantScreenshot = true;
@@ -1059,11 +1165,16 @@ int main( int argc, char** argv )
 			o.hideUi = true;
 			takes = false;
 		}
+		else if ( strcmp( a, "--follow" ) == 0 )
+		{
+			o.follow = true;
+			takes = false;
+		}
 		else
 		{
-			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep] [--workers N] [--frames N] [--screenshot out.png]\n"
+			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
-					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui]\n" );
+					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n" );
 			return 1;
 		}
 		if ( takes )

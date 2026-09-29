@@ -227,7 +227,9 @@ tiers instead of popping them.
 - A parked chassis falls asleep (its forces never wake it); a changed control wakes it, and so does losing the ground
   under a wheel, which holds no Box3D contact to do it.
 - Controls (`lpWorld_SetVehicleControl`) are persistent simulation state and hashed; so are the wheels' steering,
-  suspension and contact state, only when vehicles exist.
+  suspension and contact state, only when vehicles exist. The sandbox turns keys into `drive` events recorded when the
+  controls change; scripted drivers (`lpSceneDrive`, the track's lap drivers) set controls from simulation state
+  every tick, and leave alone the vehicle a drive event last steered.
 
 ## Rendering (`facet.c`, `app/sandbox/renderer.cpp`)
 
@@ -239,7 +241,8 @@ tiers instead of popping them.
   draws in one call per 131k-vertex page, plus a shadow pass, instanced particles and a nearest-filtered blit
   (render scale < 1 gives a chunky retro look). Particles are one instanced cube scaled per kind: long splinters,
   flat leaves, thin glass shards that flash in the sun. The sandbox draws ropes the same way, as short knotted
-  segments that sag when slack.
+  segments that sag when slack. Wheels are no pieces: the renderer keeps a 12-sided tyre mesh per live wheel link in
+  128 slots reserved at the start of the piece and body maps, posed each frame from `lpWorld_GetWheelState`.
 
 ## Extension points already in the API
 

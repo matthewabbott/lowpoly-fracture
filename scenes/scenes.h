@@ -20,6 +20,7 @@ typedef enum lpSceneId
 	lp_sceneRuins,	// a dry-stone arch, a colonnade with lintels, balconies: structures that know where they are weak
 	lp_sceneYard,	// things joined by links: a cart of volatile crates on a ramp, a hanging sign, a door, a drawbridge
 	lp_sceneKeep,	// a mortared stone keep of about 2000 pieces with wooden floors: the stress solve at scale
+	lp_sceneTrack,	// a ring road with kerbs, a hump, a plank bridge and a brick wall, and three cars that drive laps
 	lp_sceneCount
 } lpSceneId;
 
@@ -40,6 +41,11 @@ int lpAddKeep( lpWorld* world, b3Vec3 base, int floors );
 // and queues a grenade (or every fourth time a cannon blast) where it hits. Deterministic for a deterministic world.
 // Returns true if an impact was queued this tick.
 bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
+
+// Scripted drivers for scenes with vehicles (the track's cars drive laps), for benchmarks and demos: call every tick
+// before the step. They read only simulation state, so they are deterministic. skipVehicle (-1: none) is left alone,
+// for the player. Does nothing in scenes without vehicles.
+void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle );
 
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );

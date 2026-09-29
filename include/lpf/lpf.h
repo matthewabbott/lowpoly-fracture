@@ -347,6 +347,9 @@ typedef struct lpVehicleState
 	int steerable;	// attached wheels that steer
 	float power;	// share of its drive force it can deliver
 	float speed;	// m/s along its forward direction, of `body`
+	b3Pos position; // of `body`'s centre of mass
+	b3Vec3 forward; // world directions of `body`
+	b3Vec3 up;
 	lpVehicleControl control;
 } lpVehicleState;
 

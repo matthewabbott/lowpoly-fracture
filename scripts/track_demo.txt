@@ -1,0 +1,12 @@
+# Scripted demo for the "track" scene (run with --follow to ride along): the blue car (vehicle 0) is taken over and
+# driven off the ring while the other two keep lapping; then grenades and a cannon blast go off around them.
+# tick tool origin(xyz) direction(xyz), or: tick drive vehicle throttle brake steer handbrake (lines in tick order)
+20 drive 0 1.0 0.0 0.0 0
+80 drive 0 1.0 0.0 -0.5 0
+130 drive 0 1.0 0.0 0.0 0
+150 grenade 0.0 12.0 0.0   -0.95 -0.26 0.18
+170 drive 0 0.6 0.0 0.6 1
+190 grenade 0.0 12.0 0.0   -0.30 -0.26 -0.92
+200 drive 0 1.0 0.0 0.0 0
+240 cannon 0.0 12.0 0.0   0.60 -0.25 -0.76
+300 drive 0 0.0 1.0 0.0 1

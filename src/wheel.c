@@ -774,8 +774,11 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 	if ( s.body >= 0 )
 	{
 		b3BodyId id = w->bodies.data[s.body].id;
-		b3Vec3 forward = b3RotateVector( b3Body_GetRotation( id ), v->forward );
-		s.speed = b3Dot( b3Body_GetLinearVelocity( id ), forward );
+		b3Quat q = b3Body_GetRotation( id );
+		s.forward = b3RotateVector( q, v->forward );
+		s.up = b3RotateVector( q, v->up );
+		s.position = b3Body_GetWorldCenter( id );
+		s.speed = b3Dot( b3Body_GetLinearVelocity( id ), s.forward );
 	}
 	return s;
 }

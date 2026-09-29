@@ -454,6 +454,55 @@ static int TestVehicleDeterminism( void )
 	return 0;
 }
 
+// The track's scripted drivers take all three cars round the ring (kerbs, crates, a hump, a plank bridge) in under
+// half a minute, upright and whole
+static int TestTrackLap( void )
+{
+	Sim s = CreateSim( lp_sceneTrack );
+	int count = lpWorld_GetVehicleCapacity( s.world );
+	ENSURE( count == 3 );
+	float last[3], travelled[3] = { 0.0f, 0.0f, 0.0f };
+	int lapAt[3] = { -1, -1, -1 };
+	for ( int v = 0; v < count; ++v )
+	{
+		lpVehicleState vs = lpWorld_GetVehicleState( s.world, v );
+		last[v] = atan2f( (float)vs.position.z, (float)vs.position.x );
+	}
+	bool valid = true;
+	for ( int t = 0; t < 1800; ++t )
+	{
+		lpSceneDrive( s.world, lp_sceneTrack, t, -1 );
+		Step( &s );
+		for ( int v = 0; v < count; ++v )
+		{
+			lpVehicleState vs = lpWorld_GetVehicleState( s.world, v );
+			float angle = atan2f( (float)vs.position.z, (float)vs.position.x );
+			float d = angle - last[v];
+			d = d > 3.14159265f ? d - 6.2831853f : ( d < -3.14159265f ? d + 6.2831853f : d );
+			travelled[v] += d;
+			last[v] = angle;
+			if ( lapAt[v] < 0 && travelled[v] >= 6.2831853f )
+			{
+				lapAt[v] = t;
+			}
+		}
+		if ( t % 30 == 0 )
+		{
+			valid = valid && lpWorld_Validate( s.world );
+		}
+	}
+	for ( int v = 0; v < count; ++v )
+	{
+		lpVehicleState vs = lpWorld_GetVehicleState( s.world, v );
+		printf( "  car %d: lap at tick %d, %.2f laps, %d wheels on, upright %.3f, speed %.1f m/s\n", v, lapAt[v],
+				travelled[v] / 6.2831853f, vs.attached, vs.up.y, vs.speed );
+		ENSURE( lapAt[v] > 0 && vs.attached == 4 && vs.up.y > 0.9f );
+	}
+	ENSURE( valid );
+	DestroySim( &s );
+	return 0;
+}
+
 // What wheels cost per step (casts and the tyre solve), driving on open ground: 4 cars, then 64
 static int TestWheelCost( void )
 {
@@ -499,6 +548,7 @@ int VehicleTest( void )
 	RUN_TEST( TestWheelSplitHalfRolls );
 	RUN_TEST( TestWheelLoadsBridge );
 	RUN_TEST( TestVehicleDeterminism );
+	RUN_TEST( TestTrackLap );
 	RUN_TEST( TestWheelCost );
 	return 0;
 }

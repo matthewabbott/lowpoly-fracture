@@ -11,6 +11,8 @@ target_include_directories(lpf_imgui SYSTEM PUBLIC ${LPF_IMGUI_DIR})
 set_target_properties(lpf_imgui PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
 set(LPF_SANDBOX_FILES
+	drive.cpp
+	drive.h
 	main.cpp
 	math3d.h
 	renderer.cpp

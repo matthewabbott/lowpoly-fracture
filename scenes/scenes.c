@@ -142,6 +142,8 @@ const char* lpSceneName( int scene )
 			return "yard";
 		case lp_sceneKeep:
 			return "keep";
+		case lp_sceneTrack:
+			return "track";
 		default:
 			return "?";
 	}
@@ -1020,6 +1022,170 @@ static void lpAddPorterRack( lpWorld* world, b3Vec3 base )
 	}
 }
 
+// ---- the track: a ring road, and cars that drive laps ----
+
+#define LP_TRACK_RADIUS 45.0f
+#define LP_TRACK_SPEED 14.0f  // m/s the scripted drivers hold
+#define LP_TRACK_LOOKAHEAD 12.0f // m along the ring they steer for
+
+// A point on the ring of radius r at angle a (x = r cos a, z = r sin a). Yaw -a turns local +z along the ring
+// (counterclockwise seen from above) and local +x outward.
+static b3Vec3 lpRingPoint( float r, float a, float y )
+{
+	b3CosSin cs = b3ComputeCosSin( a );
+	return (b3Vec3){ r * cs.cosine, y, r * cs.sine };
+}
+
+// A ramp along local z: height 0 at z0, h at z1
+static void lpWedge( float halfWidth, float z0, float z1, float h, int material, uint32_t color )
+{
+	b3Vec3 pts[6] = { { -halfWidth, 0.0f, z0 }, { halfWidth, 0.0f, z0 }, { -halfWidth, 0.0f, z1 },
+					  { halfWidth, 0.0f, z1 },	{ -halfWidth, h, z1 },	 { halfWidth, h, z1 } };
+	lpHull( pts, 6, material, color, true );
+}
+
+// A box car facing local +z: a wooden floor pan with a cabin, a hood and a boot, on four wheels (rear drive, front
+// steering, the handbrake on the rear). About 2 t. Returns the vehicle.
+static int lpAddBoxCar( lpWorld* world, b3Vec3 base, float yaw, uint32_t paint )
+{
+	float ride = 0.75f; // the floor pan's bottom above the ground, about where it rests
+	b3Quat q = lpYaw( yaw );
+	lpBegin();
+	lpBox( (b3Vec3){ 0.0f, 0.1f, 0.0f }, (b3Vec3){ 0.9f, 0.1f, 2.1f }, b3Quat_identity, lp_wood, paint, false );
+	lpBox( (b3Vec3){ 0.0f, 0.45f, -0.35f }, (b3Vec3){ 0.8f, 0.25f, 0.95f }, b3Quat_identity, lp_wood, 0xE3DED0u, false );
+	lpBox( (b3Vec3){ 0.0f, 0.32f, 1.45f }, (b3Vec3){ 0.85f, 0.12f, 0.6f }, b3Quat_identity, lp_wood, paint, false );
+	lpBox( (b3Vec3){ 0.0f, 0.32f, -1.8f }, (b3Vec3){ 0.85f, 0.12f, 0.28f }, b3Quat_identity, lp_wood, paint, false );
+	b3Vec3 origin = { base.x, base.y + ride, base.z };
+	int body = lpCommitDef( world, origin, q, lpDynamicDef() );
+
+	lpWheelDef wheels[4];
+	for ( int i = 0; i < 4; ++i )
+	{
+		bool front = i >= 2;
+		b3Vec3 mount = { ( i & 1 ) ? 0.78f : -0.78f, 0.0f, front ? 1.35f : -1.35f };
+		wheels[i] = lpDefaultWheelDef();
+		wheels[i].mount = b3ToPos( b3Add( origin, b3RotateVector( q, mount ) ) );
+		wheels[i].radius = 0.36f;
+		wheels[i].width = 0.24f;
+		wheels[i].driveShare = front ? 0.0f : 0.5f;
+		wheels[i].steerFactor = front ? 1.0f : 0.0f;
+		wheels[i].handbrake = front == false;
+	}
+	lpVehicleDef def = lpDefaultVehicleDef();
+	def.body = body;
+	def.forward = b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } );
+	def.wheels = wheels;
+	def.wheelCount = 4;
+	def.maxDriveForce = 11000.0f;
+	def.maxSpeed = 30.0f;
+	def.maxBrakeForce = 16000.0f;
+	return lpCreateVehicle( world, &def );
+}
+
+static void lpAddTrack( lpWorld* world )
+{
+	float r = LP_TRACK_RADIUS;
+	lpAddGround( world, 120.0f );
+
+	// Two stone kerbs across the road
+	for ( int k = 0; k < 2; ++k )
+	{
+		float a = 0.9f + 0.1f * (float)k;
+		lpBegin();
+		lpBox( b3Vec3_zero, (b3Vec3){ 4.5f, 0.08f, 0.4f }, b3Quat_identity, lp_stone, LP_STONE, true );
+		lpCommit( world, lpRingPoint( r, a, 0.08f ), -a, true );
+	}
+
+	// Loose crates in the road
+	for ( int k = 0; k < 5; ++k )
+	{
+		float a = 1.5f + 0.02f * (float)( k % 3 );
+		lpBegin();
+		lpBox( b3Vec3_zero, (b3Vec3){ 0.35f, 0.35f, 0.35f }, b3Quat_identity, lp_wood, LP_PLANK, false );
+		lpCommit( world, lpRingPoint( r - 1.5f + 1.0f * (float)k, a, 0.36f + 0.72f * (float)( k / 3 ) ), 0.3f * (float)k, false );
+	}
+
+	// A hump: up 0.7 m over 5 m, flat for 2 m, down again
+	{
+		float a = 2.6f;
+		lpBegin();
+		lpWedge( 4.0f, -6.0f, -1.0f, 0.7f, lp_stone, LP_STONE_DARK );
+		lpBox( (b3Vec3){ 0.0f, 0.35f, 0.0f }, (b3Vec3){ 4.0f, 0.35f, 1.0f }, b3Quat_identity, lp_stone, LP_STONE_DARK, true );
+		lpWedge( 4.0f, 6.0f, 1.0f, 0.7f, lp_stone, LP_STONE_DARK );
+		lpCommit( world, lpRingPoint( r, a, 0.0f ), -a, true );
+	}
+
+	// A plank bridge: ramps up to two stone piers, an 8 m span of planks nailed across them
+	{
+		float a = 3.8f;
+		b3Vec3 at = lpRingPoint( r, a, 0.0f );
+		lpBegin();
+		lpWedge( 2.2f, -10.0f, -5.0f, 0.9f, lp_stone, LP_STONE );
+		lpCommit( world, at, -a, true );
+		lpBegin();
+		lpWedge( 2.2f, 10.0f, 5.0f, 0.9f, lp_stone, LP_STONE );
+		lpCommit( world, at, -a, true );
+		lpBegin();
+		for ( int side = -1; side <= 1; side += 2 )
+		{
+			lpBox( (b3Vec3){ 0.0f, 0.4f, 4.5f * (float)side }, (b3Vec3){ 2.2f, 0.4f, 0.5f }, b3Quat_identity, lp_stone, LP_STONE, true );
+		}
+		for ( int k = 0; k < 4; ++k )
+		{
+			lpPartDef* plank = lpBox( (b3Vec3){ -1.35f + 0.9f * (float)k, 0.85f, 0.0f }, (b3Vec3){ 0.44f, 0.05f, 5.0f },
+									  b3Quat_identity, lp_wood, LP_PLANK, false );
+			plank->grainAxis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+		}
+		lpCommit( world, at, -a, true );
+	}
+
+	// A brick wall just outside the ring, for the cars that leave it
+	{
+		float a = 5.2f;
+		b3CosSin cs = b3ComputeCosSin( a );
+		float yaw = b3Atan2( -cs.cosine, -cs.sine ); // turns the wall's local x along the ring's tangent
+		lpAddWall( world, lpRingPoint( r + 8.0f, a, 0.0f ), yaw, 10.0f, 1.6f, 0.3f, lp_brick, LP_BRICK, 1.0f );
+	}
+
+	// Three cars spread round the ring, driving counterclockwise
+	lpAddBoxCar( world, lpRingPoint( r, 0.0f, 0.0f ), -0.0f, 0x2F6FB5u );
+	lpAddBoxCar( world, lpRingPoint( r, 2.1f, 0.0f ), -2.1f, 0xC0392Bu );
+	lpAddBoxCar( world, lpRingPoint( r, 4.5f, 0.0f ), -4.5f, 0xE0A526u );
+}
+
+// Each car steers for a point a little ahead on the ring and holds the track speed
+static void lpDriveTrack( lpWorld* world, int skipVehicle )
+{
+	int count = lpWorld_GetVehicleCapacity( world );
+	for ( int v = 0; v < count; ++v )
+	{
+		lpVehicleState s = lpWorld_GetVehicleState( world, v );
+		if ( v == skipVehicle || s.alive == false || s.body < 0 )
+		{
+			continue;
+		}
+		float angle = b3Atan2( (float)s.position.z, (float)s.position.x );
+		b3Vec3 target = lpRingPoint( LP_TRACK_RADIUS, angle + LP_TRACK_LOOKAHEAD / LP_TRACK_RADIUS, 0.0f );
+		float tx = target.x - (float)s.position.x;
+		float tz = target.z - (float)s.position.z;
+		// Signed angle from the car's heading to the target about +y: positive is to the left
+		float error = b3Atan2( s.forward.z * tx - s.forward.x * tz, s.forward.x * tx + s.forward.z * tz );
+		lpVehicleControl c = { 0 };
+		c.steer = b3ClampFloat( -2.0f * error, -1.0f, 1.0f );
+		c.throttle = b3ClampFloat( 0.5f * ( LP_TRACK_SPEED - s.speed ), -1.0f, 1.0f );
+		lpWorld_SetVehicleControl( world, v, &c );
+	}
+}
+
+void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle )
+{
+	(void)tick;
+	if ( scene == lp_sceneTrack )
+	{
+		lpDriveTrack( world, skipVehicle );
+	}
+}
+
 static void lpAddPile( lpWorld* world, b3Vec3 center, int count, uint64_t seed )
 {
 	uint64_t rng = seed;
@@ -1129,6 +1295,10 @@ void lpBuildScene( lpWorld* world, int scene )
 			lpAddKeep( world, (b3Vec3){ 0.0f, 0.0f, -10.0f }, 4 );
 			break;
 
+		case lp_sceneTrack:
+			lpAddTrack( world );
+			break;
+
 		case lp_sceneLumber:
 		{
 			lpAddGround( world, 60.0f );
@@ -1208,6 +1378,20 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			// Across the keep's front, from the foot of the wall to the parapet
 			origin = (b3Vec3){ 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 14.0f };
 			target = (b3Vec3){ -7.0f + 14.0f * lpUnit( &rng ), 0.3f + 12.5f * lpUnit( &rng ), -2.5f };
+			break;
+		}
+		case lp_sceneTrack:
+		{
+			// At the cars in turn, from the infield (at the road ahead of a car that is gone)
+			int count = lpWorld_GetVehicleCapacity( world );
+			lpVehicleState car = lpWorld_GetVehicleState( world, count > 0 ? shot % count : 0 );
+			b3Vec3 at = car.body >= 0 ? b3Vec3_zero : lpRingPoint( LP_TRACK_RADIUS, 0.4f * (float)shot, 0.5f );
+			if ( car.body >= 0 )
+			{
+				at = (b3Vec3){ (float)car.position.x, (float)car.position.y, (float)car.position.z };
+			}
+			target = b3Add( at, (b3Vec3){ 2.0f * ( lpUnit( &rng ) - 0.5f ), 0.3f * lpUnit( &rng ), 2.0f * ( lpUnit( &rng ) - 0.5f ) } );
+			origin = (b3Vec3){ 0.7f * target.x, 1.8f, 0.7f * target.z };
 			break;
 		}
 		default:

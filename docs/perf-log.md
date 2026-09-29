@@ -424,3 +424,16 @@ Cost (casts and the solve): 3.0 us per wheel at 16 wheels, 2.8 us at 256 (64 car
 for worlds without vehicles: every ladder hash is the same. The ladder reads 5 to 18% slower than the baseline, but an
 interleaved A/B against the previous commit on this machine today gives the same time (town, 1 worker: 3.80 vs 3.81
 ms): the machine is slower than when the baseline was taken.
+
+## 2026-09-28 articulated objects, step 2: the track, driving, the 'track' rung
+
+The track scene: a ring road (45 m radius) with two stone kerbs, loose crates, a 0.7 m hump, a plank bridge on two
+piers and a brick wall outside the bend, and three box cars (wooden floor pan, cabin, hood and boot on four wheels,
+about 2 t). `lpSceneDrive` steers each for a point 12 m ahead on the ring at 14 m/s, from simulation state only. All
+three lap in 1300 ticks (22 s), whole and upright. The sandbox drives: V takes the nearest car, keys become `drive`
+events recorded when the controls change, a chase camera follows (`--follow` in replays). The track demo under a blast
+every 12 ticks is identical at 1, 4 and 8 workers.
+
+New ladder rung 'track' (a blast every 30 ticks at the cars): 0.50 / 0.30 ms per step at 1 / 8 workers, 487 pieces.
+Under a blast every 12 ticks the wooden cars are splinters within seven seconds, wheels lying about: crash and blast
+calibration is step 5's (sheet metal on bolts). Every other ladder hash is unchanged.

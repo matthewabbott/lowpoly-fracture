@@ -32,6 +32,9 @@ static_assert( sizeof( RVertex ) == 24, "vertex layout" );
 constexpr int kPageVertices = 1 << 17;
 constexpr int kShadowSize = 2048;
 constexpr int kMaxParticles = 16384;
+// Vehicles' wheels are no pieces: each drawn wheel gets a mesh of its own and a body slot for its hub, both in the
+// first kWheelSlots entries of the piece and body maps (pieces and bodies come after them)
+constexpr int kWheelSlots = 128;
 
 struct Page
 {
@@ -61,6 +64,9 @@ struct State
 {
 	std::vector<Page> pages;
 	std::vector<PieceSlot> slots;
+	std::vector<PieceSlot> wheelSlots = std::vector<PieceSlot>( kWheelSlots );
+	std::vector<int> wheelLink = std::vector<int>( kWheelSlots, -1 ); // the link each wheel slot draws
+	std::vector<uint32_t> wheelGeneration = std::vector<uint32_t>( kWheelSlots, 0u );
 	std::vector<uint32_t> pieceMap;			 // [piece + 1] -> body slot
 	std::vector<scene_body_xf_t> bodyXf;	 // [body + 1]
 	std::vector<scene_particle_inst_t> particleInst;
@@ -132,9 +138,8 @@ Page& NewPage()
 	return s.pages.back();
 }
 
-void FreeSlot( int piece )
+void FreeSlotOf( PieceSlot& slot )
 {
-	PieceSlot& slot = s.slots[piece];
 	if ( slot.page < 0 )
 	{
 		return;
@@ -149,21 +154,28 @@ void FreeSlot( int piece )
 	slot.page = -1;
 }
 
+void FreeSlot( int piece )
+{
+	FreeSlotOf( s.slots[piece] );
+}
+
 void CompactPage( int pageIndex )
 {
 	Page& page = s.pages[pageIndex];
 	std::vector<RVertex> fresh( kPageVertices );
 	int used = 0;
-	for ( size_t piece = 0; piece < s.slots.size(); ++piece )
+	for ( std::vector<PieceSlot>* slots : { &s.slots, &s.wheelSlots } )
 	{
-		PieceSlot& slot = s.slots[piece];
-		if ( slot.page != pageIndex )
+		for ( PieceSlot& slot : *slots )
 		{
-			continue;
+			if ( slot.page != pageIndex )
+			{
+				continue;
+			}
+			memcpy( fresh.data() + used, page.cpu.data() + slot.offset, sizeof( RVertex ) * (size_t)slot.count );
+			slot.offset = used;
+			used += slot.count;
 		}
-		memcpy( fresh.data() + used, page.cpu.data() + slot.offset, sizeof( RVertex ) * (size_t)slot.count );
-		slot.offset = used;
-		used += slot.count;
 	}
 	page.cpu.swap( fresh );
 	page.used = used;
@@ -423,15 +435,136 @@ void Renderer_Reset()
 	{
 		slot = PieceSlot();
 	}
+	for ( int k = 0; k < kWheelSlots; ++k )
+	{
+		s.wheelSlots[k] = PieceSlot();
+		s.wheelLink[k] = -1;
+	}
 	for ( Page& page : s.pages )
 	{
 		page.used = 0;
 		page.live = 0;
 		page.dirty = false;
 	}
-	s.pieceMap.assign( 1, 0u );
-	s.bodyXf.assign( 1, scene_body_xf_t{} );
+	s.pieceMap.assign( 1 + kWheelSlots, 0u );
+	s.bodyXf.assign( 1 + kWheelSlots, scene_body_xf_t{} );
 	s.particleCount = 0;
+}
+
+void SetBodyXf( scene_body_xf_t& dst, const b3WorldTransform& xf )
+{
+	dst.pos[0] = (float)xf.p.x;
+	dst.pos[1] = (float)xf.p.y;
+	dst.pos[2] = (float)xf.p.z;
+	dst.pos[3] = 1.0f;
+	dst.rot[0] = xf.q.v.x;
+	dst.rot[1] = xf.q.v.y;
+	dst.rot[2] = xf.q.v.z;
+	dst.rot[3] = xf.q.s;
+}
+
+constexpr int kWheelSides = 12;
+constexpr int kWheelVertices = kWheelSides * 12;
+
+// A 12-sided tyre along x, flat shaded: dark tread, grey hubs
+void BuildWheelMesh( float radius, float width, uint32_t piece, RVertex* out )
+{
+	const uint32_t tread = 0xFF2A2A2Au, hub = 0xFF9A9A9Au;
+	float h = 0.5f * width;
+	int n = 0;
+	auto put = [&]( float x, float y, float z, float nx, float ny, float nz, uint32_t color ) {
+		RVertex& v = out[n++];
+		v.pos[0] = x;
+		v.pos[1] = y;
+		v.pos[2] = z;
+		v.normal[0] = (int8_t)( 127.0f * nx );
+		v.normal[1] = (int8_t)( 127.0f * ny );
+		v.normal[2] = (int8_t)( 127.0f * nz );
+		v.normal[3] = 0;
+		v.color = color;
+		v.piece = piece;
+	};
+	for ( int k = 0; k < kWheelSides; ++k )
+	{
+		float a0 = 6.2831853f * (float)k / (float)kWheelSides, a1 = 6.2831853f * (float)( k + 1 ) / (float)kWheelSides;
+		float am = 0.5f * ( a0 + a1 );
+		float y0 = radius * cosf( a0 ), z0 = radius * sinf( a0 ), y1 = radius * cosf( a1 ), z1 = radius * sinf( a1 );
+		float ny = cosf( am ), nz = sinf( am );
+		put( -h, y0, z0, 0.0f, ny, nz, tread );
+		put( h, y1, z1, 0.0f, ny, nz, tread );
+		put( h, y0, z0, 0.0f, ny, nz, tread );
+		put( -h, y0, z0, 0.0f, ny, nz, tread );
+		put( -h, y1, z1, 0.0f, ny, nz, tread );
+		put( h, y1, z1, 0.0f, ny, nz, tread );
+		put( h, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, hub );
+		put( h, y0, z0, 1.0f, 0.0f, 0.0f, hub );
+		put( h, y1, z1, 1.0f, 0.0f, 0.0f, hub );
+		put( -h, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, hub );
+		put( -h, y1, z1, -1.0f, 0.0f, 0.0f, hub );
+		put( -h, y0, z0, -1.0f, 0.0f, 0.0f, hub );
+	}
+}
+
+// Wheel slots follow the live wheel links: a slot keeps its link (and its mesh) while the link lives. Returns the
+// triangles drawn.
+int SyncWheels( const lpWorld* world )
+{
+	int links = lpWorld_GetLinkCapacity( world );
+	std::vector<char> drawn( (size_t)links, 0 );
+	for ( int k = 0; k < kWheelSlots; ++k )
+	{
+		int link = s.wheelLink[k];
+		if ( link < 0 )
+		{
+			continue;
+		}
+		bool live = link < links && lpWorld_GetWheelState( world, link ).alive &&
+					lpWorld_GetLinkState( world, link ).generation == s.wheelGeneration[k];
+		if ( live )
+		{
+			drawn[(size_t)link] = 1;
+		}
+		else
+		{
+			FreeSlotOf( s.wheelSlots[k] );
+			s.wheelLink[k] = -1;
+		}
+	}
+	int next = 0;
+	for ( int link = 0; link < links; ++link )
+	{
+		lpWheelState ws = lpWorld_GetWheelState( world, link );
+		if ( ws.alive == false || drawn[(size_t)link] )
+		{
+			continue;
+		}
+		while ( next < kWheelSlots && s.wheelLink[next] >= 0 )
+		{
+			next += 1;
+		}
+		if ( next == kWheelSlots )
+		{
+			break; // more wheels than slots: the rest go undrawn
+		}
+		int offset = 0;
+		int page = Allocate( kWheelVertices, &offset );
+		BuildWheelMesh( ws.radius, ws.width, (uint32_t)( next + 1 ), s.pages[page].cpu.data() + offset );
+		s.wheelSlots[next] = PieceSlot{ 0, page, offset, kWheelVertices };
+		s.wheelLink[next] = link;
+		s.wheelGeneration[next] = lpWorld_GetLinkState( world, link ).generation;
+	}
+	int triangles = 0;
+	for ( int k = 0; k < kWheelSlots; ++k )
+	{
+		bool live = s.wheelLink[k] >= 0;
+		s.pieceMap[k + 1] = live ? (uint32_t)( k + 1 ) : 0u;
+		if ( live )
+		{
+			SetBodyXf( s.bodyXf[k + 1], lpWorld_GetWheelState( world, s.wheelLink[k] ).hub );
+			triangles += kWheelVertices / 3;
+		}
+	}
+	return triangles;
 }
 
 void Renderer_Sync( const lpWorld* world )
@@ -443,7 +576,7 @@ void Renderer_Sync( const lpWorld* world )
 	{
 		s.slots.resize( (size_t)capacity );
 	}
-	s.pieceMap.resize( (size_t)capacity + 1 );
+	s.pieceMap.resize( (size_t)capacity + 1 + kWheelSlots );
 	s.pieceMap[0] = 0;
 	if ( s.scratch.empty() )
 	{
@@ -458,7 +591,7 @@ void Renderer_Sync( const lpWorld* world )
 		if ( info.body < 0 )
 		{
 			FreeSlot( i );
-			s.pieceMap[i + 1] = 0;
+			s.pieceMap[i + 1 + kWheelSlots] = 0;
 			continue;
 		}
 
@@ -477,7 +610,7 @@ void Renderer_Sync( const lpWorld* world )
 					memcpy( dst[k].pos, src.position, sizeof( dst[k].pos ) );
 					memcpy( dst[k].normal, src.normal, 4 );
 					dst[k].color = src.color;
-					dst[k].piece = (uint32_t)( i + 1 );
+					dst[k].piece = (uint32_t)( i + 1 + kWheelSlots );
 				}
 				slot.page = page;
 				slot.offset = offset;
@@ -485,34 +618,27 @@ void Renderer_Sync( const lpWorld* world )
 			}
 			slot.generation = info.generation;
 		}
-		s.pieceMap[i + 1] = (uint32_t)( info.body + 1 );
+		s.pieceMap[i + 1 + kWheelSlots] = (uint32_t)( info.body + 1 + kWheelSlots );
 		triangles += slot.count / 3;
 	}
 
 	int bodyCapacity = lpWorld_GetBodyCapacity( world );
-	s.bodyXf.resize( (size_t)bodyCapacity + 1 );
+	s.bodyXf.resize( (size_t)bodyCapacity + 1 + kWheelSlots );
 	s.bodyXf[0] = scene_body_xf_t{};
 	for ( int b = 0; b < bodyCapacity; ++b )
 	{
 		b3WorldTransform xf;
-		scene_body_xf_t& dst = s.bodyXf[b + 1];
 		if ( lpWorld_GetBodyTransform( world, b, &xf ) )
 		{
-			dst.pos[0] = (float)xf.p.x;
-			dst.pos[1] = (float)xf.p.y;
-			dst.pos[2] = (float)xf.p.z;
-			dst.pos[3] = 1.0f;
-			dst.rot[0] = xf.q.v.x;
-			dst.rot[1] = xf.q.v.y;
-			dst.rot[2] = xf.q.v.z;
-			dst.rot[3] = xf.q.s;
+			SetBodyXf( s.bodyXf[b + 1 + kWheelSlots], xf );
 		}
 		else
 		{
-			dst = scene_body_xf_t{};
-			dst.rot[3] = 1.0f;
+			s.bodyXf[b + 1 + kWheelSlots] = scene_body_xf_t{};
+			s.bodyXf[b + 1 + kWheelSlots].rot[3] = 1.0f;
 		}
 	}
+	triangles += SyncWheels( world );
 
 	for ( Page& page : s.pages )
 	{

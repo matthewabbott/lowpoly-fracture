@@ -95,6 +95,7 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
 		lpSceneBombard( world, scene, tick, period );
+		lpSceneDrive( world, scene, tick, -1 ); // the track's cars drive laps
 		uint64_t t0 = b3GetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
 		total[tick] = b3GetMilliseconds( t0 );
@@ -221,7 +222,7 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep] [--workers 1,4,8] [--ticks N] [--period N]\n"
+			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers 1,4,8] [--ticks N] [--period N]\n"
 					"                 [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n" );
 			return 1;
 		}
