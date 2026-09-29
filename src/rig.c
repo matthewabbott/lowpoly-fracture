@@ -28,6 +28,7 @@
 #define LP_RIG_LIMIT_MARGIN 0.05f // rad: targets stay inside a hinge's limits (pressed on a limit reads as load)
 #define LP_RIG_WEAK 0.2f		  // a limb whose weakest servo has less of its torque than this cannot stand
 #define LP_RIG_REACH 0.25f		 // the foot as created must be this close to a piece of its body
+#define LP_RIG_STUMP 0.6f		 // a limb that reaches less than this share of the stand height below the torso cannot stand
 
 lpRigDef lpDefaultRigDef( void )
 {
@@ -173,8 +174,23 @@ static void lpFindFoot( const lpWorld* w, lpLimb* limb )
 	limb->foot = b3MulAdd( joint, extent, axis );
 }
 
-// Which links are on in a chain from the torso, the weakest servo, the foot
-static void lpLimbCapability( const lpWorld* w, lpLimb* limb )
+// How far below the torso's frame (along its up) the limb's foot reaches at its neutral point: IK toward a point far
+// below it, from where the joints are
+static float lpLimbDepth( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
+{
+	float q[LP_MAX_LIMB_JOINTS];
+	for ( int k = 0; k < limb->joints; ++k )
+	{
+		q[k] = w->links.data[limb->def.links[k]].angle;
+	}
+	b3Vec3 target = b3MulAdd( b3Sub( limb->neutral, b3MulSV( b3Dot( limb->neutral, up ), up ) ), -4.0f, up );
+	lpLimbIK( w, limb, limb->joints, limb->foot, target, q );
+	b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+	return -b3Dot( lpLimbForward( w, limb, limb->joints, q, limb->foot, axes, origins ), up );
+}
+
+// Which links are on in a chain from the torso, the weakest servo, the foot (and how deep it reaches)
+static void lpLimbCapability( const lpWorld* w, lpLimb* limb, b3Vec3 up )
 {
 	int inner = -1;
 	limb->joints = 0;
@@ -217,6 +233,7 @@ static void lpLimbCapability( const lpWorld* w, lpLimb* limb )
 		limb->tipTopology = tip->topology;
 		limb->tipJoints = limb->joints;
 		lpFindFoot( w, limb );
+		limb->depth = lpLimbDepth( w, limb, up );
 	}
 }
 
@@ -300,7 +317,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		}
 		limb->defFoot = b3InvTransformWorldPoint( lpGetTransform( w->bodies.data + inner ), limb->def.foot );
 		limb->tipBody = -1;
-		lpLimbCapability( w, limb );
+		lpLimbCapability( w, limb, b3InvRotateVector( b3Body_GetRotation( torso->id ), b3Normalize( def->up ) ) );
 	}
 
 	b3WorldTransform xf = b3Body_GetTransform( torso->id );
@@ -318,6 +335,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 	{
 		lpLimb* limb = r.limbs + i;
 		limb->neutral = limb->joints > 0 ? b3InvTransformWorldPoint( xf, lpFootWorld( w, limb ) ) : b3Vec3_zero;
+		limb->depth = limb->joints > 0 ? lpLimbDepth( w, limb, r.up ) : 0.0f; // now that it has its neutral point
 		limb->planted = limb->joints > 0; // standing as built
 		limb->hold = limb->joints > 0 ? lpFootWorld( w, limb ) : xf.p;
 		limb->holdClock = 0.0f; // built above the ground, it is held where it lands
@@ -334,6 +352,10 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 			sum += b3Dot( b3SubPos( xf.p, lpFootWorld( w, r.limbs + i ) ), worldUp );
 		}
 		r.def.standHeight = sum / (float)r.limbCount;
+	}
+	if ( r.def.bellyHeight <= 0.0f )
+	{
+		r.def.bellyHeight = 0.2f * r.def.standHeight;
 	}
 	lpArray_Push( w->rigs, r );
 	return w->rigs.count - 1;
@@ -355,7 +377,7 @@ void lpStepRigs( lpWorld* w, float timeStep )
 		r->body = -1;
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
-			lpLimbCapability( w, r->limbs + i );
+			lpLimbCapability( w, r->limbs + i, r->up );
 		}
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
@@ -382,7 +404,8 @@ void lpStepRigs( lpWorld* w, float timeStep )
 		{
 			lpLimb* limb = r->limbs + i;
 			limb->attached = limb->joints > 0 && limb->rootBody == r->body;
-			limb->able = limb->attached && lpLimbCanLift( w, limb, worldUp );
+			// A stump too short to reach the ground from near its stance (a femur without its tibia) is held up instead
+			limb->able = limb->attached && lpLimbCanLift( w, limb, worldUp ) && limb->depth >= LP_RIG_STUMP * r->def.standHeight;
 			limb->reach = 0.0f;
 			if ( limb->joints > 0 )
 			{
@@ -427,6 +450,7 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	s.body = r->body;
 	s.limbCount = r->limbCount;
 	s.idle = r->idle;
+	s.crawling = r->crawling;
 	s.height = r->height;
 	s.control = r->control;
 	for ( int i = 0; i < r->limbCount; ++i )
@@ -468,6 +492,7 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 	s.joints = l->joints;
 	s.strength = l->strength;
 	s.reach = l->reach;
+	s.depth = l->depth;
 	if ( l->tipBody >= 0 && w->bodies.data[l->tipBody].alive )
 	{
 		s.footBody = l->tipBody;
@@ -486,12 +511,14 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 		// Field by field: no struct padding in the hash
 		float control[4] = { r->control.forward, r->control.strafe, r->control.turn, r->control.crouch };
 		float pose[4] = { r->desired.q.v.x, r->desired.q.v.y, r->desired.q.v.z, r->desired.q.s };
-		uint8_t flags[2] = { r->alive ? 1 : 0, r->idle ? 1 : 0 };
+		uint8_t flags[4] = { r->alive ? 1 : 0, r->idle ? 1 : 0, r->crawling ? 1 : 0, r->stuck ? 1 : 0 };
 		h = lpHashBytes( h, control, sizeof( control ) );
 		h = lpHashBytes( h, &r->desired.p, sizeof( r->desired.p ) );
 		h = lpHashBytes( h, pose, sizeof( pose ) );
 		h = lpHashBytes( h, flags, sizeof( flags ) );
 		h = lpHashBytes( h, &r->calm, sizeof( r->calm ) );
+		int counters[2] = { r->stall, r->ableSeen };
+		h = lpHashBytes( h, counters, sizeof( counters ) );
 		h = lpHashBytes( h, &r->body, sizeof( r->body ) );
 		for ( int i = 0; i < r->limbCount; ++i )
 		{

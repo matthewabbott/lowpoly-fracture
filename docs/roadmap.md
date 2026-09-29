@@ -229,7 +229,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
    inertia (`lpObjectDef.inertiaRadius`) so Box3D holds their joints; 13 us a step).
 3. The mech scene, driving a rig in the sandbox (walk events; reach and grab come with strikes), the 'mech' rung
    (done: the patrol goes round its yard, over a step, rubble and a hump, in 58 s; V takes the mech, WASD/QE/C).
-4. Damage adaptation: lost legs, pegs, weak legs, crawling.
+4. Damage adaptation: lost legs, pegs, weak legs, crawling (done: on five legs 41% of its pace, on four 11%, on three
+   or one leg left on a side it crawls; a peg walks level; a weak leg lowers the body; the kit gets its systems and an
+   armored hull, `lp_armor`).
 5. Pools, nerves, jam.
 6. Strikes and grabs.
 7. Bones and landings.

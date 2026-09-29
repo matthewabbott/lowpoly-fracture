@@ -49,6 +49,10 @@ static lpMaterialDef lp_materials[lp_materialCount] = {
 						0.7f },
 	[lp_rubber] = { "rubber", 900.0f, 20000.0f, 30000.0f, 0.25f, 1.0f, 0.1f, lp_breakImpact, 1.0f, 0x2A2A2Au, true,
 					3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 8, lp_particleChip, 0.3f, 0, 20e6f, 50e6f, 20e6f, 0.0f, 0.0f, 0.6f },
+	// Welded plate. Like sheet metal the parts are stand-ins for a shell, so the density is a hull's, but it takes ten
+	// times the damage: a grenade (13 kJ/m^2 at its centre) or a cannon blast (20) chips at most its welds' edges
+	[lp_armor] = { "armor", 1200.0f, 25000.0f, 60000.0f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x6A6F75u, true,
+				   3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 10, lp_particleChip, 0.3f, 0, 400e6f, 400e6f, 250e6f, 0.0f, 0.0f, 0.5f },
 };
 
 // Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by

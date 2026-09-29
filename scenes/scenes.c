@@ -1219,11 +1219,13 @@ int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
 // foot is set), centred at `center`, turned by q
 static int lpHexSegment( lpWorld* world, b3Vec3 center, b3Quat q, b3Vec3 half, uint32_t color, bool foot, b3Quat legQ )
 {
+	const uint8_t lines = ( 1u << lp_channelPower ) | ( 1u << lp_channelHydraulics ) | ( 1u << lp_channelControl );
 	lpBegin();
 	lpPartDef* part = lpBox( b3Vec3_zero, half, b3Quat_identity, lp_sheetMetal, color, false );
 	if ( part != NULL )
 	{
 		part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+		part->system = (lpPartSystem){ lp_tagLeg, lines, 0, 0 };
 	}
 	if ( foot )
 	{
@@ -1247,13 +1249,26 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 	b3Quat q = lpYaw( yaw );
 	b3Vec3 origin = { base.x, base.y + LP_HEX_RIDE, base.z };
 
-	// The torso: a frame (the belly skid under it), an armored deck, a reactor, a hydraulic reservoir and a computer
+	// The torso, all armor welded together: a frame (the belly skid under it) carrying every line, a deck, and between
+	// them a reactor (power), a hydraulic reservoir and a computer (control), both run on power. The legs are sheet metal:
+	// they are what a grenade takes
+	const uint8_t power = 1u << lp_channelPower, hydraulics = 1u << lp_channelHydraulics, control = 1u << lp_channelControl;
+	const uint8_t lines = power | hydraulics | control;
 	lpBegin();
-	lpBox( (b3Vec3){ 0.0f, 0.0f, 0.0f }, (b3Vec3){ 0.95f, 0.08f, 1.35f }, b3Quat_identity, lp_sheetMetal, steel, false );
-	lpBox( (b3Vec3){ 0.0f, 0.33f, -0.75f }, (b3Vec3){ 0.35f, 0.25f, 0.35f }, b3Quat_identity, lp_sheetMetal, dark, false );
-	lpBox( (b3Vec3){ 0.45f, 0.28f, 0.35f }, (b3Vec3){ 0.3f, 0.2f, 0.25f }, b3Quat_identity, lp_sheetMetal, 0x7A5C2Eu, false );
-	lpBox( (b3Vec3){ -0.45f, 0.23f, 0.45f }, (b3Vec3){ 0.2f, 0.15f, 0.2f }, b3Quat_identity, lp_sheetMetal, 0x2E4A3Au, false );
-	lpBox( (b3Vec3){ 0.0f, 0.61f, 0.0f }, (b3Vec3){ 0.9f, 0.03f, 1.2f }, b3Quat_identity, lp_sheetMetal, paint, false );
+	lpPartDef* frame = lpBox( (b3Vec3){ 0.0f, 0.0f, 0.0f }, (b3Vec3){ 0.95f, 0.08f, 1.35f }, b3Quat_identity, lp_armor, steel, false );
+	lpPartDef* reactor = lpBox( (b3Vec3){ 0.0f, 0.33f, -0.75f }, (b3Vec3){ 0.35f, 0.25f, 0.35f }, b3Quat_identity, lp_armor, dark, false );
+	lpPartDef* reservoir = lpBox( (b3Vec3){ 0.45f, 0.28f, 0.35f }, (b3Vec3){ 0.3f, 0.2f, 0.25f }, b3Quat_identity, lp_armor, 0x7A5C2Eu,
+								  false );
+	lpPartDef* computer = lpBox( (b3Vec3){ -0.45f, 0.23f, 0.45f }, (b3Vec3){ 0.2f, 0.15f, 0.2f }, b3Quat_identity, lp_armor, 0x2E4A3Au,
+								 false );
+	lpBox( (b3Vec3){ 0.0f, 0.61f, 0.0f }, (b3Vec3){ 0.9f, 0.03f, 1.2f }, b3Quat_identity, lp_armor, paint, false );
+	if ( frame != NULL && reactor != NULL && reservoir != NULL && computer != NULL )
+	{
+		frame->system = (lpPartSystem){ lp_tagFrame, lines, 0, 0 };
+		reactor->system = (lpPartSystem){ lp_tagReactor, power, power, 0 };
+		reservoir->system = (lpPartSystem){ lp_tagReservoir, hydraulics | power, hydraulics, power }; // carries what it needs
+		computer->system = (lpPartSystem){ lp_tagComputer, control | power, control, power };
+	}
 	int torso = lpCommitDef( world, origin, q, lpDynamicDef() );
 
 	// Legs in order around the body (right front, middle, rear, then left rear, middle, front): each one's neighbours
@@ -1301,7 +1316,8 @@ int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
 			hinge.maxForce = 120000.0f; // walking loads them to about a third
 			hinge.maxTorque = 150000.0f;
 			hinge.strength = 20000.0f;
-			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, 0, 0.0f }; // gain 8 sways at 6 Hz on 4 substeps
+			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, hydraulics | control, 0.0f }; // gain 8 sways at 6 Hz on 4 substeps
+			hinge.carries = lines;
 			hinge.userId = (uint32_t)( lp_linkHexapod + 16 * leg + j );
 			hinge.tearRatio = j > 0 ? 0.1f : 0.0f; // a stub of a leg segment left on a joint tears off
 			limbs[leg].links[j] = lpCreateLink( world, &hinge );
@@ -1806,7 +1822,7 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 	lpImpactDef impact = { 0 };
 	impact.point = hit.point;
 	impact.direction = dir;
-	if ( shot % 4 == 3 )
+	if ( shot % 4 == 3 && scene != lp_sceneMech ) // the mech's legs take grenades only
 	{
 		impact.radius = 2.0f;
 		impact.energy = 250000.0f;

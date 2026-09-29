@@ -238,6 +238,7 @@ typedef struct lpLimb
 	b3Vec3 foot;	// in tipBody's frame
 	float strength; // of its weakest joint's servo, 0 to 1
 	float reach;
+	float depth;	// below the torso's frame, how far the foot reaches at its neutral point (found with the foot)
 	bool attached;
 	bool able;
 	bool planted;
@@ -276,6 +277,10 @@ typedef struct lpRig
 	int calm;				  // steps settled and still toward the idle latch
 	float pace;				  // share of the commanded motion its feet allowed this step (an overstretched foot slows it)
 	bool waiting;			  // a foot waited for balance this step
+	bool crawling;			  // fewer than 4 able limbs, or stuck: on its belly
+	bool stuck;				  // stalled with no foot able to lift: it crawls until its able limbs change
+	int stall;				  // steps stalled so far
+	int ableSeen;			  // able limbs when that was last reset
 } lpRig;
 
 // A wheel that came off, spawned as an object of its own at the start of the next step

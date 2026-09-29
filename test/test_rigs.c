@@ -175,7 +175,7 @@ static int TestRigModelMatchesBodies( void )
 	return 0;
 }
 
-// A leg that loses its tibia stands on the end of its femur: a peg
+// A leg that loses its tibia has its foot at the end of its femur (too short to stand on, it is held up)
 static int TestRigStumpFoot( void )
 {
 	Sim s = CreateSim( -1 );
@@ -185,9 +185,10 @@ static int TestRigStumpFoot( void )
 	const lpLink* knee = s.world->links.data + limb->def.links[2];
 	int femurEnd = limb->prox[2];
 	int femurBody = s.world->pieces.data[knee->ends[femurEnd].piece].body;
-	b3Pos kneePoint = b3TransformWorldPoint( lpGetTransform( s.world->bodies.data + femurBody ), knee->ends[femurEnd].frame.p );
+	b3Vec3 kneeLocal = knee->ends[femurEnd].frame.p; // the femur's end, in its body's frame
 	lpDestroyLink( s.world, limb->def.links[2] );
 	Run( &s, 1 );
+	b3Pos kneePoint = b3TransformWorldPoint( lpGetTransform( s.world->bodies.data + femurBody ), kneeLocal );
 	lpLimbState st = lpWorld_GetLimbState( s.world, rig, 1 );
 	float off = b3Length( b3SubPos( st.foot, kneePoint ) );
 	printf( "  after the knee went: %d joints, foot %.3f m from the femur's end, reach %.2f m, able %d\n", st.joints, off, st.reach,
@@ -722,6 +723,180 @@ static int TestRigPatrols( void )
 	return 0;
 }
 
+// ---- damage ----
+
+// A leg off at the hip: its first link goes, and the leg with it
+static void LoseLeg( Sim* s, int rig, int limb )
+{
+	lpDestroyLink( s->world, s->world->rigs.data[rig].limbs[limb].def.links[0] );
+}
+
+typedef struct Hobble
+{
+	float speed; // m/s along where it faced when it set off
+	float drift; // m across it
+	float tiltRms, worstTilt;
+	float height;
+	int able;
+	bool crawling;
+	bool valid;
+	float pegDepth; // how far below the torso leg 1 reaches at the end
+} Hobble;
+
+// The mech as built, damaged by `harm`, given two seconds to find its feet, then walked forward for `ticks`
+static Hobble WalkDamaged( void ( *harm )( Sim*, int ), int ticks )
+{
+	Sim s = CreateSim( -1 );
+	int rig = lpAddHexapod( s.world, (b3Vec3){ 0.0f, 0.0f, -15.0f }, 0.0f, 0 );
+	Run( &s, 30 );
+	harm( &s, rig );
+	Run( &s, 120 );
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	b3Vec3 heading = b3Normalize( (b3Vec3){ st.forward.x, 0.0f, st.forward.z } );
+	lpRigControl go = { 1.0f, 0.0f, 0.0f, 0.0f };
+	Walk( &s, rig, go, 60 );
+	WalkReport w = Walk( &s, rig, go, ticks );
+	b3Vec3 moved = b3Sub( w.end, w.start );
+	Hobble h;
+	h.speed = b3Dot( moved, heading ) * 60.0f / (float)ticks;
+	h.drift = b3AbsFloat( b3Dot( moved, b3Cross( (b3Vec3){ 0.0f, 1.0f, 0.0f }, heading ) ) );
+	h.tiltRms = w.tiltRms;
+	h.worstTilt = w.worstTilt;
+	st = lpWorld_GetRigState( s.world, rig );
+	h.height = st.height;
+	h.able = st.able;
+	h.crawling = st.crawling;
+	h.valid = w.valid;
+	h.pegDepth = lpWorld_GetLimbState( s.world, rig, 1 ).depth;
+	DestroySim( &s );
+	return h;
+}
+
+static void HarmNone( Sim* s, int rig )
+{
+	(void)s;
+	(void)rig;
+}
+
+static void HarmOneLeg( Sim* s, int rig )
+{
+	LoseLeg( s, rig, 1 ); // the right middle
+}
+
+static void HarmOpposite( Sim* s, int rig )
+{
+	LoseLeg( s, rig, 1 );
+	LoseLeg( s, rig, 4 ); // both middles
+}
+
+static void HarmSameSide( Sim* s, int rig )
+{
+	LoseLeg( s, rig, 0 );
+	LoseLeg( s, rig, 2 ); // right front and rear
+}
+
+static void HarmThreeLegs( Sim* s, int rig )
+{
+	LoseLeg( s, rig, 1 );
+	LoseLeg( s, rig, 3 );
+	LoseLeg( s, rig, 5 );
+}
+
+// A heavy shot through the lower tibia: what is left of it below the knee is a peg
+static void HarmPeg( Sim* s, int rig )
+{
+	const lpLimb* limb = s->world->rigs.data[rig].limbs + 1;
+	const lpLink* knee = s->world->links.data + limb->def.links[2];
+	b3Vec3 top = knee->ends[1 - limb->prox[2]].frame.p;
+	b3Vec3 at = b3Lerp( top, limb->foot, 0.6f );
+	lpImpactDef impact = { 0 };
+	impact.point = b3TransformWorldPoint( lpGetTransform( s->world->bodies.data + limb->tipBody ), at );
+	impact.direction = (b3Vec3){ -1.0f, 0.0f, 0.0f };
+	impact.radius = 0.25f;
+	impact.energy = 40000.0f;
+	lpWorld_AddImpact( s->world, &impact );
+}
+
+static void HarmStump( Sim* s, int rig )
+{
+	lpDestroyLink( s->world, s->world->rigs.data[rig].limbs[1].def.links[2] ); // the tibia falls: a femur alone is too short
+}
+
+static void HarmWeakLeg( Sim* s, int rig )
+{
+	for ( int k = 0; k < 3; ++k )
+	{
+		lpLink* l = s->world->links.data + s->world->rigs.data[rig].limbs[1].def.links[k];
+		l->health = 0.4f * l->def.strength; // its servos hold 40% of their torque
+	}
+}
+
+static void HarmLimpLeg( Sim* s, int rig )
+{
+	// The hip no longer carries the lines: what lies beyond it goes unfed, and its servos limp
+	lpLink* hip = s->world->links.data + s->world->rigs.data[rig].limbs[1].def.links[0];
+	hip->def.carries = 0;
+	lpCarriersChanged( s->world, 0xFF );
+}
+
+static void PrintHobble( const char* what, Hobble h, float intact )
+{
+	printf( "  %s: %.2f m/s (%.0f%%), drift %.2f m, tilt rms %.1f deg (worst %.1f), height %.2f m, %d able%s\n", what, h.speed,
+			100.0f * h.speed / intact, h.drift, 57.29578f * h.tiltRms, 57.29578f * h.worstTilt, h.height, h.able, h.crawling ? ", crawling" : "" );
+}
+
+// It keeps walking on five legs, four (two opposite; two off one side leave one leg there, and no foot lifts without
+// tipping it over, so it crawls), and drags itself on three
+static int TestRigLosesLegs( void )
+{
+	Hobble intact = WalkDamaged( HarmNone, 600 );
+	Hobble one = WalkDamaged( HarmOneLeg, 600 );
+	Hobble opposite = WalkDamaged( HarmOpposite, 600 );
+	Hobble side = WalkDamaged( HarmSameSide, 600 );
+	Hobble three = WalkDamaged( HarmThreeLegs, 600 );
+	PrintHobble( "intact", intact, intact.speed );
+	PrintHobble( "one leg off", one, intact.speed );
+	PrintHobble( "both middles off", opposite, intact.speed );
+	PrintHobble( "right front and rear off", side, intact.speed );
+	PrintHobble( "three off", three, intact.speed );
+	ENSURE( intact.valid && one.valid && opposite.valid && side.valid && three.valid );
+	// Fewer legs swing in more turns (on five, half its pace; on four, a third)
+	ENSURE( one.able == 5 && one.speed >= 0.4f * intact.speed && one.drift < 1.5f );
+	ENSURE( opposite.able == 4 && opposite.speed >= 0.2f );
+	ENSURE( side.able == 4 && side.speed >= 0.1f );
+	ENSURE( three.able == 3 && three.crawling && three.speed >= 0.1f && three.worstTilt < 0.52f );
+	return 0;
+}
+
+// A leg shot through below the knee walks on what is left of its tibia, a peg (it reaches 1.2 m instead of 1.9, still
+// enough to stand level at full height). One that lost its whole tibia holds the femur up (too short to reach the ground)
+// and the rest walk on
+static int TestRigWalksOnAPeg( void )
+{
+	Hobble intact = WalkDamaged( HarmNone, 300 );
+	Hobble peg = WalkDamaged( HarmPeg, 600 );
+	Hobble stump = WalkDamaged( HarmStump, 600 );
+	PrintHobble( "on a peg", peg, intact.speed );
+	PrintHobble( "a femur held up", stump, intact.speed );
+	ENSURE( peg.valid && peg.able == 6 && peg.tiltRms < 0.087f && peg.speed >= 0.5f * intact.speed );
+	ENSURE( peg.pegDepth < 1.5f );
+	ENSURE( stump.valid && stump.able == 5 && stump.tiltRms < 0.087f );
+	return 0;
+}
+
+// A leg with 40% of its servos' torque: the body walks lower; a leg whose lines are cut goes limp and the others walk on
+static int TestRigWeakAndLimpLegs( void )
+{
+	Hobble intact = WalkDamaged( HarmNone, 300 );
+	Hobble weak = WalkDamaged( HarmWeakLeg, 600 );
+	Hobble limp = WalkDamaged( HarmLimpLeg, 600 );
+	PrintHobble( "a leg at 40%", weak, intact.speed );
+	PrintHobble( "a leg limp", limp, intact.speed );
+	ENSURE( weak.valid && weak.able == 6 && intact.height - weak.height >= 0.1f && weak.speed >= 0.25f * intact.speed );
+	ENSURE( limp.valid && limp.able == 5 && limp.speed >= 0.3f * intact.speed );
+	return 0;
+}
+
 int RigTest( void )
 {
 	RUN_TEST( TestKitStands );
@@ -741,5 +916,8 @@ int RigTest( void )
 	RUN_TEST( TestRigWalkDeterminism );
 	RUN_TEST( TestRigWalkCost );
 	RUN_TEST( TestRigPatrols );
+	RUN_TEST( TestRigLosesLegs );
+	RUN_TEST( TestRigWalksOnAPeg );
+	RUN_TEST( TestRigWeakAndLimpLegs );
 	return 0;
 }

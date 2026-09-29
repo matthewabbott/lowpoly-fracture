@@ -54,6 +54,8 @@ enum
 	lp_channelFuel = 0,
 	lp_channelPower = 1, // fed by the engine, which needs fuel
 	lp_channelSteer = 2, // fed by the steering box, which needs power
+	lp_channelHydraulics = 3, // the mech's: fed by its reservoir, which needs power (from its reactor)
+	lp_channelControl = 4,	  // the mech's: fed by its computer, which needs power
 };
 
 enum
@@ -65,6 +67,10 @@ enum
 	lp_tagPanel,
 	lp_tagGlass,
 	lp_tagBumper,
+	lp_tagReactor,
+	lp_tagReservoir,
+	lp_tagComputer,
+	lp_tagLeg,
 };
 
 // A car facing local +z at base (on the ground), turned by yaw: a sheet-metal floor pan carrying fuel, power and
@@ -96,7 +102,9 @@ enum
 // A car-sized hexapod mech standing at base (its feet on the ground), facing local +z turned by yaw: a sheet-metal
 // torso (frame, deck, reactor, hydraulic reservoir, computer) of about 1.8 t and six legs of three segments (hip
 // block, femur, tibia with a rubber foot) on motorised hinges, about 2.7 t in all, standing on them as a rig (its limbs
-// in the order of the legs above). style picks the paint. Returns the rig.
+// in the order of the legs above). Its systems: the reactor feeds power, the reservoir hydraulics and the computer
+// control (both need power); the frame, the legs and their hinges carry all three, and every servo needs hydraulics
+// and control (unfed, it goes limp). style picks the paint. Returns the rig.
 int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
 
 // The ground plane, for tests that build their own scene

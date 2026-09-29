@@ -586,3 +586,27 @@ at its legs in turn. The sandbox's V takes the nearest car or rig; walk events a
   and so is the yard under a shot at a leg every 20 ticks.
 - The 'mech' rung (a shot every 30 ticks): 0.07 ms a step on 1 worker (p95 0.13, max 0.30), 0.09 on 8; every other
   rung's hash unchanged, solver hashes included.
+
+## 2026-09-29 creatures and mechs, step 4: damage adaptation
+
+The mech kit gets its systems (a reactor feeding power, a hydraulic reservoir and a computer feeding hydraulics and
+control, both running on power; the frame, the legs and their hinges carry all three; every servo needs hydraulics and
+control) and an armored torso (`lp_armor`, welded plate at ten times sheet metal's strength: grenades take the legs, not
+the hull). The gait adapts:
+- the torso stands lower as its weakest able leg weakens (by up to 30%) and no higher than its shortest able leg
+  reaches; a stump that cannot reach 60% of the stand height is held up out of the way;
+- feet that swing together keep to every other able leg only when there is an even number of them (on five, one leg was
+  stranded out of turn); fewer legs swing in more turns, so the controls ask half the pace of five legs and a third of
+  four;
+- with fewer than four able legs, or stuck (asked to move, making under a tenth of that for 1.5 s: one leg left on a
+  side can never lift without tipping it over), it drops onto its belly and drags itself a foot at a time.
+
+Results (walking 10 s after the damage; intact 2.27 m/s):
+- One leg off: 0.93 m/s, 1.3 m of drift. Both middle legs off: 0.24 m/s. Right front and rear off: stuck, then it
+  crawls at 0.20 m/s. Three off: it crawls at 0.11 m/s, tilting 5 degrees at worst.
+- A shot through the lower tibia leaves a peg reaching 1.2 m instead of 1.9, still enough: it walks level at full pace.
+  A femur without its tibia is held up, and the other five walk at 25%.
+- A leg at 40% of its servos' torque: the torso drops 18 cm and it walks at 30%. A leg whose lines are cut goes limp;
+  the other five walk at 33%.
+- Under a grenade at a leg every 45 ticks the hull holds; after 13 it hobbles on four legs, after 40 it is on its belly.
+- Identical at 1, 4 and 8 workers under a shot every 3 ticks.

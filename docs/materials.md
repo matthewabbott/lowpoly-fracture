@@ -91,6 +91,7 @@ toughness are 0 to 5.
 | metal (now, unbreakable) | 7800 | n/a | 5 | 5 | none | dents and crumples (ductile), never shatters |
 | sheet metal (now) | 1200 | 2 | 3 | 3 | impact | car bodies: thick stand-ins for thin sheet, bolted panels tear off in big plates; crush 0.7 |
 | rubber (now) | 900 | 17 | 1 | 5 | impact | tyres and bumpers: very hard to break, barely bounces; crush 0.6 |
+| armor (now) | 1200 | 21 | 5 | 4 | impact | welded plate (a mech's hull): stand-ins for a shell like sheet metal, but ten times as strong, so a grenade or a cannon blast only chips it; welded (solid joints); crush 0.5 |
 | foam | 30 | 0.1 | 0 | 1 | impact | light, floaty, bounces, shoved by anything |
 | ice | 920 | 0.8 | 2 | 1 | radial | slippery (low friction), shatters, melts near heat |
 | ceramic | 2000 | 0.6 | 3 | 0 | radial | pots and flasks: clinks, then shatters into shards |

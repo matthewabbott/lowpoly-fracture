@@ -32,6 +32,7 @@ typedef enum lpMaterialId
 	lp_foliage,
 	lp_sheetMetal, // car bodies: panels bolted to a floor pan, tear off in big plates, crumple (crush) in a crash
 	lp_rubber,	   // tyres, bumpers
+	lp_armor,	   // welded plate: a mech's hull, a tank's; a grenade or a cannon only chips it
 	lp_materialCount
 } lpMaterialId;
 
@@ -467,6 +468,8 @@ typedef struct lpRigDef
 	int limbCount;		// 1 to LP_MAX_RIG_LIMBS, in order around the body: each limb's neighbours are the ones next to it
 	float standHeight;	// of the torso's frame above its feet at full strength; 0: as created
 	float crouchDepth;	// share of standHeight a full crouch lowers it by
+	float bellyHeight;	// of the torso's frame resting on its belly (it crawls so with fewer than 4 able limbs); 0: a
+						// fifth of standHeight
 	float stepHeight;	// a swinging foot's lift, m
 	float stride;		// m a planted foot drifts from where it rests before it steps (half a stride's length)
 	float maxSpeed;		// m/s
@@ -502,6 +505,7 @@ typedef struct lpRigState
 	int able;		// of those, the ones that can stand and step
 	int planted;	// feet on the ground
 	bool idle;		// standing still with its servos' targets frozen (it can sleep)
+	bool crawling;	// too few able limbs to walk: on its belly, dragging itself a foot at a time
 	float height;	// of the torso's frame above its planted feet
 	float speed;	// m/s along its forward direction
 	b3Pos position; // of the torso's frame
@@ -522,6 +526,7 @@ typedef struct lpLimbState
 	int joints;		// links still on in a chain from the torso (0 to linkCount)
 	float strength; // of its weakest joint's servo: damage and supply, 0 to 1
 	float reach;	// from its first joint to its foot, m
+	float depth;	// how far below the torso's frame the foot reaches at its rest point (a stump reaches less), m
 	b3Pos foot;		// world
 	int footBody;	// the body its foot is on (-1: detached)
 } lpLimbState;
