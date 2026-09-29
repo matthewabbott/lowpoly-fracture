@@ -93,20 +93,24 @@ tiers instead of popping them.
   dry, solid). A bond between parts takes the weaker joint; bonds between the cells of one broken piece are solid but
   start with the damage the impact did at their location, so cracks near a hit barely hold.
 
-## Stress (`stress.c`)
+## Stress (`stress.c`, `solve.c`)
 
 - Quasi-static solve per structure: pieces are rigid nodes (6 degrees of freedom, anchored pieces fixed), bonds are
   short beams through their contact patch with axial, shear, bending and twist stiffness from its area and extents.
   Stiffness is normalized (only ratios share the load), so bond forces come out in newtons.
 - K x = gravity by conjugate gradient with a block-Jacobi preconditioner (each piece's 6x6 block, Cholesky), warm
-  started from the last solution. A solve continues across steps (residual and search direction live on the pieces)
-  until the structure's topology stamp changes; a per-step work budget in bond-iterations slices big solves.
+  started from the last solution. `solve.c` holds the system and its math with no world in it (so it runs in parallel
+  jobs and tests can build systems by hand); `stress.c` builds systems from structures and judges them. A structure
+  keeps its system on its body: a solve continues across steps on it without a rebuild until the structure's topology
+  stamp changes; a per-step work budget in bond-iterations slices big solves.
 - Every structure updated in a step is checked together, after the splits (`lpCheckStructures`), in three phases:
   1. in queue order, the checks that need no solve finish (a creaking structure only adds strain; unchanged loads end
      the check), and each remaining structure reserves its share of the budget before anything is built: at most
      `maxStressStructureWork` bond-iterations for itself and `maxStressWork` for all. One that does not fit waits,
      having cost nothing, and goes first next step;
-  2. the reserved structures build and solve in parallel, each job with its own scratch, writing only its own pieces;
+  2. the reserved structures build (unless continuing on their system) and solve in parallel, each writing only its
+     own pieces, bonds and system; a converged one also computes every joint's utilization, the force and moment it
+     carries (kept on the bond), and its slender pieces' worst sections;
   3. in queue order, each solution is judged: strain, breaks, slender pieces.
   The per-structure cap bounds the step's stress time on enough cores, the total bounds the CPU. Results do not
   depend on the worker count.
@@ -119,7 +123,7 @@ tiers instead of popping them.
 - New structures are **settled at load**: `lpWorld_SettleStructures` (called by `lpBuildScene`) solves every waiting
   structure to convergence with no per-step budget (up to `maxSettleIterations`), judges it, and repeats a few rounds
   while joints break, so a scene's first step solves nothing. Afterwards only topology changes (impacts, breaks) and
-  changed loads queue a solve.
+  changed loads queue a solve (`lpRequestStressCheck`: a hit, a link's pull).
 - `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
   refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics

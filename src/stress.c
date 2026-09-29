@@ -16,7 +16,9 @@
 //
 // Every structure updated in a step is checked together, in three phases (like fracture jobs, impact.c):
 // 1. in queue order: the shortcuts that need no solve, and each structure's share of the step's budget
-// 2. in parallel: build and solve each structure (a pure function of its own pieces and bonds)
+// 2. in parallel: build (unless continuing on the body's system) and solve each structure, and from a converged
+//    solution every joint's utilization and the slender pieces' worst sections (a pure function of its own pieces and
+//    bonds; solve.c has the math)
 // 3. in queue order: judge each solution, strain and break joints
 // Results do not depend on the worker count. Settling (lpWorld_SettleStructures, at load) runs the same check with no
 // budget, so new structures start converged.
@@ -29,158 +31,6 @@
 #include <stdio.h>
 
 static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
-
-// Relative motion of the two sides at the contact, and the elastic force and moment it produces
-static void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, b3Vec3* force, b3Vec3* moment )
-{
-	lpVec6 va = e->a >= 0 ? x[e->a] : lp_vec6Zero;
-	lpVec6 vb = e->b >= 0 ? x[e->b] : lp_vec6Zero;
-	b3Vec3 delta = b3Sub( b3Add( vb.f, b3Cross( vb.t, e->rb ) ), b3Add( va.f, b3Cross( va.t, e->ra ) ) );
-	b3Vec3 phi = b3Sub( vb.t, va.t );
-	float dn = b3Dot( delta, e->n );
-	*force = b3Add( b3MulSV( e->kn * dn, e->n ), b3MulSV( e->ks, b3MulSub( delta, dn, e->n ) ) );
-	b3Vec3 m = b3MulSV( e->kt * b3Dot( phi, e->n ), e->n );
-	m = b3MulAdd( m, e->kb1 * b3Dot( phi, e->t1 ), e->t1 );
-	*moment = b3MulAdd( m, e->kb2 * b3Dot( phi, e->t2 ), e->t2 );
-}
-
-// y = K x, matrix free, in edge order
-static void lpStressApply( const lpStressEdge* edges, int edgeCount, const lpVec6* x, lpVec6* y, int nodeCount )
-{
-	for ( int i = 0; i < nodeCount; ++i )
-	{
-		y[i] = lp_vec6Zero;
-	}
-	for ( int k = 0; k < edgeCount; ++k )
-	{
-		const lpStressEdge* e = edges + k;
-		b3Vec3 force, moment;
-		lpEdgeForce( e, x, &force, &moment );
-		if ( e->a >= 0 )
-		{
-			y[e->a].f = b3Sub( y[e->a].f, force );
-			y[e->a].t = b3Sub( y[e->a].t, b3Add( b3Cross( e->ra, force ), moment ) );
-		}
-		if ( e->b >= 0 )
-		{
-			y[e->b].f = b3Add( y[e->b].f, force );
-			y[e->b].t = b3Add( y[e->b].t, b3Add( b3Cross( e->rb, force ), moment ) );
-		}
-	}
-}
-
-static double lpDot6( const lpVec6* a, const lpVec6* b, int n )
-{
-	double sum = 0.0;
-	for ( int i = 0; i < n; ++i )
-	{
-		sum += (double)b3Dot( a[i].f, b[i].f ) + (double)b3Dot( a[i].t, b[i].t );
-	}
-	return sum;
-}
-
-// Block-Jacobi preconditioner: each node's own 6x6 block of K, Cholesky-factored. The coupling between a piece's
-// translation and rotation (bonds far from its centroid) is exactly what a plain diagonal misses.
-static void lpAddBlock( lpBlock6* block, const lpStressEdge* e, b3Vec3 r )
-{
-	float n[3] = { e->n.x, e->n.y, e->n.z };
-	float t1[3] = { e->t1.x, e->t1.y, e->t1.z };
-	float t2[3] = { e->t2.x, e->t2.y, e->t2.z };
-	float kc[3][3], kr[3][3], rx[3][3];
-	for ( int a = 0; a < 3; ++a )
-	{
-		for ( int b = 0; b < 3; ++b )
-		{
-			kc[a][b] = ( a == b ? e->ks : 0.0f ) + ( e->kn - e->ks ) * n[a] * n[b];
-			kr[a][b] = e->kt * n[a] * n[b] + e->kb1 * t1[a] * t1[b] + e->kb2 * t2[a] * t2[b];
-		}
-	}
-	// rx v = r x v
-	rx[0][0] = 0.0f, rx[0][1] = -r.z, rx[0][2] = r.y;
-	rx[1][0] = r.z, rx[1][1] = 0.0f, rx[1][2] = -r.x;
-	rx[2][0] = -r.y, rx[2][1] = r.x, rx[2][2] = 0.0f;
-
-	// [ Kc, -Kc Rx ; Rx Kc, -Rx Kc Rx + Kr ]
-	float kcr[3][3], rkc[3][3];
-	for ( int a = 0; a < 3; ++a )
-	{
-		for ( int b = 0; b < 3; ++b )
-		{
-			kcr[a][b] = kc[a][0] * rx[0][b] + kc[a][1] * rx[1][b] + kc[a][2] * rx[2][b];
-			rkc[a][b] = rx[a][0] * kc[0][b] + rx[a][1] * kc[1][b] + rx[a][2] * kc[2][b];
-		}
-	}
-	for ( int a = 0; a < 3; ++a )
-	{
-		for ( int b = 0; b < 3; ++b )
-		{
-			float rkcr = rkc[a][0] * rx[0][b] + rkc[a][1] * rx[1][b] + rkc[a][2] * rx[2][b];
-			block->m[a][b] += kc[a][b];
-			block->m[a][3 + b] -= kcr[a][b];
-			block->m[3 + a][b] += rkc[a][b];
-			block->m[3 + a][3 + b] += kr[a][b] - rkcr;
-		}
-	}
-}
-
-// In-place Cholesky (lower triangle) of a node block, in double. A pivot that is not positive is replaced by the
-// diagonal, which keeps the preconditioner symmetric positive definite.
-static void lpFactorBlock( lpBlock6* block )
-{
-	double l[6][6] = { { 0.0 } };
-	for ( int j = 0; j < 6; ++j )
-	{
-		double sum = block->m[j][j];
-		for ( int k = 0; k < j; ++k )
-		{
-			sum -= l[j][k] * l[j][k];
-		}
-		double pivot = sum > 1e-12 * (double)block->m[j][j] && sum > 0.0 ? sum : ( block->m[j][j] > 0.0f ? block->m[j][j] : 1.0 );
-		l[j][j] = sqrt( pivot );
-		for ( int i = j + 1; i < 6; ++i )
-		{
-			double s = block->m[i][j];
-			for ( int k = 0; k < j; ++k )
-			{
-				s -= l[i][k] * l[j][k];
-			}
-			l[i][j] = s / l[j][j];
-		}
-	}
-	for ( int i = 0; i < 6; ++i )
-	{
-		for ( int j = 0; j < 6; ++j )
-		{
-			block->m[i][j] = j <= i ? (float)l[i][j] : 0.0f;
-		}
-	}
-}
-
-// z = (L L^T)^-1 r
-static lpVec6 lpPrecondition( lpVec6 r, const lpBlock6* block )
-{
-	float v[6] = { r.f.x, r.f.y, r.f.z, r.t.x, r.t.y, r.t.z };
-	for ( int i = 0; i < 6; ++i )
-	{
-		float s = v[i];
-		for ( int k = 0; k < i; ++k )
-		{
-			s -= block->m[i][k] * v[k];
-		}
-		v[i] = s / block->m[i][i];
-	}
-	for ( int i = 5; i >= 0; --i )
-	{
-		float s = v[i];
-		for ( int k = i + 1; k < 6; ++k )
-		{
-			s -= block->m[k][i] * v[k];
-		}
-		v[i] = s / block->m[i][i];
-	}
-	lpVec6 z = { { v[0], v[1], v[2] }, { v[3], v[4], v[5] } };
-	return z;
-}
 
 // What rests on a structure: dynamic bodies pressing on its pieces, from the last physics step's contact impulses
 // (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
@@ -294,112 +144,107 @@ static void lpStressCount( const lpWorld* w, const lpBody* body, int* nodes, int
 }
 
 // Compact system for one structure: non-anchored pieces become nodes, bonds become edges; loads, preconditioner and
-// warm start. Runs inside a parallel job: it writes only the job and its own pieces' solve slots.
+// warm start. A solve continuing on the body's system from the last step only reloads the warm start. Runs inside a
+// parallel job: it writes only the job, the body's system and its own pieces' solve slots.
 static void lpStressBuild( lpWorld* w, lpStressJob* job )
 {
 	const lpBody* body = w->bodies.data + job->body;
+	lpStressSystem* s = job->system;
 	b3Vec3 g = job->gravity;
+	int n = job->nodeCount;
 
-	int n = 0;
-	job->nodes.count = 0;
-	float heaviest = 0.0f;
-	for ( int i = 0; i < body->pieces.count; ++i )
+	if ( job->cached == false )
 	{
-		int pi = body->pieces.data[i];
-		lpPiece* p = w->pieces.data + pi;
-		p->solveSlot = -1;
-		if ( p->anchored == false )
+		s->nodes.count = 0;
+		float heaviest = 0.0f;
+		int slot = 0;
+		for ( int i = 0; i < body->pieces.count; ++i )
 		{
-			p->solveSlot = n++;
-			lpArray_Push( job->nodes, pi );
-			float weight = p->shape->volume * lpGetMaterial( p->material )->density;
-			heaviest = weight > heaviest ? weight : heaviest;
+			int pi = body->pieces.data[i];
+			lpPiece* p = w->pieces.data + pi;
+			p->solveSlot = -1;
+			if ( p->anchored == false )
+			{
+				p->solveSlot = slot++;
+				lpArray_Push( s->nodes, pi );
+				float weight = p->shape->volume * lpGetMaterial( p->material )->density;
+				heaviest = weight > heaviest ? weight : heaviest;
+			}
 		}
-	}
-	LP_ASSERT( n == job->nodeCount );
-	float scale = heaviest * b3Length( g );
-	scale = scale > 0.0f ? scale : 1.0f;
-	job->forceScale = scale;
+		LP_ASSERT( slot == n );
+		float scale = heaviest * b3Length( g );
+		s->forceScale = scale > 0.0f ? scale : 1.0f;
 
-	job->edges.count = 0;
-	for ( int i = 0; i < body->pieces.count; ++i )
-	{
-		int pi = body->pieces.data[i];
-		const lpPiece* p = w->pieces.data + pi;
-		for ( int k = 0; k < p->bonds.count; ++k )
+		s->edges.count = 0;
+		for ( int i = 0; i < body->pieces.count; ++i )
 		{
-			int bi = p->bonds.data[k];
-			const lpBond* bond = w->bonds.data + bi;
-			if ( bond->a != pi )
+			int pi = body->pieces.data[i];
+			const lpPiece* p = w->pieces.data + pi;
+			for ( int k = 0; k < p->bonds.count; ++k )
 			{
-				continue; // each bond once, from its lower piece
+				int bi = p->bonds.data[k];
+				const lpBond* bond = w->bonds.data + bi;
+				if ( bond->a != pi )
+				{
+					continue; // each bond once, from its lower piece
+				}
+				const lpPiece* pa = p;
+				const lpPiece* pb = w->pieces.data + bond->b;
+				if ( pa->solveSlot < 0 && pb->solveSlot < 0 )
+				{
+					continue; // between two anchored pieces: carries nothing we solve for
+				}
+				lpStressEdge e;
+				e.a = pa->solveSlot;
+				e.b = pb->solveSlot;
+				e.bond = bi;
+				e.ra = b3Sub( bond->centroid, pa->shape->centroid );
+				e.rb = b3Sub( bond->centroid, pb->shape->centroid );
+				e.n = bond->normal;
+				lpContactBasis( e.n, &e.t1, &e.t2 );
+				float len = b3MaxFloat( b3Distance( pa->shape->centroid, pb->shape->centroid ), 0.05f );
+				float area = bond->area;
+				e.kn = area / len;
+				e.ks = 0.4f * e.kn;
+				e.kb1 = area * bond->h2 * bond->h2 / ( 3.0f * len );
+				e.kb2 = area * bond->h1 * bond->h1 / ( 3.0f * len );
+				e.kt = 0.4f * ( e.kb1 + e.kb2 );
+				lpArray_Push( s->edges, e );
 			}
-			const lpPiece* pa = p;
-			const lpPiece* pb = w->pieces.data + bond->b;
-			if ( pa->solveSlot < 0 && pb->solveSlot < 0 )
-			{
-				continue; // between two anchored pieces: carries nothing we solve for
-			}
-			lpStressEdge e;
-			e.a = pa->solveSlot;
-			e.b = pb->solveSlot;
-			e.bond = bi;
-			e.ra = b3Sub( bond->centroid, pa->shape->centroid );
-			e.rb = b3Sub( bond->centroid, pb->shape->centroid );
-			e.n = bond->normal;
-			lpContactBasis( e.n, &e.t1, &e.t2 );
-			float len = b3MaxFloat( b3Distance( pa->shape->centroid, pb->shape->centroid ), 0.05f );
-			float area = bond->area;
-			e.kn = area / len;
-			e.ks = 0.4f * e.kn;
-			e.kb1 = area * bond->h2 * bond->h2 / ( 3.0f * len );
-			e.kb2 = area * bond->h1 * bond->h1 / ( 3.0f * len );
-			e.kt = 0.4f * ( e.kb1 + e.kb2 );
-			lpArray_Push( job->edges, e );
 		}
+		LP_ASSERT( s->edges.count == job->edgeCount );
+		lpSystemResize( s );
+		lpSystemFactor( s );
+		s->topology = body->topology;
+		s->built = true;
 	}
-	LP_ASSERT( job->edges.count == job->edgeCount );
 
-	// Vectors: x (solution), f (load), r, z, p, q; one factored block per node
-	lpArray_Reserve( job->vectors, 6 * n );
-	job->vectors.count = 6 * n;
-	lpArray_Reserve( job->blocks, n );
-	job->blocks.count = n;
-	lpVec6* x = job->vectors.data;
+	// Vectors: x (solution) and f (load); r, z, p and q are the solver's
+	float scale = s->forceScale;
+	lpVec6* x = s->vectors.data;
 	lpVec6* f = x + n;
-	lpBlock6* blocks = job->blocks.data;
-	memset( blocks, 0, sizeof( lpBlock6 ) * (size_t)n );
 	for ( int i = 0; i < n; ++i )
 	{
-		const lpPiece* p = w->pieces.data + job->nodes.data[i];
-		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
+		const lpPiece* p = w->pieces.data + s->nodes.data[i];
 		x[i].f = b3MulSV( 1.0f / scale, p->stressX.f );
 		x[i].t = b3MulSV( 1.0f / scale, p->stressX.t );
+	}
+	if ( job->cached )
+	{
+		return; // loads, r and p are in the system as the last step left them
+	}
+	for ( int i = 0; i < n; ++i )
+	{
+		const lpPiece* p = w->pieces.data + s->nodes.data[i];
+		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
 		f[i].f = b3MulSV( mass / scale, g );
 		f[i].t = b3Vec3_zero;
 	}
-
 	for ( int i = 0; i < n; ++i )
 	{
-		const lpPiece* p = w->pieces.data + job->nodes.data[i];
+		const lpPiece* p = w->pieces.data + s->nodes.data[i];
 		f[i].f = b3MulAdd( f[i].f, 1.0f / scale, p->stressLoad.f );
 		f[i].t = b3MulAdd( f[i].t, 1.0f / scale, p->stressLoad.t );
-	}
-	for ( int k = 0; k < job->edges.count; ++k )
-	{
-		const lpStressEdge* e = job->edges.data + k;
-		if ( e->a >= 0 )
-		{
-			lpAddBlock( blocks + e->a, e, e->ra );
-		}
-		if ( e->b >= 0 )
-		{
-			lpAddBlock( blocks + e->b, e, e->rb );
-		}
-	}
-	for ( int i = 0; i < n; ++i )
-	{
-		lpFactorBlock( blocks + i );
 	}
 
 	// A solve in progress continues from where the last step left it
@@ -409,103 +254,10 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		lpVec6* p = x + 4 * n;
 		for ( int i = 0; i < n; ++i )
 		{
-			const lpPiece* piece = w->pieces.data + job->nodes.data[i];
+			const lpPiece* piece = w->pieces.data + s->nodes.data[i];
 			r[i] = piece->stressR;
 			p[i] = piece->stressP;
 		}
-	}
-}
-
-// Preconditioned conjugate gradient, at most job->budget iterations. A fresh solve starts from the warm start x; a
-// continued one picks up r, p and rz where the last step left them, so a big structure's iterations add up to one
-// solve spread over several steps instead of restarting every step.
-static void lpStressSolve( lpStressJob* job )
-{
-	int n = job->nodes.count;
-	const lpStressEdge* edges = job->edges.data;
-	int edgeCount = job->edges.count;
-	lpVec6* x = job->vectors.data;
-	lpVec6* f = x + n;
-	lpVec6* r = x + 2 * n;
-	lpVec6* z = x + 3 * n;
-	lpVec6* p = x + 4 * n;
-	lpVec6* q = x + 5 * n;
-	const lpBlock6* d = job->blocks.data;
-
-	double rz = job->rz;
-	if ( job->continuing == false )
-	{
-		lpStressApply( edges, edgeCount, x, q, n );
-		for ( int i = 0; i < n; ++i )
-		{
-			r[i].f = b3Sub( f[i].f, q[i].f );
-			r[i].t = b3Sub( f[i].t, q[i].t );
-			z[i] = lpPrecondition( r[i], d + i );
-			p[i] = z[i];
-		}
-		rz = lpDot6( r, z, n );
-	}
-	double limit = job->tolerance * job->tolerance * lpDot6( f, f, n );
-	bool converged = false;
-	int it = 0;
-	for ( ; it < job->budget; ++it )
-	{
-		if ( lpDot6( r, r, n ) <= limit )
-		{
-			converged = true;
-			break;
-		}
-		lpStressApply( edges, edgeCount, p, q, n );
-		double pq = lpDot6( p, q, n );
-		if ( ( pq > 0.0 ) == false )
-		{
-			break;
-		}
-		float alpha = (float)( rz / pq );
-		for ( int i = 0; i < n; ++i )
-		{
-			x[i].f = b3MulAdd( x[i].f, alpha, p[i].f );
-			x[i].t = b3MulAdd( x[i].t, alpha, p[i].t );
-			r[i].f = b3MulSub( r[i].f, alpha, q[i].f );
-			r[i].t = b3MulSub( r[i].t, alpha, q[i].t );
-			z[i] = lpPrecondition( r[i], d + i );
-		}
-		double rz2 = lpDot6( r, z, n );
-		float beta = (float)( rz2 / rz );
-		rz = rz2;
-		for ( int i = 0; i < n; ++i )
-		{
-			p[i].f = b3MulAdd( z[i].f, beta, p[i].f );
-			p[i].t = b3MulAdd( z[i].t, beta, p[i].t );
-		}
-	}
-	if ( converged == false && lpDot6( r, r, n ) <= limit )
-	{
-		converged = true;
-	}
-	job->rz = rz;
-	job->iterations = it;
-	job->converged = converged;
-}
-
-// Phase 2, one structure: build, solve, and keep the solution (in newtons of load) and the solve's state on the pieces
-static void lpRunStressJob( int index, void* context )
-{
-	lpWorld* w = context;
-	lpStressJob* job = w->stressJobs + index;
-	lpStressBuild( w, job );
-	lpStressSolve( job );
-	int n = job->nodes.count;
-	const lpVec6* x = job->vectors.data;
-	const lpVec6* r = x + 2 * n;
-	const lpVec6* p = x + 4 * n;
-	for ( int i = 0; i < n; ++i )
-	{
-		lpPiece* piece = w->pieces.data + job->nodes.data[i];
-		piece->stressX.f = b3MulSV( job->forceScale, x[i].f );
-		piece->stressX.t = b3MulSV( job->forceScale, x[i].t );
-		piece->stressR = r[i];
-		piece->stressP = p[i];
 	}
 }
 
@@ -603,22 +355,25 @@ static int lpBreakOverloads( lpWorld* w, b3WorldTransform xf )
 	return broken;
 }
 
-// Stresses at every bond from the solution; strain for the overloaded ones, and the worst of those break.
-// Writes the peak utilization. Returns the number of broken bonds.
-static int lpStressEvaluate( lpWorld* w, const lpStressJob* job, float* peak, int* strained )
+// Phase 2, converged: every bond's utilization from the solution (into the system's rho) and the force and moment it
+// carries (onto the bond), and the peak
+static void lpStressUtilizations( lpWorld* w, lpStressJob* job )
 {
-	const lpVec6* x = job->vectors.data;
-	w->scratchOverloads.count = 0;
-	*peak = 0.0f;
-	*strained = 0;
-	for ( int k = 0; k < job->edges.count; ++k )
+	lpStressSystem* s = job->system;
+	const lpVec6* x = s->vectors.data;
+	lpArray_Reserve( s->rho, s->edges.count );
+	s->rho.count = s->edges.count;
+	float peak = 0.0f;
+	for ( int k = 0; k < s->edges.count; ++k )
 	{
-		const lpStressEdge* e = job->edges.data + k;
+		const lpStressEdge* e = s->edges.data + k;
 		lpBond* bond = w->bonds.data + e->bond;
 		b3Vec3 force, moment;
 		lpEdgeForce( e, x, &force, &moment );
-		force = b3MulSV( job->forceScale, force );
-		moment = b3MulSV( job->forceScale, moment );
+		force = b3MulSV( s->forceScale, force );
+		moment = b3MulSV( s->forceScale, moment );
+		bond->force = force;
+		bond->moment = moment;
 
 		float area = bond->area;
 		float axialForce = b3Dot( force, e->n ); // tension positive
@@ -632,8 +387,8 @@ static int lpStressEvaluate( lpWorld* w, const lpStressJob* job, float* peak, in
 
 		float tensionLimit, compressionLimit, shearLimit, mu;
 		lpBondLimits( w, bond, &tensionLimit, &compressionLimit, &shearLimit, &mu );
-		float s = w->def.stressScale * b3MaxFloat( bond->health, 0.0f ) / bond->strength;
-		float tensionCap = b3MaxFloat( s * tensionLimit, 1e4f );
+		float str = w->def.stressScale * b3MaxFloat( bond->health, 0.0f ) / bond->strength;
+		float tensionCap = b3MaxFloat( str * tensionLimit, 1e4f );
 
 		// Pulling apart and bending: the section's elastic tension capacity, plus rocking. A compressed joint holds a
 		// moment until its resultant reaches the edge of the patch, so masonry tips over an edge instead of cracking
@@ -644,13 +399,13 @@ static int lpStressEvaluate( lpWorld* w, const lpStressJob* job, float* peak, in
 
 		// Crushing at the compressed edge, and Coulomb shear
 		float edge = compression / area + 3.0f * m1 / ( area * bond->h2 ) + 3.0f * m2 / ( area * bond->h1 );
-		rho = b3MaxFloat( rho, edge / b3MaxFloat( s * compressionLimit, 1e4f ) );
-		rho = b3MaxFloat( rho, shear / ( s * ( shearLimit + mu * compression / area ) + 1e3f ) );
+		rho = b3MaxFloat( rho, edge / b3MaxFloat( str * compressionLimit, 1e4f ) );
+		rho = b3MaxFloat( rho, shear / ( str * ( shearLimit + mu * compression / area ) + 1e3f ) );
 
-		*peak = rho > *peak ? rho : *peak;
-		lpApplyStrain( w, job->xf, e->bond, rho, strained );
+		s->rho.data[k] = rho;
+		peak = rho > peak ? rho : peak;
 	}
-	return lpBreakOverloads( w, job->xf );
+	job->peak = peak;
 }
 
 // A structure that converged and is only creaking (joints over their limit, nothing broken yet) does not need its
@@ -677,21 +432,19 @@ static int lpStressCreak( lpWorld* w, int bodyIndex, int* strained )
 	return lpBreakOverloads( w, xf );
 }
 
-// Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. From the solved bond
-// forces and the piece's own weight, find the bending moment along its axis at a few cuts between its supports; where
-// the section is overloaded, strain builds, and at 1 a small synthetic impact there snaps it through the normal
-// fracture pipeline next step. Returns the number of pieces queued to break.
-static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, int* slender )
+// Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. Phase 2, converged: from
+// the solved bond forces and the piece's own weight, find the bending moment along its axis at a few cuts between its
+// supports, and keep the worst (into the job). Phase 3 (lpStressSnap) strains the overloaded ones.
+static void lpStressSlender( lpWorld* w, lpStressJob* job )
 {
-	const lpVec6* x = job->vectors.data;
-	b3WorldTransform xf = job->xf;
+	const lpStressSystem* s = job->system;
+	const lpVec6* x = s->vectors.data;
 	b3Vec3 g = job->gravity;
-	float forceScale = job->forceScale;
-	int queued = 0;
-	for ( int i = 0; i < job->nodes.count; ++i )
+	float forceScale = s->forceScale;
+	for ( int i = 0; i < s->nodes.count; ++i )
 	{
-		int pi = job->nodes.data[i];
-		lpPiece* p = w->pieces.data + pi;
+		int pi = s->nodes.data[i];
+		const lpPiece* p = w->pieces.data + pi;
 		const lpMaterialDef* m = lpGetMaterial( p->material );
 		float fragment = m->fragmentSize * w->def.fragmentScale;
 		if ( m->breakable == false || m->pattern == lp_breakRadial || p->depth >= w->def.maxDepth || p->bonds.count < 2 )
@@ -707,9 +460,9 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 		for ( int k = 0; k < p->shape->vertexCount; ++k )
 		{
 			b3Vec3 d = b3Sub( p->shape->vertices[k], c );
-			float s = b3Dot( d, a );
-			lo = s < lo ? s : lo;
-			hi = s > hi ? s : hi;
+			float along = b3Dot( d, a );
+			lo = along < lo ? along : lo;
+			hi = along > hi ? along : hi;
 			w1 = b3MaxFloat( w1, b3AbsFloat( b3Dot( d, t1 ) ) );
 			w2 = b3MaxFloat( w2, b3AbsFloat( b3Dot( d, t2 ) ) );
 		}
@@ -720,13 +473,12 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 		}
 
 		// Loads on the piece: each bond's force at its contact, and the moment it carries
-		int slot = p->solveSlot;
 		float bondLo = FLT_MAX, bondHi = -FLT_MAX;
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
-			float s = b3Dot( b3Sub( w->bonds.data[p->bonds.data[k]].centroid, c ), a );
-			bondLo = s < bondLo ? s : bondLo;
-			bondHi = s > bondHi ? s : bondHi;
+			float along = b3Dot( b3Sub( w->bonds.data[p->bonds.data[k]].centroid, c ), a );
+			bondLo = along < bondLo ? along : bondLo;
+			bondHi = along > bondHi ? along : bondHi;
 		}
 		if ( bondHi - bondLo < 0.25f * length )
 		{
@@ -737,18 +489,16 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 		float limit = w->def.stressScale * m->tensileStrength;
 		float mass = p->shape->volume * m->density;
 		float worst = 0.0f, worstAt = 0.0f;
+		const int* incident = s->incident.data;
+		int first = s->incidentStart.data[i], last = s->incidentStart.data[i + 1];
 		for ( int sample = 1; sample <= 9; ++sample )
 		{
 			float cut = bondLo + ( bondHi - bondLo ) * (float)sample / 10.0f;
 			b3Vec3 q = b3MulAdd( c, cut, a );
 			b3Vec3 forceSum = b3Vec3_zero, momentSum = b3Vec3_zero;
-			for ( int k = 0; k < job->edges.count; ++k )
+			for ( int j = first; j < last; ++j )
 			{
-				const lpStressEdge* e = job->edges.data + k;
-				if ( e->a != slot && e->b != slot )
-				{
-					continue;
-				}
+				const lpStressEdge* e = s->edges.data + incident[j];
 				const lpBond* bond = w->bonds.data + e->bond;
 				if ( b3Dot( b3Sub( bond->centroid, c ), a ) <= cut )
 				{
@@ -756,7 +506,7 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 				}
 				b3Vec3 f, mo;
 				lpEdgeForce( e, x, &f, &mo );
-				float sign = e->a == slot ? forceScale : -forceScale; // what the bond does to this piece
+				float sign = e->a == i ? forceScale : -forceScale; // what the bond does to this piece
 				f = b3MulSV( sign, f );
 				mo = b3MulSV( sign, mo );
 				forceSum = b3Add( forceSum, f );
@@ -778,18 +528,35 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 				worstAt = cut;
 			}
 		}
+		lpSlenderCut slenderCut = { pi, length, worst, worstAt, 2.0f * b3MaxFloat( w1, w2 ) };
+		lpArray_Push( job->slender, slenderCut );
+	}
+}
+
+// Phase 3, once the joints hold: an overloaded slender piece strains, and at 1 a small synthetic impact at its worst
+// section snaps it through the normal fracture pipeline next step. Returns the number of pieces queued to break.
+static int lpStressSnap( lpWorld* w, const lpStressJob* job, int* strained, int* slender )
+{
+	b3WorldTransform xf = job->xf;
+	int queued = 0;
+	for ( int k = 0; k < job->slender.count; ++k )
+	{
+		const lpSlenderCut* cut = job->slender.data + k;
+		int pi = cut->piece;
+		lpPiece* p = w->pieces.data + pi;
+		const lpMaterialDef* m = lpGetMaterial( p->material );
 		if ( w->def.debugLog )
 		{
-			printf( "[lpf]   slender piece %d: length %.2f, worst utilization %.2f at %.2f, strain %.2f\n", pi, (double)length,
-					(double)worst, (double)worstAt, (double)p->strain );
+			printf( "[lpf]   slender piece %d: length %.2f, worst utilization %.2f at %.2f, strain %.2f\n", pi, (double)cut->length,
+					(double)cut->worst, (double)cut->worstAt, (double)p->strain );
 		}
-		if ( worst <= 1.0f )
+		if ( cut->worst <= 1.0f )
 		{
 			continue;
 		}
 		*strained += 1;
 		*slender += 1;
-		p->strain += ( worst - 1.0f ) * w->def.strainRate;
+		p->strain += ( cut->worst - 1.0f ) * w->def.strainRate;
 		if ( p->strain < 1.0f )
 		{
 			continue;
@@ -797,11 +564,10 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 
 		// Snap it where it is weakest: a blow sized to the section, through the normal fracture pipeline
 		p->strain = 0.0f;
-		float depth = 2.0f * b3MaxFloat( w1, w2 );
 		lpImpactDef impact = { 0 };
-		impact.point = b3TransformWorldPoint( xf, b3MulAdd( c, worstAt, a ) );
-		impact.direction = b3RotateVector( xf.q, a );
-		impact.radius = 1.5f * depth;
+		impact.point = b3TransformWorldPoint( xf, b3MulAdd( p->shape->centroid, cut->worstAt, p->axis ) );
+		impact.direction = b3RotateVector( xf.q, p->axis );
+		impact.radius = 1.5f * cut->depth;
 		impact.energy = 4.0f * b3MaxFloat( m->bondStrength, m->fractureEnergy ) * B3_PI * impact.radius * impact.radius;
 		w->impactSerial += 1;
 		lpDeferredJob snap = { pi, p->generation, w->impactSerial, impact, true };
@@ -810,6 +576,36 @@ static int lpStressPieces( lpWorld* w, const lpStressJob* job, int* strained, in
 		queued += 1;
 	}
 	return queued;
+}
+
+// Phase 2, one structure: build, solve, and keep the solution (in newtons of load) and the solve's state on the
+// pieces; converged, also the utilizations and the slender pieces' worst sections
+static void lpRunStressJob( int index, void* context )
+{
+	lpWorld* w = context;
+	lpStressJob* job = w->stressJobs + index;
+	lpStressBuild( w, job );
+	lpSystemSolve( job->system, job->budget, job->tolerance, job->continuing, &job->solve );
+	const lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	const lpVec6* x = s->vectors.data;
+	const lpVec6* r = x + 2 * n;
+	const lpVec6* p = x + 4 * n;
+	for ( int i = 0; i < n; ++i )
+	{
+		lpPiece* piece = w->pieces.data + s->nodes.data[i];
+		piece->stressX.f = b3MulSV( s->forceScale, x[i].f );
+		piece->stressX.t = b3MulSV( s->forceScale, x[i].t );
+		piece->stressR = r[i];
+		piece->stressP = p[i];
+	}
+	job->peak = 0.0f;
+	job->slender.count = 0;
+	if ( job->solve.converged )
+	{
+		lpStressUtilizations( w, job );
+		lpStressSlender( w, job );
+	}
 }
 
 static lpStressJob* lpAddStressJob( lpWorld* w )
@@ -824,29 +620,30 @@ static lpStressJob* lpAddStressJob( lpWorld* w )
 	return w->stressJobs + w->stressJobCount++;
 }
 
-// Phase 3, one structure: judge its solution. Converged: stresses at every joint, strain and breaks, then the slender
-// pieces. Not converged: it keeps solving next step, and nothing is judged on an unconverged solution.
+// Phase 3, one structure: judge its solution. Converged: strain at every overloaded joint and the worst break, then
+// the slender pieces. Not converged: it keeps solving next step, and nothing is judged on an unconverged solution.
 static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 {
 	lpBody* body = w->bodies.data + job->body;
-	int n = job->nodes.count;
-	int edges = job->edges.count;
-	w->stressWork += ( job->iterations + 2 ) * edges;
-	w->stats.stressIterations += job->iterations;
+	const lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	int edges = s->edges.count;
+	w->stressWork += ( job->solve.iterations + 2 ) * edges;
+	w->stats.stressIterations += job->solve.iterations;
 	w->stats.stressSolves += 1;
-	body->solving = job->converged == false;
-	body->solveRz = job->rz;
+	body->solving = job->solve.converged == false;
+	body->solveRz = job->solve.rz;
 	body->solveTopology = body->topology;
 	body->solveNodes = n;
 	body->solveEdges = edges;
 
-	if ( job->converged == false )
+	if ( job->solve.converged == false )
 	{
 		body->stressSteps += 1;
 		body->unsettled = true;
 		for ( int k = 0; k < edges; ++k )
 		{
-			int bi = job->edges.data[k].bond;
+			int bi = s->edges.data[k].bond;
 			const lpBond* bond = w->bonds.data + bi;
 			if ( bond->strain > 0.0f && ( w->tick + (uint64_t)bi ) % 4 == 0 )
 			{
@@ -857,11 +654,15 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 		return;
 	}
 
-	float peak = 0.0f;
 	int strained = 0;
-	int broken = lpStressEvaluate( w, job, &peak, &strained );
+	w->scratchOverloads.count = 0;
+	for ( int k = 0; k < edges; ++k )
+	{
+		lpApplyStrain( w, job->xf, s->edges.data[k].bond, s->rho.data[k], &strained );
+	}
+	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;
-	int snapped = broken == 0 ? lpStressPieces( w, job, &strained, &slender ) : 0; // once the joints hold
+	int snapped = broken == 0 ? lpStressSnap( w, job, &strained, &slender ) : 0; // once the joints hold
 	body->unsettled = broken > 0 || snapped > 0 || strained > 0;
 	body->creaking = broken == 0 && snapped == 0 && slender == 0 && strained > 0; // next checks only add strain
 	body->strainedLastCheck = strained > 0;
@@ -870,8 +671,8 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	{
 		printf( "[lpf] tick %llu stress: body %d, %d nodes, %d bonds, %d iterations over %d steps, peak utilization %.2f, "
 				"%d strained, %d broke\n",
-				(unsigned long long)w->tick, job->body, n, edges, job->iterations, body->stressSteps + 1, (double)peak, strained,
-				broken );
+				(unsigned long long)w->tick, job->body, n, edges, job->solve.iterations, body->stressSteps + 1,
+				(double)job->peak, strained, broken );
 	}
 	body->stressSteps = 0;
 	if ( body->unsettled )
@@ -958,16 +759,27 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			body->stressSteps = 0;
 		}
 		reserved += ( budget + 2 ) * edges;
+		if ( body->system == NULL )
+		{
+			body->system = lpAlloc( sizeof( lpStressSystem ) );
+			memset( body->system, 0, sizeof( lpStressSystem ) );
+		}
 		lpStressJob* job = lpAddStressJob( w );
 		job->body = bodyIndex;
+		job->system = body->system;
 		job->xf = b3Body_GetTransform( body->id );
 		job->gravity = b3MulSV( body->gravityScale, b3InvRotateVector( job->xf.q, gravity ) );
 		job->nodeCount = nodes;
 		job->edgeCount = edges;
 		job->budget = budget;
 		job->continuing = continuing;
+		// A solve continuing on an unchanged structure still has its system (a piece that left without a bond to
+		// break changes the counts, not the topology)
+		const lpStressSystem* system = body->system;
+		job->cached = continuing && system->built && system->topology == body->topology && system->nodes.count == nodes &&
+					  system->edges.count == edges;
 		job->tolerance = body->stressSteps < w->def.stressPatience ? 1e-3 : 1e-2;
-		job->rz = body->solveRz;
+		job->solve.rz = body->solveRz;
 	}
 	w->stressQueue.count = 0;
 
@@ -990,7 +802,7 @@ int lpCheckStructures( lpWorld* w, bool settle )
 		lpRunStressChecks( w, settle );
 		for ( int i = 0; i < w->stressJobCount; ++i )
 		{
-			iterations += w->stressJobs[i].iterations;
+			iterations += w->stressJobs[i].solve.iterations;
 		}
 	}
 	for ( int i = 0; i < w->stressAgain.count; ++i )
@@ -1021,4 +833,29 @@ int lpWorld_SettleStructures( lpWorld* w )
 	w->stats.settleIterations = iterations;
 	w->stats.bondCount = w->bondCount;
 	return iterations;
+}
+
+void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits )
+{
+	lpBody* b = w->bodies.data + bodyIndex;
+	b->solving = false; // sample the new loads
+	b->creaking = false;
+	if ( duringSplits )
+	{
+		lpArray_Push( w->stressAgain, bodyIndex );
+	}
+	else
+	{
+		lpMarkDirty( w, bodyIndex );
+	}
+}
+
+void lpFreeStressSystem( lpBody* b )
+{
+	if ( b->system != NULL )
+	{
+		lpSystemFree( b->system );
+		lpFree( b->system );
+		b->system = NULL;
+	}
 }

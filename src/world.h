@@ -6,6 +6,7 @@
 #include "core.h"
 #include "fracture.h"
 #include "poly.h"
+#include "solve.h"
 
 typedef struct lpTaskPool lpTaskPool;
 
@@ -45,54 +46,38 @@ typedef enum lpCellClass
 #define LP_CAT_PROJECTILE 0x20ull
 #define LP_CAT_ALL 0xFFFFFFFFFFFFFFFFull
 
-// Stress solve (stress.c): a 6-vector per node (force and torque, or translation and rotation)
-typedef struct lpVec6
-{
-	b3Vec3 f;
-	b3Vec3 t;
-} lpVec6;
-
-// A bond as a short beam between two nodes (slot -1: an anchored piece, fixed to the world)
-typedef struct lpStressEdge
-{
-	int a, b;
-	int bond;
-	b3Vec3 ra, rb; // contact centroid from each piece's centroid
-	b3Vec3 n, t1, t2;
-	float kn, ks, kb1, kb2, kt; // axial, shear, bending about t1 and t2, twist
-} lpStressEdge;
-
-// One node's 6x6 block of the stress stiffness, then its Cholesky factor (block-Jacobi preconditioner)
-typedef struct lpBlock6
-{
-	float m[6][6];
-} lpBlock6;
-
 typedef struct lpOverload
 {
 	float rho;
 	int bond;
 } lpOverload;
 
-// One structure's stress solve in a step. Structures are built and solved in parallel: a job reads only its own
-// structure's pieces and bonds and writes only their solve state. Its arrays are kept between steps for reuse.
+// A slender piece's worst section at a converged solve (stress.c, lpStressSlender)
+typedef struct lpSlenderCut
+{
+	int piece;
+	float length;
+	float worst;   // utilization of the worst of the cuts
+	float worstAt; // where along the piece's axis, from its centroid
+	float depth;   // of the section
+} lpSlenderCut;
+
+// One structure's stress check in a step. Structures are solved in parallel: a job reads only its own structure's
+// pieces and bonds and writes only their solve state, its body's system, and its own arrays (kept between steps).
 typedef struct lpStressJob
 {
 	int body;
+	lpStressSystem* system; // the body's
 	b3WorldTransform xf;
 	b3Vec3 gravity;			  // body frame
 	int nodeCount, edgeCount; // counted before the build, for the budget
 	int budget;				  // iterations granted this step
-	bool continuing;		  // pick up the solve in progress (r, p on the pieces, rz here)
+	bool continuing;		  // pick up the solve in progress (r, p and the system, rz in solve)
+	bool cached;			  // the body's system is still the structure's: no build
 	double tolerance;
-	double rz;
-	float forceScale;
-	int iterations;
-	bool converged;
-	LP_ARRAY( int ) nodes; // piece of each node
-	LP_ARRAY( lpStressEdge ) edges;
-	LP_ARRAY( lpVec6 ) vectors; // x, f, r, z, p, q: six per node
-	LP_ARRAY( lpBlock6 ) blocks;
+	lpSolveState solve;
+	float peak;						  // converged: the highest joint utilization (in the system's rho)
+	LP_ARRAY( lpSlenderCut ) slender; // converged: the slender pieces' worst sections
 } lpStressJob;
 
 // One end of a link: a piece and a frame in its body's frame, which never changes for the piece (new bodies are made
@@ -172,6 +157,8 @@ typedef struct lpBond
 	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
 	float strain;		// stress overload accumulated over checks; the bond breaks at 1
 	float rho;			// utilization at the last converged check (1 = at its limit)
+	b3Vec3 force;		// on piece b at the last converged check (newtons, body frame; piece a gets the opposite)
+	b3Vec3 moment;
 	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
 	int nextFree;
@@ -209,6 +196,9 @@ typedef struct lpBody
 	int stressSteps;   // structure: steps spent solving the current topology
 	uint32_t topology; // bumped whenever a bond or piece of the body changes; a solve in progress restarts then
 	uint32_t solveTopology;
+	uint32_t splitTopology; // topology at the last split that found nothing to split off
+	bool splitChecked;		// splitTopology is set
+	lpStressSystem* system; // structure: its stress system, kept between checks (NULL until the first)
 	int solveNodes, solveEdges;
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
@@ -435,6 +425,10 @@ void lpFreeLinks( lpWorld* w, bool physicsAlive );
 // still solving or straining are marked dirty for the next step. Settling solves each to convergence, with no budget.
 // Returns the iterations spent.
 int lpCheckStructures( lpWorld* w, bool settle );
+// Something changed what a structure carries (a hit, a link's pull): check it again next step with fresh loads. During
+// the step's splits the dirty list is being walked, so there it waits with the structures to check again.
+void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits );
+void lpFreeStressSystem( lpBody* b );
 
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );

@@ -23,7 +23,8 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, hash, validation |
 | `src/impact.c` | impacts: fracture jobs (3 phases), bond damage, detonators, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
-| `src/stress.c` | quasi-static stress solve per structure (PCG, block-Jacobi; structures in parallel), joint failure, strain |
+| `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
+| `src/stress.c` | the stress check per structure: scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |

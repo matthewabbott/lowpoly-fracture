@@ -294,6 +294,7 @@ void lpDestroyWorld( lpWorld* w )
 			b3DestroyBody( b->id );
 		}
 		lpArray_Free( b->pieces );
+		lpFreeStressSystem( b );
 	}
 	for ( int i = 0; i < w->pieces.count; ++i )
 	{
@@ -327,11 +328,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->pendingDestroy );
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
-		lpStressJob* job = w->stressJobs + i;
-		lpArray_Free( job->nodes );
-		lpArray_Free( job->edges );
-		lpArray_Free( job->vectors );
-		lpArray_Free( job->blocks );
+		lpArray_Free( w->stressJobs[i].slender );
 	}
 	lpFree( w->stressJobs );
 	lpArray_Free( w->stressQueue );
@@ -602,6 +599,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	{
 		b3DestroyBody( b->id );
 	}
+	lpFreeStressSystem( b );
 	b->alive = false;
 	b->id = b3_nullBodyId;
 	b->nextFree = w->freeBody;
@@ -1209,6 +1207,28 @@ bool lpWorld_Validate( const lpWorld* w )
 			if ( pi < 0 || pi >= w->pieces.count || w->pieces.data[pi].body != i )
 			{
 				return lpFail( "body %d lists piece %d that is not on it (%d)", i, pi, pi >= 0 && pi < w->pieces.count ? w->pieces.data[pi].body : -2 );
+			}
+		}
+
+		// A stress system belongs to a structure; while it solves, the system is the structure's current one
+		const lpStressSystem* s = b->system;
+		if ( s != NULL && b->kind != lp_kindStructure )
+		{
+			return lpFail( "body %d of kind %d has a stress system", i, b->kind, 0 );
+		}
+		if ( s != NULL && b->solving && s->built && s->topology == b->topology )
+		{
+			for ( int k = 0; k < s->nodes.count; ++k )
+			{
+				int pi = s->nodes.data[k];
+				if ( pi < 0 || pi >= w->pieces.count || w->pieces.data[pi].body != i || w->pieces.data[pi].solveSlot != k )
+				{
+					return lpFail( "body %d's stress system has node %d on piece %d, not its own", i, k, pi );
+				}
+			}
+			if ( s->incidentStart.count != s->nodes.count + 1 || s->vectors.count != 6 * s->nodes.count )
+			{
+				return lpFail( "body %d's stress system is sized wrong (%d nodes, %d vectors)", i, s->nodes.count, s->vectors.count );
 			}
 		}
 	}

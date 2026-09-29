@@ -313,11 +313,7 @@ static void lpReleaseLink( lpWorld* w, int index )
 			lpBody* b = w->bodies.data + p->body;
 			if ( b->alive && b->kind == lp_kindStructure )
 			{
-				// Its pull is gone: check the structure again with fresh loads. Queued, not marked dirty now, since a
-				// link can break in the middle of the step's splits.
-				b->solving = false;
-				b->creaking = false;
-				lpArray_Push( w->stressAgain, p->body );
+				lpRequestStressCheck( w, p->body, true ); // its pull is gone (a link can break during the splits)
 			}
 		}
 		else if ( B3_IS_NON_NULL( l->anchor[k] ) )
@@ -517,10 +513,7 @@ static void lpRecheckStructures( lpWorld* w, lpLink* l )
 		int bodyIndex = piece >= 0 ? w->pieces.data[piece].body : -1;
 		if ( bodyIndex >= 0 && w->bodies.data[bodyIndex].kind == lp_kindStructure )
 		{
-			lpBody* b = w->bodies.data + bodyIndex;
-			b->solving = false; // sample the new loads
-			b->creaking = false;
-			lpMarkDirty( w, bodyIndex );
+			lpRequestStressCheck( w, bodyIndex, false );
 			l->recheckTick = w->tick + 1;
 		}
 	}

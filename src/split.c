@@ -20,6 +20,10 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		lpDestroyBody( w, bodyIndex, false );
 		return 0;
 	}
+	if ( body->splitChecked && body->splitTopology == body->topology )
+	{
+		return 0; // its pieces and bonds are as they were when there was nothing to split off
+	}
 
 	// Flood fill over live bonds. Components are listed in the order of their first piece in the body list.
 	w->stamp += 1;
@@ -74,6 +78,8 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 
 	if ( componentCount <= 1 && ( body->kind != lp_kindStructure || componentCount == 0 || components[0].anchored ) )
 	{
+		body->splitChecked = true;
+		body->splitTopology = body->topology;
 		return 0;
 	}
 
@@ -182,6 +188,8 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 
 	if ( movedAny == 0 )
 	{
+		body->splitChecked = true; // a structure whose anchored components all stay
+		body->splitTopology = body->topology;
 		return 0;
 	}
 

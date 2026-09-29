@@ -271,6 +271,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		{
 			memmove( body->pieces.data + i, body->pieces.data + i + 1, sizeof( int ) * (size_t)( body->pieces.count - i - 1 ) );
 			body->pieces.count -= 1;
+			body->topology += 1; // (breaking its bonds did, unless it had none)
 			break;
 		}
 	}
@@ -843,9 +844,7 @@ void lpCollectHits( lpWorld* w )
 				if ( hit != NULL && hit->kind == lp_kindStructure && w->tick >= hit->hitCheckTick + 30 )
 				{
 					hit->hitCheckTick = w->tick;
-					hit->creaking = false;
-					hit->solving = false; // sample the new loads
-					lpMarkDirty( w, bi );
+					lpRequestStressCheck( w, bi, false );
 				}
 			}
 		}

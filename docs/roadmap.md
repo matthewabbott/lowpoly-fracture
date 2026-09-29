@@ -113,7 +113,7 @@ causal consistency: fidelity may vary with load, as long as the engine stays det
 Steps (each measured in [perf-log.md](perf-log.md)):
 0. The keep scene, settling at load, sweep bonding, the solver hash (done).
 1. Split the solver out of `stress.c`, cache each body's system while it solves, the slender check over incident
-   edges (behaviour-preserving: hashes identical).
+   edges (behaviour-preserving: hashes identical; done).
 2. Change tracking per piece, warm starts for fracture children, liveness (a structure hit every few steps is still
    judged).
 3. The reduced assembly and the Δ-form.

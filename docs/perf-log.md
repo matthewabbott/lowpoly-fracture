@@ -238,3 +238,23 @@ barrage's first shot lands before town's tower had finished its second-round sol
 
 Object creation pairs parts by a sweep along x instead of testing every pair, and bonds them in the old order: every
 rung's hash was unchanged with settling turned off.
+
+## 2026-09-28 stress at scale, step 1: the solver on its own, systems kept while solving
+
+Behaviour-preserving: every rung's simulation and solver hashes are unchanged (`bench.ps1 -StrictSolver`).
+- `solve.c` holds the system and its math; `stress.c` builds and judges.
+- A structure keeps its system on its body, so a step that continues a solve no longer rebuilds it (edges, stiffness,
+  blocks and their factors). It only reloads x through the pieces, keeping the round trip bit for bit.
+- The slender check walks each piece's incident edges instead of every edge of the structure (it was O(N·E)).
+- Utilizations and slender sections are computed in the parallel phase.
+- A split skips its flood fill when the body's topology has not changed since there was nothing to split off.
+
+| keep, one worker | step 0 | step 1 |
+|---|---|---|
+| a solving step at one iteration | about 3.2 ms | about 0.55 ms (0.4 ms of it the iteration) |
+| breach test, stress over 900 steps | 1744 ms | 300 ms |
+| cannon hole test, stress over 600 steps | 920 ms | 347 ms |
+| settle at load | 135 ms | 73 ms |
+
+Ladder, best of 3 (1 / 8 workers): keep 6.05 / 3.72 → 4.53 / 2.37 ms per step (stress 2.2 → 1.1 ms); barrage 12.66 /
+5.18 → 11.85 / 4.69 (stress at 8 workers 1.08 → 0.93); the rest within noise.
