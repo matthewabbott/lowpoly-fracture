@@ -8,7 +8,7 @@ Order (one at a time):
 1. Chunky fracture + debris tiers (done)
 2. Toppling and stress points (done)
 3. Breakable links and assemblies (done)
-4. Stress at scale (in progress)
+4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Destructible vehicles
 6. Profiling and hot paths
 7. Large-map physics zones
@@ -120,7 +120,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 4. Large structures take L2; clustering from exact results; drift tests against the fine solve (done: a local hit on
    the keep is decided in 12 steps instead of 41; a breach or cannon hole redistributes widely, dissolves most
    clusters and falls back to a fine solve, which the budget still starves).
-5. The ladder and audits under pressure.
+5. The ladder and audits under pressure (done: the budget shared by the structures that want it, provisional judgements
+   audited exactly when calm; a patch level with the far field pinned was tried and dropped, the oracle showed it
+   breaking joints it should not).
 6. If settling or audits dominate: a nested-iteration settle and a two-level preconditioner.
 
 ## 5. Destructible vehicles

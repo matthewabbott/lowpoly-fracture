@@ -665,6 +665,8 @@ void DrawUi()
 	ImGui::Text( "stress %.2f ms  %d solves (%d waiting)  %d iterations  unsettled %d  joints broke %d", app.last.stressMs,
 				 app.last.stressSolves, app.last.stressWaiting, app.last.stressIterations, app.last.unsettledStructures,
 				 app.last.stressBreaks );
+	ImGui::Text( "clustered pieces %d  provisional %d (audits queued %d)  meter dissolved %d", app.last.clusteredPieces,
+				 app.last.provisionalStructures, app.last.auditBacklog, app.last.stressDissolved );
 	float peak = 0.0f;
 	for ( int i = 0; i < lpWorld_GetLinkCapacity( app.world ); ++i )
 	{

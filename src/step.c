@@ -190,6 +190,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.stressJudged = 0;
 	w->stats.stressReduced = 0;
 	w->stats.stressDissolved = 0;
+	w->stats.stressAudits = 0;
 	w->stats.stressWaiting = 0;
 	w->stats.linkBreaks = 0;
 	w->stats.linkRebuilds = 0;
@@ -277,6 +278,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.ghostBodies = 0;
 	w->stats.scrapBodies = 0;
 	w->stats.clusteredPieces = 0;
+	w->stats.provisionalStructures = 0;
+	w->stats.auditBacklog = w->audits.count;
 	int pieceCount = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
@@ -290,6 +293,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		{
 			w->stats.structureBodies += 1;
 			w->stats.unsettledStructures += b->unsettled ? 1 : 0;
+			w->stats.provisionalStructures += b->provisional ? 1 : 0;
 			for ( int k = 0; k < b->pieces.count && b->clusters > 0; ++k )
 			{
 				w->stats.clusteredPieces += w->pieces.data[b->pieces.data[k]].cluster != 0 ? 1 : 0;

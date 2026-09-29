@@ -279,6 +279,7 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	w->freeBond = -1;
 	w->freeBody = -1;
 	w->freeLink = -1;
+	w->audit.body = -1;
 	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
 	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
 	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
@@ -343,6 +344,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->scratchLoads );
 	lpArray_Free( w->scratchClusters );
 	lpArray_Free( w->scratchSets );
+	lpArray_Free( w->audits );
 	lpArray_Free( w->stressAgain );
 	for ( int i = 0; i < w->jobCapacity; ++i )
 	{

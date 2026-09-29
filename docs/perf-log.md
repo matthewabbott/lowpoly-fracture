@@ -359,3 +359,32 @@ redistributes the front wall's weight into the corners: the meter reads it as no
 one round, and the fine solve that follows starts late. Under the ladder's constant bombardment the keep is never
 judged either way, and the corrections' extra fine passes cost 0.16 ms per step (stress 0.99 → 1.15 ms): step 5's
 ladder and audits are for that regime, and its budget allocation for the fine solves the budget starves.
+
+## 2026-09-28 stress at scale, step 5: the budget shared, provisional judgements audited
+
+- **The budget is shared by the structures that want to solve**: each gets the step's `maxStressWork` divided among
+  them, but at least `maxStressStructureWork`. One solving alone may use all of it: the per-structure cap bounds a
+  step's time when many solve in parallel, and is moot then. This is the lever: the keep's fine solves had been
+  starved at one iteration per step.
+- **Judgements on a reduced system are provisional.** They queue for an audit, an exact solve once things are calm
+  (30 steps at most half the budget, nothing waiting) or once they have waited 300 steps. It is judged as usual and
+  forms the clusters again.
+- **The meter's last round:** if it still objects, every cluster goes and the solve is exact. A third reduced solve
+  accepted unmetered had been off by 1.28, with 158 joints flipped.
+- **Tried and dropped:** the plan's L1, solving only the patch around a change with the rest of the structure held
+  where it was. Under fire the oracle found it flipping 70 to 240 joints per judgement: the held boundary carries what
+  should have spread, false strain breaks joints, and the keep crumbled from ten shots (180 m³ against 45 without).
+  The budget sharing made it unnecessary. L0 (no solve under extreme pressure) was not needed either.
+
+The keep, one worker:
+
+| case | exact only (step 0) | clusters (step 4) | now |
+|---|---|---|---|
+| local hit: decided | 41 | 12 | 2 (audited exactly at calm) |
+| breach: decided / settled | 153 / 592 | 207 / 378 | 30 / 70, the same 12 joints |
+| cannon hole: decided / settled | 99 / never in 600 | 26 / 306 | 7 / 67 |
+| a shot every 12 ticks for 120 ticks: judged under fire | 0 | 0 | 10 |
+
+Judged corrections against exact solves: breach 0.008 worst joint error, no flips; cannon hole 0.28, 1 of 58k
+joints flipped; small structures all clustered 0.08, none flipped. A new ladder rung, 'siege', is the keep with a
+blast every 4 ticks.

@@ -45,6 +45,14 @@ static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } }
 #define LP_METER_DISSOLVE 0.5f	   // a cluster whose joints could be carried to this utilization dissolves (above the glue)
 #define LP_METER_CHANGE 0.25f	   // or whose load changed by this share of what its most loaded member carries
 
+// Audits (lpStressAudits): a provisional structure is solved exactly once the stress budget has been at most half used,
+// with nothing waiting, for LP_CALM_STEPS steps, or once it has waited LP_AUDIT_AGE steps whatever the load. An audit
+// takes at most LP_AUDIT_SHARE of the step's budget, and gives way if the structure changes while it runs (it stays
+// provisional, first in line).
+#define LP_CALM_STEPS 30
+#define LP_AUDIT_AGE 300
+#define LP_AUDIT_SHARE 0.5f
+
 // What rests on a structure: dynamic bodies pressing on its pieces, from the last physics step's contact impulses
 // (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
 // stressLoad. Sampled when a solve starts and kept, so the solve can continue across steps while the contacts jitter.
@@ -905,9 +913,10 @@ static int lpStressMeter( lpWorld* w, lpStressJob* job, const lpVec6* x )
 		dissolved += worst[g] > 1.0f ? 1 : 0;
 		job->meterWorst = b3MaxFloat( job->meterWorst, worst[g] );
 	}
-	if ( 2 * dissolved > clusters )
+	if ( 2 * dissolved > clusters || ( dissolved > 0 && body->meterRounds + 1 >= LP_METER_ROUNDS ) )
 	{
-		// Most of it is carrying the change: it is not local, and the clusters all go at once rather than a round each
+		// Most of it is carrying the change (it is not local), or this was the last round: the clusters all go, and it is
+		// solved exactly
 		for ( int g = 0; g < part->groupCount; ++g )
 		{
 			worst[g] = part->members.data[g] > 1 ? 2.0f : worst[g];
@@ -1037,7 +1046,7 @@ static void lpRunStressJob( int index, void* context )
 	{
 		lpStressOracle( w, job, x );
 	}
-	if ( red != NULL && job->solve.converged && w->bodies.data[job->body].meterRounds < LP_METER_ROUNDS )
+	if ( red != NULL && job->solve.converged )
 	{
 		job->dissolved = lpStressMeter( w, job, x );
 		job->solve.converged = job->dissolved == 0; // otherwise solved again, from here, with them resolved finely
@@ -1206,9 +1215,10 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 		}
 		if ( w->def.debugLog )
 		{
-			printf( "[lpf] tick %llu stress: body %d, reduced solve against the exact one: worst joint utilization off by %.4f, "
-					"the meter read %.4f\n",
-					(unsigned long long)w->tick, job->body, (double)job->oracleWorst, (double)job->meterWorst );
+			printf( "[lpf] tick %llu stress: body %d, %s solve against the exact one: worst joint utilization off by %.4f, "
+					"%d flipped, the meter read %.4f\n",
+					(unsigned long long)w->tick, job->body, "reduced", (double)job->oracleWorst, job->oracleFlips,
+					(double)job->meterWorst );
 		}
 	}
 	if ( job->dissolved > 0 )
@@ -1241,6 +1251,24 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	w->stats.stressJudged += 1;
 	w->stats.stressReduced += job->clustered ? 1 : 0;
 	body->meterRounds = 0;
+
+	// Judged on a reduced system: provisional until an exact solve (an audit) confirms it
+	if ( job->clustered )
+	{
+		if ( body->provisional == false )
+		{
+			body->provisional = true;
+			body->provisionalTick = w->tick + 1;
+			lpBodyRef ref = { job->body, body->generation };
+			lpArray_Push( w->audits, ref );
+		}
+	}
+	else
+	{
+		w->stats.stressAudits += body->auditing ? 1 : 0;
+		body->provisional = false; // a queued entry is skipped when it comes up
+		body->auditing = false;
+	}
 
 	// Accepted: the pieces changed since the last judgement were its seeds
 	int seeds = 0;
@@ -1359,6 +1387,16 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 	int reserved = 0;
 	w->stressJobCount = 0;
 
+	// The budget is shared by the structures that want to solve: one alone may use all of it (the per-structure cap
+	// bounds a step's time when many solve in parallel, and is moot then)
+	int wanting = 0;
+	for ( int qi = 0; qi < w->stressQueue.count; ++qi )
+	{
+		const lpBody* body = w->bodies.data + w->stressQueue.data[qi];
+		wanting += body->solving || body->solveTopology != body->topology || body->reloadLoads || body->auditing ? 1 : 0;
+	}
+	int share = b3MaxInt( w->def.maxStressStructureWork, w->def.maxStressWork / b3MaxInt( wanting, 1 ) );
+
 	// Phase 1, in queue order: what needs no solve, and what the solves may spend
 	for ( int qi = 0; qi < w->stressQueue.count; ++qi )
 	{
@@ -1382,7 +1420,19 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			continue;
 		}
 
-		if ( body->clusters > 0 )
+		// An audit gives way to a change: the change is solved at the usual fidelity, and the audit waits, first in line
+		if ( body->auditing && body->solving && ( body->reloadLoads || body->solveTopology != body->topology ) )
+		{
+			body->auditing = false;
+			w->audit.body = -1;
+			lpBodyRef ref = { bodyIndex, body->generation };
+			lpArray_Push( w->audits, ref );
+			memmove( w->audits.data + 1, w->audits.data, sizeof( lpBodyRef ) * (size_t)( w->audits.count - 1 ) );
+			w->audits.data[0] = ref;
+		}
+
+		// A clustered structure's changes are seeded, unless a solve is still running on them
+		if ( body->clusters > 0 && ( body->solving == false || body->reloadLoads || body->solveTopology != body->topology ) )
 		{
 			lpStressSeed( w, body );
 		}
@@ -1400,8 +1450,10 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		// A solve in progress continues if the structure and its loads have not changed since the last step. It still has
 		// its system: no build, and it is charged only its iterations (a piece that left without a bond to break
 		// changes the counts, not the topology).
-		// Parts moving as rigid clusters: it is solved on its reduced system, for a correction to its last solution
-		bool clustered = groups < nodes && reducedEdges > 0;
+		// The fidelity it is solved at: exact (settling, auditing, a small structure, no clusters left), or on its reduced
+		// system for a correction to its last solution (parts of it moving as rigid clusters), provisional until audited
+		bool exact = settle || body->auditing || nodes <= w->def.stressLargeNodes;
+		bool clustered = exact == false && groups < nodes && reducedEdges > 0;
 		const lpStressSystem* system = body->system;
 		const lpStressReduced* red = body->reduced;
 		bool continuing = body->solving && body->reloadLoads == false && body->solveTopology == body->topology &&
@@ -1419,7 +1471,8 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		// Its share of the budget, reserved whole before anything is built. The first structure of a step always gets an
 		// iteration, so even one bigger than the budget makes progress. One that does not fit waits, having cost
 		// nothing, and goes first next step. Settling has no budget.
-		int room = ( b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) - overhead ) / solvedEdges;
+		int mine = body->auditing ? b3MinInt( share, (int)( LP_AUDIT_SHARE * (float)w->def.maxStressWork ) ) : share;
+		int room = ( b3MinInt( mine, w->def.maxStressWork - reserved ) - overhead ) / solvedEdges;
 		int budget = b3MinInt( room, w->def.maxStressIterations );
 		budget = budget < 1 && reserved == 0 ? 1 : budget;
 		budget = settle ? w->def.maxSettleIterations : budget;
@@ -1436,7 +1489,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			// Asked again with the structure unchanged since it settled: only something landing on it or leaving it can
 			// matter. If what rests on it barely changed, it stays settled without a solve (joints a blast weakened are
 			// judged again from the last forces).
-			bool loadOnly = unchanged && body->strainedLastCheck == false;
+			bool loadOnly = unchanged && body->strainedLastCheck == false && body->auditing == false;
 			float change = lpSampleLoads( w, bodyIndex );
 			body->reloadLoads = false;
 			if ( loadOnly && change < 0.02f )
@@ -1491,6 +1544,51 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 	w->stats.stressMs += b3GetMilliseconds( ticks );
 }
 
+// Once the step's stress budget has been at most half used, with nothing waiting, for LP_CALM_STEPS steps, or once the
+// oldest provisional structure has waited LP_AUDIT_AGE steps, the oldest is solved exactly (an audit, one at a time),
+// continuing across steps on at most LP_AUDIT_SHARE of the budget. It is judged as usual, so a collapse a provisional
+// judgement missed comes a beat late; its clusters are formed again from it.
+static void lpStressAudits( lpWorld* w )
+{
+	bool calm = w->stats.stressWaiting == 0 && w->stressWork <= w->def.maxStressWork / 2;
+	w->calmSteps = calm ? w->calmSteps + 1 : 0;
+	if ( w->audit.body >= 0 )
+	{
+		const lpBody* b = w->bodies.data + w->audit.body;
+		if ( b->alive && b->generation == w->audit.generation && b->auditing )
+		{
+			return;
+		}
+		w->audit.body = -1;
+	}
+	while ( w->audits.count > 0 )
+	{
+		lpBodyRef ref = w->audits.data[0];
+		lpBody* b = w->bodies.data + ref.body;
+		if ( b->alive == false || b->generation != ref.generation || b->provisional == false )
+		{
+			memmove( w->audits.data, w->audits.data + 1, sizeof( lpBodyRef ) * (size_t)( w->audits.count - 1 ) );
+			w->audits.count -= 1;
+			continue; // judged exactly since, or gone
+		}
+		if ( w->calmSteps < LP_CALM_STEPS && w->tick + 1 < b->provisionalTick + LP_AUDIT_AGE )
+		{
+			return;
+		}
+		memmove( w->audits.data, w->audits.data + 1, sizeof( lpBodyRef ) * (size_t)( w->audits.count - 1 ) );
+		w->audits.count -= 1;
+		b->auditing = true;
+		w->audit = ref;
+		lpMarkDirty( w, ref.body );
+		if ( w->def.debugLog )
+		{
+			printf( "[lpf] tick %llu stress: body %d audited (provisional since tick %llu, %d calm steps)\n", (unsigned long long)w->tick,
+					ref.body, (unsigned long long)( b->provisionalTick - 1 ), w->calmSteps );
+		}
+		return;
+	}
+}
+
 int lpCheckStructures( lpWorld* w, bool settle )
 {
 	int iterations = 0;
@@ -1507,6 +1605,10 @@ int lpCheckStructures( lpWorld* w, bool settle )
 		lpMarkDirty( w, w->stressAgain.data[i] ); // still solving or straining: check again next step
 	}
 	w->stressAgain.count = 0;
+	if ( settle == false )
+	{
+		lpStressAudits( w );
+	}
 	return iterations;
 }
 
@@ -1536,6 +1638,20 @@ void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
 	b->reloadLoads = true; // a solve in progress restarts with them; one that had settled solves again if they changed
+	if ( b->provisional && b->auditing == false )
+	{
+		// Something is happening to it: its audit comes first
+		for ( int i = 1; i < w->audits.count; ++i )
+		{
+			if ( w->audits.data[i].body == bodyIndex && w->audits.data[i].generation == b->generation )
+			{
+				lpBodyRef ref = w->audits.data[i];
+				memmove( w->audits.data + 1, w->audits.data, sizeof( lpBodyRef ) * (size_t)i );
+				w->audits.data[0] = ref;
+				break;
+			}
+		}
+	}
 	if ( duringSplits )
 	{
 		lpArray_Push( w->stressAgain, bodyIndex );

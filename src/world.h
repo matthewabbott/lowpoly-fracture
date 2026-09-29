@@ -247,6 +247,10 @@ typedef struct lpBody
 	int meterRounds;		  // structure: clusters dissolved by the residual meter since its last judgement
 	int solveNodes, solveEdges;
 	bool solveClustered; // the last solve ran on the reduced system
+	bool provisional;	 // structure: judged on a reduced system; an exact audit is queued (w->audits)
+	bool auditing;		 // structure: its audit is running
+	uint64_t provisionalTick; // tick + 1 it became provisional
+
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
 	lpDetonatorDef detonator;
@@ -389,6 +393,9 @@ struct lpWorld
 	LP_ARRAY( int ) scratchClusters;
 	LP_ARRAY( lpClusterSet ) scratchSets;
 	int stressWork; // bond-iterations used this step, over all structures
+	LP_ARRAY( lpBodyRef ) audits; // provisional structures in the order they became so (stress.c)
+	lpBodyRef audit;			  // the one being audited (body -1: none)
+	int calmSteps;				  // consecutive steps with the stress budget at most half used and nothing waiting
 	// Tests: every solve on a reduced system is checked against an exact fine solve of the same change, and the worst
 	// joint utilization difference is kept (lpStressOracle)
 	bool stressOracle;

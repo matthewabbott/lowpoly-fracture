@@ -106,10 +106,10 @@ tiers instead of popping them.
 - Every structure updated in a step is checked together, after the splits (`lpCheckStructures`), in three phases:
   1. in queue order, the checks that need no solve finish (a creaking structure only adds strain; joints a blast
      weakened are judged again from the forces of the last solve, kept on the bonds; unchanged loads end the check),
-     and each remaining structure reserves its share of the budget before anything is built: at most
-     `maxStressStructureWork` bond-iterations for itself and `maxStressWork` for all (a step continuing on its system
-     is charged its iterations only, others two more for the build). One that does not fit waits, having cost nothing,
-     and goes first next step;
+     and each remaining structure reserves its share of the budget before anything is built: the step's
+     `maxStressWork` shared by the structures wanting to solve, but at least `maxStressStructureWork` each (one
+     solving alone may use all of it; a step continuing on its system is charged its iterations only, others two fine
+     passes more for the build). One that does not fit waits, having cost nothing, and goes first next step;
   2. the reserved structures build (unless continuing on their system) and solve in parallel, each writing only its
      own pieces, bonds and system; a converged one also computes every joint's utilization, the force and moment it
      carries (kept on the bond), and its slender pieces' worst sections;
@@ -157,6 +157,12 @@ tiers instead of popping them.
     carry a member's joints past 0.5, or if the cluster's load changed by more than a quarter of what its most loaded
     member carries (then it is carrying a redistribution stiffly and biasing the fine joints around it). If most
     clusters must go, the change is not local and they all go at once.
+  - *Rounds:* at most two; if the meter still objects on the last one, every cluster goes and it is solved exactly.
+  - *Provisional and audits:* a judgement on a reduced system is provisional. Provisional structures queue for an
+    audit (`lpWorld.audits`), an exact solve on at most half the budget, one at a time, once the budget has been at
+    most half used with nothing waiting for 30 steps, or once the oldest has waited 300 steps. An audit gives way to
+    a change (it stays first in line), is judged as usual (a collapse a provisional judgement missed comes a beat
+    late), and forms the clusters again. A hit on a provisional structure brings its audit to the front.
   - *Invariants:* any joint loaded past the glue share has both pieces unclustered (`lpWorld_Validate`).
   - *The oracle:* tests set `lpWorld.stressOracle` to check every judged correction against an exact fine solve of
     the same change, with the worst joint error and the number of strain decisions that differ.

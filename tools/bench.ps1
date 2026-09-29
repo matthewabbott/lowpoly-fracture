@@ -6,11 +6,11 @@
 #   pwsh tools/bench.ps1 -StrictSolver   # also fail if a stress solver hash changed (for refactors of the solver)
 # A rung is a scene under the standard bombardment, or 'barrage': town with a blast every 3 ticks, many structures
 # breaking and re-solving at once (the stress solve's parallel case). 'keep' is one 2000-piece structure under fire (the
-# stress solve at scale).
+# stress solve at scale), and 'siege' the keep with a blast every 4 ticks.
 # After a behaviour change, a rung's timings can move because a different amount comes down (destruction is chaotic):
 # compare its pieces and contacts, or try other --period values with lpf_bench, before calling it a regression.
 param(
-    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'yard', 'keep', 'barrage'),
+    [string[]]$Scenes = @('walls', 'town', 'pile', 'lumber', 'tower', 'ruins', 'yard', 'keep', 'barrage', 'siege'),
     [string]$Workers = '1,8',
     [int]$Ticks = 600,
     [int]$Period = 12,
@@ -27,7 +27,7 @@ $exe = "build/$Preset/bin/lpf_bench.exe"
 $out = 'build/bench'
 New-Item -ItemType Directory -Force $out | Out-Null
 
-$rungs = @{ barrage = @{ scene = 'town'; period = 3 } }
+$rungs = @{ barrage = @{ scene = 'town'; period = 3 }; siege = @{ scene = 'keep'; period = 4 } }
 $current = [ordered]@{}
 foreach ($scene in $Scenes) {
     $name = $scene

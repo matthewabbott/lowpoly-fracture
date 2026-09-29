@@ -366,6 +366,9 @@ typedef struct lpStats
 	int stressReduced;		 // of those, the ones solved on a reduced system (rigid clusters)
 	int stressDissolved;	 // clusters dissolved because holding them rigid leaked too much load (the residual meter)
 	int clusteredPieces;	 // pieces in rigid clusters, over all structures
+	int stressAudits;		 // exact solves this step of structures judged provisionally before
+	int provisionalStructures; // judged on a reduced system (rigid clusters), waiting for an exact audit
+	int auditBacklog;		   // of those, queued
 	int stressWaiting;		 // structures that found this step's stress budget spent; they go first next step
 	int unsettledStructures; // structures still solving or creaking toward a break
 	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)

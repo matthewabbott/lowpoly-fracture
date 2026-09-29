@@ -484,6 +484,8 @@ typedef struct KeepRun
 	float oracleWorst;
 	float oracleMeter;
 	int oracleFlips, oracleJoints;
+	int audits;		 // exact audits judged
+	int provisional; // structures provisional at the end
 } KeepRun;
 
 // Damage the keep, then watch what the stress solve makes of it: knock out the pieces in [lo, hi] (keep frame), or, with
@@ -518,6 +520,8 @@ static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpa
 		r.breaks += st.stressBreaks;
 		r.stressMs += st.stressMs;
 		r.iterations += st.stressIterations;
+		r.audits += st.stressAudits;
+		r.provisional = st.provisionalStructures;
 		const lpBody* b = s.world->bodies.data + keep;
 		if ( r.decided < 0 && st.stressSolves > 0 && b->solving == false )
 		{
@@ -1002,6 +1006,79 @@ static int TestDriftSmallStructures( void )
 	return 0;
 }
 
+typedef struct FireRun
+{
+	int judged, audits; // over the fire and the calm after
+	int judgedUnderFire;
+	int provisionalAfterFire, provisionalAtEnd, backlogAtEnd;
+	float volume; // of the keep at the end
+	uint64_t hash;
+} FireRun;
+
+// The keep under the bench's bombardment (a shot every 12 ticks) for 120 ticks, then 1080 calm ones
+static FireRun KeepUnderFire( lpWorldDef def )
+{
+	FireRun r = { 0 };
+	Sim s = CreateSimDef( def, lp_sceneKeep );
+	int keep = BiggestStructure( s.world );
+	for ( int tick = 0; tick < 1200; ++tick )
+	{
+		if ( tick < 120 )
+		{
+			lpSceneBombard( s.world, lp_sceneKeep, tick, 12 );
+		}
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		lpStats st = lpWorld_GetStats( s.world );
+		r.judged += st.stressJudged;
+		r.judgedUnderFire += tick < 120 ? st.stressJudged : 0;
+		r.audits += st.stressAudits;
+		if ( tick == 119 )
+		{
+			r.provisionalAfterFire = st.provisionalStructures;
+		}
+		r.provisionalAtEnd = st.provisionalStructures;
+		r.backlogAtEnd = st.auditBacklog;
+	}
+	r.volume = BodyVolume( s.world, keep );
+	r.hash = lpWorld_Hash( s.world );
+	DestroySim( &s );
+	return r;
+}
+
+// Under sustained fire the keep used to go unjudged: each shot restarted a solve too big to finish between shots. Now
+// it is judged, on its reduced system with the whole step's budget when it solves alone, and the same at 1 and 4
+// workers. (With a quarter of the budget it is judged less often, and what the judgements break comes down later.)
+static int TestKeepUnderFire( void )
+{
+	lpWorldDef def = lpDefaultWorldDef();
+	FireRun full = KeepUnderFire( def );
+	def.maxStressWork /= 4;
+	def.maxStressStructureWork /= 4;
+	FireRun pressed = KeepUnderFire( def );
+	printf( "  full budget: %d judged (%d under fire), %d audits; provisional %d after the fire, %d at the end; keep %.1f m^3\n",
+			full.judged, full.judgedUnderFire, full.audits, full.provisionalAfterFire, full.provisionalAtEnd, (double)full.volume );
+	printf( "  a quarter:   %d judged (%d under fire), %d audits; provisional %d after the fire, %d at the end; keep %.1f m^3\n",
+			pressed.judged, pressed.judgedUnderFire, pressed.audits, pressed.provisionalAfterFire, pressed.provisionalAtEnd,
+			(double)pressed.volume );
+	ENSURE( full.judgedUnderFire >= 5 && pressed.judgedUnderFire > 0 );
+
+	def.workerCount = 4;
+	FireRun parallel = KeepUnderFire( def );
+	ENSURE( parallel.hash == pressed.hash );
+	return 0;
+}
+
+// A provisional judgement is audited once things are calm: a local hit is judged on the keep's reduced system, and
+// half a second after it settles an exact solve confirms it and forms the clusters again
+static int TestKeepAudit( void )
+{
+	KeepRun r = KeepDamageDef( lpDefaultWorldDef(), lp_localLo, lp_localHi, NULL, 300, NULL );
+	printf( "  local hit: decided after %d steps, %d audits, provisional at the end %d\n", r.decided, r.audits, r.provisional );
+	ENSURE( r.decided > 0 && r.decided < 10 );
+	ENSURE( r.audits == 1 && r.provisional == 0 );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestSolveSystem );
@@ -1021,5 +1098,7 @@ int StressTest( void )
 	RUN_TEST( TestKeepDeterminism );
 	RUN_TEST( TestKeepLocalHit );
 	RUN_TEST( TestDriftSmallStructures );
+	RUN_TEST( TestKeepUnderFire );
+	RUN_TEST( TestKeepAudit );
 	return 0;
 }
