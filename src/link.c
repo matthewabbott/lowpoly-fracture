@@ -456,7 +456,7 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 }
 
 // A chip left holding a much heavier body by a link would jitter on the joint (or blow it up): it tears off instead
-static bool lpTearsOff( b3BodyId a, b3BodyId b )
+static bool lpTearsOff( b3BodyId a, b3BodyId b, float ratio )
 {
 	if ( b3Body_GetType( a ) != b3_dynamicBody || b3Body_GetType( b ) != b3_dynamicBody )
 	{
@@ -464,7 +464,7 @@ static bool lpTearsOff( b3BodyId a, b3BodyId b )
 	}
 	float ma = b3Body_GetMass( a );
 	float mb = b3Body_GetMass( b );
-	return b3MinFloat( ma, mb ) < LP_LINK_TEAR_RATIO * b3MaxFloat( ma, mb );
+	return b3MinFloat( ma, mb ) < ( ratio > 0.0f ? ratio : LP_LINK_TEAR_RATIO ) * b3MaxFloat( ma, mb );
 }
 
 void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
@@ -528,6 +528,14 @@ static float lpMotorFeed( const lpWorld* w, const lpLink* l )
 	return fed;
 }
 
+float lpMotorCap( const lpWorld* w, const lpLink* l )
+{
+	const lpMotorDef* m = &l->def.motor;
+	float fed = lpMotorFeed( w, l );
+	float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
+	return m->maxTorque * health * fed + m->holdTorque * ( 1.0f - fed );
+}
+
 // The servos: speed toward the target in proportion to how far off it is, torque up to the cap. Box3D's setters are
 // called only when a value changed (and always after a rebuild); a changed target wakes the joint's bodies.
 void lpDriveMotors( lpWorld* w )
@@ -541,12 +549,16 @@ void lpDriveMotors( lpWorld* w )
 		}
 		const lpMotorDef* m = &l->def.motor;
 		float fed = lpMotorFeed( w, l );
-		float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
-		float cap = m->maxTorque * health * fed + m->holdTorque * ( 1.0f - fed );
+		float cap = lpMotorCap( w, l );
 		if ( l->def.type == lp_linkHinge )
 		{
 			float angle = b3RevoluteJoint_GetAngle( l->joint );
-			float speed = fed > 0.0f ? b3ClampFloat( m->gain * ( l->target - angle ), -m->maxSpeed, m->maxSpeed ) : 0.0f;
+			float speed = m->gain * ( l->target - angle );
+			if ( l->feed != 0.0f )
+			{
+				speed += l->feed; // its rig's motion this step: servos with different gains or clamps still move together
+			}
+			speed = fed > 0.0f ? b3ClampFloat( speed, -m->maxSpeed, m->maxSpeed ) : 0.0f;
 			if ( l->motorApplied == false || speed != l->appliedSpeed )
 			{
 				b3RevoluteJoint_SetMotorSpeed( l->joint, speed );
@@ -646,7 +658,7 @@ void lpSyncLinks( lpWorld* w )
 		{
 			b3DestroyJoint( l->joint, false );
 		}
-		if ( lpTearsOff( bodies[0], bodies[1] ) )
+		if ( lpTearsOff( bodies[0], bodies[1], l->def.tearRatio ) )
 		{
 			lpBreakLink( w, i, true );
 			continue;
@@ -906,9 +918,14 @@ uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
 			h = lpHashBytes( h, &l->target, sizeof( float ) );
 			h = lpHashBytes( h, &l->targetRotation, sizeof( b3Quat ) );
 			h = lpHashBytes( h, &l->motorCap, sizeof( float ) );
+			if ( l->feed != 0.0f ) // only rigs set it: old hashes stay valid
+			{
+				h = lpHashBytes( h, &l->feed, sizeof( float ) );
+			}
 		}
 	}
-	return w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
+	h = w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
+	return w->rigs.count > 0 ? lpHashRigs( w, h ) : h;
 }
 
 static bool lpLinkFail( const char* message, int a, int b )

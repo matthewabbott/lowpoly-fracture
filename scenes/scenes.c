@@ -1200,6 +1200,118 @@ int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
 	return tower;
 }
 
+// ---- the hexapod: a walking mech ----
+
+// A leg in its own plane: u outward from the hip, v up. The hip's yaw hinge is at the torso's side, the femur's pitch
+// hinge 0.45 m out, the knee 1.2 m further up and out, the foot 1.6 m below and a little out from the knee.
+#define LP_HEX_FEMUR_U 0.45f
+#define LP_HEX_KNEE_U 1.4892f
+#define LP_HEX_KNEE_V 0.6f
+#define LP_HEX_FOOT_U 1.8392f
+#define LP_HEX_FOOT_V -0.95f
+#define LP_HEX_SOLE 0.08f // the rubber foot's half height below the tibia's tip
+#define LP_HEX_RIDE 1.09f // the torso's centre above the ground, standing as built (the sole reaches 0.14 m below the tibia)
+
+// One leg segment: an object of a box along its local x (a sheet-metal part, and a rubber foot at the far end when
+// foot is set), centred at `center`, turned by q
+static int lpHexSegment( lpWorld* world, b3Vec3 center, b3Quat q, b3Vec3 half, uint32_t color, bool foot, b3Quat legQ )
+{
+	lpBegin();
+	lpPartDef* part = lpBox( b3Vec3_zero, half, b3Quat_identity, lp_sheetMetal, color, false );
+	if ( part != NULL )
+	{
+		part->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	}
+	if ( foot )
+	{
+		// The sole sits square to the leg's plane (not tilted with the tibia), its top at the tibia's tip
+		b3Quat local = b3InvMulQuat( q, legQ );
+		b3Vec3 tip = { half.x, 0.0f, 0.0f };
+		lpBox( b3Add( tip, b3RotateVector( local, (b3Vec3){ 0.0f, -LP_HEX_SOLE + 0.02f, 0.0f } ) ), (b3Vec3){ 0.1f, LP_HEX_SOLE, 0.1f }, local,
+			   lp_rubber, 0x2A2A2Au, false );
+	}
+	lpObjectDef def = lpDynamicDef();
+	return lpCommitDef( world, center, q, def );
+}
+
+int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style )
+{
+	static const uint32_t paints[4] = { 0x8A8F4Bu, 0x4F6E8Cu, 0xB5652Eu, 0x5D5F63u };
+	uint32_t paint = paints[( style % 4 + 4 ) % 4];
+	const uint32_t steel = 0x55595Eu, dark = 0x3A3D42u;
+	const b3Vec3 up = { 0.0f, 1.0f, 0.0f };
+	b3Quat q = lpYaw( yaw );
+	b3Vec3 origin = { base.x, base.y + LP_HEX_RIDE, base.z };
+
+	// The torso: a frame (the belly skid under it), an armored deck, a reactor, a hydraulic reservoir and a computer
+	lpBegin();
+	lpBox( (b3Vec3){ 0.0f, 0.0f, 0.0f }, (b3Vec3){ 0.95f, 0.08f, 1.35f }, b3Quat_identity, lp_sheetMetal, steel, false );
+	lpBox( (b3Vec3){ 0.0f, 0.33f, -0.75f }, (b3Vec3){ 0.35f, 0.25f, 0.35f }, b3Quat_identity, lp_sheetMetal, dark, false );
+	lpBox( (b3Vec3){ 0.45f, 0.28f, 0.35f }, (b3Vec3){ 0.3f, 0.2f, 0.25f }, b3Quat_identity, lp_sheetMetal, 0x7A5C2Eu, false );
+	lpBox( (b3Vec3){ -0.45f, 0.23f, 0.45f }, (b3Vec3){ 0.2f, 0.15f, 0.2f }, b3Quat_identity, lp_sheetMetal, 0x2E4A3Au, false );
+	lpBox( (b3Vec3){ 0.0f, 0.61f, 0.0f }, (b3Vec3){ 0.9f, 0.03f, 1.2f }, b3Quat_identity, lp_sheetMetal, paint, false );
+	int torso = lpCommitDef( world, origin, q, lpDynamicDef() );
+
+	// Legs in order around the body (right front, middle, rear, then left rear, middle, front): each one's neighbours
+	// are the ones next to it in this list
+	lpLimbDef limbs[6];
+	for ( int leg = 0; leg < 6; ++leg )
+	{
+		float side = leg < 3 ? 1.0f : -1.0f;
+		int row = leg < 3 ? leg : 5 - leg; // 0 front, 1 middle, 2 rear
+		float splay = row == 0 ? 0.61f : ( row == 1 ? 0.0f : -0.61f ); // 35 degrees toward the front or the rear
+		b3CosSin cs = b3ComputeCosSin( splay );
+		b3Vec3 d = b3RotateVector( q, (b3Vec3){ side * cs.cosine, 0.0f, cs.sine } ); // outward
+		b3Vec3 t = b3Cross( d, up );												   // the pitch hinges' axis
+		b3Matrix3 m = { d, up, t };
+		b3Quat legQ = b3MakeQuatFromMatrix( &m );
+		b3Vec3 hip = b3Add( origin, b3RotateVector( q, (b3Vec3){ 0.95f * side, 0.0f, row == 0 ? 1.1f : ( row == 1 ? 0.0f : -1.1f ) } ) );
+		b3Vec3 femurRoot = b3MulAdd( hip, LP_HEX_FEMUR_U, d );
+		b3Vec3 knee = b3Add( b3MulAdd( hip, LP_HEX_KNEE_U, d ), b3MulSV( LP_HEX_KNEE_V, up ) );
+		b3Vec3 foot = b3Add( b3MulAdd( hip, LP_HEX_FOOT_U, d ), b3MulSV( LP_HEX_FOOT_V, up ) );
+
+		// The hip block, the femur rising 30 degrees, the tibia down to the foot
+		b3Quat femurTilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, 0.5236f );
+		b3Vec3 shin = { LP_HEX_FOOT_U - LP_HEX_KNEE_U, LP_HEX_FOOT_V - LP_HEX_KNEE_V, 0.0f };
+		float shinLength = b3Length( shin );
+		b3Quat tibiaTilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 0.0f, 1.0f }, b3Atan2( shin.y, shin.x ) );
+		int block = lpHexSegment( world, b3Lerp( hip, femurRoot, 0.5f ), legQ, (b3Vec3){ 0.22f, 0.22f, 0.22f }, steel, false, legQ );
+		int femur = lpHexSegment( world, b3Lerp( femurRoot, knee, 0.5f ), b3MulQuat( legQ, femurTilt ), (b3Vec3){ 0.6f, 0.13f, 0.13f },
+								  paint, false, legQ );
+		int tibia = lpHexSegment( world, b3Lerp( knee, foot, 0.5f ), b3MulQuat( legQ, tibiaTilt ),
+								  (b3Vec3){ 0.5f * shinLength, 0.11f, 0.12f }, paint, true, legQ );
+
+		// Motorised hinges: the hip turns the leg about the vertical, the femur and the knee lift it
+		int bodies[4] = { torso, block, femur, tibia };
+		b3Vec3 anchors[3] = { hip, femurRoot, knee };
+		b3Vec3 axes[3] = { b3RotateVector( q, up ), t, t };
+		float limits[3] = { 0.6f, 0.9f, 1.2f };
+		float caps[3] = { 10000.0f, 30000.0f, 30000.0f }; // a tripod stance loads the femur and knee about 15 kN*m
+		for ( int j = 0; j < 3; ++j )
+		{
+			lpLinkDef hinge = lpLinkBetween( lp_linkHinge, bodies[j], bodies[j + 1], anchors[j], anchors[j] );
+			hinge.axis = axes[j];
+			hinge.lowerAngle = -limits[j];
+			hinge.upperAngle = limits[j];
+			hinge.maxForce = 60000.0f;
+			hinge.maxTorque = 60000.0f;
+			hinge.strength = 20000.0f;
+			hinge.motor = (lpMotorDef){ caps[j], 4.0f, 4.0f, 0, 0.0f }; // gain 8 sways at 6 Hz on 4 substeps
+			hinge.userId = (uint32_t)( lp_linkHexapod + 16 * leg + j );
+			hinge.tearRatio = 0.1f; // a stub of a leg segment left on a joint tears off
+			limbs[leg].links[j] = lpCreateLink( world, &hinge );
+		}
+		limbs[leg].linkCount = 3;
+		limbs[leg].foot = b3ToPos( b3MulAdd( foot, -2.0f * LP_HEX_SOLE + 0.02f, up ) ); // the sole's bottom
+	}
+	lpRigDef def = lpDefaultRigDef();
+	def.body = torso;
+	def.forward = b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } );
+	def.limbs = limbs;
+	def.limbCount = 6;
+	return lpCreateRig( world, &def );
+}
+
 // The crane's links by user id (-1 if gone)
 static int lpFindLink( const lpWorld* world, uint32_t userId )
 {

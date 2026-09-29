@@ -10,6 +10,7 @@ add_library(lpf STATIC
 	link.c
 	poly.c
 	poly.h
+	rig.c
 	solve.c
 	solve.h
 	split.c

@@ -1,4 +1,4 @@
-add_executable(lpf_test main.c test_macros.h test_sim.h test_poly.c test_fracture.c test_world.c test_debris.c test_stress.c test_links.c test_vehicles.c test_systems.c)
+add_executable(lpf_test main.c test_macros.h test_sim.h test_poly.c test_fracture.c test_world.c test_debris.c test_stress.c test_links.c test_vehicles.c test_systems.c test_rigs.c)
 target_link_libraries(lpf_test PRIVATE lpf lpf_scenes)
 target_include_directories(lpf_test PRIVATE ${PROJECT_SOURCE_DIR}/src) # tests reach into the core's internals
 set_target_properties(lpf_test PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
@@ -12,3 +12,4 @@ add_test(NAME stress COMMAND lpf_test stress)
 add_test(NAME links COMMAND lpf_test links)
 add_test(NAME vehicles COMMAND lpf_test vehicles)
 add_test(NAME systems COMMAND lpf_test systems)
+add_test(NAME rigs COMMAND lpf_test rigs)

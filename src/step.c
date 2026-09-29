@@ -256,6 +256,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.wheelCasts = 0;
 	w->stats.supplyUpdates = 0;
 	w->stats.motorSets = 0;
+	w->stats.footCasts = 0;
 	w->stressWork = 0;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
@@ -318,8 +319,11 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpApplyPulls( w );
 	lpSyncLinks( w ); // every body of this step exists now
 	lpUpdateSupply( w );
-	lpDriveMotors( w );
 	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
+	lpStepRigs( w, timeStep );
+	w->stats.rigMs = b3GetMillisecondsAndReset( &ticks );
+	lpDriveMotors( w );
+	w->stats.fractureMs += b3GetMillisecondsAndReset( &ticks );
 	lpStepVehicles( w, timeStep );
 	w->stats.vehicleMs = b3GetMillisecondsAndReset( &ticks );
 

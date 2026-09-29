@@ -222,7 +222,8 @@ as arms: they stomp, and a claw grabs what it touches. Everything it does adapts
 Steps (each measured in [perf-log.md](perf-log.md)):
 0. This reshape.
 1. Kit physics and the rig core: the kit's bodies and servos standing (a substep sweep first), kinematics, IK,
-   capability, feedforward and a tear ratio per link.
+   capability, feedforward and a tear ratio per link (done: it stands on 4 substeps with its servos at gain 4, sags
+   1.5 cm and sleeps after 3 s; IK to 0.03 mm; a crouch lands within a millimetre; 11 us a step).
 2. Gait: footholds, stance and swing, the free gait, the idle latch; walking straight, turning, slopes, steps, stopping.
 3. The mech scene, driving a rig in the sandbox (walk, reach and grab events), the 'mech' rung.
 4. Damage adaptation: lost legs, pegs, weak legs, crawling.

@@ -283,6 +283,8 @@ typedef struct lpLinkDef
 	uint8_t carries;			  // supply channels it carries between its ends (a fuel hose, a power cable)
 	lpMotorDef motor;			  // hinges and ball joints
 	uint32_t userId;			  // the game's id for the link
+	float tearRatio;			  // rebuilt between two moving bodies, it tears when one is under this share of the other's
+								  // mass (0: 0.02); a strong servo on a chip left of a limb would whip it about
 } lpLinkDef;
 
 // Defaults for a type: the limits of a hemp rope, an iron hinge or ball joint, a bolted weld
@@ -432,6 +434,93 @@ typedef struct lpWheelState
 // Cached at the last step the chassis was awake: safe at any time
 lpWheelState lpWorld_GetWheelState( const lpWorld* world, int link );
 
+// ---- rigs ----
+//
+// A rig walks a body on limbs (a mech's legs, a creature's). It makes no physics of its own: the limbs are chains of
+// motorised hinges (lpCreateLink with a motor) from the body outward, and the rig only steers their servos. Its
+// kinematics come from the links' frames and measured angles, so it follows its pieces through splits and fractures
+// like the links do. Each limb's capability is recomputed every step: which of its joints are still on, how strong
+// the weakest is (damage, supply), and where its foot is (after a break, the far end of the last segment left: a stump
+// walks as a peg). A rig never names a body: the torso is the body holding most of its limbs' first links.
+
+#define LP_MAX_RIG_LIMBS 8
+#define LP_MAX_LIMB_JOINTS 3
+
+typedef struct lpLimbDef
+{
+	int links[LP_MAX_LIMB_JOINTS]; // motorised hinges from the body outward, each on the body the one before it turns
+	int linkCount;				   // 1 to LP_MAX_LIMB_JOINTS
+	b3Pos foot;					   // world, at creation: the point it stands on, on the last link's outer body
+} lpLimbDef;
+
+typedef struct lpRigDef
+{
+	int body;		// the torso at creation: every limb's first link has an end on it
+	b3Vec3 forward; // world, at creation
+	b3Vec3 up;
+	const lpLimbDef* limbs;
+	int limbCount;		// 1 to LP_MAX_RIG_LIMBS, in order around the body: each limb's neighbours are the ones next to it
+	float standHeight;	// of the torso's frame above its feet at full strength; 0: as created
+	float crouchDepth;	// share of standHeight a full crouch lowers it by
+	float stepHeight;	// a swinging foot's lift, m
+	float maxSpeed;		// m/s
+	float maxTurn;		// rad/s
+	float swingTime;	// s a step takes
+	float margin;		// m the centre of mass stays inside the planted feet when a leg lifts
+} lpRigDef;
+
+lpRigDef lpDefaultRigDef( void );
+
+// Returns the rig index, or -1: not a dynamic body, no limbs or too many, a limb's links not motorised hinges or not
+// chained from the body outward.
+int lpCreateRig( lpWorld* world, const lpRigDef* def );
+
+typedef struct lpRigControl
+{
+	float forward; // -1 to 1 of maxSpeed
+	float strafe;  // -1 (left) to 1
+	float turn;	   // -1 (left) to 1 of maxTurn
+	float crouch;  // 0 to 1 of crouchDepth
+} lpRigControl;
+
+// Persists until changed and is applied from the next step. It is simulation state (hashed): record it like any input,
+// at the tick it changed.
+void lpWorld_SetRigControl( lpWorld* world, int rig, const lpRigControl* control );
+
+typedef struct lpRigState
+{
+	bool alive;
+	int body;		// the torso (-1: no limb left on anything)
+	int limbCount;	// as created
+	int attached;	// limbs whose first link is still on the torso
+	int able;		// of those, the ones that can stand and step
+	int planted;	// feet on the ground
+	bool idle;		// standing still with its servos' targets frozen (it can sleep)
+	float height;	// of the torso's frame above its planted feet
+	float speed;	// m/s along its forward direction
+	b3Pos position; // of the torso's frame
+	b3Vec3 forward; // world directions of the torso
+	b3Vec3 up;
+	lpRigControl control;
+} lpRigState;
+
+lpRigState lpWorld_GetRigState( const lpWorld* world, int rig );
+int lpWorld_GetRigCapacity( const lpWorld* world ); // every rig index is below this
+
+typedef struct lpLimbState
+{
+	bool attached;	// its first link is still on the torso
+	bool able;		// it can lift its foot and carry its share
+	bool planted;
+	int joints;		// links still on in a chain from the torso (0 to linkCount)
+	float strength; // of its weakest joint's servo: damage and supply, 0 to 1
+	float reach;	// from its first joint to its foot, m
+	b3Pos foot;		// world
+	int footBody;	// the body its foot is on (-1: detached)
+} lpLimbState;
+
+lpLimbState lpWorld_GetLimbState( const lpWorld* world, int rig, int limb );
+
 // ---- impacts ----
 
 typedef struct lpImpactDef
@@ -541,6 +630,10 @@ typedef struct lpStats
 	int wheelCasts;	   // this step
 	int supplyUpdates; // this step: 1 when a carrier's connections changed
 	int motorSets;	   // this step: Box3D motor setter calls (only when a servo's speed or cap changed)
+
+	// Rigs (rig.c)
+	float rigMs;
+	int footCasts; // this step
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );

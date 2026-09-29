@@ -510,3 +510,26 @@ beyond gravity is now spread by the struck material's crush (a crumple zone stop
   front wheels gone, the cabin whole. 2 to 4 relief solves per crash, identical at 1, 4 and 8 workers.
 - Every ladder hash but the track's is unchanged, stress solver hashes included; the track rung is 0.13 / 0.14 ms per
   step at 1 / 8 workers.
+
+## 2026-09-29 creatures and mechs, step 1: the hexapod kit standing, the rig core
+
+The kit: a 1.8 t sheet-metal torso and six legs of a hip block, a femur and a tibia (about 100 kg each) on 18
+motorised hinges, 3.6 t in all. The first measurement, every servo holding its pose as built, on the 4 substeps every
+scene uses: it carried its weight (1.6 cm sag, 9 mm joint separation, knees at 53% of their cap) but swayed sideways at
+6 Hz, growing, and never slept; 8 substeps damped it. Softer joints (30 Hz, damping ratio 5) or half the servo gain
+(8 to 4 per second) stopped it at 4 substeps, gain 6 barely. The kit's servos use gain 4 (the rig's feedforward carries
+the motion; the gain only corrects), so nothing global changed.
+
+The rig (`rig.c`): capability per limb, kinematics from the links' frames and measured angles, damped least squares
+IK, a stance that pushes the torso toward a level pose over its feet, an idle latch.
+- IK: 60 random poses found again to 0.03 mm (6 iterations, warm-started); the model's feet are within 2.2 cm of the
+  bodies' while standing (the joints give under load).
+- Standing, built at rest: 1.5 cm sag, 0.05 degrees of tilt, knees at 26% of their cap, link utilization 0.19, asleep
+  after 3.3 s. Dropped 5 cm: knees at 32%, utilization 0.34, asleep after 3.2 s.
+- Aiming the stance at where the bodies have the feet (not the model) pushed the feet about (2 cm in a crouch) and
+  locked a landing's load between the gripping feet (knees at 67% of their cap); the model's feet at the measured
+  angles removed both. Easing that locked load by letting each foot's target drift along its share of it (its
+  horizontal reaction less the feet's mean) was tried and dropped: at any rate that eased it, it fed the sway.
+- A crouch to half its depth lowers the torso 19.1 cm (19.1 wanted); the feet move 9 mm.
+- A leg that loses its tibia stands on its femur's end (found 1.2 cm from it).
+- Cost: the rig's step 11 us awake, 2 us asleep; Box3D 0.05 ms a step for the awake mech (a car driving: 0.006 ms).

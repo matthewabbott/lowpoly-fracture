@@ -151,6 +151,7 @@ typedef struct lpLink
 	float appliedCap;
 	float motorCap;
 	float motorTorque;
+	float feed;	 // rad/s added to a hinge servo's speed: the motion its rig wants this step (0 for other links)
 	float angle; // hinges: from the pose at creation, at the last step
 	int nextFree;
 	bool alive;
@@ -216,6 +217,50 @@ typedef struct lpVehicle
 	int wheelCount;
 	int links[LP_MAX_VEHICLE_WHEELS]; // each wheel's link as created (-1: it came off)
 } lpVehicle;
+
+// A limb of a rig (rig.c): a chain of hinge links from the torso outward. Each link's inner end (prox: 0 or 1) is on
+// the body the link before it turns; its angle turns the outer end's frame about the inner end's z by sign * angle.
+typedef struct lpLimb
+{
+	lpLimbDef def;
+	uint8_t prox[LP_MAX_LIMB_JOINTS]; // the end of each link on the inner body
+	uint32_t gen[LP_MAX_LIMB_JOINTS]; // each link's generation at creation (a slot reused by another link is not it)
+	float lower[LP_MAX_LIMB_JOINTS];  // the angles its targets keep within (just inside the hinge's limits)
+	float upper[LP_MAX_LIMB_JOINTS];
+	b3Vec3 defFoot; // the foot as created, in the frame of the last link's outer body
+	// Capability, every step
+	int joints;		// links on in a chain from the torso
+	int rootBody;	// the body of its first link's inner end (-1: that link is gone)
+	int tipBody;	// the outer body of its last joint on: the foot is on it
+	uint32_t tipGeneration;
+	uint32_t tipTopology;
+	int tipJoints;	// joints when the foot was found
+	b3Vec3 foot;	// in tipBody's frame
+	float strength; // of its weakest joint's servo, 0 to 1
+	float reach;
+	bool attached;
+	bool able;
+	bool planted;
+	float residual; // how far its stance IK fell short, m
+	float q[LP_MAX_LIMB_JOINTS]; // the angles last given to its servos
+} lpLimb;
+
+typedef struct lpRig
+{
+	lpRigDef def; // limbs cleared
+	b3Vec3 forward; // torso body frame (the creation body's; bodies split off it share it)
+	b3Vec3 up;
+	lpRigControl control;
+	bool controlChanged;
+	bool alive;
+	int body; // the torso this step (-1: none)
+	int limbCount;
+	lpLimb limbs[LP_MAX_RIG_LIMBS];
+	b3WorldTransform desired; // where the torso's frame is pushed: level, at its height, moving with the controls
+	float height;			  // the torso's frame above its planted feet, this step
+	bool idle;				  // targets frozen: standing still, settled
+	int calm;				  // steps settled and still toward the idle latch
+} lpRig;
 
 // A wheel that came off, spawned as an object of its own at the start of the next step
 typedef struct lpLostWheel
@@ -515,6 +560,7 @@ struct lpWorld
 	LP_ARRAY( lpVehicle ) vehicles;
 	LP_ARRAY( lpLostWheel ) lostWheels;
 	LP_ARRAY( lpBodyWheel ) scratchWheels;
+	LP_ARRAY( lpRig ) rigs;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
 	LP_ARRAY( int ) stressQueue; // structures updated this step, checked together after the splits (stress.c)
 	lpStressJob* stressJobs;	 // this step's solves; the first stressJobCount are in use
@@ -647,6 +693,19 @@ static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
 }
 bool lpValidateWheel( const lpWorld* w, int link );
 void lpFreeVehicles( lpWorld* w );
+
+// rigs (rig.c): lpStepRigs after the supply update and before the servos are driven (capability, the stance, targets)
+void lpStepRigs( lpWorld* w, float timeStep );
+uint64_t lpHashRigs( const lpWorld* w, uint64_t h );
+bool lpValidateRigs( const lpWorld* w );
+void lpFreeRigs( lpWorld* w );
+// A limb's kinematics in the torso frame (tests reach them too): the foot (in the tip's frame) of its first `joints`
+// links at the angles q, each joint's signed axis and point into axes and origins; and IK, the angles (q, warm on
+// entry) that put the foot at target within the limits, returning how far short it falls
+b3Vec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, b3Vec3 foot, b3Vec3* axes, b3Vec3* origins );
+float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, b3Vec3 foot, b3Vec3 target, float* q );
+// What a motorised link's servo can put in now: its max torque by its health and supply, its hold torque unfed
+float lpMotorCap( const lpWorld* w, const lpLink* l );
 
 // stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
 // still solving or straining are marked dirty for the next step. Settling solves each to convergence, with no budget.

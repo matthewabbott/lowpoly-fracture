@@ -85,6 +85,19 @@ enum
 // structure's body.
 int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass );
 
+// The hexapod's hinges, by lpLinkDef.userId: lp_linkHexapod + 16 * leg + joint (joint 0 the hip's yaw, 1 the femur,
+// 2 the knee; legs 0 to 2 the right front, middle and rear, 3 to 5 the left rear, middle and front)
+enum
+{
+	lp_linkHexapod = 0x4E00,
+};
+
+// A car-sized hexapod mech standing at base (its feet on the ground), facing local +z turned by yaw: a sheet-metal
+// torso (frame, deck, reactor, hydraulic reservoir, computer) of about 1.8 t and six legs of three segments (hip
+// block, femur, tibia with a rubber foot) on motorised hinges, about 3.6 t in all, standing on them as a rig (its limbs
+// in the order of the legs above). style picks the paint. Returns the rig.
+int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
+
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );
 

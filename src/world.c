@@ -332,6 +332,7 @@ void lpDestroyWorld( lpWorld* w )
 	}
 	lpFreeLinks( w, physicsAlive );
 	lpFreeVehicles( w );
+	lpFreeRigs( w );
 	lpArray_Free( w->scratchLinkMoves );
 	lpArray_Free( w->pieces );
 	lpArray_Free( w->bonds );
@@ -1395,7 +1396,7 @@ bool lpWorld_Validate( const lpWorld* w )
 	{
 		return lpFail( "bond count %d, live %d, refs %d", w->bondCount, liveBonds, bondRefs );
 	}
-	return lpValidateLinks( w );
+	return lpValidateLinks( w ) && lpValidateRigs( w );
 }
 
 bool lpWorld_ValidateBondGeometry( const lpWorld* w )
