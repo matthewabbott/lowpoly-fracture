@@ -388,3 +388,19 @@ The keep, one worker:
 Judged corrections against exact solves: breach 0.008 worst joint error, no flips; cannon hole 0.28, 1 of 58k
 joints flipped; small structures all clustered 0.08, none flipped. A new ladder rung, 'siege', is the keep with a
 blast every 4 ticks.
+
+The price of deciding sooner is time per step while a big structure solves. One solving alone may now spend the whole
+`maxStressWork` (60k bond-iterations, about 4 ms on one core here) where it spent 10k. Ladder, best of 3, 1 / 8
+workers, against step 4:
+
+| rung | step avg | stress avg | judged |
+|---|---|---|---|
+| keep | 4.24 / 2.41 → 6.79 / 4.75 ms | 1.14 → 3.28 ms | 0 → 11 (10 on reduced systems) |
+| barrage | 9.92 / 4.03 → 10.65 / 4.75 ms | 0.87 → 1.32 ms (8 workers) | 1026 |
+| siege (new: the keep, a blast every 4 ticks) | 19.43 / 10.29 ms | 5.38 ms | 3 |
+| town | 4.56 / 2.12 → 3.55 / 1.94 ms | about the same | 502 (less comes down) |
+
+On a slow machine, lower `maxStressWork`. The profiling milestone's first target is the cost of an iteration itself
+(65 ns per bond: a structure of arrays for the 6-vectors, precomputed bond blocks, a parallel K·x for the biggest
+structures). Step 6 (a nested-iteration settle, a two-level preconditioner) is not needed yet: settling the keep takes
+65 to 75 ms at load, and audits finish within a few hundred calm steps.

@@ -60,6 +60,8 @@ and look at the PNG.
   be behaviour-preserving must keep the `lpf_bench` hashes identical (`tools/bench.ps1` checks them; `-StrictSolver`
   for the stress solver's state too).
 - Performance: every per-step cap is a count, never a time budget. Log before and after numbers in docs/perf-log.md.
+- Stress solver changes: the oracle tests (`lpf_test stress TestKeepLocalHit`, `TestDriftSmallStructures`,
+  `TestKeepBreach`, `TestKeepHole`) check every judgement on a reduced system against an exact solve.
 - Gotchas: the agent harness turns `\n` inside Bash heredocs and inline python strings into real newlines, so write C
   string escapes with the Edit or Write tools. ASan binaries need the MSVC runtime on PATH: dot-source
   `tools/devenv.ps1` first.

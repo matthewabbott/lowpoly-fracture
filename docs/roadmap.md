@@ -123,7 +123,8 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 5. The ladder and audits under pressure (done: the budget shared by the structures that want it, provisional judgements
    audited exactly when calm; a patch level with the far field pinned was tried and dropped, the oracle showed it
    breaking joints it should not).
-6. If settling or audits dominate: a nested-iteration settle and a two-level preconditioner.
+6. If settling or audits dominate: a nested-iteration settle and a two-level preconditioner (not needed yet: settling
+   the keep takes 65 to 75 ms; moved to the profiling milestone with the cost of an iteration itself).
 
 ## 5. Destructible vehicles
 
@@ -146,8 +147,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
 solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run), then the
 hottest paths first. Candidates logged so far:
-- the stress system: precomputed bond blocks instead of `lpAddBlock` per build, incremental updates, a structure of
-  arrays for the 6-vectors, a parallel K·x for the biggest structures;
+- the stress system: the cost of an iteration (65 ns per bond: a structure of arrays for the 6-vectors, precomputed
+  bond blocks instead of `lpAddBlock` per build), a parallel K·x for the biggest structures (one alone may now spend
+  4 ms a step), a two-level preconditioner reusing the rigid clusters as its coarse space, a nested-iteration settle;
 - the creak loop over stored overloads only; budget units calibrated to time;
 - a spinning barrier in the task pool.
 

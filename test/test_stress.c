@@ -1015,13 +1015,13 @@ typedef struct FireRun
 	uint64_t hash;
 } FireRun;
 
-// The keep under the bench's bombardment (a shot every 12 ticks) for 120 ticks, then 1080 calm ones
+// The keep under the bench's bombardment (a shot every 12 ticks) for 120 ticks, then 240 calm ones
 static FireRun KeepUnderFire( lpWorldDef def )
 {
 	FireRun r = { 0 };
 	Sim s = CreateSimDef( def, lp_sceneKeep );
 	int keep = BiggestStructure( s.world );
-	for ( int tick = 0; tick < 1200; ++tick )
+	for ( int tick = 0; tick < 360; ++tick )
 	{
 		if ( tick < 120 )
 		{
