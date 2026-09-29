@@ -74,7 +74,8 @@ typedef struct lpStressJob
 	int budget;				  // iterations granted this step
 	bool continuing;		  // pick up the solve in progress (r, p and the system, rz in solve)
 	bool cached;			  // the body's system is still the structure's: no build
-	double tolerance;
+	double tolerance;		  // of the whole residual, relative to the whole load
+	float nodeTolerance;	  // of each node's residual, relative to the forces through it
 	lpSolveState solve;
 	float peak;						  // converged: the highest joint utilization (in the system's rho)
 	LP_ARRAY( lpSlenderCut ) slender; // converged: the slender pieces' worst sections
@@ -99,7 +100,8 @@ typedef struct lpLink
 	b3Pos points[2];	 // world points of the ends, cached at the last step either end was awake
 	b3Vec3 force;		 // on end B, world, N
 	b3Vec3 torque;
-	float stressForce;	  // the pull its structure ends were last re-checked for
+	b3Vec3 stressForce;	  // the force and torque its structure ends were last re-checked for (world)
+	b3Vec3 stressTorque;
 	uint64_t recheckTick; // tick + 1 of that re-check (0: never)
 	float utilization; // load over limit, smoothed
 	float strain;	   // breaks at 1
@@ -140,6 +142,8 @@ typedef struct lpPiece
 	lpVec6 stressP;
 	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
 	float strain; // stress overload accumulated inside the piece (slender pieces break mid-span at 1)
+	uint32_t changed;  // w->changeSerial when its bonds, their health or its load last changed
+	uint32_t accepted; // w->changeSerial when its structure's last solve was judged: changed after it, it is a seed
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
 	uint8_t depth;
@@ -193,6 +197,8 @@ typedef struct lpBody
 	bool solving;	   // structure: a solve is in progress (r, p on the pieces, solveRz here)
 	bool creaking;	   // structure: converged, joints straining but none broken: checks only add strain
 	bool strainedLastCheck; // structure: something was over its limit at the last converged check
+	bool reloadLoads;		// structure: what rests or hangs on it changed; sample its loads at the next check
+	bool rejudge;			// structure: a joint's health dropped; judge the joints again from the last solve's forces
 	int stressSteps;   // structure: steps spent solving the current topology
 	uint32_t topology; // bumped whenever a bond or piece of the body changes; a solve in progress restarts then
 	uint32_t solveTopology;
@@ -366,6 +372,7 @@ struct lpWorld
 	float lastTimeStep; // of the last physics step, to turn contact impulses into forces
 	uint64_t pieceSerial;
 	uint32_t impactSerial;
+	uint32_t changeSerial; // stamps pieces whose bonds or loads change (lpPiece.changed)
 	int stamp;
 	int freezesThisStep;
 	lpStats stats;
@@ -428,6 +435,11 @@ int lpCheckStructures( lpWorld* w, bool settle );
 // Something changed what a structure carries (a hit, a link's pull): check it again next step with fresh loads. During
 // the step's splits the dirty list is being walked, so there it waits with the structures to check again.
 void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits );
+// A piece's bonds, their health or its load changed (for the stress check's seeds)
+static inline void lpTouchPiece( lpWorld* w, int piece )
+{
+	w->pieces.data[piece].changed = ++w->changeSerial;
+}
 void lpFreeStressSystem( lpBody* b );
 
 float lpParticleVolume( const lpWorld* w, int material );

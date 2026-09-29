@@ -358,6 +358,7 @@ typedef struct lpStats
 	int stressIterations;
 	int stressBreaks;
 	int stressSolves;		 // structures solved this step (in parallel)
+	int stressJudged;		 // of those, the ones that converged and were judged
 	int stressWaiting;		 // structures that found this step's stress budget spent; they go first next step
 	int unsettledStructures; // structures still solving or creaking toward a break
 	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)

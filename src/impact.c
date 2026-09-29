@@ -261,6 +261,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	int depth = piece->depth + 1;
 	bool anchored = piece->anchored;
 	b3Plane anchorPlane = piece->anchorPlane;
+	lpVec6 parentX = piece->stressX; // kept cells start their stress solve where the parent was, moved rigidly
+	b3Vec3 parentCenter = piece->shape->centroid;
 
 	uint64_t shapeTicks = b3GetTicks();
 	lpDetachPieceShape( w, pieceIndex );
@@ -337,6 +339,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		if ( cls == lp_cellKeep )
 		{
 			child->anchored = anchored && lpShape_HasFaceOnPlane( cell, anchorPlane, 1e-3f );
+			child->stressX.f = b3Add( parentX.f, b3Cross( parentX.t, b3Sub( cell->centroid, parentCenter ) ) );
+			child->stressX.t = parentX.t;
 			if ( lpAttachPiece( w, childIndex, bodyIndex ) == false )
 			{
 				lpFreePieceSlot( w, childIndex );
@@ -636,6 +640,14 @@ static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 			else
 			{
 				k += 1;
+				if ( density > 0.0f && w->bodies.data[p->body].kind == lp_kindStructure )
+				{
+					// Weaker, not broken: its joints are judged again against the forces they carry
+					lpTouchPiece( w, bond->a );
+					lpTouchPiece( w, bond->b );
+					w->bodies.data[p->body].rejudge = true;
+					lpMarkDirty( w, p->body );
+				}
 			}
 		}
 	}

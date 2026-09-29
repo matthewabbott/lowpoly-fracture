@@ -45,6 +45,10 @@ typedef struct lpStressSystem
 	LP_ARRAY( int ) incidentStart; // the edges at node i are incident[incidentStart[i] .. incidentStart[i + 1]), in edge order
 	LP_ARRAY( int ) incident;
 	LP_ARRAY( float ) rho; // each edge's utilization at the last converged solve
+	// Optional (empty: not checked): each node's force scale (its load plus the forces through it) and arm (its size),
+	// for the per-node equilibrium test
+	LP_ARRAY( float ) nodeScale;
+	LP_ARRAY( float ) nodeArm;
 } lpStressSystem;
 
 // Relative motion of an edge's two sides at the contact, and the elastic force and moment it produces (on side b; side a
@@ -67,8 +71,14 @@ typedef struct lpSolveState
 	bool converged;
 } lpSolveState;
 
-// Preconditioned conjugate gradient, at most `budget` iterations, until |r| <= tolerance |f|. A continuing solve picks
-// up r, p (in the system) and rz (in the state) where the last call left them; otherwise it starts from x.
-void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, bool continuing, lpSolveState* state );
+// Preconditioned conjugate gradient, at most `budget` iterations, until |r| <= tolerance |f| and every node is in
+// equilibrium to nodeTolerance of its scale: a global norm alone lets the residual gather on a few small nodes. A
+// continuing solve picks up r, p (in the system) and rz (in the state) where the last call left them; otherwise it
+// starts from x.
+void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeTolerance, bool continuing, lpSolveState* state );
+
+// Each node's scale for the equilibrium test from the current x and f: its own load plus the magnitude of the edge
+// forces on it (plus floor); arms are the caller's
+void lpSystemNodeScales( lpStressSystem* s, float floor );
 
 void lpSystemFree( lpStressSystem* s );

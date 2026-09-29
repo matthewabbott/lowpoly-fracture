@@ -191,6 +191,8 @@ int lpAllocPiece( lpWorld* w )
 	p->shapeId = b3_nullShapeId;
 	memset( &p->stressX, 0, 4 * sizeof( lpVec6 ) );
 	p->strain = 0.0f;
+	p->accepted = 0;
+	lpTouchPiece( w, index ); // a new piece is a seed of its structure's next solve
 	return index;
 }
 
@@ -461,6 +463,8 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 	}
 	lpRemoveBondFromPiece( w->pieces.data + bond->a, bondIndex );
 	lpRemoveBondFromPiece( w->pieces.data + bond->b, bondIndex );
+	lpTouchPiece( w, bond->a );
+	lpTouchPiece( w, bond->b );
 	bond->alive = false;
 	bond->nextFree = w->freeBond;
 	w->freeBond = bondIndex;
@@ -490,11 +494,15 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	bond->joint = joint;
 	bond->strain = 0.0f;
 	bond->rho = 0.0f;
+	bond->force = b3Vec3_zero;
+	bond->moment = b3Vec3_zero;
 	bond->health = strengthA < strengthB ? strengthA : strengthB;
 	bond->strength = bond->health;
 	bond->alive = true;
 	lpArray_Push( pa->bonds, index );
 	lpArray_Push( pb->bonds, index );
+	lpTouchPiece( w, a );
+	lpTouchPiece( w, b );
 	w->bondCount += 1;
 	return index;
 }

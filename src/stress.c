@@ -34,9 +34,9 @@ static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } }
 
 // What rests on a structure: dynamic bodies pressing on its pieces, from the last physics step's contact impulses
 // (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
-// stressLoad. Sampled when a solve
-// starts and kept, so the solve can continue across steps while the contacts jitter. Returns how much the loads
-// changed, relative to the structure's own weight.
+// stressLoad. Sampled when a solve starts and kept, so the solve can continue across steps while the contacts jitter.
+// Returns how much the loads changed (forces, and torques over each piece's size), relative to the structure's own
+// weight; a piece whose load changed by more than 2% of its own weight is stamped.
 static float lpSampleLoads( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
@@ -118,8 +118,16 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	float change = 0.0f;
 	for ( int i = 0; i < n; ++i )
 	{
-		const lpPiece* p = w->pieces.data + body->pieces.data[i];
-		change += b3Length( b3Sub( p->stressLoad.f, w->scratchLoads.data[i].f ) );
+		int pi = body->pieces.data[i];
+		const lpPiece* p = w->pieces.data + pi;
+		float size = cbrtf( p->shape->volume );
+		float moved = b3Length( b3Sub( p->stressLoad.f, w->scratchLoads.data[i].f ) ) +
+					  b3Length( b3Sub( p->stressLoad.t, w->scratchLoads.data[i].t ) ) / size;
+		change += moved;
+		if ( moved > 0.02f * p->shape->volume * lpGetMaterial( p->material )->density * g )
+		{
+			lpTouchPiece( w, pi );
+		}
 	}
 	return weight > 0.0f ? change / weight : 0.0f;
 }
@@ -247,6 +255,16 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		f[i].t = b3MulAdd( f[i].t, 1.0f / scale, p->stressLoad.t );
 	}
 
+	// For the per-node equilibrium test: each node's size, and the forces through it at the warm start (a crumb must
+	// balance to a fraction of a crumb, a stone carrying the wall above it to a fraction of that wall)
+	lpArray_Reserve( s->nodeArm, n );
+	s->nodeArm.count = n;
+	for ( int i = 0; i < n; ++i )
+	{
+		s->nodeArm.data[i] = cbrtf( w->pieces.data[s->nodes.data[i]].shape->volume );
+	}
+	lpSystemNodeScales( s, 1e-3f );
+
 	// A solve in progress continues from where the last step left it
 	if ( job->continuing )
 	{
@@ -355,6 +373,39 @@ static int lpBreakOverloads( lpWorld* w, b3WorldTransform xf )
 	return broken;
 }
 
+// A joint's utilization (1 = at its limit) under a force and moment (on piece b, body frame), from its patch, its
+// limits and its health; t1, t2 are lpContactBasis( bond->normal )
+static float lpBondUtilization( const lpWorld* w, const lpBond* bond, b3Vec3 t1, b3Vec3 t2, b3Vec3 force, b3Vec3 moment )
+{
+	b3Vec3 n = bond->normal;
+	float area = bond->area;
+	float axialForce = b3Dot( force, n ); // tension positive
+	float compression = b3MaxFloat( -axialForce, 0.0f );
+	float m1 = b3AbsFloat( b3Dot( moment, t1 ) ); // bending about t1: the fibres at +-h2 carry it
+	float m2 = b3AbsFloat( b3Dot( moment, t2 ) );
+	b3Vec3 shearForce = b3MulSub( force, axialForce, n );
+	float hMax = b3MaxFloat( bond->h1, bond->h2 );
+	float shear = b3Length( shearForce ) / area +
+				  3.0f * b3AbsFloat( b3Dot( moment, n ) ) * hMax / ( area * ( bond->h1 * bond->h1 + bond->h2 * bond->h2 ) );
+
+	float tensionLimit, compressionLimit, shearLimit, mu;
+	lpBondLimits( w, bond, &tensionLimit, &compressionLimit, &shearLimit, &mu );
+	float str = w->def.stressScale * b3MaxFloat( bond->health, 0.0f ) / bond->strength;
+	float tensionCap = b3MaxFloat( str * tensionLimit, 1e4f );
+
+	// Pulling apart and bending: the section's elastic tension capacity, plus rocking. A compressed joint holds a moment
+	// until its resultant reaches the edge of the patch, so masonry tips over an edge instead of cracking as soon as the
+	// load leaves the middle third.
+	float cap1 = tensionCap * area * bond->h2 / 3.0f + compression * bond->h2;
+	float cap2 = tensionCap * area * bond->h1 / 3.0f + compression * bond->h1;
+	float rho = b3MaxFloat( axialForce, 0.0f ) / ( tensionCap * area ) + m1 / cap1 + m2 / cap2;
+
+	// Crushing at the compressed edge, and Coulomb shear
+	float edge = compression / area + 3.0f * m1 / ( area * bond->h2 ) + 3.0f * m2 / ( area * bond->h1 );
+	rho = b3MaxFloat( rho, edge / b3MaxFloat( str * compressionLimit, 1e4f ) );
+	return b3MaxFloat( rho, shear / ( str * ( shearLimit + mu * compression / area ) + 1e3f ) );
+}
+
 // Phase 2, converged: every bond's utilization from the solution (into the system's rho) and the force and moment it
 // carries (onto the bond), and the peak
 static void lpStressUtilizations( lpWorld* w, lpStressJob* job )
@@ -370,47 +421,20 @@ static void lpStressUtilizations( lpWorld* w, lpStressJob* job )
 		lpBond* bond = w->bonds.data + e->bond;
 		b3Vec3 force, moment;
 		lpEdgeForce( e, x, &force, &moment );
-		force = b3MulSV( s->forceScale, force );
-		moment = b3MulSV( s->forceScale, moment );
-		bond->force = force;
-		bond->moment = moment;
-
-		float area = bond->area;
-		float axialForce = b3Dot( force, e->n ); // tension positive
-		float compression = b3MaxFloat( -axialForce, 0.0f );
-		float m1 = b3AbsFloat( b3Dot( moment, e->t1 ) ); // bending about t1: the fibres at +-h2 carry it
-		float m2 = b3AbsFloat( b3Dot( moment, e->t2 ) );
-		b3Vec3 shearForce = b3MulSub( force, axialForce, e->n );
-		float hMax = b3MaxFloat( bond->h1, bond->h2 );
-		float shear = b3Length( shearForce ) / area +
-					  3.0f * b3AbsFloat( b3Dot( moment, e->n ) ) * hMax / ( area * ( bond->h1 * bond->h1 + bond->h2 * bond->h2 ) );
-
-		float tensionLimit, compressionLimit, shearLimit, mu;
-		lpBondLimits( w, bond, &tensionLimit, &compressionLimit, &shearLimit, &mu );
-		float str = w->def.stressScale * b3MaxFloat( bond->health, 0.0f ) / bond->strength;
-		float tensionCap = b3MaxFloat( str * tensionLimit, 1e4f );
-
-		// Pulling apart and bending: the section's elastic tension capacity, plus rocking. A compressed joint holds a
-		// moment until its resultant reaches the edge of the patch, so masonry tips over an edge instead of cracking
-		// as soon as the load leaves the middle third.
-		float cap1 = tensionCap * area * bond->h2 / 3.0f + compression * bond->h2;
-		float cap2 = tensionCap * area * bond->h1 / 3.0f + compression * bond->h1;
-		float rho = b3MaxFloat( axialForce, 0.0f ) / ( tensionCap * area ) + m1 / cap1 + m2 / cap2;
-
-		// Crushing at the compressed edge, and Coulomb shear
-		float edge = compression / area + 3.0f * m1 / ( area * bond->h2 ) + 3.0f * m2 / ( area * bond->h1 );
-		rho = b3MaxFloat( rho, edge / b3MaxFloat( str * compressionLimit, 1e4f ) );
-		rho = b3MaxFloat( rho, shear / ( str * ( shearLimit + mu * compression / area ) + 1e3f ) );
-
+		bond->force = b3MulSV( s->forceScale, force );
+		bond->moment = b3MulSV( s->forceScale, moment );
+		float rho = lpBondUtilization( w, bond, e->t1, e->t2, bond->force, bond->moment );
 		s->rho.data[k] = rho;
 		peak = rho > peak ? rho : peak;
 	}
 	job->peak = peak;
 }
 
-// A structure that converged and is only creaking (joints over their limit, nothing broken yet) does not need its
-// system rebuilt or solved again: the utilizations are unchanged, so a check just adds strain from the stored ones.
-static int lpStressCreak( lpWorld* w, int bodyIndex, int* strained )
+// A converged structure that has not changed since, but creaks (joints over their limit, none broken yet) or had
+// joints weakened by a blast: its joints are judged again from the forces of its last solve, with no solve. Creaking
+// only adds strain from the stored utilizations; after a blast (recompute) they are computed again from the stored
+// forces and the joints' new health.
+static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* strained )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
 	b3WorldTransform xf = b3Body_GetTransform( body->id );
@@ -423,9 +447,20 @@ static int lpStressCreak( lpWorld* w, int bodyIndex, int* strained )
 		{
 			int bi = p->bonds.data[k];
 			const lpBond* bond = w->bonds.data + bi;
-			if ( bond->a == pi && bond->rho > 1.0f )
+			if ( bond->a != pi )
 			{
-				lpApplyStrain( w, xf, bi, bond->rho, strained );
+				continue;
+			}
+			float rho = bond->rho;
+			if ( recompute && ( p->anchored == false || w->pieces.data[bond->b].anchored == false ) )
+			{
+				b3Vec3 t1, t2;
+				lpContactBasis( bond->normal, &t1, &t2 );
+				rho = lpBondUtilization( w, bond, t1, t2, bond->force, bond->moment );
+			}
+			if ( rho > 1.0f || rho != bond->rho )
+			{
+				lpApplyStrain( w, xf, bi, rho, strained );
 			}
 		}
 	}
@@ -585,7 +620,7 @@ static void lpRunStressJob( int index, void* context )
 	lpWorld* w = context;
 	lpStressJob* job = w->stressJobs + index;
 	lpStressBuild( w, job );
-	lpSystemSolve( job->system, job->budget, job->tolerance, job->continuing, &job->solve );
+	lpSystemSolve( job->system, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
 	const lpStressSystem* s = job->system;
 	int n = s->nodes.count;
 	const lpVec6* x = s->vectors.data;
@@ -628,7 +663,7 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	const lpStressSystem* s = job->system;
 	int n = s->nodes.count;
 	int edges = s->edges.count;
-	w->stressWork += ( job->solve.iterations + 2 ) * edges;
+	w->stressWork += ( job->solve.iterations + ( job->cached ? 0 : 2 ) ) * edges; // a build and a first residual
 	w->stats.stressIterations += job->solve.iterations;
 	w->stats.stressSolves += 1;
 	body->solving = job->solve.converged == false;
@@ -654,6 +689,18 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 		return;
 	}
 
+	w->stats.stressJudged += 1;
+
+	// Accepted: the pieces changed since the last judgement were its seeds
+	int seeds = 0;
+	for ( int i = 0; i < n; ++i )
+	{
+		lpPiece* p = w->pieces.data + s->nodes.data[i];
+		seeds += p->changed > p->accepted ? 1 : 0;
+		p->accepted = w->changeSerial;
+	}
+	body->rejudge = false;
+
 	int strained = 0;
 	w->scratchOverloads.count = 0;
 	for ( int k = 0; k < edges; ++k )
@@ -669,15 +716,32 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	w->stats.stressBreaks += broken;
 	if ( w->def.debugLog )
 	{
-		printf( "[lpf] tick %llu stress: body %d, %d nodes, %d bonds, %d iterations over %d steps, peak utilization %.2f, "
-				"%d strained, %d broke\n",
-				(unsigned long long)w->tick, job->body, n, edges, job->solve.iterations, body->stressSteps + 1,
+		printf( "[lpf] tick %llu stress: body %d, %d nodes (%d changed), %d bonds, %d iterations over %d steps, peak "
+				"utilization %.2f, %d strained, %d broke\n",
+				(unsigned long long)w->tick, job->body, n, seeds, edges, job->solve.iterations, body->stressSteps + 1,
 				(double)job->peak, strained, broken );
 	}
 	body->stressSteps = 0;
 	if ( body->unsettled )
 	{
 		lpArray_Push( w->stressAgain, job->body ); // broken joints split it next step; strained ones creak on
+	}
+}
+
+// The bookkeeping of a check with no solve (lpStressRejudge)
+static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
+{
+	lpBody* body = w->bodies.data + bodyIndex;
+	int creaks = 0;
+	int broke = lpStressRejudge( w, bodyIndex, body->rejudge, &creaks );
+	body->rejudge = false;
+	body->creaking = broke == 0 && creaks > 0;
+	body->unsettled = broke > 0 || creaks > 0;
+	body->strainedLastCheck = creaks > 0;
+	w->stats.stressBreaks += broke;
+	if ( body->unsettled )
+	{
+		lpArray_Push( w->stressAgain, bodyIndex ); // broken joints split it next step; strained ones creak on
 	}
 }
 
@@ -697,37 +761,45 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		if ( w->def.stressScale <= 0.0f || body->pieces.count < 2 )
 		{
 			body->solving = false;
+			body->reloadLoads = false;
+			body->rejudge = false;
 			continue;
 		}
 
-		// Converged and only creaking: the stored utilizations add strain, with no solve
-		if ( body->creaking && body->solving == false && body->solveTopology == body->topology )
+		// Converged, unchanged, and nothing new resting on it: creaking joints add strain, and joints a blast weakened
+		// are judged again from the last solve's forces, with no solve
+		bool unchanged = body->solving == false && body->solveTopology == body->topology;
+		if ( unchanged && body->reloadLoads == false && ( body->creaking || body->rejudge ) )
 		{
-			int creaks = 0;
-			int broke = lpStressCreak( w, bodyIndex, &creaks );
-			body->creaking = broke == 0 && creaks > 0;
-			body->unsettled = broke > 0 || creaks > 0;
-			w->stats.stressBreaks += broke;
-			if ( body->unsettled )
-			{
-				lpArray_Push( w->stressAgain, bodyIndex );
-			}
+			lpStressRejudgeBody( w, bodyIndex );
 			continue;
 		}
-		body->creaking = false;
 
 		int nodes, edges;
 		lpStressCount( w, body, &nodes, &edges );
 		if ( nodes == 0 || edges == 0 )
 		{
 			body->solving = false;
+			body->creaking = false;
+			body->reloadLoads = false;
+			body->rejudge = false;
 			continue;
 		}
 
-		// Its share of the budget, reserved whole (the build, the first residual and the iterations), before anything
-		// is built. The first structure of a step always gets an iteration, so even one bigger than the budget makes
-		// progress. One that does not fit waits, having cost nothing, and goes first next step. Settling has no budget.
-		int room = b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) / edges - 2;
+		// A solve in progress continues if the structure and its loads have not changed since the last step. It still has
+		// its system: no build, and it is charged only its iterations (a piece that left without a bond to break
+		// changes the counts, not the topology).
+		const lpStressSystem* system = body->system;
+		bool continuing = body->solving && body->reloadLoads == false && body->solveTopology == body->topology &&
+						  body->solveNodes == nodes && body->solveEdges == edges;
+		bool cached = continuing && system != NULL && system->built && system->topology == body->topology &&
+					  system->nodes.count == nodes && system->edges.count == edges;
+		int overhead = cached ? 0 : 2; // a build and the first residual
+
+		// Its share of the budget, reserved whole before anything is built. The first structure of a step always gets an
+		// iteration, so even one bigger than the budget makes progress. One that does not fit waits, having cost
+		// nothing, and goes first next step. Settling has no budget.
+		int room = b3MinInt( w->def.maxStressStructureWork, w->def.maxStressWork - reserved ) / edges - overhead;
 		int budget = b3MinInt( room, w->def.maxStressIterations );
 		budget = budget < 1 && reserved == 0 ? 1 : budget;
 		budget = settle ? w->def.maxSettleIterations : budget;
@@ -739,26 +811,26 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			continue;
 		}
 
-		bool fresh = body->solving == false || body->solveTopology != body->topology;
-		if ( fresh )
+		if ( continuing == false )
 		{
 			// Asked again with the structure unchanged since it settled: only something landing on it or leaving it can
-			// matter. If what rests on it barely changed, it stays settled without a solve.
-			bool loadOnly = body->solving == false && body->solveTopology == body->topology && body->strainedLastCheck == false;
+			// matter. If what rests on it barely changed, it stays settled without a solve (joints a blast weakened are
+			// judged again from the last forces).
+			bool loadOnly = unchanged && body->strainedLastCheck == false;
 			float change = lpSampleLoads( w, bodyIndex );
+			body->reloadLoads = false;
 			if ( loadOnly && change < 0.02f )
 			{
+				if ( body->rejudge )
+				{
+					lpStressRejudgeBody( w, bodyIndex );
+				}
 				continue;
 			}
 		}
+		body->creaking = false;
 
-		// Continue the solve in progress if the structure has not changed since the last step
-		bool continuing = fresh == false && body->solveNodes == nodes && body->solveEdges == edges;
-		if ( continuing == false )
-		{
-			body->stressSteps = 0;
-		}
-		reserved += ( budget + 2 ) * edges;
+		reserved += ( budget + overhead ) * edges;
 		if ( body->system == NULL )
 		{
 			body->system = lpAlloc( sizeof( lpStressSystem ) );
@@ -773,12 +845,11 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		job->edgeCount = edges;
 		job->budget = budget;
 		job->continuing = continuing;
-		// A solve continuing on an unchanged structure still has its system (a piece that left without a bond to
-		// break changes the counts, not the topology)
-		const lpStressSystem* system = body->system;
-		job->cached = continuing && system->built && system->topology == body->topology && system->nodes.count == nodes &&
-					  system->edges.count == edges;
-		job->tolerance = body->stressSteps < w->def.stressPatience ? 1e-3 : 1e-2;
+		job->cached = cached;
+		// Patience: after many steps without a judgement (restarts count too), the tolerances relax so it is judged
+		bool patient = body->stressSteps >= w->def.stressPatience;
+		job->tolerance = patient ? 1e-2 : 1e-3;
+		job->nodeTolerance = patient ? 0.25f : 0.05f;
 		job->solve.rz = body->solveRz;
 	}
 	w->stressQueue.count = 0;
@@ -838,8 +909,7 @@ int lpWorld_SettleStructures( lpWorld* w )
 void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
-	b->solving = false; // sample the new loads
-	b->creaking = false;
+	b->reloadLoads = true; // a solve in progress restarts with them; one that had settled solves again if they changed
 	if ( duringSplits )
 	{
 		lpArray_Push( w->stressAgain, bodyIndex );

@@ -104,10 +104,12 @@ tiers instead of popping them.
   keeps its system on its body: a solve continues across steps on it without a rebuild until the structure's topology
   stamp changes; a per-step work budget in bond-iterations slices big solves.
 - Every structure updated in a step is checked together, after the splits (`lpCheckStructures`), in three phases:
-  1. in queue order, the checks that need no solve finish (a creaking structure only adds strain; unchanged loads end
-     the check), and each remaining structure reserves its share of the budget before anything is built: at most
-     `maxStressStructureWork` bond-iterations for itself and `maxStressWork` for all. One that does not fit waits,
-     having cost nothing, and goes first next step;
+  1. in queue order, the checks that need no solve finish (a creaking structure only adds strain; joints a blast
+     weakened are judged again from the forces of the last solve, kept on the bonds; unchanged loads end the check),
+     and each remaining structure reserves its share of the budget before anything is built: at most
+     `maxStressStructureWork` bond-iterations for itself and `maxStressWork` for all (a step continuing on its system
+     is charged its iterations only, others two more for the build). One that does not fit waits, having cost nothing,
+     and goes first next step;
   2. the reserved structures build (unless continuing on their system) and solve in parallel, each writing only its
      own pieces, bonds and system; a converged one also computes every joint's utilization, the force and moment it
      carries (kept on the bond), and its slender pieces' worst sections;
@@ -118,12 +120,19 @@ tiers instead of popping them.
   compression) against its joint's limits, scaled by `stressScale` and the bond's health, give a utilization. Over
   1, strain accumulates each converged check (`strainRate`); at strain 1 the bond breaks, everything at twice its
   limit at once and otherwise the worst few per check, so failure cascades and a structure creaks before it gives.
-- Nothing is judged on an unconverged solution. Dry and mortar joints carry little or no tension, so an overhang's
-  moment opens the tension side, the part above loses its anchor, and Box3D topples it.
+- Nothing is judged on an unconverged solution. Converged means the whole residual is within 0.1% of the whole load
+  **and** every node balances to 5% of its own load plus the forces through it: a global norm alone let the residual
+  gather on small fracture cells, whose joints then read absurd utilizations. After `stressPatience` steps without a
+  judgement (restarts count too) both relax, 10 and 5 times. Dry and mortar joints carry little or no tension, so an
+  overhang's moment opens the tension side, the part above loses its anchor, and Box3D topples it.
+- A request for a new check (`lpRequestStressCheck`: a hit, a link's pull) samples the loads again: a solve in progress
+  restarts with them from where it was, a settled structure solves again only if they changed. Kept fracture cells
+  start from their parent's solution moved rigidly. Each piece carries change stamps (`changed`, `accepted`): what
+  changed since its structure's last judgement is a seed of the next solve.
 - New structures are **settled at load**: `lpWorld_SettleStructures` (called by `lpBuildScene`) solves every waiting
   structure to convergence with no per-step budget (up to `maxSettleIterations`), judges it, and repeats a few rounds
-  while joints break, so a scene's first step solves nothing. Afterwards only topology changes (impacts, breaks) and
-  changed loads queue a solve (`lpRequestStressCheck`: a hit, a link's pull).
+  while joints break, so a scene's first step solves nothing. Afterwards only topology changes (impacts, breaks),
+  changed loads and weakened joints queue a check.
 - `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
   refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics

@@ -49,7 +49,7 @@ typedef struct Result
 	double sumCell, sumHull, sumShape, sumBond, sumSplit;
 	double sumVoronoiCpu, sumMergeCpu, sumHullCpu;
 	double sumStress, maxStress;
-	int stressIterations, stressBreaks, stressSolves, stressWaiting;
+	int stressIterations, stressBreaks, stressSolves, stressJudged, stressWaiting;
 	int maxContacts, maxAwakeContacts, maxShapes;
 	double sumAwakeContacts;
 } Result;
@@ -115,6 +115,7 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.stressIterations += st.stressIterations;
 		r.stressBreaks += st.stressBreaks;
 		r.stressSolves += st.stressSolves;
+		r.stressJudged += st.stressJudged;
 		r.stressWaiting += st.stressWaiting;
 		r.sumMergeCpu += st.mergeCpuMs;
 		r.sumHullCpu += st.hullCpuMs;
@@ -249,8 +250,10 @@ int main( int argc, char** argv )
 		double jobCpu = r.sumVoronoiCpu + r.sumMergeCpu + r.sumHullCpu;
 		printf( "        fracture job cpu ms: voronoi %.0f merge %.0f hulls %.0f (hulls %.0f%% of job time)\n", r.sumVoronoiCpu,
 				r.sumMergeCpu, r.sumHullCpu, jobCpu > 0.0 ? 100.0 * r.sumHullCpu / jobCpu : 0.0 );
-		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke, %d solves, %d waits for budget; solver %016llx\n",
-				r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress, r.stressIterations, r.stressBreaks, r.stressSolves, r.stressWaiting,
+		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke, %d solves (%d judged, %.1f steps each), "
+				"%d waits for budget; solver %016llx\n",
+				r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress, r.stressIterations, r.stressBreaks, r.stressSolves,
+				r.stressJudged, r.stressJudged > 0 ? (double)r.stressSolves / (double)r.stressJudged : 0.0, r.stressWaiting,
 				(unsigned long long)r.solverHash );
 		printf( "        load: %.1f ms for %d pieces and %d bonds, settling %.1f ms of it (%d iterations)\n", (double)r.loadMs,
 				r.pieces, r.bonds, (double)r.settleMs, r.settleIterations );
@@ -273,14 +276,14 @@ int main( int argc, char** argv )
 						 "\"fractureMaxMs\": %.3f, \"physicsAvgMs\": %.3f, \"physicsP95Ms\": %.3f, \"maxPieces\": %d, \"maxBodies\": %d, "
 						 "\"maxAwakeDebris\": %d, \"maxRubble\": %d, \"impacts\": %d, \"fractures\": %d, \"cells\": %d, "
 						 "\"awakeContactsAvg\": %.0f, \"maxContacts\": %d, \"voronoiCpuMs\": %.1f, \"mergeCpuMs\": %.1f, "
-						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, "
+						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, \"stressJudged\": %d, "
 						 "\"stressWaits\": %d, \"loadMs\": %.1f, \"settleMs\": %.1f, \"settleIterations\": %d, \"pieces\": %d, "
 						 "\"bonds\": %d, \"hash\": \"%016llx\", \"solverHash\": \"%016llx\"}%s\n",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
 						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
-						 r.stressSolves, r.stressWaiting, (double)r.loadMs, (double)r.settleMs, r.settleIterations, r.pieces, r.bonds,
+						 r.stressSolves, r.stressJudged, r.stressWaiting, (double)r.loadMs, (double)r.settleMs, r.settleIterations, r.pieces, r.bonds,
 						 (unsigned long long)r.hash, (unsigned long long)r.solverHash, w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );

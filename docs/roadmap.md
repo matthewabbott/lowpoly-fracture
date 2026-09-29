@@ -114,8 +114,8 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 0. The keep scene, settling at load, sweep bonding, the solver hash (done).
 1. Split the solver out of `stress.c`, cache each body's system while it solves, the slender check over incident
    edges (behaviour-preserving: hashes identical; done).
-2. Change tracking per piece, warm starts for fracture children, liveness (a structure hit every few steps is still
-   judged).
+2. Change tracking per piece, warm starts for fracture children, liveness (a request never drops a solve in progress,
+   patience counts across restarts), a per-node convergence test, weakened joints judged from stored forces (done).
 3. The reduced assembly and the Δ-form.
 4. Large structures take L2; clustering from exact results; drift tests against the fine solve.
 5. The ladder and audits under pressure.

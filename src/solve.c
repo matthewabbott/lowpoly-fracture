@@ -229,7 +229,58 @@ void lpSystemFactor( lpStressSystem* s )
 	start[0] = 0;
 }
 
-void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, bool continuing, lpSolveState* state )
+void lpSystemNodeScales( lpStressSystem* s, float floor )
+{
+	int n = s->nodes.count;
+	const lpVec6* x = s->vectors.data;
+	const lpVec6* f = x + n;
+	lpArray_Reserve( s->nodeScale, n );
+	s->nodeScale.count = n;
+	float* scale = s->nodeScale.data;
+	for ( int i = 0; i < n; ++i )
+	{
+		scale[i] = floor + b3Length( f[i].f );
+	}
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		const lpStressEdge* e = s->edges.data + k;
+		b3Vec3 force, moment;
+		lpEdgeForce( e, x, &force, &moment );
+		float magnitude = b3Length( force );
+		if ( e->a >= 0 )
+		{
+			scale[e->a] += magnitude;
+		}
+		if ( e->b >= 0 )
+		{
+			scale[e->b] += magnitude;
+		}
+	}
+}
+
+// Every node's residual force and torque within nodeTolerance of its scale
+static bool lpNodesBalanced( const lpStressSystem* s, const lpVec6* r, float nodeTolerance )
+{
+	int n = s->nodes.count;
+	if ( s->nodeScale.count != n || s->nodeArm.count != n )
+	{
+		return true;
+	}
+	const float* scale = s->nodeScale.data;
+	const float* arm = s->nodeArm.data;
+	for ( int i = 0; i < n; ++i )
+	{
+		float limit = nodeTolerance * scale[i];
+		float torque = limit * arm[i];
+		if ( b3LengthSquared( r[i].f ) > limit * limit || b3LengthSquared( r[i].t ) > torque * torque )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeTolerance, bool continuing, lpSolveState* state )
 {
 	int n = s->nodes.count;
 	const lpStressEdge* edges = s->edges.data;
@@ -260,7 +311,7 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, bool contin
 	int it = 0;
 	for ( ; it < budget; ++it )
 	{
-		if ( lpDot6( r, r, n ) <= limit )
+		if ( lpDot6( r, r, n ) <= limit && lpNodesBalanced( s, r, nodeTolerance ) )
 		{
 			converged = true;
 			break;
@@ -289,7 +340,7 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, bool contin
 			p[i].t = b3MulAdd( z[i].t, beta, p[i].t );
 		}
 	}
-	if ( converged == false && lpDot6( r, r, n ) <= limit )
+	if ( converged == false && lpDot6( r, r, n ) <= limit && lpNodesBalanced( s, r, nodeTolerance ) )
 	{
 		converged = true;
 	}
@@ -307,5 +358,7 @@ void lpSystemFree( lpStressSystem* s )
 	lpArray_Free( s->incidentStart );
 	lpArray_Free( s->incident );
 	lpArray_Free( s->rho );
+	lpArray_Free( s->nodeScale );
+	lpArray_Free( s->nodeArm );
 	s->built = false;
 }

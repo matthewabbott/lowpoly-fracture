@@ -258,3 +258,38 @@ Behaviour-preserving: every rung's simulation and solver hashes are unchanged (`
 
 Ladder, best of 3 (1 / 8 workers): keep 6.05 / 3.72 → 4.53 / 2.37 ms per step (stress 2.2 → 1.1 ms); barrage 12.66 /
 5.18 → 11.85 / 4.69 (stress at 8 workers 1.08 → 0.93); the rest within noise.
+
+## 2026-09-28 stress at scale, step 2: change tracking, liveness, a per-node convergence test
+
+Behaviour changes (hashes rebaselined):
+- **A per-node convergence test** beside the global one: every node balances to 5% of its own load plus the forces
+  through it (25% after patience).
+- **A request for a check** (a hit, a link's pull) resamples loads instead of clearing `solving`: before, a structure
+  hit mid-solve whose loads barely changed was dropped with its solve unconverged and never judged. Patience now
+  counts across restarts.
+- **Fracture:** kept cells start from their parent's solution moved rigidly.
+- **Weakened joints:** a blast that weakens joints without breaking them has them judged again from the stored bond
+  forces, with no solve. Before, nothing looked at them until the next topology change.
+- **Rechecks:** load rechecks compare torques too, link rechecks force and torque vectors.
+- **Budget:** a step continuing on its cached system is charged its iterations only.
+- **Change stamps:** pieces carry them (seeds for the reduced solves to come; the debug log counts them).
+
+Measured with the step-1 build plus only the new `stressJudged` stat, 8 workers, 600 ticks:
+
+| rung | step avg | stress avg | solves / judged | steps per judgement | waits |
+|---|---|---|---|---|---|
+| town, before | 2.27 ms | 0.52 ms | 1193 / 569 | 2.1 | 0 |
+| town, after | 1.93 ms | 0.57 ms | 1216 / 504 | 2.4 | 1 |
+| barrage, before | 4.22 ms | 0.84 ms | 2964 / 1003 | 3.0 | 99 |
+| barrage, after | 4.71 ms | 0.81 ms | 2418 / 891 | 2.7 | 25 |
+| tower, before | 1.95 ms | 0.08 ms | 228 / 196 | 1.2 | 0 |
+| tower, after | 1.87 ms | 0.06 ms | 171 / 139 | 1.2 | 0 |
+| keep, before | 2.18 ms | 0.96 ms | 573 / 0 | never | 0 |
+| keep, after | 2.31 ms | 1.06 ms | 594 / 0 | never | 0 |
+
+Destruction is chaotic (town now peaks at 9017 pieces instead of 10073), so the smaller rungs are a wash. The keep's
+row is the milestone's problem in one line: under a shot every 12 ticks it is never judged at all, because each shot
+restarts its solve and at one iteration per step no tolerance is reachable in between. The per-node test makes the
+first judgement after a cannon hole honest: 99 steps instead of 29 (the 29 was the global norm hiding the residual
+on the new cells). Steps 3 to 5 give it more iterations per step (reduced systems) and a guaranteed judgement
+(pressure allocation and audits).

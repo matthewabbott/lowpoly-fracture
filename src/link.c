@@ -497,16 +497,20 @@ bool lpTouchesLinked( lpWorld* w, const lpBody* b )
 }
 
 // A structure at either end carries the link's pull in its stress solve (sampled with its loads): check it again when
-// the pull has changed by a quarter since, at most every 30 steps (a swinging load pulls back and forth)
+// its force or torque has changed by a quarter since (in direction too: a sign swung round pulls the other way), at
+// most every 30 steps (a swinging load pulls back and forth)
 static void lpRecheckStructures( lpWorld* w, lpLink* l )
 {
-	float pull = b3Length( l->force );
-	if ( b3AbsFloat( pull - l->stressForce ) <= 0.25f * b3MaxFloat( pull, l->stressForce ) + 10.0f ||
-		 ( l->recheckTick != 0 && w->tick + 1 < l->recheckTick + 30 ) )
+	float force = b3Length( b3Sub( l->force, l->stressForce ) );
+	float torque = b3Length( b3Sub( l->torque, l->stressTorque ) );
+	bool changed = force > 0.25f * b3MaxFloat( b3Length( l->force ), b3Length( l->stressForce ) ) + 10.0f ||
+				   torque > 0.25f * b3MaxFloat( b3Length( l->torque ), b3Length( l->stressTorque ) ) + 10.0f;
+	if ( changed == false || ( l->recheckTick != 0 && w->tick + 1 < l->recheckTick + 30 ) )
 	{
 		return;
 	}
-	l->stressForce = pull; // with no structure at either end there is nothing to check: stop asking too
+	l->stressForce = l->force; // with no structure at either end there is nothing to check: stop asking too
+	l->stressTorque = l->torque;
 	for ( int k = 0; k < 2; ++k )
 	{
 		int piece = l->ends[k].piece;
