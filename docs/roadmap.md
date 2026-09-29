@@ -163,7 +163,7 @@ Steps (each measured in [perf-log.md](perf-log.md)):
    tests at 40 m/s, full lock, kerbs, slopes and hard landings (done: about 3 us per wheel per step).
 2. A track scene, a drive mode in the sandbox (chase camera, recorded controls), scripted drivers for the bench
    (done: three box cars lap a ring road with kerbs, crates, a hump and a plank bridge in 22 s; the 'track' rung).
-3. Part identity and part detonators.
+3. Part identity and part detonators (done: a fuel tank goes off alone; objects' detonators and every hash as before).
 4. Channels and supply.
 5. A car kit (frame, sheet-metal panels on bolts, glass, engine, fuel tank, steering box) and crash calibration.
 6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path.

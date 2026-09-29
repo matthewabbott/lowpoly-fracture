@@ -31,7 +31,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track) and scripted bombardment and drivers (`lpSceneDrive`); `lpBuildScene` settles their structures |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`), `lpf_test stress TestKeepBreach` one test |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`), `lpf_test stress TestKeepBreach` one test |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving (`drive.cpp`: keys to recorded controls, chase camera), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |

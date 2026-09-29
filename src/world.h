@@ -252,6 +252,14 @@ typedef struct lpPiece
 	float slenderDepth; // of the section
 	uint32_t changed;  // w->changeSerial when its bonds, their health or its load last changed
 	uint32_t accepted; // w->changeSerial when its structure's last solve was judged: changed after it, it is a seed
+	uint32_t userId;   // of the object it came from
+	uint16_t part;	   // index of the part it came from in that object
+	uint16_t tag;	   // that part's system tag
+	uint8_t carries;   // that part's channels (lpPartSystem)
+	uint8_t sources;
+	uint8_t needs;
+	float sourceShare; // of its object's sources of the same channels, by volume (split among its fracture cells)
+	int detonator;	   // its part's detonator, w->detonators + 1; 0: inert
 	uint8_t material;
 	uint8_t joint; // lpJointId where this piece meets other parts (never auto)
 	uint8_t depth;
@@ -300,7 +308,6 @@ typedef struct lpBody
 	bool alive;
 	bool dirty;
 	bool freezePending;
-	bool armed;
 	bool unsettled;	   // structure: still solving, or joints straining toward a break
 	bool solving;	   // structure: a solve is in progress (r, p on the pieces, solveRz here)
 	bool creaking;	   // structure: converged, joints straining but none broken: checks only add strain
@@ -325,7 +332,6 @@ typedef struct lpBody
 
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
-	lpDetonatorDef detonator;
 
 	// Ghost and scrap state. The body frame is com - q * localCenter, so piece geometry stays in object space.
 	b3Pos com;
@@ -344,6 +350,21 @@ typedef struct lpBody
 	int gridPrev;
 	int gridNext;
 } lpBody;
+
+// A detonator of a part or an object, shared by every piece made from it: the first of them to go off disarms it
+typedef struct lpDetonator
+{
+	lpDetonatorDef def;
+	bool armed;
+} lpDetonator;
+
+// Pieces of a body that detonated (detonator + 1 of theirs), removed at the start of the next step
+typedef struct lpPendingBlast
+{
+	int body;
+	uint32_t generation;
+	int detonator;
+} lpPendingBlast;
 
 typedef struct lpPull
 {
@@ -481,7 +502,8 @@ struct lpWorld
 	int oracleSolves;
 	int oracleFlips; // joints the exact solve would strain and the reduced one not, or the other way round
 	int oracleJoints; // joints checked
-	LP_ARRAY( lpBodyRef ) pendingDestroy; // detonated bodies, removed at the start of the next step
+	LP_ARRAY( lpPendingBlast ) pendingDestroy; // detonated pieces, removed at the start of the next step
+	LP_ARRAY( lpDetonator ) detonators;
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpBlow ) blows;
 	LP_ARRAY( lpDeferredJob ) deferred;

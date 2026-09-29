@@ -98,6 +98,65 @@ static void lpFreezeOrKill( lpWorld* w )
 	}
 }
 
+static int lpComparePendingBlast( const void* a, const void* b )
+{
+	const lpPendingBlast* x = a;
+	const lpPendingBlast* y = b;
+	if ( x->body != y->body )
+	{
+		return ( x->body > y->body ) - ( x->body < y->body );
+	}
+	if ( x->generation != y->generation )
+	{
+		return ( x->generation > y->generation ) - ( x->generation < y->generation );
+	}
+	return ( x->detonator > y->detonator ) - ( x->detonator < y->detonator );
+}
+
+// The pieces of a body that share a detonator go up in its blast: the whole body when they are all of it (or it is a
+// ghost or scrap), else only they, and what is left is split next
+static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
+{
+	lpBody* b = w->bodies.data + bodyIndex;
+	bool whole = true;
+	for ( int k = 0; k < b->pieces.count && b->kind != lp_kindGhost && b->kind != lp_kindScrap; ++k )
+	{
+		whole = whole && w->pieces.data[b->pieces.data[k]].detonator == detonator;
+	}
+	if ( whole )
+	{
+		lpDestroyBody( w, bodyIndex, true );
+		return;
+	}
+	b3WorldTransform xf = lpGetTransform( b );
+	int kept = 0;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		int pieceIndex = b->pieces.data[k];
+		lpPiece* p = w->pieces.data + pieceIndex;
+		if ( p->detonator != detonator )
+		{
+			b->pieces.data[kept++] = pieceIndex;
+			continue;
+		}
+		while ( p->bonds.count > 0 )
+		{
+			lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
+		}
+		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( cbrtf( p->shape->volume ), 0.3f ), p->material );
+		b->volume -= p->shape->volume;
+		lpDetachPieceShape( w, pieceIndex );
+		lpFreePieceSlot( w, pieceIndex );
+	}
+	b->pieces.count = kept;
+	b->topology += 1;
+	if ( b3Body_GetType( b->id ) == b3_dynamicBody )
+	{
+		b3Body_ApplyMassFromShapes( b->id );
+	}
+	lpMarkDirty( w, bodyIndex );
+}
+
 void lpWorld_Pull( lpWorld* w, int piece, b3Vec3 localPoint, b3Pos target, float maxAccel, float maxMass )
 {
 	lpPull pull = { piece, localPoint, target, maxAccel, maxMass };
@@ -204,19 +263,19 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 
 	uint64_t ticks = b3GetTicks();
 
-	// Bodies that detonated last step are consumed by their own blast. One that is already gone may have had its slot
-	// reused since, so the generation must match too.
+	// Pieces that detonated last step are consumed by their own blast: the whole body when they were all of it, else
+	// only they. A body that is already gone may have had its slot reused since, so the generation must match too.
 	if ( w->pendingDestroy.count > 1 )
 	{
-		qsort( w->pendingDestroy.data, (size_t)w->pendingDestroy.count, sizeof( lpBodyRef ), lpCompareBodyRef );
+		qsort( w->pendingDestroy.data, (size_t)w->pendingDestroy.count, sizeof( lpPendingBlast ), lpComparePendingBlast );
 	}
 	for ( int i = 0; i < w->pendingDestroy.count; ++i )
 	{
-		lpBodyRef ref = w->pendingDestroy.data[i];
-		const lpBody* b = w->bodies.data + ref.body;
-		if ( b->alive && b->generation == ref.generation )
+		lpPendingBlast pending = w->pendingDestroy.data[i];
+		const lpBody* b = w->bodies.data + pending.body;
+		if ( b->alive && b->generation == pending.generation )
 		{
-			lpDestroyBody( w, ref.body, true );
+			lpDestroyDetonated( w, pending.body, pending.detonator );
 		}
 	}
 	w->pendingDestroy.count = 0;

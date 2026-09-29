@@ -263,6 +263,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	b3Plane anchorPlane = piece->anchorPlane;
 	lpVec6 parentX = piece->stressX; // kept cells start their stress solve where the parent was, moved rigidly
 	b3Vec3 parentCenter = piece->shape->centroid;
+	lpPiece identity = *piece; // who it was: its object, part and channels go to its cells
+	float parentVolume = piece->shape->volume;
 
 	uint64_t shapeTicks = b3GetTicks();
 	lpDetachPieceShape( w, pieceIndex );
@@ -335,6 +337,14 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		child->depth = (uint8_t)( depth > 255 ? 255 : depth );
 		child->seed = (uint32_t)lpMix64( w->def.seed ^ w->pieceSerial++ );
 		child->anchorPlane = anchorPlane;
+		child->userId = identity.userId;
+		child->part = identity.part;
+		child->tag = identity.tag;
+		child->carries = identity.carries;
+		child->sources = identity.sources;
+		child->needs = identity.needs;
+		child->sourceShare = identity.sourceShare * cell->volume / parentVolume;
+		child->detonator = cls == lp_cellKeep ? identity.detonator : 0; // a chip thrown clear is no longer volatile
 
 		if ( cls == lp_cellKeep )
 		{
@@ -442,24 +452,50 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	lpMarkDirty( w, bodyIndex );
 }
 
-// Queue the blast of an armed body for the next step and remove the body then.
-static void lpDetonate( lpWorld* w, int bodyIndex )
+// Queue the blast of an armed piece's detonator for the next step, and remove the pieces that share it from its body
+// then. The first piece of a detonator to go off disarms it: a tank torn in two explodes once.
+static void lpDetonate( lpWorld* w, int pieceIndex )
 {
-	lpBody* b = w->bodies.data + bodyIndex;
-	if ( b->alive == false || b->armed == false )
+	const lpPiece* piece = w->pieces.data + pieceIndex;
+	if ( piece->detonator == 0 || piece->body < 0 || w->detonators.data[piece->detonator - 1].armed == false )
 	{
 		return;
 	}
-	b->armed = false;
+	lpDetonator* d = w->detonators.data + piece->detonator - 1;
+	d->armed = false;
+	const lpBody* b = w->bodies.data + piece->body;
+
+	// At the centre of the pieces that go: the body's centre of mass when they are all of it
+	b3WorldTransform xf = lpGetTransform( b );
+	b3Vec3 center = b3Vec3_zero;
+	float volume = 0.0f;
+	bool whole = true;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		const lpPiece* p = w->pieces.data + b->pieces.data[k];
+		if ( p->detonator == piece->detonator )
+		{
+			center = b3MulAdd( center, p->shape->volume, p->shape->centroid );
+			volume += p->shape->volume;
+		}
+		whole = whole && p->detonator == piece->detonator;
+	}
 	lpImpactDef blast = { 0 };
-	blast.point = B3_IS_NON_NULL( b->id ) ? b3Body_GetWorldCenter( b->id ) : b->com;
-	blast.radius = b->detonator.radius;
-	blast.energy = b->detonator.energy;
-	blast.impulse = b->detonator.speed;
+	if ( whole )
+	{
+		blast.point = B3_IS_NON_NULL( b->id ) ? b3Body_GetWorldCenter( b->id ) : b->com;
+	}
+	else
+	{
+		blast.point = b3TransformWorldPoint( xf, b3MulSV( 1.0f / volume, center ) );
+	}
+	blast.radius = d->def.radius;
+	blast.energy = d->def.energy;
+	blast.impulse = d->def.speed;
 	blast.explosion = true;
 	lpArray_Push( w->nextImpacts, blast );
-	lpBodyRef ref = { bodyIndex, b->generation };
-	lpArray_Push( w->pendingDestroy, ref );
+	lpPendingBlast pending = { piece->body, b->generation, piece->detonator };
+	lpArray_Push( w->pendingDestroy, pending );
 }
 
 typedef struct lpFractureCandidate
@@ -676,13 +712,13 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 		}
 		lpWakeRubble( w, p->body );
 		lpBody* b = w->bodies.data + p->body;
-		if ( b->armed )
+		if ( p->detonator != 0 && w->detonators.data[p->detonator - 1].armed )
 		{
 			b3WorldTransform xf = b3Body_GetTransform( b->id );
 			float d = lpShape_SignedDistance( p->shape, b3InvTransformWorldPoint( xf, impact->point ) );
 			if ( lpImpactDensity( impact, d ) > 150.0f )
 			{
-				lpDetonate( w, p->body );
+				lpDetonate( w, candidates[i] );
 			}
 		}
 	}
@@ -881,14 +917,11 @@ void lpCollectHits( lpWorld* w )
 		intptr_t pieceData[2] = { da, db };
 		for ( int k = 0; k < 2; ++k )
 		{
-			if ( pieceData[k] > 0 )
+			int detonator = pieceData[k] > 0 ? w->pieces.data[pieceData[k] - 1].detonator : 0;
+			if ( detonator != 0 && w->detonators.data[detonator - 1].armed &&
+				 e->approachSpeed >= w->detonators.data[detonator - 1].def.triggerSpeed )
 			{
-				int bodyIndex = w->pieces.data[pieceData[k] - 1].body;
-				lpBody* b = w->bodies.data + bodyIndex;
-				if ( b->armed && e->approachSpeed >= b->detonator.triggerSpeed )
-				{
-					lpDetonate( w, bodyIndex );
-				}
+				lpDetonate( w, (int)( pieceData[k] - 1 ) );
 			}
 		}
 

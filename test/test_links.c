@@ -726,8 +726,8 @@ static int TestYardCart( void )
 	int crates[4];
 	for ( int i = 0; i < s.world->bodies.count && armed < 4; ++i )
 	{
-		const lpBody* b = s.world->bodies.data + i;
-		if ( b->alive && b->armed && b->detonator.triggerSpeed < 3.8f ) // the crates, not the rack's flasks
+		float trigger = 0.0f;
+		if ( BodyArmed( s.world, i, &trigger ) && trigger < 3.8f ) // the crates, not the rack's flasks
 		{
 			crates[armed++] = i;
 		}
@@ -753,8 +753,7 @@ static int TestYardCart( void )
 	int wentOff = 0;
 	for ( int k = 0; k < armed; ++k )
 	{
-		const lpBody* b = s.world->bodies.data + crates[k];
-		wentOff += b->alive == false || b->armed == false ? 1 : 0;
+		wentOff += BodyArmed( s.world, crates[k], NULL ) ? 0 : 1;
 	}
 	int ropes = 0, hinges = 0;
 	for ( int i = 0; i < lpWorld_GetLinkCapacity( s.world ); ++i )

@@ -175,7 +175,7 @@ static int TestDetonator( void )
 		fractures += lpWorld_GetStats( s.world ).fracturesThisStep;
 		cells += lpWorld_GetStats( s.world ).cellsThisStep;
 	}
-	ENSURE( s.world->bodies.data[flask].alive == false || s.world->bodies.data[flask].armed == false );
+	ENSURE( BodyArmed( s.world, flask, NULL ) == false );
 	printf( "  fractures %d, cells %d, debris %d\n", fractures, cells, lpWorld_GetStats( s.world ).debrisBodies );
 	ENSURE( fractures >= 1 && cells > 20 ); // one solid brick wall now: fewer pieces break, into many cells
 	DestroySim( &s );

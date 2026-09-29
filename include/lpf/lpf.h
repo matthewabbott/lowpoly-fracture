@@ -165,6 +165,28 @@ void lpDestroyWorld( lpWorld* world );
 
 // ---- objects ----
 
+// Makes a part or an object explode: when it hits something at triggerSpeed or faster, or when a nearby blast reaches
+// it. A thrown alchemical flask, a gas can, volatile cargo, a car's fuel tank. Zero radius means inert.
+typedef struct lpDetonatorDef
+{
+	float triggerSpeed; // m/s approach speed (at least lpWorldDef.hitSpeed, where collisions start to register)
+	float radius;
+	float energy;
+	float speed; // blast push, m/s at the center
+} lpDetonatorDef;
+
+// What a part is to the systems a machine or a creature runs on. There are 8 channels (bit n is channel n); the game
+// names them (fuel, power, steering; blood, nerves). A bond between two parts that carry a channel carries it, and so
+// does a link that carries it; a part supplied with a channel is one its sources reach through carriers. Fracture
+// cells inherit all of it.
+typedef struct lpPartSystem
+{
+	uint16_t tag;	 // the game's name for the part (an engine, a fuel tank, a heart); 0: none. The core never reads it.
+	uint8_t carries; // channels it carries
+	uint8_t sources; // channels it feeds (it carries them too)
+	uint8_t needs;	 // channels it must be fed before it feeds its own; only those below its lowest source count
+} lpPartSystem;
+
 // One convex part of an object, in object space. A box when pointCount is zero, else the hull of points.
 typedef struct lpPartDef
 {
@@ -177,17 +199,9 @@ typedef struct lpPartDef
 	b3Vec3 grainAxis; // object space; zero picks the longest box axis
 	bool anchored;	  // rests on a foundation: bonded to the world through its bottom face
 	uint8_t joint;	  // lpJointId where this part meets its neighbours (lp_jointAuto: by material)
+	lpPartSystem system;
+	lpDetonatorDef detonator; // this part goes off alone, and takes only its own pieces with it (a fuel tank)
 } lpPartDef;
-
-// Makes an object explode: when it hits something at triggerSpeed or faster, or when a nearby blast reaches it.
-// A thrown alchemical flask, a gas can, volatile cargo. Zero radius means inert.
-typedef struct lpDetonatorDef
-{
-	float triggerSpeed; // m/s approach speed (at least lpWorldDef.hitSpeed, where collisions start to register)
-	float radius;
-	float energy;
-	float speed; // blast push, m/s at the center
-} lpDetonatorDef;
 
 typedef struct lpObjectDef
 {
@@ -197,8 +211,9 @@ typedef struct lpObjectDef
 	int partCount;
 	b3Vec3 linearVelocity;
 	b3Vec3 angularVelocity;
-	lpDetonatorDef detonator;
-	float gravityScale; // "fairy dust": 1 is normal weight, 0 floats; everything that breaks off keeps it
+	lpDetonatorDef detonator; // the parts without one of their own share it: they go off together, as one
+	float gravityScale;		  // "fairy dust": 1 is normal weight, 0 floats; everything that breaks off keeps it
+	uint32_t userId;		  // the game's id for the object, kept by every piece made from it
 } lpObjectDef;
 
 lpObjectDef lpDefaultObjectDef( void );
@@ -515,6 +530,10 @@ typedef struct lpPieceInfo
 {
 	int body;			 // -1 when the slot is free
 	uint32_t generation; // changes when the slot is reused; piece geometry never changes otherwise
+	uint32_t userId;	 // of the object it came from
+	int part;			 // index of the part it came from in that object
+	uint16_t tag;		 // that part's system tag
+	float volume;
 } lpPieceInfo;
 
 int lpWorld_GetPieceCapacity( const lpWorld* world );

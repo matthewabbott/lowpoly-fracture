@@ -64,6 +64,25 @@ static inline void DestroySim( Sim* s )
 	b3DestroyWorld( s->physics );
 }
 
+// A body with a piece whose detonator is still armed; its trigger speed then goes to *triggerSpeed (if not NULL)
+static inline bool BodyArmed( const lpWorld* w, int body, float* triggerSpeed )
+{
+	const lpBody* b = w->bodies.data + body;
+	for ( int k = 0; k < b->pieces.count && b->alive; ++k )
+	{
+		int d = w->pieces.data[b->pieces.data[k]].detonator;
+		if ( d != 0 && w->detonators.data[d - 1].armed )
+		{
+			if ( triggerSpeed != NULL )
+			{
+				*triggerSpeed = w->detonators.data[d - 1].def.triggerSpeed;
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
 static inline void Run( Sim* s, int ticks )
 {
 	for ( int i = 0; i < ticks; ++i )

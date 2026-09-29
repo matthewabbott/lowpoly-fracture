@@ -12,6 +12,7 @@ int DebrisTest( void );
 int StressTest( void );
 int LinkTest( void );
 int VehicleTest( void );
+int SystemsTest( void );
 
 const char* lp_testFilter = NULL;
 int lp_testLargeNodes = 0;
@@ -22,7 +23,7 @@ int lp_testOracleJoints = 0;
 
 int main( int argc, char** argv )
 {
-	// Optional filters: lpf_test [poly|fracture|world|debris|stress|links|vehicles [TestName]]
+	// Optional filters: lpf_test [poly|fracture|world|debris|stress|links|vehicles|systems [TestName]]
 	const char* only = argc > 1 ? argv[1] : NULL;
 	lp_testFilter = argc > 2 ? argv[2] : NULL;
 	printf( "lowpoly-fracture tests\n" );
@@ -53,6 +54,10 @@ int main( int argc, char** argv )
 	if ( only == NULL || strcmp( only, "vehicles" ) == 0 )
 	{
 		RUN_SUITE( VehicleTest );
+	}
+	if ( only == NULL || strcmp( only, "systems" ) == 0 )
+	{
+		RUN_SUITE( SystemsTest );
 	}
 	printf( "All tests passed.\n" );
 	return 0;

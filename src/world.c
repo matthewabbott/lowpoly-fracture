@@ -334,6 +334,7 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->pendingWakes );
 	lpArray_Free( w->freezeCandidates );
 	lpArray_Free( w->pendingDestroy );
+	lpArray_Free( w->detonators );
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
 		lpArray_Free( w->stressJobs[i].slender );
@@ -756,14 +757,25 @@ static void lpBondParts( lpWorld* w, int bodyIndex, int first )
 	lpArray_Free( pairs );
 }
 
+// Returns the detonator + 1, or 0 for an inert one
+static int lpAddDetonator( lpWorld* w, const lpDetonatorDef* def )
+{
+	if ( def->radius <= 0.0f )
+	{
+		return 0;
+	}
+	lpDetonator d = { *def, true };
+	lpArray_Push( w->detonators, d );
+	return w->detonators.count;
+}
+
 int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
 	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
 										  def->gravityScale );
-	w->bodies.data[bodyIndex].detonator = def->detonator;
-	w->bodies.data[bodyIndex].armed = def->detonator.radius > 0.0f;
+	int objectDetonator = lpAddDetonator( w, &def->detonator ); // shared by the parts without one of their own
 
 	lpPoly* poly = lpAlloc( sizeof( lpPoly ) );
 	int first = w->bodies.data[bodyIndex].pieces.count;
@@ -806,6 +818,15 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		p->joint = lpResolveJoint( part->joint, part->material );
 		p->color = part->color;
 		p->seed = (uint32_t)lpMix64( w->def.seed ^ ( (uint64_t)pieceIndex << 20 ) ^ w->pieceSerial++ );
+		p->userId = def->userId;
+		p->part = (uint16_t)i;
+		p->tag = part->system.tag;
+		p->sources = part->system.sources;
+		p->carries = (uint8_t)( part->system.carries | part->system.sources ); // a source carries what it feeds
+		// What it needs comes from lower channels only, so one pass over the channels in order settles every supply
+		uint8_t lowest = (uint8_t)( p->sources & ( ~p->sources + 1u ) );
+		p->needs = p->sources != 0 ? (uint8_t)( part->system.needs & ( lowest - 1u ) ) : part->system.needs;
+		p->detonator = part->detonator.radius > 0.0f ? lpAddDetonator( w, &part->detonator ) : objectDetonator;
 
 		b3Quat q = part->pointCount == 0 ? part->transform.q : b3Quat_identity;
 		int pattern = lpGetMaterial( part->material )->pattern;
@@ -850,6 +871,20 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		}
 	}
 	lpFree( poly );
+
+	// Each source's share of the object's sources of the same channels, by volume
+	lpBody* body = w->bodies.data + bodyIndex;
+	for ( int k = first; k < body->pieces.count; ++k )
+	{
+		lpPiece* p = w->pieces.data + body->pieces.data[k];
+		float total = 0.0f;
+		for ( int j = first; j < body->pieces.count && p->sources != 0; ++j )
+		{
+			const lpPiece* q = w->pieces.data + body->pieces.data[j];
+			total += q->sources == p->sources ? q->shape->volume : 0.0f;
+		}
+		p->sourceShare = total > 0.0f ? p->shape->volume / total : 0.0f;
+	}
 
 	lpBondParts( w, bodyIndex, first );
 
@@ -985,6 +1020,12 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		h = lpHashBytes( h, &p->shape->centroid, sizeof( b3Vec3 ) );
 		h = lpHashBytes( h, p->shape->vertices, sizeof( b3Vec3 ) * (size_t)p->shape->vertexCount );
 		h = lpHashBytes( h, p->bonds.data, sizeof( int ) * (size_t)p->bonds.count );
+		if ( ( p->carries | p->needs ) != 0 )
+		{
+			uint8_t masks[3] = { p->carries, p->sources, p->needs }; // only when set: old hashes stay valid
+			h = lpHashBytes( h, masks, sizeof( masks ) );
+			h = lpHashBytes( h, &p->sourceShare, sizeof( float ) );
+		}
 	}
 	for ( int i = 0; i < w->bonds.count; ++i )
 	{
@@ -1146,7 +1187,7 @@ int lpWorld_GetPieceCapacity( const lpWorld* w )
 lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* w, int piece )
 {
 	const lpPiece* p = w->pieces.data + piece;
-	lpPieceInfo info = { p->body, p->generation };
+	lpPieceInfo info = { p->body, p->generation, p->userId, p->part, p->tag, p->body >= 0 ? p->shape->volume : 0.0f };
 	return info;
 }
 

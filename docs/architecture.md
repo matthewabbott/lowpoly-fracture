@@ -92,6 +92,14 @@ tiers instead of popping them.
 - Joints: every part meets its neighbours with a joint (`lpJointId`: mortar for masonry and plaster, nails for wood,
   dry, solid). A bond between parts takes the weaker joint; bonds between the cells of one broken piece are solid but
   start with the damage the impact did at their location, so cracks near a hit barely hold.
+- Identity: every piece keeps the object's `userId`, its part index and the part's system (`lpPartSystem`: a tag the
+  core never reads, the channels it carries, sources and needs, and its share of its object's sources by volume).
+  Fracture cells inherit all of it (the share split by volume); splits move pieces as they are.
+- Detonators belong to parts (`w->detonators`, shared by every piece made from the part; an object's detonator is
+  shared by all its parts without one of their own). A hit at trigger speed, or a blast of more than 150 J/m^2 at a
+  piece, sets its detonator off: it disarms (a tank torn in two goes off once) and its pieces on that body go up with
+  the blast at their centre next step. When they are the whole body it goes as before, the blast at its centre of
+  mass; otherwise only they go and the rest is split. Chips thrown clear by a fracture are no longer volatile.
 
 ## Stress (`stress.c`, `solve.c`)
 

@@ -437,3 +437,11 @@ every 12 ticks is identical at 1, 4 and 8 workers.
 New ladder rung 'track' (a blast every 30 ticks at the cars): 0.50 / 0.30 ms per step at 1 / 8 workers, 487 pieces.
 Under a blast every 12 ticks the wooden cars are splinters within seven seconds, wheels lying about: crash and blast
 calibration is step 5's (sheet metal on bolts). Every other ladder hash is unchanged.
+
+## 2026-09-28 articulated objects, step 3: part identity and part detonators
+
+Pieces remember their object (`userId`), part and the part's system (tag, channels carried, fed and needed, a share of
+the object's sources by volume); fracture cells inherit them. Detonators moved from bodies to parts, shared by every
+piece made from one: a fuel tank goes off alone and takes only its own pieces, a tank torn off stays volatile and goes
+off once. `lpPiece` grows from 264 to 288 bytes. Every ladder hash is the same, the yard's volatile crates included
+(their object detonators behave exactly as before).
