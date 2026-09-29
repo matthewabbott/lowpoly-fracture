@@ -14,7 +14,8 @@ nothing much. The engine table lives in `src/world.c` (`lp_materials`); the stru
 | strength | `bondStrength` | J/m² that breaks a bond between two pieces (how easily chunks come apart) |
 | | `fractureEnergy` | J/m² that refractures a piece (how easily a chunk itself shatters) |
 | | `tensileStrength`, `compressiveStrength`, `shearStrength` | Pa limits of the solid material in the stress solve |
-| joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails or solid (table in `world.c`) |
+| | `crush` | share of a collision's energy its crumpling soaks up before anything breaks (the more crushable of the two decides); a crushable hit is also centred on the contact face, not its first corner |
+| joints | `lpPartDef.joint` | how a part meets its neighbours: mortar, dry, nails, bolts or solid (table in `world.c`) |
 | links | `lpLinkDef` | joints between objects (weld, hinge, ball, rope): limits per link, see "Links" below |
 | | `breakable` | false for ground and metal today |
 | fracture shape | `pattern` | impact Voronoi, grain Voronoi (wood), radial (glass) |
@@ -88,6 +89,8 @@ toughness are 0 to 5.
 | rotten wood | 400 | 0.5 | 0 | 1 | grain | punky, crumbles, lots of dust |
 | glass (now) | 2500 | 0.25 | 4 | 0 | radial | hard and fragile: shrugs off knocks, then shatters, glints |
 | metal (now, unbreakable) | 7800 | n/a | 5 | 5 | none | dents and crumples (ductile), never shatters |
+| sheet metal (now) | 1200 | 2 | 3 | 3 | impact | car bodies: thick stand-ins for thin sheet, bolted panels tear off in big plates; crush 0.7 |
+| rubber (now) | 900 | 17 | 1 | 5 | impact | tyres and bumpers: very hard to break, barely bounces; crush 0.6 |
 | foam | 30 | 0.1 | 0 | 1 | impact | light, floaty, bounces, shoved by anything |
 | ice | 920 | 0.8 | 2 | 1 | radial | slippery (low friction), shatters, melts near heat |
 | ceramic | 2000 | 0.6 | 3 | 0 | radial | pots and flasks: clinks, then shatters into shards |

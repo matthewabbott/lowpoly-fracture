@@ -47,6 +47,31 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
 // for the player. Does nothing in scenes without vehicles.
 void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle );
 
+// The scenes' supply channels and part tags (the core never reads tags; these are the game's names)
+enum
+{
+	lp_channelFuel = 0,
+	lp_channelPower = 1, // fed by the engine, which needs fuel
+	lp_channelSteer = 2, // fed by the steering box, which needs power
+};
+
+enum
+{
+	lp_tagFrame = 1,
+	lp_tagEngine,
+	lp_tagFuelTank,
+	lp_tagSteering,
+	lp_tagPanel,
+	lp_tagGlass,
+	lp_tagBumper,
+};
+
+// A car facing local +z at base (on the ground), turned by yaw: a sheet-metal floor pan carrying fuel, power and
+// steering, an engine (feeds power, needs fuel), a fuel tank (feeds fuel, and goes off), a steering box (feeds
+// steering, needs power), hood, boot, doors, pillars and roof bolted on, glass, rubber bumpers, and four wheels (rear
+// drive, front steering, the handbrake on the rear). About 1.7 t. style picks the paint. Returns the vehicle.
+int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style );
+
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );
 

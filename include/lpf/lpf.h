@@ -30,6 +30,8 @@ typedef enum lpMaterialId
 	lp_metal,
 	lp_ground,
 	lp_foliage,
+	lp_sheetMetal, // car bodies: panels bolted to a floor pan, tear off in big plates, crumple (crush) in a crash
+	lp_rubber,	   // tyres, bumpers
 	lp_materialCount
 } lpMaterialId;
 
@@ -85,6 +87,10 @@ typedef struct lpMaterialDef
 	// Masonry (lp_breakMasonry): the course grid, in the object's frame so neighbouring panels line up
 	float courseHeight;
 	float brickLength;
+
+	// Share of a collision's energy its crumpling soaks up before anything breaks (sheet metal, rubber): the harder
+	// of two things that hit decides
+	float crush;
 } lpMaterialDef;
 
 const lpMaterialDef* lpGetMaterial( int materialId );
@@ -93,11 +99,13 @@ const lpMaterialDef* lpGetMaterial( int materialId );
 // one part is solid. Structures break at their joints first: mortar before brick, nails before timber.
 typedef enum lpJointId
 {
-	lp_jointAuto,	// by material: mortar for stone, brick, concrete and plaster, nails for wood, solid otherwise
+	lp_jointAuto,	// by material: mortar for stone, brick, concrete and plaster, nails for wood, bolts for sheet metal,
+					// solid otherwise
 	lp_jointSolid,	// as strong as the weaker of the two materials
 	lp_jointMortar, // weak in tension: masonry cracks and hinges at its joints
 	lp_jointDry,	// stacked with nothing between: no tension or cohesion, friction only
 	lp_jointNails,
+	lp_jointBolts, // sheet metal panels on a car
 	lp_jointCount
 } lpJointId;
 

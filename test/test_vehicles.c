@@ -503,6 +503,122 @@ static int TestTrackLap( void )
 	return 0;
 }
 
+typedef struct Crash
+{
+	float kept;		// of the car's volume, still on its body
+	int carPieces;	// then
+	int wallPieces; // brick pieces left standing
+	float breach;	// brick volume knocked loose
+	float power;
+	float speedAfter;
+} Crash;
+
+// The kit car into a brick wall at a speed, coasting
+static Crash CarIntoWall( float speed )
+{
+	Sim s = CreateSim( -1 );
+	AddStatic( &s, (b3Vec3){ 0.0f, 0.9f, 0.15f }, (b3Vec3){ 4.0f, 0.9f, 0.15f }, b3Quat_identity, lp_brick );
+	lpWorld_SettleStructures( s.world );
+	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
+	lpVehicleState vs = lpWorld_GetVehicleState( s.world, vehicle );
+	const lpBody* car = s.world->bodies.data + vs.body;
+	float volume = car->volume;
+	b3Body_SetLinearVelocity( car->id, (b3Vec3){ 0.0f, 0.0f, speed } );
+	Run( &s, 120 );
+	vs = lpWorld_GetVehicleState( s.world, vehicle );
+	Crash c = { 0 };
+	c.kept = vs.body >= 0 ? s.world->bodies.data[vs.body].volume / volume : 0.0f;
+	c.carPieces = vs.body >= 0 ? s.world->bodies.data[vs.body].pieces.count : 0;
+	c.power = vs.power;
+	c.speedAfter = vs.speed;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		if ( p->body < 0 || p->material != lp_brick )
+		{
+			continue;
+		}
+		if ( s.world->bodies.data[p->body].kind == lp_kindStructure )
+		{
+			c.wallPieces += 1;
+		}
+		else
+		{
+			c.breach += p->shape->volume;
+		}
+	}
+	DestroySim( &s );
+	return c;
+}
+
+// The harder the crash, the worse for both: at 10 m/s the wall is chipped and the bumper comes off; at 30 m/s the wall
+// is breached and the car's front is torn up (engine blocks torn off: less power), but most of the car is one piece
+static int TestCarWallCrash( void )
+{
+	float speeds[3] = { 10.0f, 20.0f, 30.0f };
+	Crash c[3];
+	for ( int k = 0; k < 3; ++k )
+	{
+		c[k] = CarIntoWall( speeds[k] );
+		printf( "  %.0f m/s: car keeps %.0f%% (%d pieces, power %.2f, then %.1f m/s); wall %d pieces standing, %.3f m^3 knocked "
+				"loose\n",
+				speeds[k], 100.0f * c[k].kept, c[k].carPieces, c[k].power, c[k].speedAfter, c[k].wallPieces, c[k].breach );
+	}
+	ENSURE( c[0].kept > 0.9f && c[0].power == 1.0f ); // a bumper at most
+	ENSURE( c[0].kept > c[1].kept && c[1].kept > c[2].kept && c[2].kept > 0.5f );
+	ENSURE( c[2].power < 1.0f && c[0].breach < c[2].breach && c[2].breach > 0.3f );
+	return 0;
+}
+
+// A grenade at the fuel tank sets it off: the fuel is gone, so the engine makes no power
+static int TestCarTankShot( void )
+{
+	Sim s = CreateSim( -1 );
+	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 1 );
+	Run( &s, 30 );
+	ENSURE( lpWorld_GetVehicleState( s.world, vehicle ).power == 1.0f );
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.0f, 1.2f, -2.4f };
+	im.radius = 1.4f;
+	im.energy = 80000.0f;
+	im.impulse = 12.0f;
+	im.explosion = true;
+	lpWorld_AddImpact( s.world, &im );
+	Run( &s, 1 );
+	ENSURE( s.world->pendingDestroy.count >= 1 ); // the tank went off
+	Run( &s, 60 );
+	lpVehicleState vs = lpWorld_GetVehicleState( s.world, vehicle );
+	printf( "  after the tank went off: power %.2f, %d wheels on, %d pieces\n", vs.power, vs.attached,
+			lpWorld_GetStats( s.world ).pieceCount );
+	ENSURE( vs.power == 0.0f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// A heavy blow at the front of the engine knocks its front block loose: the rest of the engine still drives the car,
+// at its share
+static int TestCarEngineShot( void )
+{
+	Sim s = CreateSim( -1 );
+	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 2 );
+	Run( &s, 30 );
+	lpImpactDef im = { 0 };
+	im.point = (b3Pos){ 0.0f, 1.0f, 1.8f }; // at the front block's face: its bolts go, the floor pan does not crack
+	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.radius = 0.5f;
+	im.energy = 12000.0f;
+	im.impulse = 20.0f;
+	lpWorld_AddImpact( s.world, &im );
+	Run( &s, 20 );
+	float power = lpWorld_GetVehicleState( s.world, vehicle ).power;
+	printf( "  after a blow to the engine's front block: power %.3f\n", power );
+	ENSURE( power > 0.5f && power < 0.9f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
 // What wheels cost per step (casts and the tyre solve), driving on open ground: 4 cars, then 64
 static int TestWheelCost( void )
 {
@@ -549,6 +665,9 @@ int VehicleTest( void )
 	RUN_TEST( TestWheelLoadsBridge );
 	RUN_TEST( TestVehicleDeterminism );
 	RUN_TEST( TestTrackLap );
+	RUN_TEST( TestCarWallCrash );
+	RUN_TEST( TestCarTankShot );
+	RUN_TEST( TestCarEngineShot );
 	RUN_TEST( TestWheelCost );
 	return 0;
 }

@@ -1044,17 +1044,65 @@ static void lpWedge( float halfWidth, float z0, float z1, float h, int material,
 	lpHull( pts, 6, material, color, true );
 }
 
-// A box car facing local +z: a wooden floor pan with a cabin, a hood and a boot, on four wheels (rear drive, front
-// steering, the handbrake on the rear). About 2 t. Returns the vehicle.
-static int lpAddBoxCar( lpWorld* world, b3Vec3 base, float yaw, uint32_t paint )
+// A sheet-metal part of the car kit, with its system
+static lpPartDef* lpCarPart( b3Vec3 center, b3Vec3 half, int material, uint32_t color, uint16_t tag, uint8_t carries,
+							 uint8_t sources, uint8_t needs )
 {
-	float ride = 0.75f; // the floor pan's bottom above the ground, about where it rests
+	lpPartDef* part = lpBox( center, half, b3Quat_identity, material, color, false );
+	if ( part != NULL )
+	{
+		part->system = (lpPartSystem){ tag, carries, sources, needs };
+	}
+	return part;
+}
+
+int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style )
+{
+	static const uint32_t paints[4] = { 0x2F6FB5u, 0xC0392Bu, 0xE0A526u, 0x3C8D4Fu };
+	uint32_t paint = paints[( style % 4 + 4 ) % 4];
+	const uint8_t fuel = 1u << lp_channelFuel, power = 1u << lp_channelPower, steer = 1u << lp_channelSteer;
+	const uint32_t trim = 0x3A3D42u, glass = 0x9FD3E0u;
+	float ride = 0.72f; // the floor pan's bottom above the ground, about where it rests
 	b3Quat q = lpYaw( yaw );
+
 	lpBegin();
-	lpBox( (b3Vec3){ 0.0f, 0.1f, 0.0f }, (b3Vec3){ 0.9f, 0.1f, 2.1f }, b3Quat_identity, lp_wood, paint, false );
-	lpBox( (b3Vec3){ 0.0f, 0.45f, -0.35f }, (b3Vec3){ 0.8f, 0.25f, 0.95f }, b3Quat_identity, lp_wood, 0xE3DED0u, false );
-	lpBox( (b3Vec3){ 0.0f, 0.32f, 1.45f }, (b3Vec3){ 0.85f, 0.12f, 0.6f }, b3Quat_identity, lp_wood, paint, false );
-	lpBox( (b3Vec3){ 0.0f, 0.32f, -1.8f }, (b3Vec3){ 0.85f, 0.12f, 0.28f }, b3Quat_identity, lp_wood, paint, false );
+	// The floor pan carries every line; what sits on it is bolted to it
+	lpCarPart( (b3Vec3){ 0.0f, 0.04f, 0.0f }, (b3Vec3){ 0.85f, 0.04f, 2.1f }, lp_sheetMetal, trim, lp_tagFrame,
+			   fuel | power | steer, 0, 0 );
+	for ( int k = 0; k < 3; ++k ) // an engine of three blocks: lose one and a third of the power goes with it
+	{
+		lpCarPart( (b3Vec3){ 0.0f, 0.28f, 1.25f + 0.2f * (float)k }, (b3Vec3){ 0.3f, 0.2f, 0.095f }, lp_sheetMetal, 0x55595Eu,
+				   lp_tagEngine, fuel, power, fuel );
+	}
+	lpPartDef* tank = lpCarPart( (b3Vec3){ 0.0f, 0.2f, -1.55f }, (b3Vec3){ 0.4f, 0.12f, 0.22f }, lp_sheetMetal, 0x6B3A2Au,
+								 lp_tagFuelTank, 0, fuel, 0 );
+	if ( tank != NULL )
+	{
+		tank->detonator = (lpDetonatorDef){ 14.0f, 2.2f, 150000.0f, 12.0f };
+	}
+	lpCarPart( (b3Vec3){ -0.45f, 0.18f, 1.05f }, (b3Vec3){ 0.12f, 0.1f, 0.12f }, lp_sheetMetal, trim, lp_tagSteering, power, steer,
+			   power );
+	// Body panels, pillars and roof, glass, bumpers
+	lpCarPart( (b3Vec3){ 0.0f, 0.51f, 1.5f }, (b3Vec3){ 0.8f, 0.03f, 0.55f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
+	lpCarPart( (b3Vec3){ 0.0f, 0.35f, -1.75f }, (b3Vec3){ 0.8f, 0.03f, 0.4f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
+	for ( int side = -1; side <= 1; side += 2 )
+	{
+		float x = 0.82f * (float)side;
+		lpCarPart( (b3Vec3){ x, 0.38f, -0.25f }, (b3Vec3){ 0.03f, 0.3f, 0.7f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
+		for ( int k = 0; k < 2; ++k )
+		{
+			lpCarPart( (b3Vec3){ 0.74f * (float)side, 0.575f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.04f, 0.495f, 0.04f },
+					   lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
+		}
+	}
+	lpCarPart( (b3Vec3){ 0.0f, 1.1f, -0.25f }, (b3Vec3){ 0.78f, 0.03f, 0.85f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
+	for ( int k = 0; k < 2; ++k )
+	{
+		lpCarPart( (b3Vec3){ 0.0f, 0.78f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.7f, 0.29f, 0.015f }, lp_glass, glass, lp_tagGlass, 0, 0,
+				   0 );
+		lpCarPart( (b3Vec3){ 0.0f, 0.1f, k == 0 ? 2.18f : -2.18f }, (b3Vec3){ 0.85f, 0.1f, 0.08f }, lp_rubber, 0x2A2A2Au,
+				   lp_tagBumper, 0, 0, 0 );
+	}
 	b3Vec3 origin = { base.x, base.y + ride, base.z };
 	int body = lpCommitDef( world, origin, q, lpDynamicDef() );
 
@@ -1068,17 +1116,20 @@ static int lpAddBoxCar( lpWorld* world, b3Vec3 base, float yaw, uint32_t paint )
 		wheels[i].radius = 0.36f;
 		wheels[i].width = 0.24f;
 		wheels[i].driveShare = front ? 0.0f : 0.5f;
+		wheels[i].driveNeeds = power;
 		wheels[i].steerFactor = front ? 1.0f : 0.0f;
+		wheels[i].steerNeeds = steer;
 		wheels[i].handbrake = front == false;
+		wheels[i].material = lp_rubber;
 	}
 	lpVehicleDef def = lpDefaultVehicleDef();
 	def.body = body;
 	def.forward = b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } );
 	def.wheels = wheels;
 	def.wheelCount = 4;
-	def.maxDriveForce = 11000.0f;
+	def.maxDriveForce = 10000.0f;
 	def.maxSpeed = 30.0f;
-	def.maxBrakeForce = 16000.0f;
+	def.maxBrakeForce = 15000.0f;
 	return lpCreateVehicle( world, &def );
 }
 
@@ -1148,9 +1199,9 @@ static void lpAddTrack( lpWorld* world )
 	}
 
 	// Three cars spread round the ring, driving counterclockwise
-	lpAddBoxCar( world, lpRingPoint( r, 0.0f, 0.0f ), -0.0f, 0x2F6FB5u );
-	lpAddBoxCar( world, lpRingPoint( r, 2.1f, 0.0f ), -2.1f, 0xC0392Bu );
-	lpAddBoxCar( world, lpRingPoint( r, 4.5f, 0.0f ), -4.5f, 0xE0A526u );
+	lpAddCar( world, lpRingPoint( r, 0.0f, 0.0f ), -0.0f, 0 );
+	lpAddCar( world, lpRingPoint( r, 2.1f, 0.0f ), -2.1f, 1 );
+	lpAddCar( world, lpRingPoint( r, 4.5f, 0.0f ), -4.5f, 2 );
 }
 
 // Each car steers for a point a little ahead on the ring and holds the track speed

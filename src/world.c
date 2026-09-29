@@ -42,6 +42,13 @@ static lpMaterialDef lp_materials[lp_materialCount] = {
 					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true,
 					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f, 0.0f, 0.0f },
+	// Panels are thick stand-ins for thin sheet, so the density is a car's, not steel's. They tear into a few big
+	// plates, and their crumpling soaks up most of a crash before anything breaks.
+	[lp_sheetMetal] = { "sheet metal", 1200.0f, 2500.0f, 6000.0f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x8A9098u, true,
+						3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 10, lp_particleChip, 0.3f, 0, 200e6f, 200e6f, 120e6f, 0.0f, 0.0f,
+						0.7f },
+	[lp_rubber] = { "rubber", 900.0f, 20000.0f, 30000.0f, 0.25f, 1.0f, 0.1f, lp_breakImpact, 1.0f, 0x2A2A2Au, true,
+					3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 8, lp_particleChip, 0.3f, 0, 20e6f, 50e6f, 20e6f, 0.0f, 0.0f, 0.6f },
 };
 
 // Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by
@@ -52,6 +59,7 @@ static const lpJointDef lp_joints[lp_jointCount] = {
 	[lp_jointMortar] = { "mortar", 0.3e6f, 15e6f, 0.3e6f, 0.6f },
 	[lp_jointDry] = { "dry", 0.0f, 40e6f, 0.0f, 0.7f },
 	[lp_jointNails] = { "nails", 0.5e6f, 20e6f, 1e6f, 0.5f },
+	[lp_jointBolts] = { "bolts", 20e6f, 100e6f, 15e6f, 0.6f },
 };
 
 const lpJointDef* lpGetJoint( int jointId )
@@ -76,6 +84,8 @@ static uint8_t lpResolveJoint( uint8_t joint, uint8_t material )
 			return lp_jointMortar;
 		case lp_wood:
 			return lp_jointNails;
+		case lp_sheetMetal:
+			return lp_jointBolts;
 		default:
 			return lp_jointSolid;
 	}

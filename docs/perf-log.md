@@ -454,3 +454,24 @@ same, and an interleaved A/B on the keep (1 worker) gives 7.08 ms before and 7.2
 (`lpPiece` grows 8 bytes more, to 296, for the supply). A recompute over 1000 carriers of all 8 channels welded in a
 10x10x10 block (10,476 bonds, the worst case: every channel, every piece) costs about 0.6 ms, all of it bond
 traversal; a car's twenty-odd carriers cost microseconds. No ladder scene has carriers yet (the car kit, step 5).
+
+## 2026-09-28 articulated objects, step 5: the car kit, sheet metal, crush
+
+New materials: sheet metal (panels as thick stand-ins at a car's density, tearing into big plates) and rubber, and a
+bolts joint. A material's `crush` is the share of a collision's energy its crumpling soaks up (sheet metal 0.7,
+rubber 0.6), and a crushable hit is centred on its contact face instead of the first corner that touched; without
+that the one hit of a crash landed on a bumper corner and reached nothing. Existing materials have no crush: every
+ladder hash but the track's is the same.
+
+The kit car (`lpAddCar`): 19 pieces, about 1.7 t, the floor pan carrying fuel, power and steering. Into a brick wall,
+coasting:
+
+| speed | car kept | power | brick knocked loose |
+|---|---|---|---|
+| 10 m/s | 96% (a bumper) | 1.00 | 0.18 m^3 |
+| 20 m/s | 93% | 0.67 (the engine's front block torn off) | 0.61 m^3 |
+| 30 m/s | 83% | 0.33 | 0.86 m^3 |
+
+A grenade at the tank sets it off and the power goes to 0; a heavy blow to the engine's front block leaves 0.67. The
+track rung with kit cars: 0.12 / 0.13 ms per step at 1 / 8 workers (the box cars made 0.48 / 0.29: sturdier cars shed
+less debris under the blasts), 612 pieces at most.

@@ -929,12 +929,37 @@ void lpCollectHits( lpWorld* w )
 		float mb = lpShapeMass( e->shapeIdB );
 		float mass = ( ma > 0.0f && mb > 0.0f ) ? ma * mb / ( ma + mb ) : b3MaxFloat( ma, mb );
 		float energy = 0.5f * mass * e->approachSpeed * e->approachSpeed;
+		// Crumpling soaks up most of a crash first: the more crushable of the two decides
+		float crush = 0.0f;
+		for ( int k = 0; k < 2; ++k )
+		{
+			crush = pieceData[k] > 0 ? b3MaxFloat( crush, lpGetMaterial( w->pieces.data[pieceData[k] - 1].material )->crush ) : crush;
+		}
+		energy *= 1.0f - crush;
+		// and spreads the blow over the face that hit, not the first corner that touched
+		b3Pos point = e->point;
+		if ( crush > 0.0f && b3Contact_IsValid( e->contactId ) )
+		{
+			b3ContactData contact = b3Contact_GetData( e->contactId );
+			b3Pos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact.shapeIdA ) );
+			b3Vec3 sum = b3Vec3_zero;
+			int count = 0;
+			for ( int mi = 0; mi < contact.manifoldCount; ++mi )
+			{
+				for ( int pi = 0; pi < contact.manifolds[mi].pointCount; ++pi )
+				{
+					sum = b3Add( sum, contact.manifolds[mi].points[pi].anchorA );
+					count += 1;
+				}
+			}
+			point = count > 0 ? b3OffsetPos( centerA, b3MulSV( 1.0f / (float)count, sum ) ) : point;
+		}
 		if ( energy < 100.0f )
 		{
 			continue;
 		}
 
-		lpHitCandidate hit = { energy, e->point, ( (uint64_t)( da > 0 ? da : 0 ) << 32 ) | (uint64_t)( db > 0 ? db : 0 ) };
+		lpHitCandidate hit = { energy, point, ( (uint64_t)( da > 0 ? da : 0 ) << 32 ) | (uint64_t)( db > 0 ? db : 0 ) };
 		lpArray_Push( w->scratchHits, hit );
 	}
 

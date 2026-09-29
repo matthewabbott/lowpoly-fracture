@@ -107,6 +107,13 @@ tiers instead of popping them.
   pass. It is recomputed once a step, after `lpSyncLinks`, and only when a carrier's connections changed (a bond or
   link between carriers made or broken, a carrier made or freed); only carriers are walked. Wheels drive as well as
   the worst of their `driveNeeds` is fed at their mount and steer at that rate for `steerNeeds` (unfed, they hold).
+- Crashes: a collision's energy is reduced by the more crushable material's `crush` (sheet metal 0.7, rubber 0.6:
+  crumple zones soak up most of it until dents come), and a crushable hit is centred on the mean of the contact's
+  manifold points instead of its first corner. Materials without crush hit as before.
+- The car kit (`lpAddCar` in `scenes.c`): a sheet-metal floor pan carrying fuel, power and steering; an engine of
+  three blocks (feeds power, needs fuel), a fuel tank (feeds fuel, a detonator), a steering box (feeds steering, needs
+  power); hood, boot, doors, pillars and roof bolted on, glass, rubber bumpers; rear drive needs power, front steering
+  needs steering. About 1.7 t in 19 pieces.
 
 ## Stress (`stress.c`, `solve.c`)
 
