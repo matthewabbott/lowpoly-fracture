@@ -169,6 +169,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 												 w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex; // array may have moved
 			lpBody* nb = w->bodies.data + newIndex;
+			nb->solveStress = body->solveStress;
 			for ( int k = 0; k < comp->count; ++k )
 			{
 				int pi = w->scratchQueue.data[comp->first + k];
@@ -241,6 +242,10 @@ void lpUpdateBody( lpWorld* w, int bodyIndex )
 		{
 			lpArray_Push( w->stressAgain, bodyIndex );
 		}
+	}
+	else if ( body->alive && body->solveStress && body->kind == lp_kindDebris && ( body->reloadLoads || body->solving ) )
+	{
+		lpArray_Push( w->stressQueue, bodyIndex ); // a moving body is checked only when asked (a hard hit, a landing)
 	}
 }
 

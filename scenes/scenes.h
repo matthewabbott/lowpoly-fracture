@@ -80,8 +80,8 @@ enum
 	lp_linkWinch = 0xC4A3, // the rope from the jib's tip to the load
 };
 
-// A tower crane at base: a concrete footing and a timber mast bolted to it (a structure, which carries the crane
-// through its links), a slewing deck, a 10 m jib along +x and a winch rope to a steel load of loadMass kg. Returns the
+// A tower crane at base: a steel base plate and a timber mast set in it (a structure, which carries the crane through
+// its links), a slewing deck, a 10 m jib along +x and a winch rope to a steel load of loadMass kg. Returns the
 // structure's body.
 int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass );
 

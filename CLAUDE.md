@@ -24,7 +24,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/impact.c` | impacts: fracture jobs (3 phases), bond damage, detonators, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
-| `src/stress.c` | the stress check per structure: scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
+| `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change |

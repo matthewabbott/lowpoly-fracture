@@ -1071,8 +1071,12 @@ int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style )
 			   fuel | power | steer, 0, 0 );
 	for ( int k = 0; k < 3; ++k ) // an engine of three blocks: lose one and a third of the power goes with it
 	{
-		lpCarPart( (b3Vec3){ 0.0f, 0.28f, 1.25f + 0.2f * (float)k }, (b3Vec3){ 0.3f, 0.2f, 0.095f }, lp_sheetMetal, 0x55595Eu,
-				   lp_tagEngine, fuel, power, fuel );
+		lpPartDef* block = lpCarPart( (b3Vec3){ 0.0f, 0.28f, 1.25f + 0.2f * (float)k }, (b3Vec3){ 0.3f, 0.2f, 0.095f }, lp_sheetMetal,
+									  0x55595Eu, lp_tagEngine, fuel, power, fuel );
+		if ( block != NULL )
+		{
+			block->joint = lp_jointMounts; // a hard crash tears it off its mounts
+		}
 	}
 	lpPartDef* tank = lpCarPart( (b3Vec3){ 0.0f, 0.2f, -1.55f }, (b3Vec3){ 0.4f, 0.12f, 0.22f }, lp_sheetMetal, 0x6B3A2Au,
 								 lp_tagFuelTank, 0, fuel, 0 );
@@ -1091,20 +1095,22 @@ int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style )
 		lpCarPart( (b3Vec3){ x, 0.38f, -0.25f }, (b3Vec3){ 0.03f, 0.3f, 0.7f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
 		for ( int k = 0; k < 2; ++k )
 		{
-			lpCarPart( (b3Vec3){ 0.74f * (float)side, 0.575f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.04f, 0.495f, 0.04f },
+			lpCarPart( (b3Vec3){ 0.72f * (float)side, 0.575f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.06f, 0.495f, 0.06f },
 					   lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
 		}
 	}
 	lpCarPart( (b3Vec3){ 0.0f, 1.1f, -0.25f }, (b3Vec3){ 0.78f, 0.03f, 0.85f }, lp_sheetMetal, paint, lp_tagPanel, 0, 0, 0 );
 	for ( int k = 0; k < 2; ++k )
 	{
-		lpCarPart( (b3Vec3){ 0.0f, 0.78f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.7f, 0.29f, 0.015f }, lp_glass, glass, lp_tagGlass, 0, 0,
+		lpCarPart( (b3Vec3){ 0.0f, 0.78f, k == 0 ? 0.5f : -1.0f }, (b3Vec3){ 0.66f, 0.29f, 0.015f }, lp_glass, glass, lp_tagGlass, 0, 0,
 				   0 );
 		lpCarPart( (b3Vec3){ 0.0f, 0.1f, k == 0 ? 2.18f : -2.18f }, (b3Vec3){ 0.85f, 0.1f, 0.08f }, lp_rubber, 0x2A2A2Au,
 				   lp_tagBumper, 0, 0, 0 );
 	}
 	b3Vec3 origin = { base.x, base.y + ride, base.z };
-	int body = lpCommitDef( world, origin, q, lpDynamicDef() );
+	lpObjectDef carDef = lpDynamicDef();
+	carDef.solveStress = true; // a crash's deceleration loads its joints: an engine can tear off its mounts
+	int body = lpCommitDef( world, origin, q, carDef );
 
 	lpWheelDef wheels[4];
 	for ( int i = 0; i < 4; ++i )
@@ -1135,16 +1141,15 @@ int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style )
 
 int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
 {
-	// The footing is cast round the mast's foot, and the mast is bolted into it: the crane's weight and swing load the
-	// joint between them
+	// A steel base plate with the mast's foot set in it: the crane's weight and swing load the timber at its foot
 	lpBegin();
-	lpPartDef* footing = lpBox( (b3Vec3){ 0.0f, 0.4f, 0.0f }, (b3Vec3){ 1.2f, 0.4f, 1.2f }, b3Quat_identity, lp_concrete, LP_CONCRETE,
+	lpPartDef* footing = lpBox( (b3Vec3){ 0.0f, 0.4f, 0.0f }, (b3Vec3){ 1.2f, 0.4f, 1.2f }, b3Quat_identity, lp_metal, 0x6F7378u,
 								true );
 	lpPartDef* mast = lpBox( (b3Vec3){ 0.0f, 4.8f, 0.0f }, (b3Vec3){ 0.35f, 4.0f, 0.35f }, b3Quat_identity, lp_wood, LP_BEAM, false );
 	if ( footing != NULL && mast != NULL )
 	{
 		footing->joint = lp_jointSolid;
-		mast->joint = lp_jointBolts;
+		mast->joint = lp_jointSolid; // set in the base plate: the timber itself is the limit
 		mast->grainAxis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
 	}
 	int tower = lpCommit( world, base, 0.0f, true );

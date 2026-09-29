@@ -59,7 +59,8 @@ static const lpJointDef lp_joints[lp_jointCount] = {
 	[lp_jointMortar] = { "mortar", 0.3e6f, 15e6f, 0.3e6f, 0.6f },
 	[lp_jointDry] = { "dry", 0.0f, 40e6f, 0.0f, 0.7f },
 	[lp_jointNails] = { "nails", 0.5e6f, 20e6f, 1e6f, 0.5f },
-	[lp_jointBolts] = { "bolts", 20e6f, 100e6f, 15e6f, 0.6f },
+	[lp_jointBolts] = { "bolts", 3e6f, 50e6f, 2.5e6f, 0.6f }, // a few bolts, not the whole face: panels come off
+	[lp_jointMounts] = { "mounts", 1.5e6f, 30e6f, 1.5e6f, 0.6f },
 };
 
 const lpJointDef* lpGetJoint( int jointId )
@@ -277,6 +278,7 @@ int lpAllocBody( lpWorld* w )
 	b->gridPrev = -1;
 	b->gridNext = -1;
 	b->landIn = -1;
+	b->stressPin = -1;
 	return index;
 }
 
@@ -790,6 +792,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
 										  def->gravityScale );
 	int objectDetonator = lpAddDetonator( w, &def->detonator ); // shared by the parts without one of their own
+	w->bodies.data[bodyIndex].solveStress = def->solveStress && def->isStatic == false;
 
 	lpPoly* poly = lpAlloc( sizeof( lpPoly ) );
 	int first = w->bodies.data[bodyIndex].pieces.count;
@@ -1292,7 +1295,7 @@ bool lpWorld_Validate( const lpWorld* w )
 
 		// A stress system belongs to a structure; while it solves, the system is the structure's current one
 		const lpStressSystem* s = b->system;
-		if ( s != NULL && b->kind != lp_kindStructure )
+		if ( s != NULL && b->kind != lp_kindStructure && b->solveStress == false )
 		{
 			return lpFail( "body %d of kind %d has a stress system", i, b->kind, 0 );
 		}

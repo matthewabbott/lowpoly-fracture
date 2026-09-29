@@ -714,7 +714,8 @@ static void lpRecheckStructures( lpWorld* w, lpLink* l )
 	{
 		int piece = l->ends[k].piece;
 		int bodyIndex = piece >= 0 ? w->pieces.data[piece].body : -1;
-		if ( bodyIndex >= 0 && w->bodies.data[bodyIndex].kind == lp_kindStructure )
+		const lpBody* b = bodyIndex >= 0 ? w->bodies.data + bodyIndex : NULL;
+		if ( b != NULL && ( b->kind == lp_kindStructure || ( b->solveStress && b->kind == lp_kindDebris ) ) )
 		{
 			lpRequestStressCheck( w, bodyIndex, false );
 			l->recheckTick = w->tick + 1;

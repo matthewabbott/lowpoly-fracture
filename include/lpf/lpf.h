@@ -105,7 +105,8 @@ typedef enum lpJointId
 	lp_jointMortar, // weak in tension: masonry cracks and hinges at its joints
 	lp_jointDry,	// stacked with nothing between: no tension or cohesion, friction only
 	lp_jointNails,
-	lp_jointBolts, // sheet metal panels on a car
+	lp_jointBolts,	// sheet metal panels on a car
+	lp_jointMounts, // an engine on its mounts: tears off in a hard crash
 	lp_jointCount
 } lpJointId;
 
@@ -222,6 +223,10 @@ typedef struct lpObjectDef
 	lpDetonatorDef detonator; // the parts without one of their own share it: they go off together, as one
 	float gravityScale;		  // "fairy dust": 1 is normal weight, 0 floats; everything that breaks off keeps it
 	uint32_t userId;		  // the game's id for the object, kept by every piece made from it
+	// A moving object whose joints carry what accelerates it (a car in a crash, a mech landing): its stress is solved
+	// on hard hits and landings, against its loads less its own acceleration ("inertia relief"). What breaks off
+	// keeps it.
+	bool solveStress;
 } lpObjectDef;
 
 lpObjectDef lpDefaultObjectDef( void );

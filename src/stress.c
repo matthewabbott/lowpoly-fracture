@@ -37,6 +37,112 @@
 
 static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
 
+// Fixed in its body's solve: anchored on a structure, the pin on a moving body
+static inline bool lpFixed( const lpBody* body, int pieceIndex, const lpPiece* p )
+{
+	return body->solveStress ? pieceIndex == body->stressPin : p->anchored;
+}
+
+// A moving body's pin: the piece nearest where it was struck in the last step (the crash's force enters there), else
+// the piece nearest its centre of mass (ties by index); a solve in progress keeps its pin. And that centre.
+static void lpChoosePin( lpWorld* w, lpBody* body, int bodyIndex )
+{
+	float mass = 0.0f;
+	b3Vec3 center = b3Vec3_zero;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + body->pieces.data[i];
+		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		center = b3MulAdd( center, m, p->shape->centroid );
+		mass += m;
+	}
+	center = mass > 0.0f ? b3MulSV( 1.0f / mass, center ) : center;
+	body->reliefCenter = center;
+	if ( body->solving && body->stressPin >= 0 && w->pieces.data[body->stressPin].body == bodyIndex )
+	{
+		return;
+	}
+	b3Vec3 at = body->hitTick == w->tick ? body->hitPoint : center; // struck in the last step: where it was struck
+	float nearest = FLT_MAX;
+	body->stressPin = -1;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		int pi = body->pieces.data[i];
+		float d = b3DistanceSquared( w->pieces.data[pi].shape->centroid, at );
+		if ( d < nearest || ( d == nearest && pi < body->stressPin ) )
+		{
+			nearest = d;
+			body->stressPin = pi;
+		}
+	}
+}
+
+void lpTrackMovingBodies( lpWorld* w )
+{
+	for ( int i = 0; i < w->bodies.count; ++i )
+	{
+		lpBody* b = w->bodies.data + i;
+		if ( b->alive == false || b->solveStress == false || b->kind != lp_kindDebris || B3_IS_NULL( b->id ) )
+		{
+			continue;
+		}
+		b->stepPair = b->stepTick != 0 && b->stepTick == w->tick; // the record being kept is from the step before
+		b->stepV[0] = b->stepV[1];
+		b->stepOmega[0] = b->stepOmega[1];
+		b->stepV[1] = b3Body_GetLinearVelocity( b->id );
+		b->stepOmega[1] = b3Body_GetAngularVelocity( b->id );
+		b->stepTick = w->tick + 1;
+	}
+}
+
+// Inertia relief: the acceleration (a, alpha) that balances a moving body's weight and sampled loads exactly, with each
+// piece a point mass at its centroid plus a small inertia of its own (so no line of pieces is singular). Its pieces then
+// carry their loads less m (a + alpha x r + omega x (omega x r)), and less their own inertia times alpha: the pin
+// carries nothing.
+static void lpComputeRelief( lpWorld* w, lpBody* body, b3Vec3 gravity )
+{
+	// Measured when it can be: the velocity change over the last step is the acceleration everything gave it, sampled
+	// or not (whatever was not sampled then enters at the pin)
+	b3Quat q = b3Body_GetRotation( body->id );
+	if ( body->stepPair && body->stepTick == w->tick && w->lastTimeStep > 0.0f )
+	{
+		float inv = 1.0f / w->lastTimeStep;
+		b3Vec3 accel = b3InvRotateVector( q, b3MulSV( inv, b3Sub( body->stepV[1], body->stepV[0] ) ) );
+		b3Vec3 alpha = b3InvRotateVector( q, b3MulSV( inv, b3Sub( body->stepOmega[1], body->stepOmega[0] ) ) );
+		// A rigid body stops in a step; a crumple zone takes several: the harder part of the stop is spread by the struck
+		// material's crush (what gravity did stays)
+		float spread = body->hitTick == w->tick ? 1.0f - lpGetMaterial( body->hitMaterial )->crush : 1.0f;
+		body->reliefAccel = b3MulAdd( gravity, spread, b3Sub( accel, gravity ) );
+		body->reliefAlpha = b3MulSV( spread, alpha );
+		body->reliefOmega = b3InvRotateVector( q, body->stepOmega[1] );
+		return;
+	}
+	b3Vec3 c = body->reliefCenter;
+	float mass = 0.0f;
+	b3Vec3 force = b3Vec3_zero;
+	b3Vec3 torque = b3Vec3_zero;
+	b3Matrix3 inertia = { b3Vec3_zero, b3Vec3_zero, b3Vec3_zero };
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + body->pieces.data[i];
+		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		b3Vec3 r = b3Sub( p->shape->centroid, c );
+		b3Vec3 load = b3MulAdd( p->stressLoad.f, m, gravity );
+		mass += m;
+		force = b3Add( force, load );
+		torque = b3Add( torque, b3Add( b3Cross( r, load ), p->stressLoad.t ) );
+		float own = m * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+		float rr = b3Dot( r, r );
+		inertia.cx = b3Add( inertia.cx, (b3Vec3){ m * ( rr - r.x * r.x ) + own, -m * r.y * r.x, -m * r.z * r.x } );
+		inertia.cy = b3Add( inertia.cy, (b3Vec3){ -m * r.x * r.y, m * ( rr - r.y * r.y ) + own, -m * r.z * r.y } );
+		inertia.cz = b3Add( inertia.cz, (b3Vec3){ -m * r.x * r.z, -m * r.y * r.z, m * ( rr - r.z * r.z ) + own } );
+	}
+	b3Vec3 omega = b3InvRotateVector( b3Body_GetRotation( body->id ), b3Body_GetAngularVelocity( body->id ) );
+	body->reliefOmega = omega;
+	body->reliefAccel = mass > 0.0f ? b3MulSV( 1.0f / mass, force ) : b3Vec3_zero;
+	body->reliefAlpha = b3MulMV( b3InvertMatrix( inertia ), b3Sub( torque, b3Cross( omega, b3MulMV( inertia, omega ) ) ) );
+}
+
 // Rigid clusters (lpFormClusters, lpStressMeter)
 #define LP_CLUSTER_MEMBERS 128	   // pieces in a cluster at most
 #define LP_CLUSTER_RADIUS 12.0f	   // mean piece sizes from the middle of a cluster's bounds to its corners, at most
@@ -178,7 +284,7 @@ static void lpStressCount( lpWorld* w, const lpBody* body, int* nodes, int* edge
 	{
 		int pi = body->pieces.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		if ( p->anchored == false )
+		if ( lpFixed( body, pi, p ) == false )
 		{
 			*nodes += 1;
 			*groups += p->cluster == 0 || w->scratchClusters.data[p->cluster] == 0 ? 1 : 0;
@@ -188,7 +294,7 @@ static void lpStressCount( lpWorld* w, const lpBody* body, int* nodes, int* edge
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
 			const lpPiece* other = w->pieces.data + bond->b;
-			if ( bond->a == pi && ( p->anchored == false || other->anchored == false ) )
+			if ( bond->a == pi && ( lpFixed( body, pi, p ) == false || lpFixed( body, bond->b, other ) == false ) )
 			{
 				*edges += 1;
 				*reducedEdges += p->cluster != 0 && p->cluster == other->cluster ? 0 : 1;
@@ -337,7 +443,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 			int pi = body->pieces.data[i];
 			lpPiece* p = w->pieces.data + pi;
 			p->solveSlot = -1;
-			if ( p->anchored == false )
+			if ( lpFixed( body, pi, p ) == false )
 			{
 				p->solveSlot = slot++;
 				lpArray_Push( s->nodes, pi );
@@ -421,6 +527,16 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
 		f[i].f = b3MulSV( mass / scale, g );
 		f[i].t = b3Vec3_zero;
+		if ( body->solveStress )
+		{
+			// Less what it takes to accelerate it with its body (inertia relief)
+			b3Vec3 r = b3Sub( p->shape->centroid, body->reliefCenter );
+			b3Vec3 w0 = body->reliefOmega;
+			b3Vec3 accel = b3Add( b3Add( body->reliefAccel, b3Cross( body->reliefAlpha, r ) ), b3Cross( w0, b3Cross( w0, r ) ) );
+			float own = mass * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+			f[i].f = b3MulSub( f[i].f, mass / scale, accel );
+			f[i].t = b3MulSV( -own / scale, body->reliefAlpha );
+		}
 	}
 	for ( int i = 0; i < n; ++i )
 	{
@@ -644,7 +760,7 @@ static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* stra
 				continue;
 			}
 			float rho = bond->rho;
-			if ( recompute && ( p->anchored == false || w->pieces.data[bond->b].anchored == false ) )
+			if ( recompute && ( lpFixed( body, pi, p ) == false || lpFixed( body, bond->b, w->pieces.data + bond->b ) == false ) )
 			{
 				b3Vec3 t1, t2;
 				lpContactBasis( bond->normal, &t1, &t2 );
@@ -1293,12 +1409,18 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;
 	int snapped = lpStressSnap( w, job, broken == 0, &strained, &slender ); // slender pieces strain once the joints hold
-	if ( job->clustered == false && n > w->def.stressLargeNodes )
+	if ( job->clustered == false && n > w->def.stressLargeNodes && body->solveStress == false )
 	{
 		lpFormClusters( w, job ); // from an exact solve only: its next corrections move the unloaded parts rigidly
 	}
 	body->unsettled = broken > 0 || snapped > 0 || strained > 0;
 	body->creaking = broken == 0 && snapped == 0 && strained > 0; // next checks only add strain, joints and slender pieces
+	if ( body->solveStress )
+	{
+		// A moving body's loads are a moment's (a crash, a landing): judged once, no creaking on; what broke splits
+		body->creaking = false;
+		body->unsettled = broken > 0 || snapped > 0;
+	}
 	body->strainedLastCheck = strained > 0;
 	w->stats.stressBreaks += broken;
 	if ( w->def.debugLog )
@@ -1440,6 +1562,10 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		{
 			lpStressSeed( w, body );
 		}
+		if ( body->solveStress )
+		{
+			lpChoosePin( w, body, bodyIndex ); // kept while a solve continues
+		}
 		int nodes, edges, groups, reducedEdges;
 		lpStressCount( w, body, &nodes, &edges, &groups, &reducedEdges );
 		if ( nodes == 0 || edges == 0 )
@@ -1456,7 +1582,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		// changes the counts, not the topology).
 		// The fidelity it is solved at: exact (settling, auditing, a small structure, no clusters left), or on its reduced
 		// system for a correction to its last solution (parts of it moving as rigid clusters), provisional until audited
-		bool exact = settle || body->auditing || nodes <= w->def.stressLargeNodes;
+		bool exact = settle || body->auditing || nodes <= w->def.stressLargeNodes || body->solveStress;
 		bool clustered = exact == false && groups < nodes && reducedEdges > 0;
 		const lpStressSystem* system = body->system;
 		const lpStressReduced* red = body->reduced;
@@ -1496,6 +1622,11 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			bool loadOnly = unchanged && body->strainedLastCheck == false && body->auditing == false;
 			float change = lpSampleLoads( w, bodyIndex );
 			body->reloadLoads = false;
+			if ( body->solveStress )
+			{
+				b3WorldTransform bodyXf = b3Body_GetTransform( body->id );
+				lpComputeRelief( w, body, b3MulSV( body->gravityScale, b3InvRotateVector( bodyXf.q, gravity ) ) );
+			}
 			if ( loadOnly && change < 0.02f )
 			{
 				if ( body->rejudge )

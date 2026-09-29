@@ -492,3 +492,21 @@ deck and a luffing jib on motorised hinges, a winch rope to a 400 kg load) swung
   whole, and a struct copy fills the three bytes of padding after its bool with stack garbage (determinism rule 11).
   It needed the sandbox's stack to show: 120 in-process runs never did. Hashed field by field now: 0 of 29 sandbox runs
   differ.
+
+## 2026-09-29 articulated objects, step 7: stress on moving bodies (inertia relief)
+
+A moving body made with `solveStress` is checked on hard hits, hard landings and changed link loads, pinned where it
+was struck (else at its centre of mass), each piece loaded with its weight and sampled loads less m times its rigid
+acceleration. The first try computed the acceleration from the sampled loads and saw 5 m/s^2 in a 30 m/s crash: the
+impact the hit makes is processed before the stress check and breaks the contact that carried the crash. Measured
+from the velocity change over the last step it is 1,950 m/s^2 (200 g, a rigid stop), which tore the roof off; the part
+beyond gravity is now spread by the struck material's crush (a crumple zone stops it over several steps).
+
+- The relieved loads balance to 7e-5 of the weight; a falling, turning beam carries 5e-6 of its limit; a beam
+  balanced on a ridge and the same beam anchored at its middle read the same peak (0.0240).
+- A beam dropped across a ridge snaps from 4 m and holds from 0.3 m.
+- The kit car into a brick wall (the engine now on mounts, 1.5 MPa; bolts 3 MPa): at 10 m/s it keeps 96% and its power;
+  at 20 m/s 79% and no power (the engine torn off); at 30 m/s 75%, the engine, steering box, hood, front bumper and
+  front wheels gone, the cabin whole. 2 to 4 relief solves per crash, identical at 1, 4 and 8 workers.
+- Every ladder hash but the track's is unchanged, stress solver hashes included; the track rung is 0.13 / 0.14 ms per
+  step at 1 / 8 workers.

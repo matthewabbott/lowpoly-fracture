@@ -1079,6 +1079,222 @@ static int TestKeepAudit( void )
 	return 0;
 }
 
+// ---- inertia relief: stress on moving bodies ----
+
+// A wooden beam of `parts` equal parts along x (solid joints between them), `length` long, 0.1 m square; moving, its
+// stress solved when asked, or a structure with its middle part anchored
+static int AddBeam( Sim* s, b3Vec3 center, float length, int parts, bool isStatic, bool anchorMiddle )
+{
+	lpPartDef defs[8];
+	float each = length / (float)parts;
+	for ( int k = 0; k < parts; ++k )
+	{
+		defs[k] = lpDefaultPartDef();
+		defs[k].halfExtents = (b3Vec3){ 0.5f * each, 0.05f, 0.05f };
+		defs[k].transform.p = (b3Vec3){ -0.5f * length + ( (float)k + 0.5f ) * each, 0.0f, 0.0f };
+		defs[k].material = lp_wood;
+		defs[k].joint = lp_jointSolid;
+		defs[k].grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+		defs[k].anchored = anchorMiddle && k == parts / 2;
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = isStatic;
+	def.solveStress = isStatic == false;
+	def.transform.p = (b3Pos){ center.x, center.y, center.z };
+	def.parts = defs;
+	def.partCount = parts;
+	return lpCreateObject( s->world, &def );
+}
+
+// Asks for a moving body's stress check and runs the step that does it
+static void CheckNow( Sim* s, int body )
+{
+	lpRequestStressCheck( s->world, body, false );
+	Run( s, 1 );
+}
+
+static float PeakRho( const Sim* s, int body )
+{
+	float peak = 0.0f;
+	const lpBody* b = s->world->bodies.data + body;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		const lpPiece* p = s->world->pieces.data + b->pieces.data[k];
+		for ( int n = 0; n < p->bonds.count; ++n )
+		{
+			peak = fmaxf( peak, s->world->bonds.data[p->bonds.data[n]].rho );
+		}
+	}
+	return peak;
+}
+
+// The relieved loads balance: weight and contacts less the body's acceleration sum to about nothing, in force and
+// torque, so the pin carries nothing
+static int TestReliefBalances( void )
+{
+	Sim s = CreateSim( -1 );
+	int body = AddBeam( &s, (b3Vec3){ 0.0f, 0.3f, 0.0f }, 3.0f, 3, false, false );
+	lpWorld_SetGravityScale( s.world, body, 1.0f );
+	Run( &s, 5 );
+	CheckNow( &s, body );
+	const lpBody* b = s.world->bodies.data + body;
+	b3Vec3 g = b3InvRotateVector( b3Body_GetRotation( b->id ), (b3Vec3){ 0.0f, -10.0f, 0.0f } );
+	b3Vec3 force = b3Vec3_zero, torque = b3Vec3_zero;
+	float weight = 0.0f;
+	for ( int k = 0; k < b->pieces.count; ++k )
+	{
+		const lpPiece* p = s.world->pieces.data + b->pieces.data[k];
+		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		b3Vec3 r = b3Sub( p->shape->centroid, b->reliefCenter );
+		b3Vec3 accel = b3Add( b3Add( b->reliefAccel, b3Cross( b->reliefAlpha, r ) ), b3Cross( b->reliefOmega, b3Cross( b->reliefOmega, r ) ) );
+		b3Vec3 f = b3Sub( b3Add( p->stressLoad.f, b3MulSV( m, g ) ), b3MulSV( m, accel ) );
+		float own = m * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+		b3Vec3 t = b3Sub( p->stressLoad.t, b3MulSV( own, b->reliefAlpha ) );
+		force = b3Add( force, f );
+		torque = b3Add( torque, b3Add( b3Cross( r, f ), t ) );
+		weight += m * 10.0f;
+	}
+	printf( "  pin piece %d; unbalanced force %.2e and torque %.2e N*m against a weight of %.0f N, acceleration %.3f m/s^2\n",
+			b->stressPin, b3Length( force ), b3Length( torque ), weight, b3Length( b->reliefAccel ) );
+	ENSURE( b->stressPin >= 0 && b3Length( force ) < 1e-3f * weight && b3Length( torque ) < 1e-3f * weight );
+	DestroySim( &s );
+	return 0;
+}
+
+// In free fall nothing carries anything: gravity accelerates every piece alike
+static int TestReliefFreeFall( void )
+{
+	Sim s = CreateSim( -1 );
+	int body = AddBeam( &s, (b3Vec3){ 0.0f, 20.0f, 0.0f }, 3.0f, 3, false, false );
+	b3Body_SetAngularVelocity( s.world->bodies.data[body].id, (b3Vec3){ 0.0f, 0.0f, 0.5f } );
+	Run( &s, 5 );
+	CheckNow( &s, body );
+	float peak = PeakRho( &s, body );
+	printf( "  falling and turning: peak joint utilization %.2e\n", peak );
+	ENSURE( peak < 1e-3f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A moving beam balanced on a ridge under its middle part is loaded like the same beam with that part anchored: its
+// arms hang from it either way
+static int TestReliefMatchesSupported( void )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef ridge = lpDefaultPartDef();
+	ridge.halfExtents = (b3Vec3){ 0.4f, 0.5f, 0.3f };
+	ridge.anchored = true;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.transform.p = (b3Pos){ 0.0f, 0.5f, 0.0f };
+	def.parts = &ridge;
+	def.partCount = 1;
+	lpCreateObject( s.world, &def );
+	lpWorld_SettleStructures( s.world );
+	int moving = AddBeam( &s, (b3Vec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, false, false );
+	Run( &s, 20 );
+	CheckNow( &s, moving );
+	float relieved = PeakRho( &s, moving );
+	DestroySim( &s );
+
+	Sim t = CreateSim( -1 );
+	int fixed = AddBeam( &t, (b3Vec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, true, true );
+	lpWorld_SettleStructures( t.world );
+	float anchored = PeakRho( &t, fixed );
+	printf( "  peak joint utilization: balanced on a ridge %.4f, its middle anchored %.4f\n", relieved, anchored );
+	ENSURE( anchored > 0.0f && fabsf( relieved - anchored ) < 0.1f * anchored );
+	DestroySim( &t );
+	return 0;
+}
+
+// Landing across a ridge bends a beam: from 4 m it snaps over the ridge, from 0.3 m it holds
+static int TestReliefLandingSnaps( void )
+{
+	float drops[2] = { 0.3f, 4.0f };
+	int bodies[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		lpPartDef ridge = lpDefaultPartDef();
+		ridge.halfExtents = (b3Vec3){ 0.1f, 0.5f, 0.5f };
+		ridge.anchored = true;
+		lpObjectDef def = lpDefaultObjectDef();
+		def.transform.p = (b3Pos){ 0.0f, 0.5f, 0.0f };
+		def.parts = &ridge;
+		def.partCount = 1;
+		lpCreateObject( s.world, &def );
+		lpWorld_SettleStructures( s.world );
+		int beam = AddBeam( &s, (b3Vec3){ 0.0f, 1.05f + drops[k], 0.0f }, 4.0f, 2, false, false );
+		int breaks = 0;
+		for ( int t = 0; t < 90; ++t )
+		{
+			Run( &s, 1 );
+			breaks += lpWorld_GetStats( s.world ).stressBreaks;
+		}
+		bodies[k] = 0;
+		for ( int i = 0; i < s.world->bodies.count; ++i )
+		{
+			const lpBody* b = s.world->bodies.data + i;
+			bodies[k] += b->alive && b->kind != lp_kindStructure && b->pieces.count > 0 &&
+								 s.world->pieces.data[b->pieces.data[0]].material == lp_wood
+							 ? 1
+							 : 0;
+		}
+		printf( "  %.1f m drop onto a ridge: %d joints broke, the beam in %d bodies\n", drops[k], breaks, bodies[k] );
+		ENSURE( lpWorld_Validate( s.world ) );
+		(void)beam;
+		DestroySim( &s );
+	}
+	ENSURE( bodies[0] == 1 && bodies[1] >= 2 );
+	return 0;
+}
+
+// A car into a wall at 30 m/s tears engine blocks off their mounts with the deceleration; at 10 m/s they hold
+static int CrashEngine( float speed, int workers, uint64_t* hash )
+{
+	Sim s = CreateSimWorkers( -1, workers );
+	lpPartDef wall = lpDefaultPartDef();
+	wall.halfExtents = (b3Vec3){ 4.0f, 0.9f, 0.15f };
+	wall.material = lp_brick;
+	wall.anchored = true;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.transform.p = (b3Pos){ 0.0f, 0.9f, 0.15f };
+	def.parts = &wall;
+	def.partCount = 1;
+	lpCreateObject( s.world, &def );
+	lpWorld_SettleStructures( s.world );
+	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
+	int car = lpWorld_GetVehicleState( s.world, vehicle ).body;
+	b3Body_SetLinearVelocity( s.world->bodies.data[car].id, (b3Vec3){ 0.0f, 0.0f, speed } );
+	Run( &s, 60 );
+	car = lpWorld_GetVehicleState( s.world, vehicle ).body;
+	int off = 0;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		off += p->body >= 0 && p->tag == lp_tagEngine && p->body != car ? 1 : 0;
+	}
+	if ( hash != NULL )
+	{
+		*hash = lpWorld_Hash( s.world );
+	}
+	DestroySim( &s );
+	return off;
+}
+
+static int TestCrashTearsEngine( void )
+{
+	int slow = CrashEngine( 10.0f, 1, NULL );
+	int fast = CrashEngine( 30.0f, 1, NULL );
+	printf( "  engine pieces torn off the car: %d at 10 m/s, %d at 30 m/s\n", slow, fast );
+	ENSURE( slow == 0 && fast >= 1 );
+	uint64_t a, b, c;
+	CrashEngine( 30.0f, 1, &a );
+	CrashEngine( 30.0f, 4, &b );
+	CrashEngine( 30.0f, 8, &c );
+	ENSURE( a == b && a == c );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestSolveSystem );
@@ -1100,5 +1316,10 @@ int StressTest( void )
 	RUN_TEST( TestDriftSmallStructures );
 	RUN_TEST( TestKeepUnderFire );
 	RUN_TEST( TestKeepAudit );
+	RUN_TEST( TestReliefBalances );
+	RUN_TEST( TestReliefFreeFall );
+	RUN_TEST( TestReliefMatchesSupported );
+	RUN_TEST( TestReliefLandingSnaps );
+	RUN_TEST( TestCrashTearsEngine );
 	return 0;
 }

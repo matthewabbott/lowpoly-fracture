@@ -346,6 +346,27 @@ typedef struct lpBody
 
 	double solveRz;
 	uint64_t hitCheckTick; // last tick a hit asked for a stress check (hits re-check a structure at most every 30)
+	// A moving body whose stress is solved (lpObjectDef.solveStress): on request only, exactly, pinned at one piece
+	// (stressPin, the nearest its centre of mass) with its loads balanced by its own acceleration (inertia relief: a,
+	// alpha and omega in its frame, about reliefCenter), sampled with its loads
+	bool solveStress;
+	int stressPin;
+	b3Vec3 reliefAccel;
+	b3Vec3 reliefAlpha;
+	b3Vec3 reliefOmega;
+	b3Vec3 reliefCenter;
+	// Its velocities at the end of the last two steps (world), for the acceleration it actually had: a crash's contact
+	// is gone by the time it is checked (the impact broke it). stepTick: the tick of the newer; stepPair: the older is
+	// from the step before.
+	b3Vec3 stepV[2];
+	b3Vec3 stepOmega[2];
+	uint64_t stepTick;
+	bool stepPair;
+	// Struck at hitTick, at hitPoint (body frame), on hitMaterial: what it did not sample enters there (the pin is the
+	// piece nearest it; the struck one may be broken by then), and its crumpling spreads the stop
+	b3Vec3 hitPoint;
+	uint8_t hitMaterial;
+	uint64_t hitTick;
 
 	// Ghost and scrap state. The body frame is com - q * localCenter, so piece geometry stays in object space.
 	b3Pos com;
@@ -640,6 +661,8 @@ static inline void lpTouchPiece( lpWorld* w, int piece )
 	w->pieces.data[piece].changed = ++w->changeSerial;
 }
 void lpFreeStressSystem( lpBody* b );
+// After the physics step: moving bodies that solve their stress keep their velocities (lpBody.stepV)
+void lpTrackMovingBodies( lpWorld* w );
 
 float lpParticleVolume( const lpWorld* w, int material );
 float lpGhostVolume( const lpWorld* w, int material );

@@ -327,6 +327,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->lastTimeStep = timeStep;
 	w->stats.physicsMs = b3GetMillisecondsAndReset( &ticks );
 	lpPollLinks( w, timeStep ); // before anything below can destroy a body under a joint
+	lpTrackMovingBodies( w );
 
 	lpStepGhosts( w, timeStep );
 	lpShove( w, timeStep );

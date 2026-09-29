@@ -572,6 +572,13 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		wh->load = b3Dot( push, wh->contactNormal );
 		l->force = b3Neg( onChassis ); // links keep the force on end B: the ground
 		lpRecheckGround( w, wh, l->force );
+		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
+		lpBody* chassis = w->bodies.data + bodyIndex;
+		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * b3Length( b3World_GetGravity( w->def.physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
+		{
+			chassis->hitCheckTick = w->tick;
+			lpRequestStressCheck( w, bodyIndex, false );
+		}
 	}
 }
 

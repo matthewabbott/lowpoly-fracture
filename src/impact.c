@@ -891,6 +891,17 @@ void lpCollectHits( lpWorld* w )
 					hit->hitCheckTick = w->tick;
 					lpRequestStressCheck( w, bi, false );
 				}
+				// A moving body that solves its stress feels a hard hit through its own acceleration: check it then
+				// (at most every 10 steps), while the hit is in its contacts
+				else if ( hit != NULL && hit->solveStress && hit->kind == lp_kindDebris && e->approachSpeed >= w->def.hitSpeed &&
+						  w->tick >= hit->hitCheckTick + 10 )
+				{
+					hit->hitCheckTick = w->tick;
+					hit->hitPoint = b3InvTransformWorldPoint( b3Body_GetTransform( hit->id ), e->point );
+					hit->hitMaterial = w->pieces.data[data - 1].material;
+					hit->hitTick = w->tick + 1; // + 1: never 0 once set
+					lpRequestStressCheck( w, bi, false );
+				}
 			}
 		}
 

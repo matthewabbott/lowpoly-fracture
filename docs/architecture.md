@@ -196,6 +196,22 @@ tiers instead of popping them.
 - Invariants are checked every tick in tests by `lpWorld_Validate` (every piece on one live body with one shape,
   bonds only within a body, counts consistent).
 
+### Stress on moving bodies (inertia relief)
+
+- An object made with `solveStress` (the car kit) keeps a stress solve while it moves. It is checked only when asked:
+  a hard hit (at most every 10 steps), a wheel bottoming out hard, a link's load changing by a quarter.
+- Its solve is always exact (no clusters, no audits) and pinned at one piece: the one nearest where it was struck in
+  the last step (the crash's force enters there; the struck piece itself may be broken by then), else the one nearest
+  its centre of mass. Each piece carries its weight and its sampled loads (contacts, links, wheels) less what it takes
+  to accelerate it with the body, m (a + alpha x r + omega x (omega x r)), and less its own small inertia times alpha.
+- The acceleration is measured, the body's velocity change over the last step (`lpTrackMovingBodies` keeps the last
+  two), because a crash's contact is gone by the time the body is checked: the impact that the hit made broke it.
+  Whatever force was not sampled then enters at the pin. Without two consecutive velocities it is computed instead, as
+  the acceleration that balances the sampled loads exactly. A rigid body stops in a step where a crumple zone takes
+  several: the part of a crash's deceleration beyond gravity is scaled by 1 - the struck material's `crush`.
+- It is judged once per check: a moment's load strains and breaks joints but does not creak on. What breaks splits as
+  usual, and split-off bodies keep `solveStress`.
+
 ## Links (`link.c`)
 
 - A link joins two objects (or an object and a fixed point) with a Box3D weld, revolute, spherical or distance joint.
@@ -286,6 +302,11 @@ tiers instead of popping them.
 - `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
 - `lpCreateLink` (weld, hinge, ball, rope) with `lpWorld_GetLinkState` (force, utilization, strain, health) and
   `lpWorld_SetRopeLength` (winches, cranes); `lpObjectDef.gravityScale` and `lpWorld_SetGravityScale`.
+- Motors on hinges and ball joints (`lpMotorDef`, `lpWorld_SetLinkTarget`, `lpWorld_SetLinkTargetRotation`): what the
+  creatures milestone drives limbs with.
+- `lpCreateVehicle` with `lpWorld_SetVehicleControl` and the vehicle and wheel states; `lpPartSystem` (tags,
+  channels) with `lpWorld_GetPieceSupply` and `lpPieceInfo.supplied`; part detonators; `lpObjectDef.userId` and
+  `solveStress`.
 
 ## Borrowed from Nebenan
 

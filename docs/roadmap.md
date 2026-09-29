@@ -9,7 +9,7 @@ Order (one at a time):
 2. Toppling and stress points (done)
 3. Breakable links and assemblies (done)
 4. Stress at scale (done, but for step 6 if measurements ask for it)
-5. Articulated objects and systems (vehicles first)
+5. Articulated objects and systems (vehicles first) (done)
 6. Creatures and mechs
 7. Dents (cars and armor)
 8. Profiling and hot paths
@@ -167,13 +167,24 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 4. Channels and supply (done: a cut line goes dry in the same step, an engine without fuel makes no power, half an
    engine gives half, a hose carries fuel between objects, a car coasts once its engine is knocked off).
 5. A car kit (frame, sheet-metal panels on bolts, glass, engine, fuel tank, steering box) and crash calibration (done:
-   into a brick wall at 10, 20 and 30 m/s the car keeps 96, 93 and 83% of itself and 100, 67 and 33% of its power).
+   with step 7's stress on moving bodies, into a brick wall at 10, 20 and 30 m/s the car keeps 96, 79 and 75% of
+   itself, and its power only at 10 m/s).
 6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path
    (done: servos hold to their cap and sag past it, go limp unfed or brake, survive a rebuild; the track's crane loads
    its tower's footing three times harder with a 2 t load than a 400 kg one).
-7. Inertia relief: stress on moving bodies, triggered by load spikes (the cut line: it may move to milestone 6).
+7. Inertia relief: stress on moving bodies, triggered by load spikes (done: measured acceleration, pinned where struck;
+   a car into a wall at 30 m/s loses its engine and front wheels and keeps its cabin, at 10 m/s only a bumper).
+
+8. Wrap-up: docs, the agent map, the memory note (done).
 
 Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to milestone 7.
+
+Open:
+- car-on-car crashes: Box3D sweeps only against static bodies, so two fast cars could pass through each other; not
+  measured yet (an `isBullet` flag per vehicle if they do);
+- Box3D's wheel joint stays unused (the fallback if the shape-cast suspension ever fails a case); its force getters
+  are wrong (PATCHES.md);
+- the track's box scenery is placeholder art; a real track and AI drivers belong to the game.
 
 ## 6. Creatures and mechs
 
