@@ -25,12 +25,12 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure: scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
-| `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces |
+| `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track) and scripted bombardment and drivers (`lpSceneDrive`); `lpBuildScene` settles their structures |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track), the car kit (`lpAddCar`), a crane (`lpAddCrane`), scripted bombardment and drivers (`lpSceneDrive`); `lpBuildScene` settles their structures |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
 | `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`), `lpf_test stress TestKeepBreach` one test |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving (`drive.cpp`: keys to recorded controls, chase camera), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |

@@ -9,7 +9,11 @@
 
 ## Local patches
 
-None yet.
+- `revolute_joint.c`, `b3GetRevoluteJointTorque`: the axial impulse (spring, motor and limits) was counted twice,
+  once along `rotationAxisZ` (as the solver applies it) and again along the frame's z axis, so a hinge at its limit or
+  driven by its motor reported twice its axial torque. The second term is dropped. Links judge a hinge's load from
+  this getter, and motorised hinges read their drive from it. (The getter still writes `perpAxisX/Y`, which
+  `b3PrepareRevoluteJoint` recomputes anyway.)
 
 ## Known issues at this commit (found in a code audit; not patched, avoided instead)
 
@@ -23,5 +27,10 @@ None yet.
   created; toggling them on a shape only affects future contacts.
 - `joint.c:1432`: `b3Joint_GetAngularSeparation` asserts on wheel joints.
 - `joint.c:1114`: the wheel joint reaction force is marked "todo probably wrong".
+- `wheel_joint.c`, `b3GetWheelJointForce`: adds `lowerSuspensionLimit` (a length) to impulses, has the wrong sign on
+  the upper limit and permutes the axes; `b3GetWheelJointTorque` returns only the spin impulse. Our wheels use no
+  joint (`src/wheel.c`), so nothing reads them.
+- `prismatic_joint.c`, `b3GetPrismaticJointForce`: adds the upper limit impulse where the solver subtracts it. No
+  link uses a prismatic joint yet.
 - The custom filter callback runs only at pair creation, and both callbacks run on worker threads (they must be
   pure).

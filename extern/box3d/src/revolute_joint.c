@@ -232,10 +232,7 @@ b3Vec3 b3GetRevoluteJointForce( b3World* world, b3JointSim* base )
 
 b3Vec3 b3GetRevoluteJointTorque( b3World* world, b3JointSim* base )
 {
-	b3WorldTransform transformA = b3GetBodyTransform( world, base->bodyIdA );
 	b3RevoluteJoint* joint = &base->revoluteJoint;
-	b3Vec3 axis = b3RotateVector( base->localFrameA.q, b3Vec3_axisZ );
-	axis = b3RotateVector( transformA.q, axis );
 
 	b3Quat relQ = b3InvMulQuat( joint->frameA.q, joint->frameB.q );
 
@@ -251,9 +248,9 @@ b3Vec3 b3GetRevoluteJointTorque( b3World* world, b3JointSim* base )
 	angularImpulse = b3MulAdd( angularImpulse, axialImpulse, joint->rotationAxisZ );
 
 	// todo add pivot torque
-	b3Vec3 impulse = b3MulAdd( angularImpulse,
-							   joint->springImpulse + joint->motorImpulse + joint->lowerImpulse - joint->upperImpulse, axis );
-	b3Vec3 torque = b3MulSV( world->inv_h, impulse );
+	// lowpoly-fracture patch: the axial impulse is already in angularImpulse (along rotationAxisZ, as the solver
+	// applies it); upstream added it a second time along the frame's axis
+	b3Vec3 torque = b3MulSV( world->inv_h, angularImpulse );
 	return torque;
 }
 

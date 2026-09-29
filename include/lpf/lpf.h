@@ -246,6 +246,19 @@ typedef enum lpLinkType
 	lp_linkTypeCount
 } lpLinkType;
 
+// A motorised hinge or ball joint (a muscle, a crane's slew): a servo turns it toward its target
+// (lpWorld_SetLinkTarget, lpWorld_SetLinkTargetRotation) with at most maxTorque, less as the link is damaged and as
+// what it needs is fed. It holds up to that torque and gives past it: a weak muscle sags. Unfed, it brakes with at most
+// holdTorque (a worm gear holds, a severed muscle does not). Its own torque never counts against the link's maxTorque.
+typedef struct lpMotorDef
+{
+	float maxTorque;  // N*m; 0 (and no holdTorque) = no motor
+	float maxSpeed;	  // rad/s
+	float gain;		  // 1/s: turning speed per radian from its target
+	uint8_t needs;	  // supply channels it needs fed at either end (0: none)
+	float holdTorque; // N*m it brakes with when unfed
+} lpMotorDef;
+
 typedef struct lpLinkDef
 {
 	int type;					  // lpLinkType
@@ -263,6 +276,8 @@ typedef struct lpLinkDef
 	float strength;				  // impact damage it takes, like a bond's (J/m^2); 0 = immune to blasts
 	bool collideConnected;		  // false stops ALL collision between the two bodies, not only near the link
 	uint8_t carries;			  // supply channels it carries between its ends (a fuel hose, a power cable)
+	lpMotorDef motor;			  // hinges and ball joints
+	uint32_t userId;			  // the game's id for the link
 } lpLinkDef;
 
 // Defaults for a type: the limits of a hemp rope, an iron hinge or ball joint, a bolted weld
@@ -275,6 +290,11 @@ void lpDestroyLink( lpWorld* world, int link );
 
 // Winches and cranes: a rope's longest length
 void lpWorld_SetRopeLength( lpWorld* world, int link, float length );
+
+// A motorised hinge's target angle (radians from its pose at creation), or a ball joint's target rotation of its B frame
+// relative to its A frame (identity: its pose at creation). They persist, and are part of the state (hashed).
+void lpWorld_SetLinkTarget( lpWorld* world, int link, float angle );
+void lpWorld_SetLinkTargetRotation( lpWorld* world, int link, b3Quat rotation );
 
 typedef struct lpLinkState
 {
@@ -291,6 +311,10 @@ typedef struct lpLinkState
 	float health;	   // what is left of its strength after blasts
 	float length;	   // a rope's longest length
 	uint8_t supplied;  // supply channels fed at either end
+	uint32_t userId;
+	float angle;	   // a hinge's angle from its pose at creation
+	float motorTorque; // what its motor is putting in, N*m
+	float motorCap;	   // what its motor can put in now: less when damaged or unfed
 } lpLinkState;
 
 // Cached at the last step: safe at any time
@@ -511,6 +535,7 @@ typedef struct lpStats
 	float vehicleMs;
 	int wheelCasts;	   // this step
 	int supplyUpdates; // this step: 1 when a carrier's connections changed
+	int motorSets;	   // this step: Box3D motor setter calls (only when a servo's speed or cap changed)
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );

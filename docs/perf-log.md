@@ -475,3 +475,20 @@ coasting:
 A grenade at the tank sets it off and the power goes to 0; a heavy blow to the engine's front block leaves 0.67. The
 track rung with kit cars: 0.12 / 0.13 ms per step at 1 / 8 workers (the box cars made 0.48 / 0.29: sturdier cars shed
 less debris under the blasts), 612 pieces at most.
+
+## 2026-09-28 articulated objects, step 6: motors, the revolute patch, a crane
+
+Hinges and ball joints take a motor: a velocity servo on Box3D's joint motor, its torque capped by the link's health
+and by how well what it needs is fed (plus a brake when unfed). A patch to Box3D's revolute torque getter stops it
+counting the axial torque twice: a hinge at its limit now reports its load (480 N*m for an arm of 480 N*m, not 960).
+The yard's hash is unchanged by it. The track gains a crane (a concrete footing and a bolted timber mast, a slewing
+deck and a luffing jib on motorised hinges, a winch rope to a 400 kg load) swung by `lpSceneDrive`.
+
+- Servos: 0.05 us each per step when nothing changed; 200 servos tracking moving targets call Box3D's setters 35
+  times a step.
+- The crane's footing joint: 0.11 of its limit with 400 kg, 0.31 with 2 t.
+- A determinism scare: the track's per-tick hash differed in about one sandbox run in twenty, always at a tick where
+  a drive event changed a car's controls. The simulation was identical; `lpHashVehicles` hashed `lpVehicleControl`
+  whole, and a struct copy fills the three bytes of padding after its bool with stack garbage (determinism rule 11).
+  It needed the sandbox's stack to show: 120 in-process runs never did. Hashed field by field now: 0 of 29 sandbox runs
+  differ.

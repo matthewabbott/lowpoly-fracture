@@ -140,6 +140,18 @@ typedef struct lpLink
 	uint32_t generation;
 	int settle; // steps before loads are judged: a rebuilt joint starts cold
 	int wheel;	// its wheel (w->wheels) when it is one, else -1
+	// Motor (hinges and ball joints with def.motor): its target, what was last given to Box3D (set again only when it
+	// changes; a rebuilt joint gets it all again), and what it did
+	float target;
+	b3Quat targetRotation;
+	bool targetChanged;
+	bool motorApplied;
+	float appliedSpeed;
+	b3Vec3 appliedVelocity;
+	float appliedCap;
+	float motorCap;
+	float motorTorque;
+	float angle; // hinges: from the pose at creation, at the last step
 	int nextFree;
 	bool alive;
 } lpLink;
@@ -581,6 +593,7 @@ void lpBreakPieceLinks( lpWorld* w, int piece );
 void lpDetachLinks( lpWorld* w, int piece, lpShape* const* cells, int cellCount );
 void lpAttachLinks( lpWorld* w, const int* cellToPiece );
 void lpSyncLinks( lpWorld* w );
+void lpDriveMotors( lpWorld* w ); // after lpSyncLinks and supply: servo speeds and torque caps
 void lpPollLinks( lpWorld* w, float timeStep );
 bool lpBodyLinked( const lpWorld* w, const lpBody* b );
 // Touching a linked body that moves (a crate in a cart): it must not freeze, or the assembly would jam on it

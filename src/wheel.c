@@ -839,7 +839,11 @@ uint64_t lpHashVehicles( const lpWorld* w, uint64_t h )
 	for ( int i = 0; i < w->vehicles.count; ++i )
 	{
 		const lpVehicle* v = w->vehicles.data + i;
-		h = lpHashBytes( h, &v->control, sizeof( v->control ) );
+		// Field by field: the struct has padding after the bool, which a copy fills with whatever was on the stack
+		float control[3] = { v->control.throttle, v->control.brake, v->control.steer };
+		uint8_t handbrake = v->control.handbrake ? 1 : 0;
+		h = lpHashBytes( h, control, sizeof( control ) );
+		h = lpHashBytes( h, &handbrake, sizeof( handbrake ) );
 		h = lpHashBytes( h, v->links, sizeof( int ) * (size_t)v->wheelCount );
 	}
 	for ( int i = 0; i < w->wheels.count; ++i )

@@ -35,6 +35,8 @@ lpLinkDef lpDefaultLinkDef( int type )
 	def.bodyB = -1;
 	def.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
 	def.dampingRatio = 1.0f;
+	def.motor.maxSpeed = 2.0f;
+	def.motor.gain = 6.0f;
 	switch ( type )
 	{
 		case lp_linkRope:
@@ -95,6 +97,12 @@ static b3BodyId lpEndBody( const lpWorld* w, const lpLink* l, int k )
 	return piece < 0 ? l->anchor[k] : w->bodies.data[w->pieces.data[piece].body].id;
 }
 
+static bool lpHasMotor( const lpLink* l )
+{
+	return ( l->def.type == lp_linkHinge || l->def.type == lp_linkBall ) &&
+		   ( l->def.motor.maxTorque > 0.0f || l->def.motor.holdTorque > 0.0f );
+}
+
 static void lpBuildJoint( lpWorld* w, int index )
 {
 	lpLink* l = w->links.data + index;
@@ -130,6 +138,7 @@ static void lpBuildJoint( lpWorld* w, int index )
 			jd.enableLimit = d->lowerAngle < d->upperAngle;
 			jd.lowerAngle = d->lowerAngle;
 			jd.upperAngle = d->upperAngle;
+			jd.enableMotor = lpHasMotor( l ); // its speed and torque come from lpDriveMotors
 			l->joint = b3CreateRevoluteJoint( physics, &jd );
 			break;
 		}
@@ -139,6 +148,7 @@ static void lpBuildJoint( lpWorld* w, int index )
 			jd.base = base;
 			jd.enableConeLimit = d->coneAngle > 0.0f;
 			jd.coneAngle = d->coneAngle;
+			jd.enableMotor = lpHasMotor( l );
 			l->joint = b3CreateSphericalJoint( physics, &jd );
 			break;
 		}
@@ -161,6 +171,7 @@ static void lpBuildJoint( lpWorld* w, int index )
 	l->builtOn[0] = a;
 	l->builtOn[1] = b;
 	l->settle = LP_LINK_SETTLE;
+	l->motorApplied = false; // a new joint gets its motor's speed and torque again
 }
 
 static int lpAllocLink( lpWorld* w )
@@ -182,6 +193,7 @@ static int lpAllocLink( lpWorld* w )
 	}
 	w->links.data[index].nextFree = -1;
 	w->links.data[index].wheel = -1;
+	w->links.data[index].targetRotation = b3Quat_identity;
 	return index;
 }
 
@@ -467,6 +479,133 @@ void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
 	b3Joint_WakeBodies( l->joint );
 }
 
+void lpWorld_SetLinkTarget( lpWorld* w, int link, float angle )
+{
+	if ( link >= 0 && link < w->links.count && w->links.data[link].alive && w->links.data[link].target != angle )
+	{
+		w->links.data[link].target = angle;
+		w->links.data[link].targetChanged = true;
+	}
+}
+
+void lpWorld_SetLinkTargetRotation( lpWorld* w, int link, b3Quat rotation )
+{
+	if ( link < 0 || link >= w->links.count || w->links.data[link].alive == false )
+	{
+		return;
+	}
+	lpLink* l = w->links.data + link;
+	b3Quat q = b3NormalizeQuat( rotation );
+	if ( q.s != l->targetRotation.s || q.v.x != l->targetRotation.v.x || q.v.y != l->targetRotation.v.y ||
+		 q.v.z != l->targetRotation.v.z )
+	{
+		l->targetRotation = q;
+		l->targetChanged = true;
+	}
+}
+
+// A joint frame of a link in the world
+static b3Quat lpEndFrameRotation( const lpWorld* w, const lpLink* l, int k )
+{
+	return b3MulQuat( b3Body_GetRotation( lpEndBody( w, l, k ) ), l->ends[k].frame.q );
+}
+
+// How well what a motor needs is fed at the better of its ends
+static float lpMotorFeed( const lpWorld* w, const lpLink* l )
+{
+	if ( l->def.motor.needs == 0 )
+	{
+		return 1.0f;
+	}
+	float fed = 0.0f;
+	for ( int k = 0; k < 2; ++k )
+	{
+		if ( l->ends[k].piece >= 0 )
+		{
+			fed = b3MaxFloat( fed, lpSupplyOf( w->pieces.data + l->ends[k].piece, l->def.motor.needs ) );
+		}
+	}
+	return fed;
+}
+
+// The servos: speed toward the target in proportion to how far off it is, torque up to the cap. Box3D's setters are
+// called only when a value changed (and always after a rebuild); a changed target wakes the joint's bodies.
+void lpDriveMotors( lpWorld* w )
+{
+	for ( int i = 0; i < w->links.count; ++i )
+	{
+		lpLink* l = w->links.data + i;
+		if ( l->alive == false || lpHasMotor( l ) == false )
+		{
+			continue;
+		}
+		const lpMotorDef* m = &l->def.motor;
+		float fed = lpMotorFeed( w, l );
+		float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
+		float cap = m->maxTorque * health * fed + m->holdTorque * ( 1.0f - fed );
+		if ( l->def.type == lp_linkHinge )
+		{
+			float angle = b3RevoluteJoint_GetAngle( l->joint );
+			float speed = fed > 0.0f ? b3ClampFloat( m->gain * ( l->target - angle ), -m->maxSpeed, m->maxSpeed ) : 0.0f;
+			if ( l->motorApplied == false || speed != l->appliedSpeed )
+			{
+				b3RevoluteJoint_SetMotorSpeed( l->joint, speed );
+				l->appliedSpeed = speed;
+				w->stats.motorSets += 1;
+			}
+		}
+		else
+		{
+			// The rotation from where frame B is (relative to frame A) to where it should be, as a rotation vector
+			b3Quat qA = lpEndFrameRotation( w, l, 0 );
+			b3Quat relative = b3InvMulQuat( qA, lpEndFrameRotation( w, l, 1 ) );
+			b3Quat error = b3MulQuat( l->targetRotation, b3Conjugate( relative ) );
+			if ( error.s < 0.0f )
+			{
+				error = (b3Quat){ b3Neg( error.v ), -error.s };
+			}
+			float sine = b3Length( error.v );
+			b3Vec3 omega = b3Vec3_zero;
+			if ( sine > 1e-6f && fed > 0.0f )
+			{
+				float angle = 2.0f * b3Atan2( sine, error.s );
+				float speed = b3MinFloat( m->gain * angle, m->maxSpeed );
+				omega = b3RotateVector( qA, b3MulSV( speed / sine, error.v ) );
+			}
+			if ( l->motorApplied == false || b3Length( b3Sub( omega, l->appliedVelocity ) ) > 0.0f )
+			{
+				b3SphericalJoint_SetMotorVelocity( l->joint, omega );
+				l->appliedVelocity = omega;
+				w->stats.motorSets += 1;
+			}
+		}
+		if ( l->motorApplied == false || cap != l->appliedCap )
+		{
+			if ( l->def.type == lp_linkHinge )
+			{
+				b3RevoluteJoint_SetMaxMotorTorque( l->joint, cap );
+			}
+			else
+			{
+				b3SphericalJoint_SetMaxMotorTorque( l->joint, cap );
+			}
+			if ( l->motorApplied )
+			{
+				b3Joint_WakeBodies( l->joint ); // weaker or stronger (unfed, damaged, fed again): a sleeping limb must react
+			}
+			l->appliedCap = cap;
+			w->stats.motorSets += 1;
+		}
+		l->motorApplied = true;
+		l->motorCap = cap;
+		if ( l->targetChanged )
+		{
+			b3Joint_WakeBodies( l->joint );
+			l->targetChanged = false;
+		}
+	}
+}
+
 void lpSyncLinks( lpWorld* w )
 {
 	uint64_t stamp = w->tick + 1;
@@ -583,8 +722,8 @@ static void lpRecheckStructures( lpWorld* w, lpLink* l )
 	}
 }
 
-// Load over limit, weakened by blast damage, clamped
-static float lpLinkLoad( const lpLink* l )
+// Load over limit, weakened by blast damage, clamped. The torque is what the joint holds against, without its motor's.
+static float lpLinkLoad( const lpLink* l, b3Vec3 torque )
 {
 	float u = 0.0f;
 	if ( l->def.maxForce > 0.0f )
@@ -593,7 +732,7 @@ static float lpLinkLoad( const lpLink* l )
 	}
 	if ( l->def.maxTorque > 0.0f )
 	{
-		u = b3MaxFloat( u, b3Length( l->torque ) / l->def.maxTorque );
+		u = b3MaxFloat( u, b3Length( torque ) / l->def.maxTorque );
 	}
 	if ( l->def.strength > 0.0f )
 	{
@@ -643,7 +782,7 @@ void lpPollLinks( lpWorld* w, float timeStep )
 			b3BodyId mount = w->bodies.data[w->pieces.data[l->ends[0].piece].body].id;
 			if ( b3Body_IsAwake( mount ) )
 			{
-				l->utilization = lpLinkLoad( l );
+				l->utilization = lpLinkLoad( l, l->torque );
 				if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
 				{
 					b3Body_SetAwake( mount, true );
@@ -665,6 +804,24 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		l->points[1] = b3TransformWorldPoint( b3Body_GetTransform( b ), l->ends[1].frame.p );
 		l->force = b3Joint_GetConstraintForce( l->joint );
 		l->torque = b3Joint_GetConstraintTorque( l->joint );
+		b3Vec3 held = l->torque; // what the joint holds against: the motor's own torque is not a load on it
+		if ( l->def.type == lp_linkHinge )
+		{
+			l->angle = b3RevoluteJoint_GetAngle( l->joint );
+		}
+		if ( lpHasMotor( l ) && l->def.type == lp_linkHinge )
+		{
+			b3Vec3 axis = b3RotateVector( lpEndFrameRotation( w, l, 0 ), (b3Vec3){ 0.0f, 0.0f, 1.0f } );
+			float drive = b3RevoluteJoint_GetMotorTorque( l->joint );
+			held = b3MulSub( held, drive, axis );
+			l->motorTorque = b3AbsFloat( drive );
+		}
+		else if ( lpHasMotor( l ) )
+		{
+			b3Vec3 drive = b3SphericalJoint_GetMotorTorque( l->joint );
+			held = b3Sub( held, drive );
+			l->motorTorque = b3Length( drive );
+		}
 		if ( l->settle > 0 )
 		{
 			l->settle -= 1;
@@ -672,7 +829,7 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		}
 		lpRecheckStructures( w, l );
 
-		l->utilization += 0.5f * ( lpLinkLoad( l ) - l->utilization );
+		l->utilization += 0.5f * ( lpLinkLoad( l, held ) - l->utilization );
 		if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
 		{
 			b3Joint_WakeBodies( l->joint ); // keep straining until it holds or gives
@@ -712,6 +869,10 @@ lpLinkState lpWorld_GetLinkState( const lpWorld* w, int link )
 	{
 		s.supplied |= l->ends[k].piece >= 0 ? lpSuppliedMask( w->pieces.data + l->ends[k].piece ) : (uint8_t)0;
 	}
+	s.userId = l->def.userId;
+	s.angle = l->angle;
+	s.motorTorque = l->motorTorque;
+	s.motorCap = l->motorCap;
 	return s;
 }
 
@@ -739,6 +900,12 @@ uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
 		h = lpHashBytes( h, &l->health, sizeof( float ) );
 		h = lpHashBytes( h, &l->strain, sizeof( float ) );
 		h = lpHashBytes( h, &l->utilization, sizeof( float ) );
+		if ( lpHasMotor( l ) ) // only motorised links: old hashes stay valid
+		{
+			h = lpHashBytes( h, &l->target, sizeof( float ) );
+			h = lpHashBytes( h, &l->targetRotation, sizeof( b3Quat ) );
+			h = lpHashBytes( h, &l->motorCap, sizeof( float ) );
+		}
 	}
 	return w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
 }

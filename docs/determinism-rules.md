@@ -35,6 +35,9 @@ keep the destruction layer (`src/`) and the app from breaking it.
    (`--script`) and applies it before the step of that tick. A pull/grab or a held blower is one event per tick.
    Vehicle controls are persistent simulation state (hashed): a `drive` event sets them when they change, and they
    hold until the next one. Scripted drivers (`lpSceneDrive`) set controls from simulation state only, every tick.
+11. **Hash fields, not structs with padding.** A struct copy fills its padding with whatever was on the stack (pointers,
+   under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
+   ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).
 
 ## How it is checked
 

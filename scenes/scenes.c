@@ -1133,6 +1133,99 @@ int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style )
 	return lpCreateVehicle( world, &def );
 }
 
+int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
+{
+	// The footing is cast round the mast's foot, and the mast is bolted into it: the crane's weight and swing load the
+	// joint between them
+	lpBegin();
+	lpPartDef* footing = lpBox( (b3Vec3){ 0.0f, 0.4f, 0.0f }, (b3Vec3){ 1.2f, 0.4f, 1.2f }, b3Quat_identity, lp_concrete, LP_CONCRETE,
+								true );
+	lpPartDef* mast = lpBox( (b3Vec3){ 0.0f, 4.8f, 0.0f }, (b3Vec3){ 0.35f, 4.0f, 0.35f }, b3Quat_identity, lp_wood, LP_BEAM, false );
+	if ( footing != NULL && mast != NULL )
+	{
+		footing->joint = lp_jointSolid;
+		mast->joint = lp_jointBolts;
+		mast->grainAxis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	}
+	int tower = lpCommit( world, base, 0.0f, true );
+
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.9f, 0.2f, 0.9f }, b3Quat_identity, lp_sheetMetal, 0xD9A12Bu, false );
+	int deck = lpCommitDef( world, b3Add( base, (b3Vec3){ 0.0f, 9.0f, 0.0f } ), b3Quat_identity, lpDynamicDef() );
+	lpBegin();
+	lpPartDef* beam = lpBox( b3Vec3_zero, (b3Vec3){ 5.0f, 0.2f, 0.2f }, b3Quat_identity, lp_wood, 0xD9A12Bu, false );
+	if ( beam != NULL )
+	{
+		beam->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	}
+	int jib = lpCommitDef( world, b3Add( base, (b3Vec3){ 5.0f, 9.4f, 0.0f } ), b3Quat_identity, lpDynamicDef() );
+	float side = cbrtf( loadMass / lpGetMaterial( lp_metal )->density );
+	lpBegin();
+	lpBox( b3Vec3_zero, (b3Vec3){ 0.5f * side, 0.5f * side, 0.5f * side }, b3Quat_identity, lp_metal, 0x3A3D42u, false );
+	int load = lpCommitDef( world, b3Add( base, (b3Vec3){ 9.8f, 9.2f - 5.0f - 0.5f * side, 0.0f } ), b3Quat_identity, lpDynamicDef() );
+
+	b3Vec3 top = b3Add( base, (b3Vec3){ 0.0f, 8.8f, 0.0f } );
+	lpLinkDef slew = lpLinkBetween( lp_linkHinge, tower, deck, top, top );
+	slew.axis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	slew.maxForce = 1e6f; // a slewing ring
+	slew.maxTorque = 2e6f;
+	slew.strength = 20000.0f;
+	slew.motor = (lpMotorDef){ 40000.0f, 0.3f, 1.0f, 0, 40000.0f };
+	slew.userId = lp_linkSlew;
+	lpCreateLink( world, &slew );
+
+	b3Vec3 root = b3Add( base, (b3Vec3){ 0.0f, 9.4f, 0.0f } );
+	lpLinkDef luff = lpLinkBetween( lp_linkHinge, deck, jib, root, root );
+	luff.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+	luff.lowerAngle = -0.2f;
+	luff.upperAngle = 0.6f;
+	luff.maxForce = 1e6f;
+	luff.maxTorque = 2e6f;
+	luff.strength = 20000.0f;
+	luff.motor = (lpMotorDef){ 300000.0f, 0.2f, 2.0f, 0, 300000.0f };
+	luff.userId = lp_linkLuff;
+	lpCreateLink( world, &luff );
+
+	b3Vec3 tip = b3Add( base, (b3Vec3){ 9.8f, 9.2f, 0.0f } );
+	lpLinkDef winch = lpLinkBetween( lp_linkRope, jib, load, tip, b3Add( base, (b3Vec3){ 9.8f, 9.2f - 5.0f, 0.0f } ) );
+	winch.maxForce = 1e6f; // steel cable
+	winch.strength = 20000.0f;
+	winch.userId = lp_linkWinch;
+	lpCreateLink( world, &winch );
+	return tower;
+}
+
+// The crane's links by user id (-1 if gone)
+static int lpFindLink( const lpWorld* world, uint32_t userId )
+{
+	for ( int i = 0; i < lpWorld_GetLinkCapacity( world ); ++i )
+	{
+		lpLinkState st = lpWorld_GetLinkState( world, i );
+		if ( st.alive && st.userId == userId )
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+// The track's crane swings its load back and forth over the infield and winches it up and down
+static void lpDriveCrane( lpWorld* world, int tick )
+{
+	int slew = lpFindLink( world, lp_linkSlew );
+	int luff = lpFindLink( world, lp_linkLuff );
+	int winch = lpFindLink( world, lp_linkWinch );
+	lpWorld_SetLinkTarget( world, slew, ( tick / 360 ) % 2 == 0 ? 1.2f : -1.2f );
+	lpWorld_SetLinkTarget( world, luff, 0.1f );
+	// The winch reels at 1 m/s: a rope shortened at once would fling its load up
+	float length = winch >= 0 ? lpWorld_GetLinkState( world, winch ).length : 0.0f;
+	float goal = ( tick / 240 ) % 2 == 0 ? 5.0f : 3.0f;
+	if ( winch >= 0 && length != goal )
+	{
+		lpWorld_SetRopeLength( world, winch, length + b3ClampFloat( goal - length, -1.0f / 60.0f, 1.0f / 60.0f ) );
+	}
+}
+
 static void lpAddTrack( lpWorld* world )
 {
 	float r = LP_TRACK_RADIUS;
@@ -1198,7 +1291,8 @@ static void lpAddTrack( lpWorld* world )
 		lpAddWall( world, lpRingPoint( r + 8.0f, a, 0.0f ), yaw, 10.0f, 1.6f, 0.3f, lp_brick, LP_BRICK, 1.0f );
 	}
 
-	// Three cars spread round the ring, driving counterclockwise
+	// A crane in the infield, and three cars spread round the ring, driving counterclockwise
+	lpAddCrane( world, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 400.0f );
 	lpAddCar( world, lpRingPoint( r, 0.0f, 0.0f ), -0.0f, 0 );
 	lpAddCar( world, lpRingPoint( r, 2.1f, 0.0f ), -2.1f, 1 );
 	lpAddCar( world, lpRingPoint( r, 4.5f, 0.0f ), -4.5f, 2 );
@@ -1230,10 +1324,10 @@ static void lpDriveTrack( lpWorld* world, int skipVehicle )
 
 void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle )
 {
-	(void)tick;
 	if ( scene == lp_sceneTrack )
 	{
 		lpDriveTrack( world, skipVehicle );
+		lpDriveCrane( world, tick );
 	}
 }
 

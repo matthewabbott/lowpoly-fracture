@@ -220,6 +220,14 @@ tiers instead of popping them.
 - Linked bodies, and bodies resting on moving linked ones (a crate in a cart), never freeze into rubble and are
   outside the debris budgets: frozen, they would hold an assembly rigid or jam it. `maxLinks` caps the count.
 - Gravity scale ("fairy dust") lives on the body and passes to every body made from it (splits, ejecta, ghosts).
+- Motors (`lpMotorDef` on hinges and ball joints: muscles, a crane's slew and luff): a velocity servo on Box3D's own
+  joint motor. `lpDriveMotors`, after `lpSyncLinks` and the supply update, sets the speed from the error to the target
+  (`lpWorld_SetLinkTarget`, `lpWorld_SetLinkTargetRotation`; a ball joint's error is a rotation vector) and the torque
+  cap to `maxTorque` times health times how well its `needs` are fed at either end, plus `holdTorque` for the unfed
+  share (a brake). It holds up to the cap and sags past it; that is the limp. Setters are called only when a value
+  changed (and after a rebuild); a changed target or cap wakes the joint's bodies. The motor's own torque never counts
+  against the link's `maxTorque`. A local patch fixes Box3D's revolute torque getter, which counted the axial torque
+  twice (`extern/box3d/PATCHES.md`).
 
 ## Vehicles (`wheel.c`)
 

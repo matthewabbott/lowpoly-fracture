@@ -168,7 +168,9 @@ Steps (each measured in [perf-log.md](perf-log.md)):
    engine gives half, a hose carries fuel between objects, a car coasts once its engine is knocked off).
 5. A car kit (frame, sheet-metal panels on bolts, glass, engine, fuel tank, steering box) and crash calibration (done:
    into a brick wall at 10, 20 and 30 m/s the car keeps 96, 93 and 83% of itself and 100, 67 and 33% of its power).
-6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path.
+6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path
+   (done: servos hold to their cap and sag past it, go limp unfed or brake, survive a rebuild; the track's crane loads
+   its tower's footing three times harder with a 2 t load than a 400 kg one).
 7. Inertia relief: stress on moving bodies, triggered by load spikes (the cut line: it may move to milestone 6).
 
 Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to milestone 7.

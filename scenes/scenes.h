@@ -20,7 +20,7 @@ typedef enum lpSceneId
 	lp_sceneRuins,	// a dry-stone arch, a colonnade with lintels, balconies: structures that know where they are weak
 	lp_sceneYard,	// things joined by links: a cart of volatile crates on a ramp, a hanging sign, a door, a drawbridge
 	lp_sceneKeep,	// a mortared stone keep of about 2000 pieces with wooden floors: the stress solve at scale
-	lp_sceneTrack,	// a ring road with kerbs, a hump, a plank bridge and a brick wall, and three cars that drive laps
+	lp_sceneTrack,	// a ring road with kerbs, a hump, a plank bridge and a brick wall, three cars that drive laps, a crane
 	lp_sceneCount
 } lpSceneId;
 
@@ -71,6 +71,19 @@ enum
 // steering, needs power), hood, boot, doors, pillars and roof bolted on, glass, rubber bumpers, and four wheels (rear
 // drive, front steering, the handbrake on the rear). About 1.7 t. style picks the paint. Returns the vehicle.
 int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style );
+
+// The crane's links, by lpLinkDef.userId
+enum
+{
+	lp_linkSlew = 0xC4A1, // the deck on the mast: a motorised vertical hinge
+	lp_linkLuff = 0xC4A2, // the jib on the deck: a motorised horizontal hinge
+	lp_linkWinch = 0xC4A3, // the rope from the jib's tip to the load
+};
+
+// A tower crane at base: a concrete footing and a timber mast bolted to it (a structure, which carries the crane
+// through its links), a slewing deck, a 10 m jib along +x and a winch rope to a steel load of loadMass kg. Returns the
+// structure's body.
+int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass );
 
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );

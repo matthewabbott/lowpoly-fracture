@@ -842,6 +842,289 @@ static int TestLinkDeterminism( void )
 	return 0;
 }
 
+// An anchored post with an arm hinged on its top (axis z) reaching along +x, 2 m of 48 kg timber: its weight is
+// 480 N*m about the hinge. The post has a battery part feeding power (channel 1) when `battery`.
+typedef struct Arm
+{
+	int post;
+	int arm;
+	int link;
+} Arm;
+
+static Arm AddArm( Sim* s, lpMotorDef motor, float lower, float upper, bool battery, bool split )
+{
+	Arm r;
+	lpPartDef posts[2];
+	posts[0] = lpDefaultPartDef();
+	posts[0].halfExtents = (b3Vec3){ 0.2f, 1.0f, 0.2f };
+	posts[0].transform.p = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	posts[0].anchored = true;
+	posts[0].system.carries = 0x2;
+	posts[1] = lpDefaultPartDef();
+	posts[1].halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+	posts[1].transform.p = (b3Vec3){ -0.4f, 1.0f, 0.0f };
+	posts[1].system.sources = 0x2;
+	lpObjectDef pd = lpDefaultObjectDef();
+	pd.parts = posts;
+	pd.partCount = battery ? 2 : 1;
+	r.post = lpCreateObject( s->world, &pd );
+
+	// The arm: one timber, or an inner 0.6 m and an outer 1.4 m (the outer, bigger, keeps the body when they part)
+	lpPartDef arms[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		arms[k] = lpDefaultPartDef();
+		arms[k].material = lp_wood;
+		arms[k].grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	}
+	arms[0].halfExtents = split ? (b3Vec3){ 0.3f, 0.1f, 0.1f } : (b3Vec3){ 1.0f, 0.1f, 0.1f };
+	arms[0].transform.p = split ? (b3Vec3){ -0.7f, 0.0f, 0.0f } : b3Vec3_zero;
+	arms[1].halfExtents = (b3Vec3){ 0.7f, 0.1f, 0.1f };
+	arms[1].transform.p = (b3Vec3){ 0.3f, 0.0f, 0.0f };
+	lpObjectDef ad = lpDefaultObjectDef();
+	ad.isStatic = false;
+	ad.transform.p = (b3Pos){ 1.2f, 2.1f, 0.0f };
+	ad.parts = arms;
+	ad.partCount = split ? 2 : 1;
+	r.arm = lpCreateObject( s->world, &ad );
+
+	lpLinkDef hinge = lpDefaultLinkDef( lp_linkHinge );
+	hinge.bodyA = r.post;
+	hinge.bodyB = r.arm;
+	hinge.anchorA = (b3Pos){ 0.2f, 2.1f, 0.0f };
+	hinge.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+	hinge.lowerAngle = lower;
+	hinge.upperAngle = upper;
+	hinge.motor = motor;
+	r.link = lpCreateLink( s->world, &hinge );
+	lpWorld_SettleStructures( s->world );
+	return r;
+}
+
+static lpMotorDef Motor( float maxTorque, uint8_t needs, float holdTorque )
+{
+	lpMotorDef m = lpDefaultLinkDef( lp_linkHinge ).motor;
+	m.maxTorque = maxTorque;
+	m.needs = needs;
+	m.holdTorque = holdTorque;
+	return m;
+}
+
+// A hinge held at its limit reports the torque it holds once (Box3D counted it twice; see PATCHES.md)
+static int TestHingeTorqueAtLimit( void )
+{
+	Sim s = CreateSim( -1 );
+	Arm a = AddArm( &s, Motor( 0.0f, 0, 0.0f ), -0.01f, 0.01f, false, false );
+	ENSURE( a.link >= 0 );
+	Run( &s, 60 );
+	lpLinkState st = lpWorld_GetLinkState( s.world, a.link );
+	float mass = b3Body_GetMass( s.world->bodies.data[a.arm].id );
+	printf( "  limit torque %.0f N*m about the axis, the arm's weight %.0f N*m\n", fabsf( st.torque.z ), mass * 10.0f * 1.0f );
+	ENSURE_NEAR( fabsf( st.torque.z ), mass * 10.0f * 1.0f, 0.1f * mass * 10.0f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A motor holds its target up to its torque and gives past it (it sags, it does not break)
+static int TestMotorHoldsUntilCap( void )
+{
+	float caps[2] = { 1000.0f, 200.0f };
+	float angles[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		Arm a = AddArm( &s, Motor( caps[k], 0, 0.0f ), 0.0f, 0.0f, false, false );
+		Run( &s, 120 );
+		lpLinkState st = lpWorld_GetLinkState( s.world, a.link );
+		angles[k] = st.angle;
+		printf( "  motor of %.0f N*m against 480: angle %.3f, drive %.0f of %.0f N*m, load %.2f of its limit\n", caps[k], st.angle,
+				st.motorTorque, st.motorCap, st.utilization );
+		ENSURE( st.alive && st.utilization < 1.0f );
+		DestroySim( &s );
+	}
+	ENSURE( fabsf( angles[0] ) < 0.03f && angles[1] < -0.5f );
+	return 0;
+}
+
+// A motor that needs power goes limp when its battery is knocked off; one with a brake holds
+static int TestMotorLimpUnsupplied( void )
+{
+	float holds[2] = { 0.0f, 1000.0f };
+	float angles[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		Arm a = AddArm( &s, Motor( 1000.0f, 0x2, holds[k] ), 0.0f, 0.0f, true, false );
+		Run( &s, 60 );
+		ENSURE( fabsf( lpWorld_GetLinkState( s.world, a.link ).angle ) < 0.03f );
+		const lpBody* post = s.world->bodies.data + a.post;
+		for ( int j = 0; j < post->pieces.count; ++j )
+		{
+			lpPiece* p = s.world->pieces.data + post->pieces.data[j];
+			while ( p->sources != 0 && p->bonds.count > 0 )
+			{
+				lpBreakBond( s.world, p->bonds.data[0] );
+			}
+		}
+		lpMarkDirty( s.world, a.post );
+		Run( &s, 90 );
+		lpLinkState st = lpWorld_GetLinkState( s.world, a.link );
+		angles[k] = st.angle;
+		printf( "  battery gone, brake %.0f N*m: angle %.3f, cap %.0f\n", holds[k], st.angle, st.motorCap );
+		DestroySim( &s );
+	}
+	ENSURE( angles[0] < -0.5f && fabsf( angles[1] ) < 0.05f );
+	return 0;
+}
+
+// A motorised hinge whose end is split off onto a new body is rebuilt there with its motor, and holds on
+static int TestMotorSurvivesSplit( void )
+{
+	Sim s = CreateSim( -1 );
+	Arm a = AddArm( &s, Motor( 1000.0f, 0, 0.0f ), 0.0f, 0.0f, false, true );
+	Run( &s, 30 );
+	lpLinkState before = lpWorld_GetLinkState( s.world, a.link );
+	const lpBody* arm = s.world->bodies.data + a.arm;
+	lpPiece* inner = s.world->pieces.data + arm->pieces.data[0];
+	while ( inner->bonds.count > 0 )
+	{
+		lpBreakBond( s.world, inner->bonds.data[0] );
+	}
+	lpMarkDirty( s.world, a.arm );
+	int rebuilds = 0;
+	for ( int t = 0; t < 90; ++t )
+	{
+		Run( &s, 1 );
+		rebuilds += lpWorld_GetStats( s.world ).linkRebuilds;
+	}
+	lpLinkState st = lpWorld_GetLinkState( s.world, a.link );
+	printf( "  body %d -> %d, %d rebuilds, angle %.3f, cap %.0f\n", before.bodyB, st.bodyB, rebuilds, st.angle, st.motorCap );
+	ENSURE( st.alive && st.bodyB != before.bodyB && rebuilds >= 1 );
+	ENSURE( fabsf( st.angle ) < 0.03f && st.motorCap == 1000.0f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// A ball joint's servo turns its arm to a target rotation (and holds it up against its weight)
+static int TestBallServo( void )
+{
+	Sim s = CreateSim( -1 );
+	Arm a = AddArm( &s, Motor( 0.0f, 0, 0.0f ), 0.0f, 0.0f, false, false );
+	lpDestroyLink( s.world, a.link );
+	lpLinkDef ball = lpDefaultLinkDef( lp_linkBall );
+	ball.bodyA = a.post;
+	ball.bodyB = a.arm;
+	ball.anchorA = (b3Pos){ 0.2f, 2.1f, 0.0f };
+	ball.motor = Motor( 2000.0f, 0, 0.0f );
+	int link = lpCreateLink( s.world, &ball );
+	ENSURE( link >= 0 );
+	lpWorld_SetLinkTargetRotation( s.world, link, b3MakeQuatFromAxisAngle( (b3Vec3){ 0.0f, 1.0f, 0.0f }, 0.8f ) );
+	Run( &s, 180 );
+	b3WorldTransform xf;
+	lpWorld_GetBodyTransform( s.world, a.arm, &xf );
+	b3Vec3 along = b3RotateVector( xf.q, (b3Vec3){ 1.0f, 0.0f, 0.0f } );
+	float yaw = atan2f( -along.z, along.x ); // +0.8 about +y turns +x toward -z
+	printf( "  arm turned %.3f rad about y (target 0.8), droops %.3f\n", yaw, along.y );
+	ENSURE_NEAR( yaw, 0.8f, 0.05f );
+	ENSURE( fabsf( along.y ) < 0.05f );
+	DestroySim( &s );
+	return 0;
+}
+
+// A crane's links load its tower: a heavier load on the jib loads the mast's footing more, and the slew turns the jib
+static int TestCraneLoadsTower( void )
+{
+	float masses[2] = { 400.0f, 2000.0f };
+	float peaks[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim s = CreateSim( -1 );
+		int tower = lpAddCrane( s.world, (b3Vec3){ 0.0f, 0.0f, -5.0f }, masses[k] );
+		lpWorld_SettleStructures( s.world );
+		int slew = -1;
+		for ( int i = 0; i < lpWorld_GetLinkCapacity( s.world ); ++i )
+		{
+			slew = lpWorld_GetLinkState( s.world, i ).userId == lp_linkSlew ? i : slew;
+		}
+		ENSURE( slew >= 0 );
+		lpWorld_SetLinkTarget( s.world, slew, 0.6f );
+		Run( &s, 300 );
+		float peak = 0.0f;
+		const lpBody* b = s.world->bodies.data + tower;
+		for ( int j = 0; j < b->pieces.count; ++j )
+		{
+			const lpPiece* p = s.world->pieces.data + b->pieces.data[j];
+			for ( int n = 0; n < p->bonds.count; ++n )
+			{
+				peak = fmaxf( peak, s.world->bonds.data[p->bonds.data[n]].rho );
+			}
+		}
+		peaks[k] = peak;
+		lpLinkState st = lpWorld_GetLinkState( s.world, slew );
+		printf( "  %.0f kg load: slewed to %.3f (target 0.6), footing joint at %.3f of its limit, %d stress breaks\n", masses[k],
+				st.angle, peak, lpWorld_GetStats( s.world ).stressBreaks );
+		ENSURE( fabsf( st.angle - 0.6f ) < 0.1f ); // a heavy load still swinging on its rope pulls the deck about a little
+		ENSURE( lpWorld_Validate( s.world ) );
+		DestroySim( &s );
+	}
+	ENSURE( peaks[1] > 1.5f * peaks[0] && peaks[0] > 0.0f );
+	return 0;
+}
+
+// What servos cost: 200 hinged arms tracking a moving target, the drive pass alone
+static int TestMotorCost( void )
+{
+	Sim s = CreateSim( -1 );
+	int links[200];
+	for ( int k = 0; k < 200; ++k )
+	{
+		lpPartDef post = lpDefaultPartDef();
+		post.halfExtents = (b3Vec3){ 0.1f, 0.5f, 0.1f };
+		post.anchored = true;
+		lpObjectDef pd = lpDefaultObjectDef();
+		pd.transform.p = (b3Pos){ -30.0f + 3.0f * (float)( k % 20 ), 0.5f, -15.0f + 3.0f * (float)( k / 20 ) };
+		pd.parts = &post;
+		pd.partCount = 1;
+		int p = lpCreateObject( s.world, &pd );
+		lpPartDef arm = lpDefaultPartDef();
+		arm.halfExtents = (b3Vec3){ 0.5f, 0.05f, 0.05f };
+		arm.material = lp_wood;
+		lpObjectDef ad = lpDefaultObjectDef();
+		ad.isStatic = false;
+		ad.transform.p = (b3Pos){ pd.transform.p.x + 0.6f, 1.05f, pd.transform.p.z };
+		ad.parts = &arm;
+		ad.partCount = 1;
+		int a = lpCreateObject( s.world, &ad );
+		lpLinkDef hinge = lpDefaultLinkDef( lp_linkHinge );
+		hinge.bodyA = p;
+		hinge.bodyB = a;
+		hinge.anchorA = (b3Pos){ pd.transform.p.x + 0.1f, 1.05f, pd.transform.p.z };
+		hinge.axis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		hinge.motor = Motor( 200.0f, 0, 0.0f );
+		links[k] = lpCreateLink( s.world, &hinge );
+	}
+	lpWorld_SettleStructures( s.world );
+	float ms = 0.0f;
+	int sets = 0;
+	for ( int t = 0; t < 120; ++t )
+	{
+		for ( int k = 0; k < 200; ++k )
+		{
+			lpWorld_SetLinkTarget( s.world, links[k], ( t / 30 ) % 2 == 0 ? 1.0f : -1.0f );
+		}
+		Run( &s, 1 );
+		uint64_t ticks = b3GetTicks();
+		lpDriveMotors( s.world ); // once more, timed (it changes nothing Box3D has not integrated yet)
+		ms += b3GetMilliseconds( ticks );
+		sets += lpWorld_GetStats( s.world ).motorSets;
+	}
+	printf( "  200 servos: %.2f us each per step, %.0f setter calls per step\n", 1000.0f * ms / ( 120.0f * 200.0f ),
+			(float)sets / 120.0f );
+	DestroySim( &s );
+	return 0;
+}
+
 int LinkTest( void )
 {
 	RUN_TEST( TestLinkCreate );
@@ -863,5 +1146,12 @@ int LinkTest( void )
 	RUN_TEST( TestYardAtRest );
 	RUN_TEST( TestYardCart );
 	RUN_TEST( TestLinkDeterminism );
+	RUN_TEST( TestHingeTorqueAtLimit );
+	RUN_TEST( TestMotorHoldsUntilCap );
+	RUN_TEST( TestMotorLimpUnsupplied );
+	RUN_TEST( TestMotorSurvivesSplit );
+	RUN_TEST( TestBallServo );
+	RUN_TEST( TestCraneLoadsTower );
+	RUN_TEST( TestMotorCost );
 	return 0;
 }
