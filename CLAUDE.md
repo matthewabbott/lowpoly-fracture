@@ -40,7 +40,7 @@ needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
 | `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`) |
-| `docs/` | feasibility, architecture, determinism rules, materials catalog, roadmap, perf log |
+| `docs/` | goals (the games the engine is for, the feel, outcomes to keep), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log |
 
 ## Commands (PowerShell; run from the repo root)
 

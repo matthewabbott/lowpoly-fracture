@@ -281,10 +281,12 @@ when a moving body's stress is checked). Agent-friendliness comes first, and it 
 is. Other models review it with the current engine as the source of truth:
 0. **An outcome catalogue:** every behaviour we like, each pinned by a test with a tolerance or by a scripted scene with
    reference screenshots; the gaps found and filled first. The contract is the outcomes, not the bench hashes (a
-   simpler design may change the numerics).
-1. **Reviews:** independent reviewers (Fable, Astra, and the Codex and Kimi reviewers set up here), each given the
-   catalogue and the code, read-only, propose simpler or more concise ways to reach the same outcomes, per subsystem,
-   with the size they expect to save.
+   simpler design may change the numerics). The first draft, with the goals and the feel it serves, is in
+   [goals.md](goals.md).
+1. **Reviews:** independent reviewers (Fable; GPT-6 Astra, run in Codex; the Codex and Kimi reviewers set up here),
+   each given the goals, the catalogue and the code, read-only, propose simpler or more concise ways to reach the same
+   outcomes, per subsystem, with the size they expect to save. One of them prunes, having read
+   [How Complex Systems Fail](https://how.complexsystems.fail/) first (the "bonsai agent" from the first week).
 2. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
    bench does not regress beyond noise. The size of the core (tokens) is logged before and after.
 
@@ -302,8 +304,7 @@ solve, physics, links, debris), a heavy-load bench rung per game (a race with ri
 budget each, then the hottest paths first.
 
 Outcomes may change here, as long as the feel holds:
-- **The feel goals, written down** (from our discussions: plausible over causal, fidelity that may drop under load),
-  so a taste reviewer can judge against them.
+- **The feel goals,** written down in [goals.md](goals.md), so a taste reviewer can judge against them.
 - **A survey for the unknown unknowns:** how other destruction engines buy their performance (NVIDIA Blast and its
   stress solver, Unreal's Chaos Destruction and its cluster hierarchies, Red Faction: Guerrilla's structures,
   Frostbite's destruction, Teardown's engine posts, Havok, Nebenan), each trick tagged: safe for the deterministic
@@ -311,8 +312,18 @@ Outcomes may change here, as long as the feel holds:
 - **The cosmetic layer as a lever:** determinism binds only what feeds back into play. Anything that never does (the
   smallest debris, dust, far-off mess) may use what the simulation may not: camera distance, time budgets, the GPU, and
   a different result on each machine. Moving more into it buys room.
-- **Reviews:** independent reviewers propose changes that trade fidelity for speed; before-and-after footage of the same
-  scripts goes to a taste reviewer (an Opus model) against the feel goals; what is kept is logged with its numbers.
+- **Parallelism and the GPU under determinism** (research first): what keeps a parallel result bit-exact is an order
+  fixed by the data, never by the threads (reductions over a tree shaped by the count alone, deterministic sorts and
+  scans, no float atomics), or arithmetic whose order does not matter (integer or fixed-point accumulation, binned
+  "reproducible" float sums). GPUs round differently across vendors and drivers (fused multiply-adds, transcendentals,
+  denormals), so a GPU result is bit-exact only in integer or fixed-point math, and otherwise belongs to the cosmetic
+  layer. "Converging" to a shared answer by rounding a converged result to a grid makes most runs agree but still
+  flips values that land near a grid line: it narrows desyncs without removing them, unless state sync repairs them.
+  Candidates: the stress solve's K·x and fracture's cell clipping on more threads, the GPU for dust, far debris and
+  rendering-side mess.
+- **Reviews:** independent reviewers (as in milestone 8) propose changes that trade fidelity for speed; before-and-after
+  footage of the same scripts goes to a taste reviewer (an Opus model) against the feel goals; what is kept is logged
+  with its numbers.
 
 Candidates logged so far:
 - the stress system: the cost of an iteration (65 ns per bond: a structure of arrays for the 6-vectors, precomputed

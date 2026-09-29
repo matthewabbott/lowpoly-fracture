@@ -9,7 +9,7 @@ debris bodies.
 - `scenes/`: procedural low-poly test scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech)
 - `app/sandbox/`: playable sandbox (sokol D3D11 + Dear ImGui)
 - `test/`, `bench/`: unit, fuzz and determinism tests; headless benchmark
-- `docs/`: [feasibility report](docs/feasibility.md), [roadmap](docs/roadmap.md), [architecture](docs/architecture.md),
+- `docs/`: [goals](docs/goals.md) (the games, the feel), [feasibility report](docs/feasibility.md), [roadmap](docs/roadmap.md), [architecture](docs/architecture.md),
   [determinism rules](docs/determinism-rules.md), [materials](docs/materials.md), [perf log](docs/perf-log.md)
 
 ## Build (Windows)
