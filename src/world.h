@@ -139,9 +139,81 @@ typedef struct lpLink
 	uint32_t lastImpact;
 	uint32_t generation;
 	int settle; // steps before loads are judged: a rebuilt joint starts cold
+	int wheel;	// its wheel (w->wheels) when it is one, else -1
 	int nextFree;
 	bool alive;
 } lpLink;
+
+#define LP_MAX_VEHICLE_WHEELS 16
+
+// A vehicle's wheel (wheel.c): a link with no joint, end 0 on the mount piece, end 1 on nothing. Its axes are the
+// vehicle's, in the chassis body frame, which every body split off the chassis shares.
+typedef struct lpWheel
+{
+	int link; // -1: a free slot
+	int vehicle;
+	int slot; // in its vehicle's wheel list
+	lpWheelDef def;
+	float sprungMass; // its share of the chassis at creation: a mount body much lighter than that tears it off
+	float steer;	  // radians
+	float spin;		  // radians, for drawing
+	float spinSpeed;
+	float length; // suspension length at the last cast
+	float load;	  // N on the ground
+	float slip;	  // sideways speed at the contact before the solve, m/s
+	bool grounded;
+	bool atStop; // bottomed out: the cast started inside the ground
+	b3Pos contactPoint;
+	b3Vec3 contactNormal; // out of the ground
+	int groundPiece;	  // -1: none
+	uint32_t groundGeneration;
+	b3WorldTransform hub; // world, at the last step its chassis was awake
+	b3Vec3 hubVelocity;
+	b3Vec3 bodyOmega;
+	b3Vec3 stressForce; // what its ground structure was last re-checked for (world)
+	int stressBody;		// that structure (-1: none)
+	uint64_t recheckTick;
+	bool sliding;	// its grip gave at the last solve: it slides on with less
+	float friction; // of the ground
+	// This step's solve (world)
+	b3Vec3 suspension; // force on the chassis
+	b3Vec3 r;		   // contact point from the chassis's centre of mass
+	b3Vec3 dirF, dirS; // along and across the tyre, in the ground's plane
+	b3Vec3 groundVelocity;
+	float massN, massF, massS;
+	float lambdaN, lambdaF, lambdaS;
+	int nextFree;
+} lpWheel;
+
+// A wheel on a chassis body, for grouping this step's tyre solves by body
+typedef struct lpBodyWheel
+{
+	int body;
+	int wheel;
+} lpBodyWheel;
+
+typedef struct lpVehicle
+{
+	lpVehicleDef def; // wheels cleared
+	b3Vec3 forward;	  // chassis body frame
+	b3Vec3 up;
+	lpVehicleControl control;
+	bool controlChanged;
+	bool alive;
+	int wheelCount;
+	int links[LP_MAX_VEHICLE_WHEELS]; // each wheel's link as created (-1: it came off)
+} lpVehicle;
+
+// A wheel that came off, spawned as an object of its own at the start of the next step
+typedef struct lpLostWheel
+{
+	b3WorldTransform hub;
+	b3Vec3 velocity;
+	b3Vec3 omega;
+	float radius, width;
+	uint8_t material;
+	uint32_t color;
+} lpLostWheel;
 
 // A link end waiting for its fractured piece's cells to be placed (see lpDetachLinks)
 typedef struct lpLinkMove
@@ -382,6 +454,11 @@ struct lpWorld
 	int freeLink;
 	int linkCount;
 	LP_ARRAY( lpLinkMove ) scratchLinkMoves;
+	LP_ARRAY( lpWheel ) wheels;
+	int freeWheel;
+	LP_ARRAY( lpVehicle ) vehicles;
+	LP_ARRAY( lpLostWheel ) lostWheels;
+	LP_ARRAY( lpBodyWheel ) scratchWheels;
 	LP_ARRAY( int ) stressAgain; // structures that lost bonds to their own weight; re-checked next step
 	LP_ARRAY( int ) stressQueue; // structures updated this step, checked together after the splits (stress.c)
 	lpStressJob* stressJobs;	 // this step's solves; the first stressJobCount are in use
@@ -485,6 +562,22 @@ bool lpTouchesLinked( lpWorld* w, const lpBody* b );
 uint64_t lpHashLinks( const lpWorld* w, uint64_t h );
 bool lpValidateLinks( const lpWorld* w );
 void lpFreeLinks( lpWorld* w, bool physicsAlive );
+// A wheel's link: end 0 on the piece nearest the mount (within reach), end 1 on nothing, no joint. Returns -1 when no
+// piece of the body is near enough.
+int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float strength, int wheel );
+// Distance from the origin to the segment a-b
+float lpSegmentDistance( b3Vec3 a, b3Vec3 b );
+
+// vehicles (wheel.c): lpSpawnLostWheels at the start of a step (wheels that came off last step become objects);
+// lpStepVehicles just before the physics step (steering, suspension casts, the tyre solve, forces)
+void lpSpawnLostWheels( lpWorld* w );
+void lpStepVehicles( lpWorld* w, float timeStep );
+void lpReleaseWheel( lpWorld* w, int wheel, bool comesOff ); // its link is going
+// Wheels standing on a structure load it (stress.c): force on the ground at the contact, world
+void lpAddWheelLoads( lpWorld* w, int bodyIndex, b3WorldTransform xf );
+uint64_t lpHashVehicles( const lpWorld* w, uint64_t h );
+bool lpValidateWheel( const lpWorld* w, int link );
+void lpFreeVehicles( lpWorld* w );
 
 // stress (stress.c): check every structure in w->stressQueue (solves in parallel, breaks in queue order); structures
 // still solving or straining are marked dirty for the next step. Settling solves each to convergence, with no budget.

@@ -59,7 +59,7 @@ static int StepValidated( Sim* s, int ticks, bool* valid )
 	return breaks;
 }
 
-// Every type links two blocks; bad definitions are refused
+// Every type links two blocks (but wheels, which only vehicles make); bad definitions are refused
 static int TestLinkCreate( void )
 {
 	Sim s = CreateSim( -1 );
@@ -68,6 +68,13 @@ static int TestLinkCreate( void )
 	for ( int type = 0; type < lp_linkTypeCount; ++type )
 	{
 		lpLinkDef def = lpDefaultLinkDef( type );
+		if ( type == lp_linkWheel )
+		{
+			def.bodyA = a;
+			def.anchorA = (b3Pos){ 3.2f, 1.0f, 0.0f };
+			ENSURE( lpCreateLink( s.world, &def ) == -1 ); // wheels are made by lpCreateVehicle
+			continue;
+		}
 		def.bodyA = a;
 		def.bodyB = b;
 		def.anchorA = (b3Pos){ 3.2f, 1.0f, 0.0f };

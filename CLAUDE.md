@@ -13,7 +13,7 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 
 | path | what it is |
 |---|---|
-| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, impacts, pulls, blows, stats, queries |
+| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, impacts, pulls, blows, stats, queries |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64` |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
@@ -26,11 +26,12 @@ First-party code is about 90k tokens and fits in one context. `extern/` (sokol, 
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure: scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces |
+| `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep) and scripted bombardment; `lpBuildScene` settles their structures |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`), `lpf_test stress TestKeepBreach` one test |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`), `lpf_test stress TestKeepBreach` one test |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, renderer (vertex pulling), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |

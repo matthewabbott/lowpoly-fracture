@@ -194,6 +194,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.stressWaiting = 0;
 	w->stats.linkBreaks = 0;
 	w->stats.linkRebuilds = 0;
+	w->stats.wheelCasts = 0;
 	w->stressWork = 0;
 	w->stats.demotionsThisStep = 0;
 	w->stats.ghostCasts = 0;
@@ -219,6 +220,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 		}
 	}
 	w->pendingDestroy.count = 0;
+	lpSpawnLostWheels( w ); // wheels that came off last step
 
 	// Fracture work deferred by earlier steps' budgets
 	lpProcessDeferred( w );
@@ -255,6 +257,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpApplyPulls( w );
 	lpSyncLinks( w ); // every body of this step exists now
 	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
+	lpStepVehicles( w, timeStep );
+	w->stats.vehicleMs = b3GetMillisecondsAndReset( &ticks );
 
 	b3World_Step( w->def.physics, timeStep, subStepCount );
 	w->lastTimeStep = timeStep;

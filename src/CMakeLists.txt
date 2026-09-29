@@ -17,6 +17,7 @@ add_library(lpf STATIC
 	stress.c
 	tasks.c
 	tasks.h
+	wheel.c
 	world.c
 	world.h
 	../include/lpf/lpf.h

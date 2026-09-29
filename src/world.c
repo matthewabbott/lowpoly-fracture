@@ -131,6 +131,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxFractureJobsPerStep = 48;
 	def.maxFreezesPerStep = 64;
 	def.maxGhostCastsPerStep = 2048;
+	def.maxWheelCastsPerStep = 1024;
 	return def;
 }
 
@@ -279,6 +280,7 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	w->freeBond = -1;
 	w->freeBody = -1;
 	w->freeLink = -1;
+	w->freeWheel = -1;
 	w->audit.body = -1;
 	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
 	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
@@ -316,6 +318,7 @@ void lpDestroyWorld( lpWorld* w )
 		lpArray_Free( p->links );
 	}
 	lpFreeLinks( w, physicsAlive );
+	lpFreeVehicles( w );
 	lpArray_Free( w->scratchLinkMoves );
 	lpArray_Free( w->pieces );
 	lpArray_Free( w->bonds );
@@ -1108,14 +1111,16 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
 		}
 	}
 
-	// Ropes are no Box3D shapes: they are hit as thin capsules, when nearer than any shape
+	// Ropes and wheels are no Box3D shapes: they are hit as capsules (a thin rope, a tyre round its axle), when nearer
+	// than any shape
 	for ( int i = 0; i < w->links.count; ++i )
 	{
 		const lpLink* l = w->links.data + i;
 		float fraction;
 		b3Vec3 point;
-		if ( l->alive && l->def.type == lp_linkRope &&
-			 lpRayNearSegment( translation, b3SubPos( l->points[0], origin ), b3SubPos( l->points[1], origin ), 0.05f,
+		float radius = l->wheel >= 0 ? w->wheels.data[l->wheel].def.radius : 0.05f;
+		if ( l->alive && ( l->def.type == lp_linkRope || l->wheel >= 0 ) &&
+			 lpRayNearSegment( translation, b3SubPos( l->points[0], origin ), b3SubPos( l->points[1], origin ), radius,
 							   &fraction, &point ) &&
 			 fraction < nearest )
 		{

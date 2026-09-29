@@ -404,3 +404,23 @@ On a slow machine, lower `maxStressWork`. The profiling milestone's first target
 (65 ns per bond: a structure of arrays for the 6-vectors, precomputed bond blocks, a parallel K·x for the biggest
 structures). Step 6 (a nested-iteration settle, a two-level preconditioner) is not needed yet: settling the keep takes
 65 to 75 ms at load, and audits finish within a few hundred calm steps.
+
+## 2026-09-28 articulated objects, step 1: wheels and vehicles
+
+A wheel is a link with no joint: a shape cast of the tyre down its suspension, a spring-damper, and an impulse solve
+for grip per chassis body (see architecture.md, "Vehicles"). Box car tests (a 4 m wooden slab on four wheels):
+
+| test | result |
+|---|---|
+| rest | sags 0.130 m (mg/4k = 0.129), asleep at tick 69 |
+| 40 m/s for 10 s | 400 m, drift 1 mm, no bounce, speed held |
+| full lock at 30 m/s | slides (16.7 m/s sideways at worst), stays upright (0.999) |
+| 20 cm kerb at 15 m/s | the chassis rises 0.30 m and settles |
+| 15 degree slope | the handbrake holds (no creep); released, it rolls back |
+| drops | 1 m holds; 8 m tears all four wheels off, which come off as wheels |
+| a plank bridge | a 0.9 t car crosses, a 3 t truck breaks 2 joints |
+
+Cost (casts and the solve): 3.0 us per wheel at 16 wheels, 2.8 us at 256 (64 cars: 0.7 ms per step). Nothing changes
+for worlds without vehicles: every ladder hash is the same. The ladder reads 5 to 18% slower than the baseline, but an
+interleaved A/B against the previous commit on this machine today gives the same time (town, 1 worker: 3.80 vs 3.81
+ms): the machine is slower than when the baseline was taken.

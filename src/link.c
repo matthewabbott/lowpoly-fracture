@@ -25,6 +25,7 @@
 #define LP_LINK_CLAMP 3.0f	   // utilization above this counts as this (one wild step cannot snap a link)
 #define LP_LINK_STRAIN 10.0f   // strain per second per unit of overload: 10% over lasts about a second
 #define LP_LINK_TEAR_RATIO 0.02f // a rebuilt link between two moving bodies tears when one is under 2% of the other
+#define LP_WHEEL_TEAR_RATIO 0.2f // a wheel tears off a mount body lighter than a fifth of its share of the chassis
 
 lpLinkDef lpDefaultLinkDef( int type )
 {
@@ -180,12 +181,14 @@ static int lpAllocLink( lpWorld* w )
 		lpArray_Push( w->links, zero );
 	}
 	w->links.data[index].nextFree = -1;
+	w->links.data[index].wheel = -1;
 	return index;
 }
 
 int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 {
-	if ( def->type < 0 || def->type >= lp_linkTypeCount || def->bodyA == def->bodyB || w->linkCount >= w->def.maxLinks )
+	if ( def->type < 0 || def->type >= lp_linkTypeCount || def->type == lp_linkWheel || def->bodyA == def->bodyB ||
+		 w->linkCount >= w->def.maxLinks )
 	{
 		return -1;
 	}
@@ -256,6 +259,35 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	return index;
 }
 
+int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float strength, int wheel )
+{
+	float distance;
+	int piece = lpNearestPiece( w, body, mount, &distance );
+	if ( piece < 0 || distance > LP_LINK_REACH || w->linkCount >= w->def.maxLinks )
+	{
+		return -1;
+	}
+	b3WorldTransform xf = lpGetTransform( w->bodies.data + body );
+	int index = lpAllocLink( w );
+	lpLink* l = w->links.data + index;
+	l->def = lpDefaultLinkDef( lp_linkWheel );
+	l->def.bodyA = body;
+	l->def.anchorA = mount;
+	l->def.maxForce = maxForce;
+	l->def.maxTorque = 0.0f;
+	l->def.strength = strength;
+	l->health = strength;
+	l->alive = true;
+	l->wheel = wheel;
+	l->ends[0] = (lpLinkEnd){ piece, w->pieces.data[piece].generation, { b3InvTransformWorldPoint( xf, mount ), b3Quat_identity } };
+	l->ends[1] = (lpLinkEnd){ -1, 0, b3Transform_identity };
+	l->points[0] = mount;
+	l->points[1] = mount;
+	lpArray_Push( w->pieces.data[piece].links, index );
+	w->linkCount += 1;
+	return index;
+}
+
 static void lpRemoveLinkFromPiece( lpPiece* p, int index )
 {
 	for ( int i = 0; i < p->links.count; ++i )
@@ -296,11 +328,17 @@ static void lpLinkDust( lpWorld* w, const lpLink* l, int index, int motes )
 	}
 }
 
-static void lpReleaseLink( lpWorld* w, int index )
+// A wheel that breaks comes off as a wheel of its own; one destroyed on purpose just goes
+static void lpReleaseLink( lpWorld* w, int index, bool broken )
 {
 	lpLink* l = w->links.data + index;
 	LP_ASSERT( l->alive );
-	if ( b3Joint_IsValid( l->joint ) )
+	if ( l->wheel >= 0 )
+	{
+		lpReleaseWheel( w, l->wheel, broken );
+		l->wheel = -1;
+	}
+	else if ( b3Joint_IsValid( l->joint ) )
 	{
 		b3DestroyJoint( l->joint, true ); // what it held falls
 	}
@@ -334,7 +372,7 @@ void lpBreakLink( lpWorld* w, int index, bool dust )
 	{
 		lpLinkDust( w, w->links.data + index, index, 4 );
 	}
-	lpReleaseLink( w, index );
+	lpReleaseLink( w, index, true );
 	w->stats.linkBreaks += 1;
 }
 
@@ -342,7 +380,7 @@ void lpDestroyLink( lpWorld* w, int link )
 {
 	if ( link >= 0 && link < w->links.count && w->links.data[link].alive )
 	{
-		lpReleaseLink( w, link );
+		lpReleaseLink( w, link, false );
 	}
 }
 
@@ -437,6 +475,18 @@ void lpSyncLinks( lpWorld* w )
 		{
 			continue;
 		}
+		if ( l->wheel >= 0 )
+		{
+			// No joint to rebuild. A mount left on a chip would be launched by its spring: the wheel tears off instead.
+			lpBody* mount = w->bodies.data + w->pieces.data[l->ends[0].piece].body;
+			mount->linkStamp = stamp;
+			if ( b3Body_GetType( mount->id ) == b3_dynamicBody &&
+				 b3Body_GetMass( mount->id ) < LP_WHEEL_TEAR_RATIO * w->wheels.data[l->wheel].sprungMass )
+			{
+				lpBreakLink( w, i, true );
+			}
+			continue;
+		}
 		b3BodyId bodies[2];
 		for ( int k = 0; k < 2; ++k )
 		{
@@ -463,6 +513,14 @@ void lpSyncLinks( lpWorld* w )
 		lpBuildJoint( w, i );
 		w->stats.linkRebuilds += 1;
 	}
+}
+
+float lpSegmentDistance( b3Vec3 a, b3Vec3 b )
+{
+	b3Vec3 ab = b3Sub( b, a );
+	float length2 = b3Dot( ab, ab );
+	float t = length2 > 0.0f ? b3ClampFloat( -b3Dot( a, ab ) / length2, 0.0f, 1.0f ) : 0.0f;
+	return b3Length( b3MulAdd( a, t, ab ) );
 }
 
 bool lpBodyLinked( const lpWorld* w, const lpBody* b )
@@ -523,6 +581,50 @@ static void lpRecheckStructures( lpWorld* w, lpLink* l )
 	}
 }
 
+// Load over limit, weakened by blast damage, clamped
+static float lpLinkLoad( const lpLink* l )
+{
+	float u = 0.0f;
+	if ( l->def.maxForce > 0.0f )
+	{
+		u = b3Length( l->force ) / l->def.maxForce;
+	}
+	if ( l->def.maxTorque > 0.0f )
+	{
+		u = b3MaxFloat( u, b3Length( l->torque ) / l->def.maxTorque );
+	}
+	if ( l->def.strength > 0.0f )
+	{
+		u /= b3MaxFloat( l->health / l->def.strength, 0.1f );
+	}
+	return b3MinFloat( u, LP_LINK_CLAMP );
+}
+
+// Strain and break an overloaded link; true when it broke
+static bool lpStrainLink( lpWorld* w, int i, float timeStep )
+{
+	lpLink* l = w->links.data + i;
+	if ( l->utilization >= 2.0f )
+	{
+		lpBreakLink( w, i, true );
+		return true;
+	}
+	if ( l->utilization > 1.0f )
+	{
+		l->strain += ( l->utilization - 1.0f ) * w->def.strainRate * LP_LINK_STRAIN * timeStep;
+		if ( l->strain >= 1.0f )
+		{
+			lpBreakLink( w, i, true );
+			return true;
+		}
+		if ( ( w->tick + (uint64_t)i ) % 6 == 0 )
+		{
+			lpLinkDust( w, l, i, 1 ); // creaking
+		}
+	}
+	return false;
+}
+
 void lpPollLinks( lpWorld* w, float timeStep )
 {
 	for ( int i = 0; i < w->links.count; ++i )
@@ -530,6 +632,21 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		lpLink* l = w->links.data + i;
 		if ( l->alive == false )
 		{
+			continue;
+		}
+		if ( l->wheel >= 0 )
+		{
+			// A wheel's load is its own force, exact and computed before the step (wheel.c): judged as it comes, so a
+			// hard landing breaks it in one step
+			b3BodyId mount = w->bodies.data[w->pieces.data[l->ends[0].piece].body].id;
+			if ( b3Body_IsAwake( mount ) )
+			{
+				l->utilization = lpLinkLoad( l );
+				if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
+				{
+					b3Body_SetAwake( mount, true );
+				}
+			}
 			continue;
 		}
 		b3BodyId a = l->builtOn[0];
@@ -553,38 +670,9 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		}
 		lpRecheckStructures( w, l );
 
-		float u = 0.0f;
-		if ( l->def.maxForce > 0.0f )
+		l->utilization += 0.5f * ( lpLinkLoad( l ) - l->utilization );
+		if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
 		{
-			u = b3Length( l->force ) / l->def.maxForce;
-		}
-		if ( l->def.maxTorque > 0.0f )
-		{
-			u = b3MaxFloat( u, b3Length( l->torque ) / l->def.maxTorque );
-		}
-		if ( l->def.strength > 0.0f )
-		{
-			u /= b3MaxFloat( l->health / l->def.strength, 0.1f );
-		}
-		u = b3MinFloat( u, LP_LINK_CLAMP );
-		l->utilization += 0.5f * ( u - l->utilization );
-		if ( l->utilization >= 2.0f )
-		{
-			lpBreakLink( w, i, true );
-			continue;
-		}
-		if ( l->utilization > 1.0f )
-		{
-			l->strain += ( l->utilization - 1.0f ) * w->def.strainRate * LP_LINK_STRAIN * timeStep;
-			if ( l->strain >= 1.0f )
-			{
-				lpBreakLink( w, i, true );
-				continue;
-			}
-			if ( ( w->tick + (uint64_t)i ) % 6 == 0 )
-			{
-				lpLinkDust( w, l, i, 1 ); // creaking
-			}
 			b3Joint_WakeBodies( l->joint ); // keep straining until it holds or gives
 		}
 	}
@@ -646,7 +734,7 @@ uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
 		h = lpHashBytes( h, &l->strain, sizeof( float ) );
 		h = lpHashBytes( h, &l->utilization, sizeof( float ) );
 	}
-	return h;
+	return w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
 }
 
 static bool lpLinkFail( const char* message, int a, int b )
@@ -668,13 +756,17 @@ bool lpValidateLinks( const lpWorld* w )
 			continue;
 		}
 		live += 1;
+		if ( l->wheel >= 0 && lpValidateWheel( w, i ) == false )
+		{
+			return false;
+		}
 		int bodies[2] = { -1, -1 };
 		for ( int k = 0; k < 2; ++k )
 		{
 			const lpLinkEnd* e = l->ends + k;
 			if ( e->piece < 0 )
 			{
-				if ( B3_IS_NULL( l->anchor[k] ) )
+				if ( B3_IS_NULL( l->anchor[k] ) && l->wheel < 0 )
 				{
 					return lpLinkFail( "link %d end %d is on the world but has no anchor body", i, k );
 				}
@@ -706,8 +798,9 @@ bool lpValidateLinks( const lpWorld* w )
 		{
 			return lpLinkFail( "link %d has both ends on body %d", i, bodies[0] );
 		}
-		if ( b3Joint_IsValid( l->joint ) == false || B3_ID_EQUALS( b3Joint_GetBodyA( l->joint ), lpEndBody( w, l, 0 ) ) == false ||
-			 B3_ID_EQUALS( b3Joint_GetBodyB( l->joint ), lpEndBody( w, l, 1 ) ) == false )
+		if ( l->wheel < 0 && ( b3Joint_IsValid( l->joint ) == false ||
+								B3_ID_EQUALS( b3Joint_GetBodyA( l->joint ), lpEndBody( w, l, 0 ) ) == false ||
+								B3_ID_EQUALS( b3Joint_GetBodyB( l->joint ), lpEndBody( w, l, 1 ) ) == false ) )
 		{
 			return lpLinkFail( "link %d has a joint that is not on its ends' bodies (%d)", i, 0 );
 		}

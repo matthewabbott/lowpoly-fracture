@@ -199,6 +199,36 @@ tiers instead of popping them.
   outside the debris budgets: frozen, they would hold an assembly rigid or jam it. `maxLinks` caps the count.
 - Gravity scale ("fairy dust") lives on the body and passes to every body made from it (splits, ejecta, ghosts).
 
+## Vehicles (`wheel.c`)
+
+- A vehicle is a body on wheels, made by `lpCreateVehicle`. A wheel is a link (`lp_linkWheel`) with no Box3D joint:
+  end 0 on the piece at its mount, end 1 on nothing. Everything links do comes free: it follows its piece through
+  splits and fractures, takes blast damage (measured from the tyre), strains under its own load, and tears off a mount
+  body lighter than a fifth of its share of the chassis (a spring on a chip would launch it). When a wheel's link
+  breaks, the wheel comes off as an object of its own (a 12-sided cylinder with the hub's pose, velocity and spin) at
+  the start of the next step. A vehicle holds its controls and its wheels' links, never a body: a chassis cut in two
+  keeps on each half the wheels mounted there.
+- Each step, after `lpSyncLinks` and before the physics step (`lpStepVehicles`):
+  - steering turns toward the control at a limited rate;
+  - each wheel on an awake chassis casts its tyre (8 rim points in the wheel's plane wrapped in half its width) from
+    the mount down the suspension, through its own chassis, against static and full pieces only (light debris is not
+    ground); casts per step are capped by `maxWheelCastsPerStep`, the others keep their last contact;
+  - the suspension is a spring-damper along the contact normal, damped by the chassis's own motion, so a kerb lifts
+    the car instead of jolting it;
+  - grip is an impulse solve per chassis body (wheels grouped by body, in wheel order, 4 iterations) on a copy of its
+    velocity after gravity and the springs: sideways and along the tyre within a friction circle (grip × the ground's
+    friction, less while sliding), the drive a motor toward top speed with a capped force, brakes, the handbrake
+    (locks, and halves sideways grip) and rolling resistance capped too, and a one-way stop when the suspension
+    bottoms out. The result goes to Box3D as forces (the side force raised toward the centre of mass by `rollFactor`,
+    so it rolls the body less), and the opposite onto a moving ground body.
+- The load a wheel puts on its mount is exact, so it is judged unsmoothed: a hard landing breaks a wheel in one step.
+  Structures carry the wheels standing on them (`lpSampleLoads`), and a wheel whose load changed by a quarter, or that
+  moved onto another structure, re-checks them (at most every 30 steps).
+- A parked chassis falls asleep (its forces never wake it); a changed control wakes it, and so does losing the ground
+  under a wheel, which holds no Box3D contact to do it.
+- Controls (`lpWorld_SetVehicleControl`) are persistent simulation state and hashed; so are the wheels' steering,
+  suspension and contact state, only when vehicles exist.
+
 ## Rendering (`facet.c`, `app/sandbox/renderer.cpp`)
 
 - The core builds flat-shaded triangle meshes per piece (`lpWorld_BuildPieceMesh`): authored faces get their colour

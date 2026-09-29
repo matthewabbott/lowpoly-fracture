@@ -135,6 +135,10 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 			piece->stressLoad.t = b3Add( piece->stressLoad.t, b3Add( b3Cross( arm, force ), torque ) );
 		}
 	}
+	if ( w->vehicles.count > 0 )
+	{
+		lpAddWheelLoads( w, bodyIndex, xf ); // and wheels standing on it (a cart on a bridge)
+	}
 
 	float change = 0.0f;
 	for ( int i = 0; i < n; ++i )

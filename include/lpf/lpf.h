@@ -153,6 +153,7 @@ typedef struct lpWorldDef
 	int stressPatience;	   // steps on one solve before its tolerance relaxes from 0.1% to 1%
 	float strainRate;	   // how fast an overloaded joint gives: at 1, 10% over its limit lasts 10 checks
 	int maxLinks;		   // live links; bodies with links are exempt from freezing and the debris budgets
+	int maxWheelCastsPerStep; // wheel suspension casts per step; a wheel not cast keeps its last contact
 } lpWorldDef;
 
 lpWorldDef lpDefaultWorldDef( void );
@@ -218,6 +219,7 @@ typedef enum lpLinkType
 	lp_linkHinge, // turns about an axis, optionally between two angles
 	lp_linkBall,  // turns freely about a point, optionally within a cone
 	lp_linkRope,  // holds two points at most `length` apart
+	lp_linkWheel, // a vehicle's wheel, made by lpCreateVehicle: one end on its mount, the other on the road
 	lp_linkTypeCount
 } lpLinkType;
 
@@ -243,7 +245,7 @@ typedef struct lpLinkDef
 lpLinkDef lpDefaultLinkDef( int type );
 
 // Returns the link index, or -1: the same body at both ends, a ghost or scrap end, no piece within 0.25 m of an
-// anchor, or maxLinks reached.
+// anchor, maxLinks reached, or a wheel (made by lpCreateVehicle).
 int lpCreateLink( lpWorld* world, const lpLinkDef* def );
 void lpDestroyLink( lpWorld* world, int link );
 
@@ -269,6 +271,107 @@ typedef struct lpLinkState
 // Cached at the last step: safe at any time
 lpLinkState lpWorld_GetLinkState( const lpWorld* world, int link );
 int lpWorld_GetLinkCapacity( const lpWorld* world ); // every link index is below this
+
+// ---- vehicles ----
+//
+// A vehicle is a body on wheels. A wheel is a link (lp_linkWheel) with one end on the piece at its mount and the other
+// on the road: its suspension casts the tyre down from the mount, and a small impulse solve per body gives it grip.
+// Like any link it follows its piece through splits and fractures, takes blast damage and strains under load; when it
+// breaks (a hard landing, a blast, its mount blown out or torn off) it comes off as a wheel of its own. A vehicle
+// never names a body: cut a chassis in two and each half keeps the wheels mounted on it.
+
+typedef struct lpWheelDef
+{
+	b3Pos mount;	   // world, at creation: the top of the suspension, within 0.25 m of a piece of the chassis
+	float radius;	   // of the tyre
+	float width;
+	float restLength;  // suspension length (mount to hub) at which the spring carries nothing
+	float maxLength;   // at full droop
+	float stiffness;   // N/m; 0: the chassis's share of weight on this wheel bounces at 1.4 Hz
+	float damping;	   // N*s/m; 0: half of critical
+	float grip;		   // tyre friction, times the ground's
+	float driveShare;  // of the vehicle's drive force (0: not driven)
+	float brakeShare;  // of its brake force
+	float steerFactor; // of its steering angle (0: fixed; negative steers the other way)
+	bool handbrake;	   // locks under the handbrake, and slides sideways more easily then
+	float maxForce;	   // N the mount carries before it strains; 0: no limit
+	float strength;	   // blast damage it takes, like a link's (J/m^2); 0: immune
+	uint8_t material;  // of the wheel once it comes off
+	uint32_t color;
+} lpWheelDef;
+
+lpWheelDef lpDefaultWheelDef( void );
+
+typedef struct lpVehicleDef
+{
+	int body;			  // the chassis at creation: a dynamic body
+	b3Vec3 forward;		  // world, at creation
+	b3Vec3 up;			  // likewise; the suspension casts along -up
+	const lpWheelDef* wheels;
+	int wheelCount;		  // at most 16
+	float maxDriveForce;  // N at full throttle, shared by the driven wheels
+	float maxSpeed;		  // m/s the drive pushes toward
+	float maxBrakeForce;  // N at full brake, shared by the braking wheels
+	float maxSteer;		  // radians at full lock
+	float steerSpeed;	  // radians per second
+	float rollFactor;	  // how much the tyres' side forces roll the body: 1 fully, 0 not at all (arcade)
+	float rollingResistance; // share of a wheel's load that slows it when it is neither driven nor braked
+} lpVehicleDef;
+
+lpVehicleDef lpDefaultVehicleDef( void );
+
+// Returns the vehicle index, or -1: not a dynamic body, no wheels or more than 16, a mount more than 0.25 m from the
+// chassis, or maxLinks reached.
+int lpCreateVehicle( lpWorld* world, const lpVehicleDef* def );
+
+typedef struct lpVehicleControl
+{
+	float throttle; // -1 (reverse) to 1
+	float brake;	// 0 to 1
+	float steer;	// -1 (left) to 1 (right)
+	bool handbrake;
+} lpVehicleControl;
+
+// Persists until changed and is applied from the next step. It is simulation state (hashed): record it like any
+// input, at the tick it changed.
+void lpWorld_SetVehicleControl( lpWorld* world, int vehicle, const lpVehicleControl* control );
+
+typedef struct lpVehicleState
+{
+	bool alive;
+	int body;		// the body holding most of its attached wheels (-1: none left)
+	int wheelCount; // as created
+	int attached;	// wheels still on
+	int grounded;
+	int driven;		// attached wheels with a share of the drive
+	int steerable;	// attached wheels that steer
+	float power;	// share of its drive force it can deliver
+	float speed;	// m/s along its forward direction, of `body`
+	lpVehicleControl control;
+} lpVehicleState;
+
+lpVehicleState lpWorld_GetVehicleState( const lpWorld* world, int vehicle );
+int lpWorld_GetVehicleCapacity( const lpWorld* world ); // every vehicle index is below this
+// The link of its i-th wheel as created, or -1 once that wheel came off
+int lpWorld_GetVehicleWheel( const lpWorld* world, int vehicle, int i );
+
+typedef struct lpWheelState
+{
+	bool alive;
+	bool grounded;
+	int vehicle;
+	int body;			  // the chassis body it is mounted on
+	b3WorldTransform hub; // the tyre: its axle is the transform's x, turned by steering and spin
+	float radius, width;
+	float length;		  // of the suspension, mount to hub
+	float load;			  // N on the ground
+	float slip;			  // sideways sliding speed at the contact, m/s
+	int groundPiece;	  // -1 in the air (or on ground that is not a piece)
+	b3Pos contactPoint;
+} lpWheelState;
+
+// Cached at the last step the chassis was awake: safe at any time
+lpWheelState lpWorld_GetWheelState( const lpWorld* world, int link );
 
 // ---- impacts ----
 
@@ -373,6 +476,10 @@ typedef struct lpStats
 	int unsettledStructures; // structures still solving or creaking toward a break
 	float settleMs;			 // the last lpWorld_SettleStructures (steps leave these alone)
 	int settleIterations;
+
+	// Vehicles (wheel.c)
+	float vehicleMs;
+	int wheelCasts; // this step
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );
