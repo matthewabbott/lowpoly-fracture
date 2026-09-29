@@ -9,11 +9,13 @@ Order (one at a time):
 2. Toppling and stress points (done)
 3. Breakable links and assemblies (done)
 4. Stress at scale (done, but for step 6 if measurements ask for it)
-5. Destructible vehicles
-6. Profiling and hot paths
-7. Large-map physics zones
-8. Networking
-9. Art polish
+5. Articulated objects and systems (vehicles first)
+6. Creatures and mechs
+7. Dents (cars and armor)
+8. Profiling and hot paths
+9. Large-map physics zones
+10. Networking
+11. Art polish
 
 ## 1. Chunky fracture + debris tiers
 
@@ -126,23 +128,73 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 6. If settling or audits dominate: a nested-iteration settle and a two-level preconditioner (not needed yet: settling
    the keep takes 65 to 75 ms; moved to the profiling milestone with the cost of an iteration itself).
 
-## 5. Destructible vehicles
+## 5. Articulated objects and systems (vehicles first)
 
-- **Driving:** raycast suspension and our own tyre friction; stable at racing speed and deterministic. When a wheel
-  comes off, a physical wheel body spawns. Box3D's wheel joint (steering servo, spin motor, friction-only grip) is
-  the fallback.
-- **Construction:** the chassis is convex parts (frame, floor, cabin panels, hood, doors, bumpers) plus hidden
-  interior "vital" parts (engine block, fuel tank, battery, wheel mounts). This works like Teardown's vital tags,
-  where destroying the engine area stops the car. Driving ability comes from which vital parts are still attached.
-- **Crumpling:**
-  - a cage lattice in car space (about 4×3×6 nodes) is dented by impacts, capped per node
-  - render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
-  - the chassis hull is rebuilt from the lattice only occasionally (`b3Shape_SetHull` + `ApplyMassFromShapes`)
-  - panels sit on breakable joints; parts fracture only past a threshold
-- **Fuel tank:** a detonator part. Leaking comes later with fluids.
-- **Materials:** sheet metal (dents), glass (shatters), rubber.
+Why: vehicles, cranes, mechs and monsters are one problem. Each is pieces and links whose function depends on which
+parts are still attached and still fed: a car stops when its engine or fuel line goes, a mech limps when a knee
+loses power, a troll hobbles on a stump. This milestone builds the shared foundation and proves it on cars; the next
+one puts creatures on it.
 
-## 6. Profiling and hot paths
+Three layers:
+- **The body:** pieces and links, as today. Muscles are capped motorised joints (a velocity servo on Box3D's hinge
+  and ball motors: it holds up to its cap and sags past it, which is the limp). Stress on moving bodies ("inertia
+  relief": loads balanced against the body's own acceleration) so a crash tears an engine off its mounts.
+- **Systems:** parts carry up to 8 channels (fuel, power, steering; later blood, nerve, hydraulics), some parts are
+  their sources. Supply is reachability from the sources over intact carrier bonds and links: a flood fill, run only
+  when a carrier's topology changes, integer and deterministic. A source is live only if what it needs is supplied
+  (fuel feeds the engine, the engine powers the steering). Vitals fall out of it: a vital part is a source (engine,
+  heart, power core) or a carrier on every path (a spine). Detonators belong to parts, so a fuel tank blows alone.
+- **Capability:** a summary each client reads (for a car: which wheels are attached, grounded, driven, steerable, and
+  the engine's power), recomputed on change. Physics does the rest.
+
+Decisions:
+- **A wheel is a link** with one end on its mount piece and no Box3D joint, so it follows fractures and splits, takes
+  blast damage, strains and tears off like any link. Suspension is a shape cast (a rounded disc), the tyres a small
+  impulse solve per body (friction circle, fixed iteration count, link order). No wheel bodies, so no mass ratios
+  across joints. A wheel that comes off spawns a physical wheel. Box3D's wheel joint is the fallback.
+- **Controls are persistent, hashed state** (`lpWorld_SetVehicleControl`, `lpWorld_SetLinkTarget`), recorded only when
+  they change.
+- **Identity lives on each piece:** the object's user id, its part index and tag, its channel masks; fracture
+  children inherit them. The core never interprets tags.
+
+Steps (each measured in [perf-log.md](perf-log.md)):
+0. This reshape.
+1. Wheels and vehicles in the core: the wheel link, the cast, the tyre solve, wheels spawned when lost; stability
+   tests at 40 m/s, full lock, kerbs, slopes and hard landings.
+2. A track scene, a drive mode in the sandbox (chase camera, recorded controls), scripted drivers for the bench.
+3. Part identity and part detonators.
+4. Channels and supply.
+5. A car kit (frame, sheet-metal panels on bolts, glass, engine, fuel tank, steering box) and crash calibration.
+6. Muscles (motorised links, with a patch for Box3D's revolute torque getter) and a crane on the structure stress path.
+7. Inertia relief: stress on moving bodies, triggered by load spikes (the cut line: it may move to milestone 6).
+
+Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to milestone 7.
+
+## 6. Creatures and mechs
+
+The hexapod mech first: statically stable, so losing a leg means planning a new gait, and a procedural gait looks
+right on a machine.
+- **Rigs:** a torso plus limbs, each a chain of muscle links. Each limb's capability is recomputed when its supply or
+  links change: attached, its reach, its strength (the weakest link: cap × health × supply), and its foot (the
+  lowest support point of whatever remains, so a stump walks as a peg).
+- **Gait:** tripod with six able legs, ripple or wave with fewer; a leg lifts only if the centre of mass stays over
+  the planted feet with a margin; the body lowers as strength drops. Footholds from the wheel cast, analytic leg IK.
+- **Impairment:** pools (blood, hydraulic fluid, fuel) drain through severed carriers and scale strength; nerve
+  channels paralyse what lies beyond a cut; damaged armor near a joint jams it (holding torque, lower speed).
+- **Maimed attacks:** IK targets within the remaining chain and its caps; a weak swing hits softer on its own, since
+  impacts take their damage from impulse. A grip is a link: lose the hand and the weapon drops.
+- **Bones:** inertia relief snaps a cracked leg under the mech's weight.
+- **Later:** bipeds (a capped upright assist whose cap shrinks with capability; hopping and crawling modes), a
+  repertoire of gaits searched offline in our own deterministic sim, learned policies trained with random damage.
+
+## 7. Dents (cars and armor)
+
+- a cage lattice in object space (about 4×3×6 nodes for a car) is dented by impacts, capped per node
+- render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
+- the hull is rebuilt from the lattice only occasionally (`b3Shape_SetHull` + `ApplyMassFromShapes`)
+- dented armor around a joint narrows its limits
+
+## 8. Profiling and hot paths
 
 Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
 solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run), then the
@@ -153,7 +205,7 @@ hottest paths first. Candidates logged so far:
 - the creak loop over stored overloads only; budget units calibrated to time;
 - a spinning barrier in the task pool.
 
-## 7. Large-map physics zones
+## 9. Large-map physics zones
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
@@ -167,7 +219,7 @@ hottest paths first. Candidates logged so far:
   `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 8. Networking
+## 10. Networking
 
 Options:
 - Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
@@ -177,7 +229,7 @@ Options:
 
 A two-process lockstep experiment comes first.
 
-## 9. Art polish
+## 11. Art polish
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public
