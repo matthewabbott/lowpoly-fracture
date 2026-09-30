@@ -71,3 +71,5 @@ and look at the PNG.
   string escapes with the Edit or Write tools. ASan binaries need the MSVC runtime on PATH: dot-source
   `tools/devenv.ps1` first.
 - Never commit `.env` (API keys), `refs/` (third-party reference art), `build/` or `tools/bin/`.
+- The engine is MIT. The games live in their own repositories under their own, more restrictive licences: never put
+  game code, game assets or game-specific policy here. The kits in `scenes/` are example content.
