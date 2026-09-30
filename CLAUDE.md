@@ -9,6 +9,8 @@ First-party code is about 240k tokens (the core, `src/` and `lpf.h`, about 130k;
 needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
 `app/sandbox/shaders/generated/` are vendored or generated: never read them whole. The Box3D API is in
 `extern/box3d/include/box3d/*.h`; our patches and known Box3D issues are in `extern/box3d/PATCHES.md`.
+`docs/research/` (milestone 7's track reports, about 150k tokens) is evidence for `docs/multiplayer-research.md`: read
+a track only when a decision needs its detail.
 
 ## Map
 
@@ -40,7 +42,7 @@ needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
 | `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`) |
-| `docs/` | goals (the games the engine is for, the feel, outcomes to keep), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log |
+| `docs/` | goals (the north star, the kinds of game the engine serves, the feel, outcomes to keep), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
 
 ## Commands (PowerShell; run from the repo root)
 

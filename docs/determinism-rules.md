@@ -51,9 +51,23 @@ keep the destruction layer (`src/`) and the app from breaking it.
 
 ## Known limits
 
-- Cross-compiler and cross-OS determinism is designed for (rules 1 to 5, and Box3D's own guarantee) but only
-  Windows/MSVC is exercised so far. Box3D's author calls cross-platform determinism "brittle" across compiler
-  versions: pin the toolchain for any multiplayer build.
+- Cross-compiler, cross-OS and cross-ISA determinism was measured in milestone 7
+  ([research/m7-experiments.md](research/m7-experiments.md)). On the `ci-determinism` branch, with portable maths, a
+  14-leg CI is byte-identical per tick on every bench rung. It spans:
+  - Windows, Linux and macOS, on x64 and ARM64;
+  - MSVC, clang-cl, clang, gcc and AppleClang, not pinned to versions;
+  - x64 under Rosetta 2, Prism and box64.
+
+  Box3D needed no patch.
+- On `sandbox`, three hazards remain until milestone 7's hardening lands:
+  - gcc gets no `-ffp-contract=off` from our CMake;
+  - C-library `cbrtf`, `sinf` and `atan2f` in simulation and scene code (not correctly rounded, and different per C
+    library);
+  - random numbers drawn inside one call's argument list (`fracture.c:780`, `scenes.c:1699`), whose order C leaves open.
+- Under Prism and box64, C-library calls may run as native ARM64 code, so the simulation must be libm-free or link the
+  C runtime statically.
+- Flush-to-zero set by other code changes the stress solver's results while the world hash stays equal (E9). The
+  hardening adds a control-word guard, and desync checks must hash the solver's state.
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
   gravity scales that are not 1, vehicles, rigs and pools: a world without them hashes as before). Rendering and particles are deliberately
   excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.

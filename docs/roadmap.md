@@ -11,7 +11,7 @@ Order (one at a time):
 4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Articulated objects and systems (vehicles first) (done)
 6. Creatures and mechs (done)
-7. Deep research: destruction engine architecture
+7. Deep research: destruction engine architecture (research done; its hardening step next)
 8. Engine surface and diagnostics
 9. Independent review: simplicity
 10. Dents (cars and armor)
@@ -258,6 +258,19 @@ Open:
 - the kit is placeholder art; bipeds, hopping and learned gaits are under "Later" above.
 
 ## 7. Deep research: destruction engine architecture
+
+**Research done (2026-09-30):** [multiplayer-research.md](multiplayer-research.md) is the decision record, with the
+evidence in [research/](research/).
+- **The model:** convergent lockstep.
+- **Determinism on the CPU** holds across OSes, CPUs, compilers and emulators once three hazards of ours are fixed.
+- **The GPU can join the simulation in block-scaled integers,** with a CPU twin.
+
+**Proposed next:**
+- this milestone's hardening step (L0), widened with the lag and spike experiments;
+- a GTX 1060 bought now to measure the floor.
+
+The reordered roadmap it proposes (its §5) waits for the owner's choice; until then the order above stands. The notes
+below framed the research.
 
 Before building more: how others build destruction engines and what they give up for speed, to choose the
 architectural trade-offs worth making now. Each one made early saves reworking later, and performance outranks
