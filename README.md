@@ -48,7 +48,12 @@ per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera ch
 `--vsync 0`, `--workers N`,
 `--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves.
 
+## License
+
+MIT (see [LICENSE](LICENSE)).
+
 ## Third-party
 
-Box3D (MIT, vendored at a pinned commit, `extern/box3d/PATCHES.md`), sokol (zlib/libpng), Dear ImGui (MIT).
-Design ideas credited to [Nebenan](https://github.com/Holz231/Nebenan) (MIT) in `docs/architecture.md`.
+Box3D (MIT, vendored at a pinned commit, `extern/box3d/PATCHES.md`), sokol (zlib/libpng), Dear ImGui (MIT); each keeps
+its own licence file in `extern/`. Design ideas credited to [Nebenan](https://github.com/Holz231/Nebenan) (MIT) in
+`docs/architecture.md`.
