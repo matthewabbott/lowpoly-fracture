@@ -146,7 +146,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 					lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
 				}
 				lpDetachPieceShape( w, pi );
-				lpEmitParticle( w, xf, p->shape->centroid, compV, cbrtf( p->shape->volume ), p->material );
+				lpEmitParticle( w, xf, p->shape->centroid, compV, lpCbrtf( p->shape->volume ), p->material );
 				lpFreePieceSlot( w, pi );
 			}
 		}

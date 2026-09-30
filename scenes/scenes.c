@@ -7,6 +7,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+// C-library roots and trig can differ between libms; LPF_PORTABLE_MATH (a research option, off by default: it
+// changes the scenes) uses the core's cube root and Box3D's own trig instead
+#if defined( LPF_PORTABLE_MATH )
+float lpCbrt( float x );
+#define lpSceneCbrt( x ) lpCbrt( x )
+#define lpSceneAtan2( y, x ) b3Atan2( y, x )
+#define lpSceneSin( x ) b3ComputeCosSin( x ).sine
+#else
+#define lpSceneCbrt( x ) cbrtf( x )
+#define lpSceneAtan2( y, x ) atan2f( y, x )
+#define lpSceneSin( x ) sinf( x )
+#endif
+
 enum
 {
 	lp_maxParts = 4096,
@@ -351,7 +364,7 @@ static void lpAddHouse( lpWorld* world, b3Vec3 base, float yaw, uint64_t seed )
 	// Gable roof: ridge along x
 	float topY = floorY + (float)stories * ( storyHeight + 0.2f );
 	float rise = 1.6f;
-	float slope = atan2f( rise, hd );
+	float slope = lpSceneAtan2( rise, hd );
 	float slant = sqrtf( rise * rise + hd * hd );
 	int roofSegments = (int)ceilf( width / 1.6f );
 	float segW = ( width + 0.6f ) / (float)roofSegments;
@@ -618,7 +631,7 @@ static void lpAddTowerAt( lpWorld* world, b3Vec3 base, int levels )
 	float radius = 2.6f;
 	float t = 0.6f;
 	float levelH = 1.4f;
-	float side = 2.0f * radius * sinf( B3_PI / (float)sides ) + 0.02f;
+	float side = 2.0f * radius * lpSceneSin( B3_PI / (float)sides ) + 0.02f;
 	for ( int l = 0; l < levels; ++l )
 	{
 		float phase = ( l % 2 ) ? 0.5f * 2.0f * B3_PI / (float)sides : 0.0f;
@@ -1167,7 +1180,7 @@ int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass )
 		beam->grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
 	}
 	int jib = lpCommitDef( world, b3Add( base, (b3Vec3){ 5.0f, 9.4f, 0.0f } ), b3Quat_identity, lpDynamicDef() );
-	float side = cbrtf( loadMass / lpGetMaterial( lp_metal )->density );
+	float side = lpSceneCbrt( loadMass / lpGetMaterial( lp_metal )->density );
 	lpBegin();
 	lpBox( b3Vec3_zero, (b3Vec3){ 0.5f * side, 0.5f * side, 0.5f * side }, b3Quat_identity, lp_metal, 0x3A3D42u, false );
 	int load = lpCommitDef( world, b3Add( base, (b3Vec3){ 9.8f, 9.2f - 5.0f - 0.5f * side, 0.0f } ), b3Quat_identity, lpDynamicDef() );
@@ -1617,7 +1630,7 @@ void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle, int ski
 static void lpAddPile( lpWorld* world, b3Vec3 center, int count, uint64_t seed )
 {
 	uint64_t rng = seed;
-	int side = (int)ceilf( cbrtf( (float)count ) );
+	int side = (int)ceilf( lpSceneCbrt( (float)count ) );
 	int n = 0;
 	for ( int y = 0; n < count; ++y )
 	{

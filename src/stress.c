@@ -131,7 +131,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, b3Vec3 gravity )
 		mass += m;
 		force = b3Add( force, load );
 		torque = b3Add( torque, b3Add( b3Cross( r, load ), p->stressLoad.t ) );
-		float own = m * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+		float own = m * lpCbrtf( p->shape->volume ) * lpCbrtf( p->shape->volume ) / 6.0f;
 		float rr = b3Dot( r, r );
 		inertia.cx = b3Add( inertia.cx, (b3Vec3){ m * ( rr - r.x * r.x ) + own, -m * r.y * r.x, -m * r.z * r.x } );
 		inertia.cy = b3Add( inertia.cy, (b3Vec3){ -m * r.x * r.y, m * ( rr - r.y * r.y ) + own, -m * r.z * r.y } );
@@ -251,7 +251,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	{
 		int pi = body->pieces.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		float size = cbrtf( p->shape->volume );
+		float size = lpCbrtf( p->shape->volume );
 		float moved = b3Length( b3Sub( p->stressLoad.f, w->scratchLoads.data[i].f ) ) +
 					  b3Length( b3Sub( p->stressLoad.t, w->scratchLoads.data[i].t ) ) / size;
 		change += moved;
@@ -533,7 +533,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 			b3Vec3 r = b3Sub( p->shape->centroid, body->reliefCenter );
 			b3Vec3 w0 = body->reliefOmega;
 			b3Vec3 accel = b3Add( b3Add( body->reliefAccel, b3Cross( body->reliefAlpha, r ) ), b3Cross( w0, b3Cross( w0, r ) ) );
-			float own = mass * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+			float own = mass * lpCbrtf( p->shape->volume ) * lpCbrtf( p->shape->volume ) / 6.0f;
 			f[i].f = b3MulSub( f[i].f, mass / scale, accel );
 			f[i].t = b3MulSV( -own / scale, body->reliefAlpha );
 		}
@@ -551,7 +551,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 	s->nodeArm.count = n;
 	for ( int i = 0; i < n; ++i )
 	{
-		s->nodeArm.data[i] = cbrtf( w->pieces.data[s->nodes.data[i]].shape->volume );
+		s->nodeArm.data[i] = lpCbrtf( w->pieces.data[s->nodes.data[i]].shape->volume );
 	}
 	lpSystemNodeScales( s, 1e-3f );
 	if ( job->clustered )
@@ -809,12 +809,6 @@ static bool lpSlenderExtents( const lpWorld* w, const lpPiece* p, float* lo, flo
 	float length = *hi - *lo;
 	float fragment = m->fragmentSize * w->def.fragmentScale;
 	return length >= 2.5f * 2.0f * b3MaxFloat( *w1, *w2 ) && length >= 4.0f * fragment;
-}
-
-static bool lpIsSlender( const lpWorld* w, const lpPiece* p )
-{
-	float lo, hi, w1, w2;
-	return lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 );
 }
 
 // Long pieces (beams, planks, columns, lintels) are rigid nodes, so the solve cannot bend them. Phase 2, converged: from
@@ -1228,7 +1222,7 @@ static void lpFormClusters( lpWorld* w, const lpStressJob* job )
 	{
 		lpPiece* p = w->pieces.data + s->nodes.data[i];
 		sets[i] = (lpClusterSet){ i, 1, p->shape->bounds, p->slenderRho < w->def.stressGlue, 0 };
-		meanSize += cbrtf( p->shape->volume );
+		meanSize += lpCbrtf( p->shape->volume );
 		p->cluster = 0;
 	}
 	float radius = LP_CLUSTER_RADIUS * meanSize / (float)n;

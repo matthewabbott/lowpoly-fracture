@@ -19,6 +19,16 @@
 
 void lpAssertFailed( const char* condition, const char* file, int line );
 
+// Cube root. The C library's cbrtf is not correctly rounded, so libms can differ in its last bit. LPF_PORTABLE_MATH
+// (a research option for cross-platform checks, off by default because it changes every hash) swaps in lpCbrt,
+// which uses only +, -, * and / (correctly rounded on every IEEE target).
+#if defined( LPF_PORTABLE_MATH )
+float lpCbrt( float x );
+#define lpCbrtf( x ) lpCbrt( x )
+#else
+#define lpCbrtf( x ) cbrtf( x )
+#endif
+
 void* lpAlloc( size_t size );
 void* lpRealloc( void* p, size_t size );
 void lpFree( void* p );

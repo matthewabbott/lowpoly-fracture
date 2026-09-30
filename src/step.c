@@ -143,7 +143,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 		{
 			lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
 		}
-		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( cbrtf( p->shape->volume ), 0.3f ), p->material );
+		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( lpCbrtf( p->shape->volume ), 0.3f ), p->material );
 		b->volume -= p->shape->volume;
 		lpDetachPieceShape( w, pieceIndex );
 		lpFreePieceSlot( w, pieceIndex );

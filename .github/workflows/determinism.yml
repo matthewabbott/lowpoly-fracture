@@ -1,0 +1,186 @@
+# Cross-platform determinism: every lpf_bench rung at workers 1 and 8 on each OS, CPU and compiler, plus x64
+# binaries under emulation on ARM64, and a probe of the C library functions the engine calls. The summary job diffs
+# every leg against windows-x64-msvc (the committed baseline's toolchain) into a table in the job summary.
+name: determinism
+
+on:
+  push:
+    branches: [ci-determinism]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ matrix.leg }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { leg: windows-x64-msvc, os: windows-latest, vsarch: x64 }
+          - { leg: windows-x64-clangcl, os: windows-latest, vsarch: x64, toolset: ClangCL }
+          - { leg: windows-arm64-msvc, os: windows-11-arm, vsarch: ARM64 }
+          - { leg: linux-x64-gcc, os: ubuntu-latest, cc: gcc, cxx: g++, keepbin: true }
+          - { leg: linux-x64-clang, os: ubuntu-latest, cc: clang, cxx: clang++ }
+          # control: contraction stays off, but gcc may use every instruction of the runner's CPU (FMA, AVX-512)
+          - { leg: linux-x64-gcc-native, os: ubuntu-latest, cc: gcc, cxx: g++, cflags: -march=native }
+          - { leg: linux-arm64-gcc, os: ubuntu-24.04-arm, cc: gcc, cxx: g++ }
+          - { leg: linux-arm64-clang, os: ubuntu-24.04-arm, cc: clang, cxx: clang++ }
+          # positive control: FMA contraction back on (ARM64 always has FMA), which must change the hashes
+          - { leg: linux-arm64-gcc-contract, os: ubuntu-24.04-arm, cc: gcc, cxx: g++, contract: true }
+          - { leg: macos-arm64-clang, os: macos-latest, cc: clang, cxx: clang++, osxarch: arm64 }
+          # x86_64 build run under Rosetta 2 on the same Apple silicon runner
+          - { leg: macos-x64-rosetta, os: macos-latest, cc: clang, cxx: clang++, osxarch: x86_64, runner: arch -x86_64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          args=(-DLPF_SANDBOX=OFF -DLPF_WARNINGS_AS_ERRORS=OFF)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            gen=(-G "Visual Studio 17 2022" -A "${{ matrix.vsarch }}")
+            if [ -n "${{ matrix.toolset }}" ]; then gen+=(-T "${{ matrix.toolset }}"); fi
+          else
+            gen=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
+            if [ -n "${{ matrix.osxarch }}" ]; then gen+=(-DCMAKE_OSX_ARCHITECTURES=${{ matrix.osxarch }}); fi
+            if [ -n "${{ matrix.cflags }}" ]; then gen+=("-DCMAKE_C_FLAGS=${{ matrix.cflags }}"); fi
+          fi
+          lpf=()
+          if [ "${{ matrix.contract }}" = "true" ]; then
+            lpf+=("-DCMAKE_C_COMPILER_LAUNCHER=sh;$GITHUB_WORKSPACE/.github/determinism/contract-launcher.sh")
+          fi
+          cmake -S . -B build/default "${gen[@]}" "${args[@]}" "${lpf[@]}"
+          cmake -S . -B build/portable "${gen[@]}" "${args[@]}" "${lpf[@]}" -DLPF_PORTABLE_MATH=ON
+          cmake -S .github/determinism -B build/probe "${gen[@]}"
+
+      - name: Build
+        shell: bash
+        run: |
+          for b in default portable probe; do cmake --build build/$b --config Release --parallel 4 || exit 1; done
+
+      - name: Run
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then sub=bin/Release; exe=.exe; else sub=bin; exe=; fi
+          echo "BIN_SUB=$sub" >> "$GITHUB_ENV"
+          echo "EXE=$exe" >> "$GITHUB_ENV"
+          out=out
+          mkdir -p $out/probe $out/bin
+          if [ "${{ matrix.osxarch }}" = "x86_64" ]; then sudo softwareupdate --install-rosetta --agree-to-license || true; fi
+          {
+            grep -hE 'CMAKE_C_COMPILER_(ID|VERSION) ' build/default/CMakeFiles/*/CMakeCCompiler.cmake | sed 's/set(//; s/)//' | tr '\n' ' '
+            echo
+            uname -a 2>/dev/null || echo windows
+            file build/default/$sub/lpf_bench$exe 2>/dev/null || true
+          } > $out/info.txt
+          cat $out/info.txt
+          ${{ matrix.runner }} build/probe/$sub/libm_probe$exe $out/probe | tee $out/probe.txt
+          bash .github/determinism/ladder.sh build/default/$sub/lpf_bench$exe $out/default ${{ matrix.runner }}
+          bash .github/determinism/ladder.sh build/portable/$sub/lpf_bench$exe $out/portable ${{ matrix.runner }}
+
+      - name: Tests
+        shell: bash
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE > out/test_log.txt 2>&1
+          code=$?
+          echo "exit $code: $(tail -n 1 out/test_log.txt)" > out/test.txt
+          cat out/test.txt
+          exit $code
+
+      - name: Keep the x64 binaries for the emulators
+        if: matrix.keepbin
+        shell: bash
+        run: |
+          mkdir -p emu
+          cp build/default/bin/lpf_bench emu/lpf_bench
+          cp build/portable/bin/lpf_bench emu/lpf_bench_portable
+          cp build/probe/bin/libm_probe emu/libm_probe
+          cp .github/determinism/ladder.sh emu/
+          cp out/info.txt emu/native_info.txt
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.keepbin
+        with:
+          name: emu-bin
+          path: emu
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: det-${{ matrix.leg }}
+          path: out
+          retention-days: 30
+
+  # The linux-x64-gcc binaries, unchanged, under x64 emulators on ARM64
+  emulated:
+    name: ${{ matrix.leg }}
+    needs: native
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { leg: box64-default, emu: box64 }
+          - { leg: box64-strict, emu: box64, env: "BOX64_DYNAREC_FASTNAN=0 BOX64_DYNAREC_FASTROUND=0" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: emu-bin
+          path: emu
+
+      - name: Build box64
+        run: |
+          git clone --depth 1 --branch v0.4.4 https://github.com/ptitSeb/box64 box64-src || git clone --depth 1 https://github.com/ptitSeb/box64 box64-src
+          cmake -S box64-src -B box64-build -DARM_DYNAREC=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build box64-build --parallel 4
+          sudo cmake --install box64-build || true
+          (cd box64-src && git log -1 --format='box64 %H %cd')
+
+      - name: Run
+        shell: bash
+        run: |
+          chmod +x emu/lpf_bench emu/lpf_bench_portable emu/libm_probe
+          export ${{ matrix.env }} BOX64_LOG=0 BOX64_NOBANNER=1
+          box=$(command -v box64 || echo box64-build/box64)
+          out=out
+          mkdir -p $out/probe
+          { echo "box64 $($box --version 2>&1 | head -n 1) env: ${{ matrix.env }}"; cat emu/native_info.txt; uname -a; } > $out/info.txt
+          cat $out/info.txt
+          $box emu/libm_probe $out/probe | tee $out/probe.txt
+          bash emu/ladder.sh emu/lpf_bench $out/default $box
+          bash emu/ladder.sh emu/lpf_bench_portable $out/portable $box
+          echo "not run (emulated)" > $out/test.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: det-${{ matrix.leg }}
+          path: out
+          retention-days: 30
+
+  summary:
+    needs: [native, emulated]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: det-*
+          path: artifacts
+      - name: Diff the legs
+        run: |
+          python3 .github/determinism/summarize.py artifacts summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary
+          path: summary.md

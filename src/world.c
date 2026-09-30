@@ -573,7 +573,7 @@ void lpTryBond( lpWorld* w, int a, int b )
 	{
 		// A weld: a nominal square patch facing from one centroid to the other
 		float v = pa->shape->volume < pb->shape->volume ? pa->shape->volume : pb->shape->volume;
-		contact.area = 0.5f * cbrtf( v * v );
+		contact.area = 0.5f * lpCbrtf( v * v );
 		contact.centroid = b3MulSV( 0.5f, b3Add( pa->shape->centroid, pb->shape->centroid ) );
 		b3Vec3 d = b3Sub( pb->shape->centroid, pa->shape->centroid );
 		contact.normal = b3LengthSquared( d ) > 1e-12f ? b3Normalize( d ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
@@ -630,7 +630,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 		}
 		if ( emitDust )
 		{
-			float size = b3MinFloat( cbrtf( p->shape->volume ), 0.3f );
+			float size = b3MinFloat( lpCbrtf( p->shape->volume ), 0.3f );
 			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : b3Vec3_zero, size, p->material );
 		}
 		p->shapeId = b3_nullShapeId; // destroyed with the body

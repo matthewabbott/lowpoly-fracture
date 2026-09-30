@@ -317,7 +317,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		{
 			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
 			b3Vec3 pv = b3Add( cellV, b3RotateVector( xf.q, b3MulSV( 2.0f, away ) ) );
-			lpEmitParticle( w, xf, cell->centroid, pv, cbrtf( cell->volume ), material );
+			lpEmitParticle( w, xf, cell->centroid, pv, lpCbrtf( cell->volume ), material );
 			lpShape_Destroy( cell );
 			if ( hull != NULL )
 			{
@@ -1015,7 +1015,7 @@ void lpCollectHits( lpWorld* w )
 		lpHitCandidate hit = w->scratchHits.data[i];
 		lpImpactDef impact = { 0 };
 		impact.point = hit.point;
-		impact.radius = b3ClampFloat( 0.06f * cbrtf( hit.energy ), 0.15f, 1.2f );
+		impact.radius = b3ClampFloat( 0.06f * lpCbrtf( hit.energy ), 0.15f, 1.2f );
 		impact.energy = hit.energy;
 		lpArray_Push( w->nextImpacts, impact );
 	}

@@ -12,6 +12,7 @@ option(LPF_BENCH "Build the headless benchmark" ON)
 option(LPF_WARNINGS_AS_ERRORS "Treat warnings in our own code as errors" ON)
 option(LPF_SANITIZE "Build with AddressSanitizer" OFF)
 option(LPF_ASSERTS "Keep lpf asserts in optimized builds (asserts never change state, so hashes are unaffected)" OFF)
+option(LPF_PORTABLE_MATH "Research: no C-library cbrtf/atan2f/sinf in the core and scenes (changes every hash)" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -24,8 +25,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Determinism: no FMA contraction, no fast-math anywhere (see docs/determinism-rules.md).
-if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+# Determinism: no FMA contraction, no fast-math anywhere (see docs/determinism-rules.md). GCC contracts across
+# statements by default (-ffp-contract=fast) wherever the target has FMA (every ARM64), so it needs the flag as much.
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 	if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
 		add_compile_options(/clang:-ffp-contract=off)
 	else()
@@ -38,6 +40,10 @@ endif()
 
 if(LPF_ASSERTS)
 	add_compile_definitions(LP_FORCE_ASSERT)
+endif()
+
+if(LPF_PORTABLE_MATH)
+	add_compile_definitions(LPF_PORTABLE_MATH)
 endif()
 
 if(LPF_SANITIZE)
@@ -62,9 +68,12 @@ function(lpf_warnings target)
 			target_compile_options(${target} PRIVATE /WX)
 		endif()
 	else()
-		target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-missing-field-initializers -Wno-unused-parameter)
 		if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-			target_compile_options(${target} PRIVATE /W4 -Wno-language-extension-token -Wno-nonportable-system-include-path)
+			# clang-cl reads -Wall as /Wall, which is -Weverything: /W4 is its -Wall -Wextra
+			target_compile_options(${target} PRIVATE /W4 -Wno-missing-field-initializers -Wno-unused-parameter
+				-Wno-language-extension-token -Wno-nonportable-system-include-path)
+		else()
+			target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-missing-field-initializers -Wno-unused-parameter)
 		endif()
 		if(LPF_WARNINGS_AS_ERRORS)
 			target_compile_options(${target} PRIVATE -Werror)

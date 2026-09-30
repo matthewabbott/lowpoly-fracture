@@ -57,6 +57,10 @@ typedef struct Result
 // Stress budgets from --stress-work (0: the world's defaults)
 static int s_stressWork, s_stressStructureWork;
 
+// --hash-log path: every tick's hashes go to path.w<workers>.txt (cross-platform checks diff them for the first
+// differing tick)
+static const char* s_hashLog;
+
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
 	b3WorldDef wd = b3DefaultWorldDef();
@@ -84,6 +88,19 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ); ++i )
 	{
 		r.pieces += lpWorld_GetPieceInfo( world, i ).body >= 0 ? 1 : 0;
+	}
+
+	FILE* hashLog = NULL;
+	if ( s_hashLog != NULL )
+	{
+		char path[512];
+		snprintf( path, sizeof( path ), "%s.w%d.txt", s_hashLog, workers );
+		hashLog = fopen( path, "w" );
+		if ( hashLog != NULL )
+		{
+			fprintf( hashLog, "load %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ) );
+		}
 	}
 
 	int samples = ticks > 0 ? ticks : 1;
@@ -137,6 +154,15 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.maxAwakeContacts = counters.awakeContactCount > r.maxAwakeContacts ? counters.awakeContactCount : r.maxAwakeContacts;
 		r.maxShapes = counters.shapeCount > r.maxShapes ? counters.shapeCount : r.maxShapes;
 		r.sumAwakeContacts += counters.awakeContactCount;
+		if ( hashLog != NULL )
+		{
+			fprintf( hashLog, "%d %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ) );
+		}
+	}
+	if ( hashLog != NULL )
+	{
+		fclose( hashLog );
 	}
 	r.sumAwakeContacts /= (double)samples;
 	r.hash = lpWorld_Hash( world );
@@ -220,10 +246,16 @@ int main( int argc, char** argv )
 			jsonPath = v;
 			++i;
 		}
+		else if ( strcmp( a, "--hash-log" ) == 0 )
+		{
+			s_hashLog = v;
+			++i;
+		}
 		else
 		{
-			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers 1,4,8] [--ticks N] [--period N]\n"
-					"                 [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n" );
+			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
+					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
+					"                 [--hash-log path]\n" );
 			return 1;
 		}
 	}
