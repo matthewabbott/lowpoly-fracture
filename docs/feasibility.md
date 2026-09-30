@@ -67,11 +67,11 @@ Measured 2026-09-27. Numbers come from `lpf_bench` (headless, 600 ticks at 60 Hz
   stay non-destructible (characters, props).
 - **Determinism?** Achieved for same-binary play across thread counts, reruns and build configs. Cross-OS is designed
   for but unverified.
-- **Can it support Woo Has His Day?** The core pieces are there: blowing up walls, collapsing structures, hauling
+- **Can it support a rigging-race game?** The core pieces are there: blowing up walls, collapsing structures, hauling
   objects (pull), explosive props (detonators), heavy impacts (cannonball), breakable ropes, hinges and winches
   (links). Missing: vehicles (raycast vehicle on Box3D's wheel joint), AI drivers, level tooling.
-- **And Alchemist Courier?** Detonators already model volatile flasks with a trigger speed. The "jostle" mechanic
-  needs lower-threshold contact events and liquid state, which are gameplay code on top.
+- **And a hauling game with volatile cargo?** Detonators already model volatile flasks with a trigger speed. The
+  "jostle" mechanic needs lower-threshold contact events and liquid state, which are gameplay code on top.
 
 ## Known limits and risks
 

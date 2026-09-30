@@ -72,4 +72,6 @@ and look at the PNG.
   `tools/devenv.ps1` first.
 - Never commit `.env` (API keys), `refs/` (third-party reference art), `build/` or `tools/bin/`.
 - The engine is MIT. The games live in their own repositories under their own, more restrictive licences: never put
-  game code, game assets or game-specific policy here. The kits in `scenes/` are example content.
+  game code, game assets, game-specific policy or game pitches here (docs name the games only neutrally, e.g. "a
+  rigging-race game"). The kits in `scenes/` are example content. The game designs are in the private sibling repo
+  `lowpoly-games` (at `../lowpoly-games` when checked out, `docs/games.md`): read it for context, never copy from it.

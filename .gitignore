@@ -16,3 +16,6 @@ tools/bin/
 
 # sandbox F12 screenshots
 screenshot_*.png
+
+# agent worktrees and local Claude state
+.claude/
