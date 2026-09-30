@@ -13,6 +13,12 @@ elseif(MSVC)
 	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 add_executable(libm_probe libm_probe.c)
+if(MSVC)
+	# The same probe with the C runtime linked in, as the engine links it: under x64 emulation on Windows on ARM the
+	# system's ucrtbase.dll need not be x64 code
+	add_executable(libm_probe_static libm_probe.c)
+	set_property(TARGET libm_probe_static PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
 if(UNIX AND NOT APPLE)
 	target_link_libraries(libm_probe m)
 endif()

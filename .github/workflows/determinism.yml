@@ -79,6 +79,10 @@ jobs:
           } > $out/info.txt
           cat $out/info.txt
           ${{ matrix.runner }} build/probe/$sub/libm_probe$exe $out/probe | tee $out/probe.txt
+          if [ -f build/probe/$sub/libm_probe_static$exe ]; then
+            mkdir -p $out/probe_static
+            build/probe/$sub/libm_probe_static$exe $out/probe_static | tee $out/probe_static.txt
+          fi
           bash .github/determinism/ladder.sh build/default/$sub/lpf_bench$exe $out/default ${{ matrix.runner }}
           bash .github/determinism/ladder.sh build/portable/$sub/lpf_bench$exe $out/portable ${{ matrix.runner }}
 
@@ -101,6 +105,7 @@ jobs:
           cp build/default/$BIN_SUB/lpf_bench$EXE emu/lpf_bench$EXE
           cp build/portable/$BIN_SUB/lpf_bench$EXE emu/lpf_bench_portable$EXE
           cp build/probe/$BIN_SUB/libm_probe$EXE emu/libm_probe$EXE
+          cp build/probe/$BIN_SUB/libm_probe_static$EXE emu/ 2>/dev/null || true
           cp .github/determinism/ladder.sh emu/
           cp out/info.txt emu/native_info.txt
 
@@ -165,6 +170,10 @@ jobs:
           { echo "$what"; cat emu/native_info.txt; uname -a; } > $out/info.txt
           cat $out/info.txt
           $run emu/libm_probe$exe $out/probe | tee $out/probe.txt
+          if [ -f emu/libm_probe_static$exe ]; then
+            mkdir -p $out/probe_static
+            $run emu/libm_probe_static$exe $out/probe_static | tee $out/probe_static.txt
+          fi
           bash emu/ladder.sh emu/lpf_bench$exe $out/default $run
           bash emu/ladder.sh emu/lpf_bench_portable$exe $out/portable $run
           echo "not run (emulated)" > $out/test.txt
