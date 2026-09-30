@@ -42,7 +42,7 @@ jobs:
         run: |
           args=(-DLPF_SANDBOX=OFF -DLPF_WARNINGS_AS_ERRORS=OFF)
           if [ "$RUNNER_OS" = "Windows" ]; then
-            gen=(-G "Visual Studio 17 2022" -A "${{ matrix.vsarch }}")
+            gen=(-A "${{ matrix.vsarch }}") # CMake's default here: the newest Visual Studio on the runner
             if [ -n "${{ matrix.toolset }}" ]; then gen+=(-T "${{ matrix.toolset }}"); fi
           else
             gen=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
