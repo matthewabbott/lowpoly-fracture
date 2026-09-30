@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { leg: windows-x64-msvc, os: windows-latest, vsarch: x64 }
+          - { leg: windows-x64-msvc, os: windows-latest, vsarch: x64, keepbin: true }
           - { leg: windows-x64-clangcl, os: windows-latest, vsarch: x64, toolset: ClangCL }
           - { leg: windows-arm64-msvc, os: windows-11-arm, vsarch: ARM64 }
           - { leg: linux-x64-gcc, os: ubuntu-latest, cc: gcc, cxx: g++, keepbin: true }
@@ -98,16 +98,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p emu
-          cp build/default/bin/lpf_bench emu/lpf_bench
-          cp build/portable/bin/lpf_bench emu/lpf_bench_portable
-          cp build/probe/bin/libm_probe emu/libm_probe
+          cp build/default/$BIN_SUB/lpf_bench$EXE emu/lpf_bench$EXE
+          cp build/portable/$BIN_SUB/lpf_bench$EXE emu/lpf_bench_portable$EXE
+          cp build/probe/$BIN_SUB/libm_probe$EXE emu/libm_probe$EXE
           cp .github/determinism/ladder.sh emu/
           cp out/info.txt emu/native_info.txt
 
       - uses: actions/upload-artifact@v4
         if: matrix.keepbin
         with:
-          name: emu-bin
+          name: emu-bin-${{ matrix.leg }}
           path: emu
 
       - uses: actions/upload-artifact@v4
@@ -117,26 +117,28 @@ jobs:
           path: out
           retention-days: 30
 
-  # The linux-x64-gcc binaries, unchanged, under x64 emulators on ARM64
+  # x64 binaries from the native legs, unchanged, under x64 emulation on ARM64: box64 on Linux, Prism on Windows
   emulated:
     name: ${{ matrix.leg }}
     needs: native
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { leg: box64-default, emu: box64 }
-          - { leg: box64-strict, emu: box64, env: "BOX64_DYNAREC_FASTNAN=0 BOX64_DYNAREC_FASTROUND=0" }
+          - { leg: box64-default, os: ubuntu-24.04-arm, bin: linux-x64-gcc, emu: box64 }
+          - { leg: box64-strict, os: ubuntu-24.04-arm, bin: linux-x64-gcc, emu: box64, env: "BOX64_DYNAREC_FASTNAN=0 BOX64_DYNAREC_FASTROUND=0" }
+          - { leg: prism-windows-arm64, os: windows-11-arm, bin: windows-x64-msvc, emu: prism }
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: emu-bin
+          name: emu-bin-${{ matrix.bin }}
           path: emu
 
       - name: Build box64
+        if: matrix.emu == 'box64'
         run: |
           git clone --depth 1 --branch v0.4.4 https://github.com/ptitSeb/box64 box64-src || git clone --depth 1 https://github.com/ptitSeb/box64 box64-src
           cmake -S box64-src -B box64-build -DARM_DYNAREC=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -147,16 +149,24 @@ jobs:
       - name: Run
         shell: bash
         run: |
-          chmod +x emu/lpf_bench emu/lpf_bench_portable emu/libm_probe
-          export ${{ matrix.env }} BOX64_LOG=0 BOX64_NOBANNER=1
-          box=$(command -v box64 || echo box64-build/box64)
           out=out
           mkdir -p $out/probe
-          { echo "box64 $($box --version 2>&1 | head -n 1) env: ${{ matrix.env }}"; cat emu/native_info.txt; uname -a; } > $out/info.txt
+          if [ "${{ matrix.emu }}" = "box64" ]; then
+            chmod +x emu/lpf_bench emu/lpf_bench_portable emu/libm_probe
+            export ${{ matrix.env }} BOX64_LOG=0 BOX64_NOBANNER=1
+            run=$(command -v box64 || echo box64-build/box64)
+            exe=
+            what="box64 $($run --version 2>&1 | head -n 1) env: ${{ matrix.env }}"
+          else
+            run=  # Windows on ARM runs x64 executables through Prism by itself
+            exe=.exe
+            what="Prism: x64 executable on $PROCESSOR_ARCHITECTURE Windows"
+          fi
+          { echo "$what"; cat emu/native_info.txt; uname -a; } > $out/info.txt
           cat $out/info.txt
-          $box emu/libm_probe $out/probe | tee $out/probe.txt
-          bash emu/ladder.sh emu/lpf_bench $out/default $box
-          bash emu/ladder.sh emu/lpf_bench_portable $out/portable $box
+          $run emu/libm_probe$exe $out/probe | tee $out/probe.txt
+          bash emu/ladder.sh emu/lpf_bench$exe $out/default $run
+          bash emu/ladder.sh emu/lpf_bench_portable$exe $out/portable $run
           echo "not run (emulated)" > $out/test.txt
 
       - uses: actions/upload-artifact@v4
