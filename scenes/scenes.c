@@ -1696,7 +1696,9 @@ void lpBuildScene( lpWorld* world, int scene )
 				float x = -27.0f + 11.0f * (float)i;
 				lpAddHouse( world, (b3Vec3){ x, 0.0f, -10.0f }, 0.0f, lpNext( &rng ) );
 				lpAddHouse( world, (b3Vec3){ x + 3.0f, 0.0f, 10.0f }, B3_PI, lpNext( &rng ) );
-				lpAddTree( world, (b3Vec3){ x + 5.5f, 0.0f, -4.5f }, 4.5f + 2.0f * lpUnit( &rng ), lpNext( &rng ) );
+				uint64_t treeSeed = lpNext( &rng ); // drawn first, as MSVC evaluated the call's arguments (C leaves it open)
+				float treeHeight = 4.5f + 2.0f * lpUnit( &rng );
+				lpAddTree( world, (b3Vec3){ x + 5.5f, 0.0f, -4.5f }, treeHeight, treeSeed );
 				lpAddFence( world, (b3Vec3){ x - 1.0f, 0.0f, 4.5f }, 0.0f, 6.0f );
 			}
 			lpAddTowerAt( world, (b3Vec3){ 40.0f, 0.0f, 0.0f }, 7 );

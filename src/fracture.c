@@ -777,8 +777,11 @@ static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape*
 	b3Vec3 n = input->axis;
 	b3Vec3 t1, t2;
 	lpContactBasis( n, &t1, &t2 );
-	n = b3Normalize( b3Add( n, b3Add( b3MulSV( lpRandom_Range( rng, -0.35f, 0.35f ), t1 ),
-									  b3MulSV( lpRandom_Range( rng, -0.35f, 0.35f ), t2 ) ) ) );
+	// Two draws as statements: C leaves the order of a call's arguments unspecified (MSVC and gcc on x64 took the
+	// second first, clang and gcc on ARM64 the first), so draws inside one call's arguments differ by compiler
+	float tilt2 = lpRandom_Range( rng, -0.35f, 0.35f );
+	float tilt1 = lpRandom_Range( rng, -0.35f, 0.35f );
+	n = b3Normalize( b3Add( n, b3Add( b3MulSV( tilt1, t1 ), b3MulSV( tilt2, t2 ) ) ) );
 	b3Plane plane = { n, b3Dot( n, input->impact ) };
 	b3Plane flipped = { b3Neg( n ), -plane.offset };
 

@@ -87,9 +87,9 @@ jobs:
         timeout-minutes: 15
         continue-on-error: true
         run: |
-          ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE > out/test_log.txt 2>&1
-          code=$?
-          echo "exit $code: $(tail -n 1 out/test_log.txt)" > out/test.txt
+          code=0
+          ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE > out/test_log.txt 2>&1 || code=$?
+          echo "exit $code: $(grep -m 3 'FAILED' out/test_log.txt | tr '\n' ' ') $(tail -n 1 out/test_log.txt)" > out/test.txt
           cat out/test.txt
           exit $code
 
