@@ -318,7 +318,34 @@ core can replace Box3D behind it, and so the rules about report order live in on
   pipeline will; the nine suites and the track and mech rungs decide whether the tyres, the servos and the gait
   tolerate it.
 
-Exit: hash-neutral but for the flagged run; no Box3D call outside the backend; the lag verdict recorded.
+Steps (each committed with the bench and solver hashes unchanged unless noted; numbers in [perf-log.md](perf-log.md)):
+0. **Inventory.** Group the 83 Box3D functions our code calls (the map is in
+   [research/m7-state-audit.md](research/m7-state-audit.md) and the brief's surface list: bodies, hull shapes, weld,
+   revolute, spherical and distance joints, motors, force getters, hit and move events, contact data, AABB overlap,
+   ray and shape casts, GJK distance, quickhull) into the operations the interface will offer, about 40.
+1. **Own the maths.** `src/lpmath.h` (MIT, from Box3D's `math_functions.h`, same operations in the same order) with
+   `lp` names for the types and helpers we use (`lpVec3`, `lpPos`, `lpQuat`, `lpTransform`, `lpAABB`, `lpCosSin`,
+   `lpAtan2`, ...). First as aliases of the Box3D ones, renamed mechanically across `src/`, `scenes/`, `test/`, `bench/`
+   and the sandbox (about 2,000 uses; the 41 Box3D types in `lpf.h` included); then made standalone, with Box3D's maths
+   kept for Box3D alone. Hash-neutral by construction.
+2. **The interface.** `src/phys.h` declares the operations on opaque handles (`lpPhysBody`, `lpPhysShape`,
+   `lpPhysJoint`); `src/phys_box3d.c` implements them on Box3D and is the only file that includes Box3D. Reports
+   (hit and move events, contact lists, query and cast results) come back already in our total order (rule 12), so the
+   sorts move out of the callers. The custom filter and user data are set behind it.
+3. **Route the calls,** one module per commit, smallest first: `split.c`, `poly.c` (hulls, GJK), `gait.c`, `step.c`,
+   `rig.c`, `stress.c`, `impact.c`, `world.c`, `debris.c`, `wheel.c`, `link.c`; then the scenes, tests and bench. A
+   lint (`tools/`, run by `build.ps1 -Test` and CI) fails if any file but the backend includes a Box3D header.
+4. **Exact wakes** (T0 #4): impact, split and shove wakes test each piece's transformed bounds, not the tree's fat
+   AABBs. Changes hashes: one re-baseline, a perf-log entry.
+5. **The lag experiment:** `lpWorldDef.physicsLag` (0 or 1, default 0): with 1, every physics read the core makes
+   (transforms, velocities, contacts, joint forces, events, casts) returns the previous tick's result, captured by the
+   backend at the end of each step. Run the nine suites and the track and mech rungs both ways; record which outcomes
+   hold, what breaks (tyre grip, servo stability, the gait, stress loads, link tearing) and what a fix would cost.
+6. **The simplicity pass** (standing practice): an independent reviewer (the Codex or Kimi reviewer, or Fable) reads
+   the milestone's diff and the seam; proposals adjudicated as in milestone 9.
+
+Exit: hash-neutral but for steps 4 and 5; no Box3D include outside `src/phys_box3d.c` (the lint passes); the 14-leg CI
+green; the lag verdict recorded here.
 
 ## 9. The outcome catalogue, the engine surface and a seams-first review
 
@@ -428,7 +455,9 @@ Exit: the round trip exact on every rung; a join measured at the town's peak.
 ## 15. The character controller
 
 The player as a destructible body (pools, vitals, knockout), predicted as the feel test decided: a kinematic latency
-state rebased on the canonical body, or the body itself under input delay.
+state rebased on the canonical body, or the body itself under input delay. The owner's feel test (2026-10-01,
+`sandbox --scene mech --input-delay 6`): 100 ms of unpredicted delay on a walked mech "doesn't feel too bad", so the
+predicted character is a refinement, not a necessity.
 
 ## 16. Networking
 
