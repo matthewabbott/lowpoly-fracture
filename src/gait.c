@@ -108,14 +108,14 @@ static lpPos lpRigCenter( const lpWorld* w, const lpRig* r )
 			}
 		}
 	}
-	lpPos origin = b3Body_GetWorldCenter( w->bodies.data[r->body].id );
+	lpPos origin = lpPhys_GetWorldCenter( w->phys, w->bodies.data[r->body].id );
 	lpVec3 sum = lpVec3_zero;
 	float mass = 0.0f;
 	for ( int n = 0; n < count; ++n )
 	{
-		b3BodyId id = w->bodies.data[bodies[n]].id;
-		float m = b3Body_GetMass( id );
-		sum = lpMulAdd( sum, m, lpSubPos( b3Body_GetWorldCenter( id ), origin ) );
+		lpPhysBody id = w->bodies.data[bodies[n]].id;
+		float m = lpPhys_GetMass( w->phys, id );
+		sum = lpMulAdd( sum, m, lpSubPos( lpPhys_GetWorldCenter( w->phys, id ), origin ) );
 		mass += m;
 	}
 	return mass > 0.0f ? lpOffsetPos( origin, lpMulSV( 1.0f / mass, sum ) ) : origin;
@@ -201,46 +201,29 @@ static float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpP
 
 // ---- footholds ----
 
-typedef struct lpFootCast
+typedef struct lpFootSkip
 {
 	const lpWorld* world;
 	const int* skip; // the rig's bodies
 	int skipCount;
-	float fraction;
-	lpPos point;
-	int piece;
-	bool hit;
-} lpFootCast;
+} lpFootSkip;
 
-static float lpFootCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
-							int triangleIndex, int childIndex, void* context )
+static bool lpFootAccept( int piece, float fraction, void* context )
 {
-	(void)normal;
-	(void)userMaterialId;
-	(void)triangleIndex;
-	(void)childIndex;
-	lpFootCast* cast = context;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
-	int piece = data > 0 ? (int)( data - 1 ) : -1;
+	(void)fraction;
+	const lpFootSkip* skip = context;
 	if ( piece >= 0 )
 	{
-		int body = cast->world->pieces.data[piece].body;
-		for ( int n = 0; n < cast->skipCount; ++n )
+		int body = skip->world->pieces.data[piece].body;
+		for ( int n = 0; n < skip->skipCount; ++n )
 		{
-			if ( cast->skip[n] == body )
+			if ( skip->skip[n] == body )
 			{
-				return -1.0f;
+				return false;
 			}
 		}
 	}
-	if ( fraction < cast->fraction || ( cast->hit && fraction == cast->fraction && piece < cast->piece ) )
-	{
-		cast->fraction = fraction;
-		cast->point = point;
-		cast->piece = piece;
-		cast->hit = true;
-	}
-	return lpNextUp( cast->fraction );
+	return true;
 }
 
 // The ground under a planned foothold: its landing height is where a sole-sized sphere comes to rest on it
@@ -259,14 +242,11 @@ static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, lpVec3 up 
 		}
 	}
 	lpVec3 center = lpVec3_zero;
-	b3ShapeProxy proxy = { &center, 1, LP_GAIT_SOLE };
-	b3QueryFilter filter = b3DefaultQueryFilter();
-	filter.categoryBits = LP_CAT_VEHICLE;
-	filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
+	lpPhysFilter filter = { LP_CAT_VEHICLE, LP_CAT_STATIC | LP_CAT_FULL };
 	lpPos from = lpOffsetPos( limb->landing, lpMulSV( LP_GAIT_CLEARANCE + LP_GAIT_SOLE, up ) );
-	lpFootCast cast = { w, skip, count, FLT_MAX, { 0 }, -1, false };
-	b3World_CastShape( w->physics, from, &proxy, lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter,
-					   lpFootCastFcn, &cast );
+	lpFootSkip rig = { w, skip, count };
+	lpPhysCastHit cast = lpPhys_CastShape( w->phys, from, &center, 1, LP_GAIT_SOLE,
+										   lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter, lpFootAccept, &rig );
 	w->stats.footCasts += 1;
 	limb->grounded = cast.hit;
 	limb->groundPiece = cast.hit ? cast.piece : -1;
@@ -453,7 +433,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	if ( r->idle )
 	{
 		bool knocked = lpAbsFloat( r->height - goal ) > 2.5f * LP_GAIT_CALM_HEIGHT || tilt > 3.0f * LP_GAIT_CALM_TILT;
-		if ( r->controlChanged == false && ( b3Body_IsAwake( torso->id ) == false || knocked == false ) )
+		if ( r->controlChanged == false && ( lpPhys_IsAwake( w->phys, torso->id ) == false || knocked == false ) )
 		{
 			return;
 		}
@@ -503,8 +483,8 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 
 	// Swings under way: their time, their aim (re-aimed across the ground as the torso goes; the ground's height from the
 	// casts), the second cast, landing
-	lpVec3 moving = lpFlatten( b3Body_GetLinearVelocity( torso->id ), up ); // the torso, as it actually is
-	float turning = lpDot( b3Body_GetAngularVelocity( torso->id ), up );
+	lpVec3 moving = lpFlatten( lpPhys_GetLinearVelocity( w->phys, torso->id ), up ); // the torso, as it actually is
+	float turning = lpDot( lpPhys_GetAngularVelocity( w->phys, torso->id ), up );
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		lpLimb* limb = r->limbs + i;
@@ -720,7 +700,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	// Falling (dropped, or its legs knocked from under it), it follows the torso down: pushed back up to where it was, it
 	// would land and spring up again
 	float height = lpDot( lpSubPos( old.p, xf.p ), up ) - support; // the desired pose's, over the feet
-	if ( lpDot( b3Body_GetLinearVelocity( torso->id ), up ) < -LP_GAIT_FALLING )
+	if ( lpDot( lpPhys_GetLinearVelocity( w->phys, torso->id ), up ) < -LP_GAIT_FALLING )
 	{
 		height = lpMinFloat( height, r->height + LP_GAIT_LEAD );
 	}

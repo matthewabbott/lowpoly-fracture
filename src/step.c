@@ -28,18 +28,13 @@ static void lpApplyWakes( lpWorld* w )
 
 static void lpFreezeOrKill( lpWorld* w )
 {
-	b3BodyEvents events = b3World_GetBodyEvents( w->physics );
+	const lpPhysMove* moves;
+	int moveCount = lpPhys_GetMoves( w->phys, &moves );
 	w->scratchBodies.count = 0;
-	int firstNew = w->freezeCandidates.count;
-	for ( int i = 0; i < events.moveCount; ++i )
+	for ( int i = 0; i < moveCount; ++i ) // in body order, so this step's new candidates and the kill list are too
 	{
-		const b3BodyMoveEvent* e = events.moveEvents + i;
-		intptr_t data = (intptr_t)e->userData;
-		if ( data <= 0 )
-		{
-			continue;
-		}
-		int bodyIndex = (int)( data - 1 );
+		const lpPhysMove* e = moves + i;
+		int bodyIndex = e->userData;
 		lpBody* b = w->bodies.data + bodyIndex;
 		if ( b->alive == false || b->kind != lp_kindDebris )
 		{
@@ -56,13 +51,6 @@ static void lpFreezeOrKill( lpWorld* w )
 		}
 	}
 
-	// This step's new candidates in index order, not the physics engine's event order (the cap below takes them in
-	// list order)
-	if ( w->freezeCandidates.count - firstNew > 1 )
-	{
-		qsort( w->freezeCandidates.data + firstNew, (size_t)( w->freezeCandidates.count - firstNew ), sizeof( int ), lpCompareInt );
-	}
-
 	// Freeze sleepers that are old enough. Fresh debris wedged in its hole can fall asleep before anything pushed
 	// it out; freezing it at once would glue it back into the wall.
 	int kept = 0;
@@ -74,7 +62,7 @@ static void lpFreezeOrKill( lpWorld* w )
 		{
 			continue;
 		}
-		if ( b3Body_IsAwake( b->id ) || lpBodyLinked( w, b ) || lpTouchesLinked( w, b ) )
+		if ( lpPhys_IsAwake( w->phys, b->id ) || lpBodyLinked( w, b ) || lpTouchesLinked( w, b ) )
 		{
 			b->freezePending = false; // linked bodies and what rests on them sleep instead: frozen, they would jam
 			continue;
@@ -84,7 +72,7 @@ static void lpFreezeOrKill( lpWorld* w )
 		{
 			b->freezePending = false;
 			b->kind = lp_kindRubble;
-			b3Body_SetType( b->id, b3_staticBody );
+			lpPhys_SetDynamic( w->phys, b->id, false );
 			w->freezesThisStep += 1;
 			continue;
 		}
@@ -92,11 +80,6 @@ static void lpFreezeOrKill( lpWorld* w )
 	}
 	w->freezeCandidates.count = kept;
 
-	// Kill list in index order
-	if ( w->scratchBodies.count > 1 )
-	{
-		qsort( w->scratchBodies.data, (size_t)w->scratchBodies.count, sizeof( int ), lpCompareInt );
-	}
 	for ( int i = 0; i < w->scratchBodies.count; ++i )
 	{
 		int bodyIndex = w->scratchBodies.data[i];
@@ -159,7 +142,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 	}
 	b->pieces.count = kept;
 	b->topology += 1;
-	if ( b3Body_GetType( b->id ) == b3_dynamicBody )
+	if ( lpPhys_IsDynamic( w->phys, b->id ) )
 	{
 		lpApplyMass( b );
 	}
@@ -216,8 +199,8 @@ static void lpApplyPulls( lpWorld* w )
 		}
 		lpWakeRubble( w, bodyIndex );
 
-		lpPos point = lpTransformWorldPoint( b3Body_GetTransform( b->id ), pull.localPoint );
-		lpVec3 v = b3Body_GetWorldPointVelocity( b->id, point );
+		lpPos point = lpTransformWorldPoint( lpPhys_GetTransform( w->phys, b->id ), pull.localPoint );
+		lpVec3 v = lpPhys_GetPointVelocity( w->phys, b->id, point );
 		lpVec3 error = lpSubPos( pull.target, point );
 		lpVec3 accel = lpSub( lpMulSV( 60.0f, error ), lpMulSV( 14.0f, v ) );
 		float a = lpLength( accel );
@@ -225,14 +208,14 @@ static void lpApplyPulls( lpWorld* w )
 		{
 			accel = lpMulSV( pull.maxAccel / a, accel );
 		}
-		float mass = b3Body_GetMass( b->id );
+		float mass = lpPhys_GetMass( w->phys, b->id );
 		float m = lpMinFloat( mass, pull.maxMass );
-		lpVec3 g = lpMulSV( b->gravityScale, b3World_GetGravity( w->physics ) );
+		lpVec3 g = lpMulSV( b->gravityScale, lpPhys_GetGravity( w->phys ) );
 		lpVec3 force = lpSub( lpMulSV( m, accel ), lpMulSV( m, g ) );
-		b3Body_ApplyForce( b->id, force, point, true );
+		lpPhys_ApplyForce( w->phys, b->id, force, point, true );
 		// A little angular damping so held things do not spin forever
-		lpVec3 omega = b3Body_GetAngularVelocity( b->id );
-		b3Body_SetAngularVelocity( b->id, lpMulSV( 0.97f, omega ) );
+		lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, b->id );
+		lpPhys_SetAngularVelocity( w->phys, b->id, lpMulSV( 0.97f, omega ) );
 	}
 	w->pulls.count = 0;
 }
@@ -339,7 +322,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpStepVehicles( w, timeStep );
 	w->stats.vehicleMs = lpGetMillisecondsAndReset( &ticks );
 
-	b3World_Step( w->physics, timeStep, subStepCount );
+	lpPhys_Step( w->phys, timeStep, subStepCount );
 	w->lastTimeStep = timeStep;
 	w->stats.physicsMs = lpGetMillisecondsAndReset( &ticks );
 	lpPollLinks( w, timeStep ); // before anything below can destroy a body under a joint
@@ -400,7 +383,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 			w->stats.debrisBodies += 1;
 			w->stats.fullDebris += b->tier == lp_tierFull ? 1 : 0;
 			w->stats.lightDebris += b->tier == lp_tierLight ? 1 : 0;
-			w->stats.awakeDebris += b3Body_IsAwake( b->id ) ? 1 : 0;
+			w->stats.awakeDebris += lpPhys_IsAwake( w->phys, b->id ) ? 1 : 0;
 		}
 	}
 	w->stats.pieceCount = pieceCount;
