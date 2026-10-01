@@ -154,7 +154,7 @@ static int TestRigModelMatchesBodies( void )
 	int rig = lpAddHexapod( s.world, (lpVec3){ 0.0f, 0.05f, 0.0f }, 0.3f, 0 );
 	Run( &s, 120 );
 	const lpRig* r = s.world->rigs.data + rig;
-	lpWorldTransform xf = lpGetTransform( s.world->bodies.data + r->body );
+	lpWorldTransform xf = lpGetTransform( s.world, s.world->bodies.data + r->body );
 	float worst = 0.0f;
 	for ( int i = 0; i < 6; ++i )
 	{
@@ -188,7 +188,7 @@ static int TestRigStumpFoot( void )
 	lpVec3 kneeLocal = knee->ends[femurEnd].frame.p; // the femur's end, in its body's frame
 	lpDestroyLink( s.world, limb->def.links[2] );
 	Run( &s, 1 );
-	lpPos kneePoint = lpTransformWorldPoint( lpGetTransform( s.world->bodies.data + femurBody ), kneeLocal );
+	lpPos kneePoint = lpTransformWorldPoint( lpGetTransform( s.world, s.world->bodies.data + femurBody ), kneeLocal );
 	lpLimbState st = lpWorld_GetLimbState( s.world, rig, 1 );
 	float off = lpLength( lpSubPos( st.foot, kneePoint ) );
 	printf( "  after the knee went: %d joints, foot %.3f m from the femur's end, reach %.2f m, able %d\n", st.joints, off, st.reach,
@@ -676,7 +676,7 @@ static int TestRigModelBent( void )
 	}
 	Run( &s, 120 );
 	const lpRig* r = s.world->rigs.data + rig;
-	lpWorldTransform xf = lpGetTransform( s.world->bodies.data + r->body );
+	lpWorldTransform xf = lpGetTransform( s.world, s.world->bodies.data + r->body );
 	float worst = 0.0f;
 	for ( int i = 0; i < 6; ++i )
 	{
@@ -828,7 +828,7 @@ static void HarmPeg( Sim* s, int rig )
 	lpVec3 top = knee->ends[1 - limb->prox[2]].frame.p;
 	lpVec3 at = lpLerp( top, limb->foot, 0.6f );
 	lpImpactDef impact = { 0 };
-	impact.point = lpTransformWorldPoint( lpGetTransform( s->world->bodies.data + limb->tipBody ), at );
+	impact.point = lpTransformWorldPoint( lpGetTransform( s->world, s->world->bodies.data + limb->tipBody ), at );
 	impact.direction = (lpVec3){ -1.0f, 0.0f, 0.0f };
 	impact.radius = 0.25f;
 	impact.energy = 40000.0f;

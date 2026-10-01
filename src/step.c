@@ -120,7 +120,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 		lpDestroyBody( w, bodyIndex, true );
 		return;
 	}
-	lpWorldTransform xf = lpGetTransform( b );
+	lpWorldTransform xf = lpGetTransform( w, b );
 	int kept = 0;
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
@@ -144,7 +144,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 	b->topology += 1;
 	if ( lpPhys_IsDynamic( w->phys, b->id ) )
 	{
-		lpApplyMass( b );
+		lpApplyMass( w, b );
 	}
 	lpMarkDirty( w, bodyIndex );
 }
@@ -162,7 +162,7 @@ lpVec3 lpWorld_ToBodyFrame( const lpWorld* w, int piece, lpPos worldPoint )
 	{
 		return lpVec3_zero;
 	}
-	return lpInvTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), worldPoint );
+	return lpInvTransformWorldPoint( lpGetTransform( w, w->bodies.data + p->body ), worldPoint );
 }
 
 lpPos lpWorld_ToWorldFrame( const lpWorld* w, int piece, lpVec3 localPoint )
@@ -172,7 +172,7 @@ lpPos lpWorld_ToWorldFrame( const lpWorld* w, int piece, lpVec3 localPoint )
 	{
 		return lpToPos( localPoint );
 	}
-	return lpTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), localPoint );
+	return lpTransformWorldPoint( lpGetTransform( w, w->bodies.data + p->body ), localPoint );
 }
 
 // Spring-damper toward the target, mass-normalized and clamped, with gravity compensation up to maxMass

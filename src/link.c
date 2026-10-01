@@ -76,7 +76,7 @@ static lpQuat lpAxisRotation( lpVec3 axis )
 static int lpNearestPiece( const lpWorld* w, int bodyIndex, lpPos point, float* distance )
 {
 	const lpBody* b = w->bodies.data + bodyIndex;
-	lpVec3 local = lpInvTransformWorldPoint( lpGetTransform( b ), point );
+	lpVec3 local = lpInvTransformWorldPoint( lpGetTransform( w, b ), point );
 	int best = -1;
 	*distance = FLT_MAX;
 	for ( int k = 0; k < b->pieces.count; ++k )
@@ -228,7 +228,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 		{
 			return -1;
 		}
-		lpWorldTransform xf = lpGetTransform( w->bodies.data + bodies[k] );
+		lpWorldTransform xf = lpGetTransform( w, w->bodies.data + bodies[k] );
 		ends[k].piece = piece;
 		ends[k].generation = w->pieces.data[piece].generation;
 		ends[k].frame.p = lpInvTransformWorldPoint( xf, points[k] );
@@ -282,7 +282,7 @@ int lpCreateWheelLink( lpWorld* w, int body, lpPos mount, float maxForce, float 
 	{
 		return -1;
 	}
-	lpWorldTransform xf = lpGetTransform( w->bodies.data + body );
+	lpWorldTransform xf = lpGetTransform( w, w->bodies.data + body );
 	int index = lpAllocLink( w );
 	lpLink* l = w->links.data + index;
 	l->def = lpDefaultLinkDef( lp_linkWheel );
@@ -329,7 +329,7 @@ static void lpLinkDust( lpWorld* w, const lpLink* l, int index, int motes )
 			continue;
 		}
 		const lpPiece* p = w->pieces.data + piece;
-		lpWorldTransform xf = lpGetTransform( w->bodies.data + p->body );
+		lpWorldTransform xf = lpGetTransform( w, w->bodies.data + p->body );
 		uint64_t h = lpMix64( ( w->tick << 24 ) ^ (uint64_t)( 2 * index + k ) );
 		for ( int m = 0; m < motes; ++m )
 		{

@@ -180,7 +180,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 				p->body = -1;
 				lpAttachPiece( w, pi, newIndex );
 			}
-			lpApplyMass( nb );
+			lpApplyMass( w, nb );
 		}
 		body = w->bodies.data + bodyIndex;
 		body->volume -= comp->volume;
@@ -214,7 +214,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 	}
 	else if ( isDynamic )
 	{
-		lpApplyMass( body );
+		lpApplyMass( w, body );
 		int material = w->pieces.data[body->pieces.data[0]].material;
 		if ( body->volume < lpGhostVolume( w, material ) )
 		{

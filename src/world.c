@@ -210,7 +210,7 @@ int lpAllocPiece( lpWorld* w )
 	lpPiece* p = w->pieces.data + index;
 	p->body = -1;
 	p->nextFree = -1;
-	p->shapeId = b3_nullShapeId;
+	p->shapeId = lp_nullPhysShape;
 	memset( &p->stressX, 0, 5 * sizeof( lpVec6 ) );
 	p->strain = 0.0f;
 	p->accepted = 0;
@@ -226,7 +226,7 @@ void lpFreePieceSlot( lpWorld* w, int index )
 	lpShape_Destroy( p->shape );
 	if ( p->hull != NULL )
 	{
-		b3DestroyHull( p->hull );
+		lpPhys_DestroyHull( p->hull );
 	}
 	lpArray_Free( p->bonds );
 	lpArray_Free( p->links );
@@ -404,39 +404,36 @@ void lpDestroyWorld( lpWorld* w )
 
 // Filters follow the body's tier (see world.h). Set at shape creation only; changing a filter later is as costly as
 // recreating the shape.
-static b3ShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material, const lpBody* body )
+static lpPhysShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material, const lpBody* body )
 {
 	const lpMaterialDef* m = lpGetMaterial( material );
-	b3ShapeDef def = b3DefaultShapeDef();
+	lpPhysShapeDef def = { 0 };
 	def.density = m->density;
-	def.baseMaterial.friction = m->friction;
-	def.baseMaterial.restitution = m->restitution;
-	def.baseMaterial.userMaterialId = material;
-	def.updateBodyMass = false;
-	def.userData = (void*)(intptr_t)( pieceIndex + 1 );
+	def.friction = m->friction;
+	def.restitution = m->restitution;
+	def.material = material;
+	def.userData = pieceIndex;
 	if ( body->kind == lp_kindStructure )
 	{
-		def.filter.categoryBits = LP_CAT_STATIC;
-		def.filter.maskBits = LP_CAT_ALL;
-		def.enableHitEvents = m->breakable;
+		def.filter = ( lpPhysFilter ){ LP_CAT_STATIC, LP_CAT_ALL };
+		def.hitEvents = m->breakable;
 	}
 	else if ( body->tier == lp_tierLight )
 	{
-		def.filter.categoryBits = LP_CAT_LIGHT;
-		def.filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
-		def.enableCustomFiltering = true;
-		def.enableHitEvents = false;
+		def.filter = ( lpPhysFilter ){ LP_CAT_LIGHT, LP_CAT_STATIC | LP_CAT_FULL };
+		def.customFilter = true;
+		def.hitEvents = false;
 	}
 	else
 	{
-		def.filter.categoryBits = LP_CAT_FULL;
-		def.filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL | LP_CAT_LIGHT | LP_CAT_VEHICLE | LP_CAT_CHARACTER | LP_CAT_PROJECTILE;
-		def.enableHitEvents = true; // also wakes fragile rubble it bumps into
+		def.filter = ( lpPhysFilter ){ LP_CAT_FULL,
+									   LP_CAT_STATIC | LP_CAT_FULL | LP_CAT_LIGHT | LP_CAT_VEHICLE | LP_CAT_CHARACTER | LP_CAT_PROJECTILE };
+		def.hitEvents = true; // also wakes fragile rubble it bumps into
 	}
 	return def;
 }
 
-// Box3D shape for a piece on a Box3D body, without touching the body's piece list
+// The physics shape for a piece on a physics body, without touching the body's piece list
 bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
@@ -452,8 +449,8 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 	}
 	w->stats.hullMs += lpGetMilliseconds( t0 );
 	uint64_t t1 = lpGetTicks();
-	b3ShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
-	p->shapeId = b3CreateHullShape( b->id, &def, p->hull );
+	lpPhysShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
+	p->shapeId = lpPhys_CreateHullShape( w->phys, b->id, &def, p->hull );
 	w->stats.shapeMs += lpGetMilliseconds( t1 );
 	return true;
 }
@@ -477,10 +474,10 @@ bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 void lpDetachPieceShape( lpWorld* w, int pieceIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
-	if ( B3_IS_NON_NULL( p->shapeId ) )
+	if ( LP_PHYS_NULL( p->shapeId ) == false )
 	{
-		b3DestroyShape( p->shapeId, false );
-		p->shapeId = b3_nullShapeId;
+		lpPhys_DestroyShape( w->phys, p->shapeId );
+		p->shapeId = lp_nullPhysShape;
 	}
 }
 
@@ -593,7 +590,7 @@ void lpTryBond( lpWorld* w, int a, int b )
 	}
 }
 
-lpWorldTransform lpGetTransform( const lpBody* b )
+lpWorldTransform lpGetTransform( const lpWorld* w, const lpBody* b )
 {
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
@@ -601,7 +598,7 @@ lpWorldTransform lpGetTransform( const lpBody* b )
 		lpWorldTransform xf = { lpOffsetPos( b->com, lpNeg( offset ) ), b->q };
 		return xf;
 	}
-	return b3Body_GetTransform( b->id );
+	return lpPhys_GetTransform( w->phys, b->id );
 }
 
 // Emit a cosmetic particle at a body-frame point, coloured and shaped by the material
@@ -628,7 +625,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	lpBody* b = w->bodies.data + bodyIndex;
 	LP_ASSERT( b->alive );
 	bool loose = b->kind == lp_kindGhost || b->kind == lp_kindScrap;
-	lpWorldTransform xf = lpGetTransform( b );
+	lpWorldTransform xf = lpGetTransform( w, b );
 
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
@@ -643,7 +640,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 			float size = lpMinFloat( lpCbrt( p->shape->volume ), 0.3f );
 			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : lpVec3_zero, size, p->material );
 		}
-		p->shapeId = b3_nullShapeId; // destroyed with the body
+		p->shapeId = lp_nullPhysShape; // destroyed with the body
 		lpFreePieceSlot( w, pieceIndex );
 	}
 	b->pieces.count = 0;
@@ -654,11 +651,11 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	}
 	else
 	{
-		b3DestroyBody( b->id );
+		lpPhys_DestroyBody( w->phys, b->id );
 	}
 	lpFreeStressSystem( b );
 	b->alive = false;
-	b->id = b3_nullBodyId;
+	b->id = lp_nullPhysBody;
 	b->nextFree = w->freeBody;
 	w->freeBody = bodyIndex;
 }
@@ -935,7 +932,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	w->bodies.data[bodyIndex].inertiaRadius = lpMaxFloat( def->inertiaRadius, 0.0f );
 	if ( def->isStatic == false )
 	{
-		lpApplyMass( w->bodies.data + bodyIndex );
+		lpApplyMass( w, w->bodies.data + bodyIndex );
 	}
 	else
 	{
@@ -951,17 +948,6 @@ void lpWorld_AddImpact( lpWorld* w, const lpImpactDef* impact )
 }
 
 // ---- piece queries ----
-
-static bool lpCollectPieceFcn( b3ShapeId shapeId, void* context )
-{
-	lpWorld* w = context;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
-	if ( data > 0 )
-	{
-		lpArray_Push( w->scratchPieces, (int)( data - 1 ) );
-	}
-	return true;
-}
 
 int lpCompareInt( const void* a, const void* b )
 {
@@ -999,21 +985,14 @@ int lpCompareBodyRef( const void* a, const void* b )
 // Pieces whose shapes overlap the box, sorted and unique (query order must not leak into results).
 void lpQueryPieces( lpWorld* w, lpAABB box )
 {
-	w->scratchPieces.count = 0;
-	b3World_OverlapAABB( w->physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, w );
-	if ( w->scratchPieces.count > 1 )
+	const int* pieces;
+	int count = lpPhys_OverlapBox( w->phys, box, lp_physQueryAll, &pieces );
+	lpArray_Reserve( w->scratchPieces, count );
+	if ( count > 0 )
 	{
-		qsort( w->scratchPieces.data, (size_t)w->scratchPieces.count, sizeof( int ), lpCompareInt );
-		int unique = 1;
-		for ( int i = 1; i < w->scratchPieces.count; ++i )
-		{
-			if ( w->scratchPieces.data[i] != w->scratchPieces.data[unique - 1] )
-			{
-				w->scratchPieces.data[unique++] = w->scratchPieces.data[i];
-			}
-		}
-		w->scratchPieces.count = unique;
+		memcpy( w->scratchPieces.data, pieces, (size_t)count * sizeof( int ) );
 	}
+	w->scratchPieces.count = count;
 }
 
 void lpWakeRubble( lpWorld* w, int bodyIndex )
@@ -1024,9 +1003,9 @@ void lpWakeRubble( lpWorld* w, int bodyIndex )
 		return;
 	}
 	b->kind = lp_kindDebris;
-	b3Body_SetType( b->id, b3_dynamicBody );
-	lpApplyMass( b );
-	b3Body_SetAwake( b->id, true );
+	lpPhys_SetDynamic( w->phys, b->id, true );
+	lpApplyMass( w, b );
+	lpPhys_SetAwake( w->phys, b->id, true );
 }
 
 lpStats lpWorld_GetStats( const lpWorld* w )
@@ -1072,9 +1051,9 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			h = lpHashBytes( h, &b->sinkTicks, sizeof( b->sinkTicks ) );
 			continue;
 		}
-		lpWorldTransform xf = b3Body_GetTransform( b->id );
-		lpVec3 v = b3Body_GetLinearVelocity( b->id );
-		lpVec3 omega = b3Body_GetAngularVelocity( b->id );
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
+		lpVec3 v = lpPhys_GetLinearVelocity( w->phys, b->id );
+		lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, b->id );
 		LP_ASSERT( lpIsValidVec3( xf.p ) && lpIsValidVec3( v ) && lpIsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
 		h = lpHashBytes( h, &xf, sizeof( xf ) );
 		h = lpHashBytes( h, &v, sizeof( v ) );
@@ -1209,39 +1188,12 @@ static bool lpRayNearSegment( lpVec3 d, lpVec3 p, lpVec3 q, float radius, float*
 	return true;
 }
 
-typedef struct lpClosestRay
+// A ray that starts inside a shape ignores it
+static bool lpPastOrigin( int piece, float fraction, void* context )
 {
-	float fraction;
-	lpPos point;
-	lpVec3 normal;
-	int piece;
-	bool hit;
-} lpClosestRay;
-
-// The closest hit past the origin (a ray starting inside a shape ignores it), ties broken by piece index rather than
-// by the physics engine's traversal order
-static float lpClosestRayFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
-							  int triangleIndex, int childIndex, void* context )
-{
-	(void)userMaterialId;
-	(void)triangleIndex;
-	(void)childIndex;
-	if ( fraction == 0.0f )
-	{
-		return -1.0f;
-	}
-	lpClosestRay* ray = context;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
-	int piece = data > 0 ? (int)( data - 1 ) : -1;
-	if ( fraction < ray->fraction || ( ray->hit && fraction == ray->fraction && piece < ray->piece ) )
-	{
-		ray->fraction = fraction;
-		ray->point = point;
-		ray->normal = normal;
-		ray->piece = piece;
-		ray->hit = true;
-	}
-	return lpNextUp( ray->fraction );
+	(void)piece;
+	(void)context;
+	return fraction != 0.0f;
 }
 
 lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
@@ -1250,8 +1202,7 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 	hit.piece = -1;
 	hit.body = -1;
 	hit.link = -1;
-	lpClosestRay result = { 2.0f, { 0 }, lpVec3_zero, -1, false }; // above any hit, so a hit at the very end counts
-	b3World_CastRay( w->physics, origin, translation, b3DefaultQueryFilter(), lpClosestRayFcn, &result );
+	lpPhysCastHit result = lpPhys_CastRay( w->phys, origin, translation, lp_physQueryAll, lpPastOrigin, NULL );
 	float nearest = result.hit ? result.fraction : 2.0f; // a rope at the very end of the ray still counts
 	if ( result.hit )
 	{
@@ -1265,7 +1216,7 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 		}
 	}
 
-	// Ropes and wheels are no Box3D shapes: they are hit as capsules (a thin rope, a tyre round its axle), when nearer
+	// Ropes and wheels are no physics shapes: they are hit as capsules (a thin rope, a tyre round its axle), when nearer
 	// than any shape
 	for ( int i = 0; i < w->links.count; ++i )
 	{
@@ -1317,7 +1268,7 @@ bool lpWorld_GetBodyTransform( const lpWorld* w, int body, lpWorldTransform* tra
 	{
 		return false;
 	}
-	*transform = lpGetTransform( b );
+	*transform = lpGetTransform( w, b );
 	return true;
 }
 
@@ -1365,18 +1316,18 @@ bool lpWorld_Validate( const lpWorld* w )
 		}
 		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 		{
-			if ( B3_IS_NON_NULL( b->id ) || b->pieces.count == 0 )
+			if ( LP_PHYS_NULL( b->id ) == false || b->pieces.count == 0 )
 			{
 				return lpFail( "loose body %d has a Box3D body or no pieces (%d)", i, b->pieces.count, 0 );
 			}
 		}
-		else if ( b3Body_IsValid( b->id ) == false )
+		else if ( lpPhys_IsValidBody( w->phys, b->id ) == false )
 		{
 			return lpFail( "body %d has an invalid Box3D id", i, 0, 0 );
 		}
-		else if ( b3Body_GetShapeCount( b->id ) != b->pieces.count )
+		else if ( lpPhys_GetShapeCount( w->phys, b->id ) != b->pieces.count )
 		{
-			return lpFail( "body %d: %d shapes but %d pieces", i, b3Body_GetShapeCount( b->id ), b->pieces.count );
+			return lpFail( "body %d: %d shapes but %d pieces", i, lpPhys_GetShapeCount( w->phys, b->id ), b->pieces.count );
 		}
 		for ( int k = 0; k < b->pieces.count; ++k )
 		{
@@ -1424,16 +1375,16 @@ bool lpWorld_Validate( const lpWorld* w )
 		uint8_t kind = w->bodies.data[p->body].kind;
 		if ( kind == lp_kindGhost || kind == lp_kindScrap )
 		{
-			if ( B3_IS_NON_NULL( p->shapeId ) )
+			if ( LP_PHYS_NULL( p->shapeId ) == false )
 			{
 				return lpFail( "loose piece %d still has a Box3D shape", i, 0, 0 );
 			}
 		}
-		else if ( b3Shape_IsValid( p->shapeId ) == false )
+		else if ( lpPhys_IsValidShape( w->phys, p->shapeId ) == false )
 		{
 			return lpFail( "piece %d has no shape", i, 0, 0 );
 		}
-		if ( kind != lp_kindGhost && kind != lp_kindScrap && b3Shape_GetBody( p->shapeId ).index1 != w->bodies.data[p->body].id.index1 )
+		if ( kind != lp_kindGhost && kind != lp_kindScrap && lpPhys_GetShapeBody( w->phys, p->shapeId ).index1 != w->bodies.data[p->body].id.index1 )
 		{
 			return lpFail( "piece %d shape on the wrong body", i, 0, 0 );
 		}

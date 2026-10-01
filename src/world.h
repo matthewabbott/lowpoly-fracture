@@ -125,9 +125,9 @@ typedef struct lpLink
 {
 	lpLinkDef def;
 	lpLinkEnd ends[2];
-	b3JointId joint;
-	b3BodyId builtOn[2]; // the Box3D bodies the joint was made on; when an end's body changes, it is rebuilt
-	b3BodyId anchor[2];	 // the static body of a world end
+	lpPhysJoint joint;
+	lpPhysBody builtOn[2]; // the Box3D bodies the joint was made on; when an end's body changes, it is rebuilt
+	lpPhysBody anchor[2];	 // the static body of a world end
 	lpPos points[2];	 // world points of the ends, cached at the last step either end was awake
 	lpVec3 force;		 // on end B, world, N
 	lpVec3 torque;
@@ -311,8 +311,8 @@ typedef struct lpLinkMove
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
-	b3HullData* hull; // cached Box3D hull of the shape, reused when the piece changes body; NULL for ghost ejecta
-	b3ShapeId shapeId; // null while the piece is on a ghost or scrap body
+	lpPhysHull* hull; // cached Box3D hull of the shape, reused when the piece changes body; NULL for ghost ejecta
+	lpPhysShape shapeId; // null while the piece is on a ghost or scrap body
 	LP_ARRAY( int ) bonds;
 	LP_ARRAY( int ) links; // links with an end on this piece
 	lpPlane anchorPlane;
@@ -381,7 +381,7 @@ typedef struct lpBodyRef
 
 typedef struct lpBody
 {
-	b3BodyId id; // null for ghost and scrap
+	lpPhysBody id; // null for ghost and scrap
 	LP_ARRAY( int ) pieces;
 	uint64_t createdTick;
 	float volume;
@@ -569,7 +569,7 @@ typedef struct lpFractureJob
 	lpShape* cells[LP_MAX_SITES];
 	int cellSites[LP_MAX_SITES];
 	uint8_t cellClass[LP_MAX_SITES];
-	b3HullData* hulls[LP_MAX_SITES];
+	lpPhysHull* hulls[LP_MAX_SITES];
 	int bondCount;
 	lpCellBond* bonds; // LP_MAX_CELL_BONDS
 	lpFractureStats stats;
@@ -690,7 +690,7 @@ int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t
 void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material );
 void lpQueryPieces( lpWorld* w, lpAABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
-lpWorldTransform lpGetTransform( const lpBody* b );
+lpWorldTransform lpGetTransform( const lpWorld* w, const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
 int lpCompareOrder( const void* a, const void* b );
 
@@ -761,20 +761,11 @@ static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
 bool lpValidateWheel( const lpWorld* w, int link );
 void lpFreeVehicles( lpWorld* w );
 
-// Box3D's mass from a body's shapes, plus its inertia padding (lpObjectDef.inertiaRadius): Box3D softens a joint by the
-// lighter body's inertia, and a slender limb has little about its long axis
-static inline void lpApplyMass( const lpBody* b )
+// The physics mass from a body's shapes, plus its inertia padding (lpObjectDef.inertiaRadius): the solver softens a
+// joint by the lighter body's inertia, and a slender limb has little about its long axis
+static inline void lpApplyMass( lpWorld* w, const lpBody* b )
 {
-	b3Body_ApplyMassFromShapes( b->id );
-	if ( b->inertiaRadius > 0.0f )
-	{
-		b3MassData md = b3Body_GetMassData( b->id );
-		float add = md.mass * b->inertiaRadius * b->inertiaRadius;
-		md.inertia.cx.x += add;
-		md.inertia.cy.y += add;
-		md.inertia.cz.z += add;
-		b3Body_SetMassData( b->id, md );
-	}
+	lpPhys_UpdateMass( w->phys, b->id, b->inertiaRadius );
 }
 
 // rigs (rig.c): lpStepRigs after the supply update and before the servos are driven (capability, then the gait's

@@ -249,7 +249,7 @@ static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, lpVec3 up )
 	{
 		const lpLink* l = w->links.data + limb->def.links[k];
 		int body = lpEndBodyIndex( w, l, limb->prox[k] );
-		lpQuat q = lpMulQuat( lpGetTransform( w->bodies.data + body ).q, l->ends[limb->prox[k]].frame.q );
+		lpQuat q = lpMulQuat( lpGetTransform( w, w->bodies.data + body ).q, l->ends[limb->prox[k]].frame.q );
 		if ( lpAbsFloat( lpDot( lpRotateVector( q, (lpVec3){ 0.0f, 0.0f, 1.0f } ), up ) ) < 0.7f )
 		{
 			return true;
@@ -260,7 +260,7 @@ static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, lpVec3 up )
 
 lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb )
 {
-	return lpTransformWorldPoint( lpGetTransform( w->bodies.data + limb->tipBody ), limb->foot );
+	return lpTransformWorldPoint( lpGetTransform( w, w->bodies.data + limb->tipBody ), limb->foot );
 }
 
 // ---- creation ----
@@ -317,7 +317,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 			limb->upper[k] = limited ? lpMaxFloat( l->def.upperAngle - LP_RIG_LIMIT_MARGIN, mid ) : 1e6f;
 			limb->q[k] = l->target;
 		}
-		limb->defFoot = lpInvTransformWorldPoint( lpGetTransform( w->bodies.data + inner ), limb->def.foot );
+		limb->defFoot = lpInvTransformWorldPoint( lpGetTransform( w, w->bodies.data + inner ), limb->def.foot );
 		limb->tipBody = -1;
 		lpLimbCapability( w, limb, lpInvRotateVector( lpPhys_GetTransform( w->phys, torso->id ).q, lpNormalize( def->up ) ) );
 	}
@@ -403,7 +403,7 @@ void lpStepRigs( lpWorld* w, float timeStep )
 			r->body = -1;
 			continue;
 		}
-		lpWorldTransform xf = lpGetTransform( w->bodies.data + r->body );
+		lpWorldTransform xf = lpGetTransform( w, w->bodies.data + r->body );
 		lpVec3 worldUp = lpRigWorldUp( w, r, xf.q );
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
@@ -415,7 +415,7 @@ void lpStepRigs( lpWorld* w, float timeStep )
 			if ( limb->joints > 0 )
 			{
 				const lpLink* root = w->links.data + limb->def.links[0];
-				lpPos joint = lpTransformWorldPoint( lpGetTransform( w->bodies.data + limb->rootBody ), root->ends[limb->prox[0]].frame.p );
+				lpPos joint = lpTransformWorldPoint( lpGetTransform( w, w->bodies.data + limb->rootBody ), root->ends[limb->prox[0]].frame.p );
 				limb->reach = lpLength( lpSubPos( lpFootWorld( w, limb ), joint ) );
 			}
 		}

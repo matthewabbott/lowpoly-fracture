@@ -385,7 +385,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			int debris = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, cellV, omega, gravityScale );
 			if ( lpAttachPiece( w, childIndex, debris ) )
 			{
-				lpApplyMass( w->bodies.data + debris );
+				lpApplyMass( w, w->bodies.data + debris );
 			}
 			else
 			{
@@ -448,7 +448,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 
 	if ( body->kind != lp_kindStructure && body->pieces.count > 0 )
 	{
-		lpApplyMass( body );
+		lpApplyMass( w, body );
 	}
 
 	w->stats.fracturesThisStep += 1;
@@ -470,7 +470,7 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 	const lpBody* b = w->bodies.data + piece->body;
 
 	// At the centre of the pieces that go: the body's centre of mass when they are all of it
-	lpWorldTransform xf = lpGetTransform( b );
+	lpWorldTransform xf = lpGetTransform( w, b );
 	lpVec3 center = lpVec3_zero;
 	float volume = 0.0f;
 	bool whole = true;

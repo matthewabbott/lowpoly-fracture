@@ -359,7 +359,7 @@ static lpVec3 lpLean( const lpRig* r, const lpPos* feet, const bool* planted, in
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 {
 	const lpBody* torso = w->bodies.data + r->body;
-	lpWorldTransform xf = lpGetTransform( torso );
+	lpWorldTransform xf = lpGetTransform( w, torso );
 	lpVec3 up = lpRigWorldUp( w, r, xf.q );
 
 	// Feet as the model has them at the measured angles, and the planted feet's height under the torso
