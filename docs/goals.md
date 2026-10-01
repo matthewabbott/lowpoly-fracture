@@ -55,7 +55,8 @@ Open, to research later:
 - **Simulation scale per session:** in lockstep the weakest peer bounds the session's simulation; only the cosmetic
   layer scales per machine.
 - **Adaptive locomotion generated for a newly maimed body:** UniMate (https://arxiv.org/abs/2609.05415,
-  https://github.com/Friedrich-M/UniMate); whether anything like it can run in real time.
+  https://github.com/Friedrich-M/UniMate), gait repertoires and learned policies; queued as a deep dive in
+  [roadmap.md](roadmap.md) ("Research queue").
 
 ## Priorities
 

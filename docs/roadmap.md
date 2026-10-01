@@ -421,3 +421,54 @@ Effects and mess, noted while tuning debris:
 - **Dust:** soft, fading dust clouds instead of solid motes once a transparent particle pass exists.
 - **Toaster profile:** one switch that lowers caps (debris, ghosts, scrap), raises the fragment scale and render
   scale, and turns off shadows, so low-end machines still get the destruction.
+
+## Research queue
+
+Deep dives that need no code and can run whenever agents are free, placed before the milestone they inform.
+
+### Adaptive locomotion: generated and learned gaits for damaged bodies
+
+Informs the creatures milestone that follows the physics-core swap and the character controller (bipeds, organic
+creatures, the player as a body).
+
+**Why.** Bodies should adapt to damage on their own (goals.md, "North star"). The hexapod's procedural free gait already
+does this for statically stable machines. Bipeds, organic creatures and a believable hobble need more, and procedural
+gaits read as mechanical on organic bodies.
+
+**Leads.** From a cursory look on 2026-09-30:
+- **UniMate**
+  - Sources: Mou et al., "One Unified Model to Animate Diverse Skeletons", https://arxiv.org/abs/2609.05415; code at
+    https://github.com/Friedrich-M/UniMate under MIT.
+  - What it is: text-to-motion for arbitrary skeleton topologies (bipeds, quadrupeds, birds, fish, insects, snakes),
+    zero-shot, with no per-skeleton retraining. It is a flow-matching diffusion transformer that also does
+    in-betweening and text-guided edits.
+  - Limits:
+    - Its output is kinematic (joint rotations over time), not a physics controller.
+    - It animates a given skeleton; it does not build one. Building skeletons is the art pipeline's auto-rigging track.
+    - It was trained on 13k clips from Mixamo, Objaverse-XL and Truebones Zoo, whose licences govern use in a
+      commercial game.
+- **Repertoire search** (Cully et al., "Robots that can adapt like animals", Nature 2015): thousands of gaits
+  precomputed offline (MAP-Elites), then searched in a few trials after damage. This is the owner's catalogue idea with
+  a published recipe.
+- **Morphology-agnostic learned policies** (shared modular policies, 2020; MetaMorph, 2022, and successors): one
+  physics-based controller for many bodies, zero-shot on new ones.
+
+**Questions:**
+1. Can a usable gait for a newly maimed body be produced in a second or two, or must gaits be precomputed? UniMate
+   claims real-time generation, but its motion is kinematic: our servos and IK must track it, and it knows nothing of
+   balance.
+2. **The catalogue.** For each entity, precompute the skeletons damage can produce (each limb lost or shortened).
+   Generate or search a gait for each one offline, in our deterministic sim. At run time, snap a damaged body to the
+   nearest entry, treating extra limbs as dead weight.
+   - How large is a catalogue per entity?
+   - How are topologies matched?
+   - How is a gait retargeted to the true proportions?
+3. **Determinism.** A generated motion is data, so it is safe in lockstep if it is precomputed, or generated once by the
+   host and sent as a command. A learned policy evaluated every tick must run in integer arithmetic (quantised
+   inference) to be bit-exact across machines; that fits the integer core.
+4. Which reads better as limping, hobbling and crawling, and which survives the integer core: a kinematic reference
+   tracked by our IK and servos, or a learned physics controller?
+5. The licences of the models and their datasets for a commercial game.
+
+**Output:** a report in the style of milestone 7's (`docs/research/`), with a recommendation and a prototype plan for
+the creatures milestone.
