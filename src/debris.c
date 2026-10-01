@@ -311,7 +311,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 		def.linearVelocity = b->v;
 		def.angularVelocity = b->omega;
 		def.gravityScale = b->gravityScale;
-		def.userData = bodyIndex;
+		def.body = bodyIndex;
 		lpGridRemove( w, bodyIndex );
 		b->id = lpPhys_CreateBody( w->phys, &def );
 		b->kind = lp_kindDebris;
@@ -401,7 +401,7 @@ static void lpLand( lpWorld* w, int bodyIndex )
 
 void lpStepGhosts( lpWorld* w, float timeStep )
 {
-	lpVec3 g = lpPhys_GetGravity( w->phys );
+	lpVec3 g = w->def.gravity;
 	int casts = 0;
 	float plan = (float)LP_GHOST_PLAN_TICKS * timeStep;
 

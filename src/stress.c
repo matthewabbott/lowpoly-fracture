@@ -172,7 +172,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	int n = body->pieces.count;
 	lpArray_Reserve( w->scratchLoads, n );
 	float weight = 0.0f;
-	float g = body->gravityScale * lpLength( lpPhys_GetGravity( w->phys ) );
+	float g = body->gravityScale * lpLength( w->def.gravity );
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
@@ -194,9 +194,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 			{
 				continue; // an anchored piece's load goes to the ground
 			}
-			// The normal points from A to B: the impulse pushes B along it and A against it
-			float sign = c->pieceIsA ? -1.0f : 1.0f;
-			lpVec3 force = lpMulSV( sign * c->impulse / w->lastTimeStep, c->normal );
+			lpVec3 force = lpMulSV( c->impulse / w->lastTimeStep, c->normal );
 			lpVec3 local = lpInvRotateVector( xf.q, force );
 			lpVec3 point = lpInvTransformWorldPoint( xf, c->point );
 			piece->stressLoad.f = lpAdd( piece->stressLoad.f, local );
@@ -1483,7 +1481,7 @@ static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
 static void lpRunStressChecks( lpWorld* w, bool settle )
 {
 	uint64_t ticks = lpGetTicks();
-	lpVec3 gravity = lpPhys_GetGravity( w->phys );
+	lpVec3 gravity = w->def.gravity;
 	int reserved = 0;
 	w->stressJobCount = 0;
 

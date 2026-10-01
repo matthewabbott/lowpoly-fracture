@@ -166,9 +166,6 @@ typedef struct lpWorldDef
 	int maxLinks;		   // live links; bodies with links are exempt from freezing and the debris budgets
 	int maxWheelCastsPerStep; // wheel suspension casts per step; a wheel not cast keeps its last contact
 	int maxFootCastsPerStep;  // rig foothold casts per step; a foot not cast lands where it was planned
-	// 1: the core reads physics results one step late, as it would from a GPU pipeline (an experiment, milestone 8;
-	// docs/roadmap.md has its verdict). 0 by default.
-	int physicsLag;
 } lpWorldDef;
 
 lpWorldDef lpDefaultWorldDef( void );

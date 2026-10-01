@@ -34,7 +34,7 @@ static void lpFreezeOrKill( lpWorld* w )
 	for ( int i = 0; i < moveCount; ++i ) // in body order, so this step's new candidates and the kill list are too
 	{
 		const lpPhysMove* e = moves + i;
-		int bodyIndex = e->userData;
+		int bodyIndex = e->body;
 		lpBody* b = w->bodies.data + bodyIndex;
 		if ( b->alive == false || b->kind != lp_kindDebris )
 		{
@@ -210,7 +210,7 @@ static void lpApplyPulls( lpWorld* w )
 		}
 		float mass = lpPhys_GetMass( w->phys, b->id );
 		float m = lpMinFloat( mass, pull.maxMass );
-		lpVec3 g = lpMulSV( b->gravityScale, lpPhys_GetGravity( w->phys ) );
+		lpVec3 g = lpMulSV( b->gravityScale, w->def.gravity );
 		lpVec3 force = lpSub( lpMulSV( m, accel ), lpMulSV( m, g ) );
 		lpPhys_ApplyForce( w->phys, b->id, force, point, true );
 		// A little angular damping so held things do not spin forever

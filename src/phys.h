@@ -2,10 +2,14 @@
 // The physics interface: every rigid-body operation the core uses, on opaque handles. src/phys_box3d.c implements it
 // on Box3D and is the only file that includes Box3D; the integer core (roadmap milestone 12) will be a second backend.
 //
-// Shapes carry a piece index and bodies a body index (their user data, -1 for none), and everything the backend
-// reports (contacts, hits, moves, query and cast results) comes back in those terms and in a total order of our own,
-// never the engine's traversal or report order (determinism rule 12). Report and query results live in the backend's
-// buffers until the next call of the same kind, so they are read on one thread; casts are safe from any thread.
+// Shapes carry a piece index and bodies a body index (-1 for none), and everything the backend reports (contacts,
+// hits, moves, query and cast results) comes back in those terms and in a total order of our own, never the engine's
+// traversal or report order (determinism rule 12).
+//
+// Threads: the hull operations (create, destroy, read, distance) are the only ones called from parallel jobs (fracture
+// jobs build hulls); everything else is called on the stepping thread, between steps. Report and query results live
+// in the backend's buffers until the next call of the same kind. Handles carry a generation: a handle to something
+// destroyed never matches a later one, so they may be kept and compared across steps.
 
 #pragma once
 
@@ -54,7 +58,8 @@ static const lpPhysFilter lp_physQueryAll = { 0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFFF
 
 // ---- the world ----
 
-// Called on the engine's worker threads when two shapes' bounds first overlap: false and the pair never collides
+// Called on the engine's worker threads when two shapes' bounds first overlap: false and the pair never collides.
+// A GPU backend cannot call back: milestone 12 turns the rule into data (collision classes), as for cast filters.
 typedef bool lpPhysPairFcn( int pieceA, int pieceB, void* context );
 
 typedef struct lpPhysDef
@@ -64,10 +69,6 @@ typedef struct lpPhysDef
 	float hitSpeed; // contacts that start at this approach speed or faster are reported as hits
 	lpPhysPairFcn* pairFilter; // for shapes created with customFilter
 	void* context;
-	// Milestone 8's experiment: every read (body state, contacts, joint loads and angles, hits, moves) returns the world
-	// as it was before the last step began, one step behind, as a core reading back a GPU step that is still running
-	// would. Casts and overlap queries see the present.
-	bool lag;
 } lpPhysDef;
 
 typedef struct lpPhysCounters
@@ -80,7 +81,6 @@ typedef struct lpPhysCounters
 lpPhys* lpPhys_Create( const lpPhysDef* def );
 void lpPhys_Destroy( lpPhys* p );
 void lpPhys_Step( lpPhys* p, float timeStep, int subStepCount );
-lpVec3 lpPhys_GetGravity( const lpPhys* p );
 lpPhysCounters lpPhys_GetCounters( const lpPhys* p );
 
 // ---- bodies ----
@@ -93,10 +93,10 @@ typedef struct lpPhysBodyDef
 	lpVec3 angularVelocity;
 	float gravityScale;
 	float sleepThreshold; // m/s; 0 keeps the engine's default
-	int userData;		  // the body's index, -1 for none
+	int body;			  // its index, -1 for none
 } lpPhysBodyDef;
 
-lpPhysBodyDef lpPhys_DefaultBodyDef( void ); // static at the origin, gravity scale 1, no user data
+lpPhysBodyDef lpPhys_DefaultBodyDef( void ); // static at the origin, gravity scale 1, no body index
 
 lpPhysBody lpPhys_CreateBody( lpPhys* p, const lpPhysBodyDef* def );
 void lpPhys_DestroyBody( lpPhys* p, lpPhysBody body ); // with its shapes and joints
@@ -154,7 +154,7 @@ typedef struct lpPhysShapeDef
 	float friction;
 	float restitution;
 	int material; // reported by casts
-	int userData; // the piece's index, -1 for none
+	int piece; // its index, -1 for none
 	lpPhysFilter filter;
 	bool hitEvents;
 	bool customFilter; // ask lpPhysDef.pairFilter
@@ -216,40 +216,40 @@ typedef struct lpPhysContact
 {
 	int piece;		  // the body's own piece
 	int other;		  // the piece it touches, -1 for a shape that is none
-	lpVec3 normal;	  // the engine's: from shape A to shape B
-	bool pieceIsA;	  // which end of the normal the piece is
+	lpVec3 normal;	  // unit: the way the contact pushes the piece
 	lpPos point;	  // world
 	float separation; // negative when overlapping
 	float impulse;	  // total normal impulse over the last step, N s
 } lpPhysContact;
 
-// A body's contact points, sorted by (piece, other); within a contact, the engine's point order
+// A body's contact points, sorted by (piece, other); within a contact, the engine's point order (a second backend
+// orders its own points, so it agrees with this one within tolerances, not bit for bit)
 int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** contacts );
 
 // A contact that began at hitSpeed or faster in the last step
 typedef struct lpPhysHit
 {
-	uint64_t pair;	  // ((lower piece + 1) << 32) | (higher piece + 1); 0 for a shape that is no piece
-	int pieceA;		  // -1 for none
+	uint64_t pair; // ((lower piece + 1) << 32) | (higher piece + 1); 0 for a shape that is no piece
+	int pieceA;	   // -1 for none
 	int pieceB;
-	float speed;	  // approach speed
+	float speed; // approach speed
 	lpPos point;
-	uint64_t contact; // for lpPhys_GetContactCentroid
 } lpPhysHit;
 
 // The last step's hits, sorted by pair, then speed (fastest first), then point, then report order (identical hits)
 int lpPhys_GetHits( lpPhys* p, const lpPhysHit** hits );
-// The mean of a contact's points; false if the contact is gone or has none
-bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point );
+// The mean of the points of the contact a hit began (hit: its index in lpPhys_GetHits' array, until the next step);
+// false if the contact is gone or has none
+bool lpPhys_GetContactCentroid( const lpPhys* p, int hit, lpPos* point );
 
 typedef struct lpPhysMove
 {
-	int userData; // the body's
+	int body; // its index
 	lpWorldTransform transform;
 	bool fellAsleep;
 } lpPhysMove;
 
-// The bodies the last step moved that carry user data, sorted by it
+// The bodies with a body index that the last step moved (or put to sleep), sorted by that index
 int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves );
 
 // ---- queries ----
@@ -267,7 +267,8 @@ typedef struct lpPhysCastHit
 	int material;
 } lpPhysCastHit;
 
-// Whether a cast hit counts (false: the cast passes through that shape)
+// Whether a cast hit counts (false: the cast passes through that shape). Called back from the cast, so on the CPU:
+// for a GPU backend these become data too (bodies to skip, start-inside hits ignored), milestone 12.
 typedef bool lpPhysCastAcceptFcn( int piece, float fraction, void* context );
 
 // The closest accepted hit; at equal fractions the lower piece wins, not the engine's traversal order. A NULL accept

@@ -717,5 +717,5 @@ experiment sits behind a flag (off by default).
 - The new baseline (best of 3, commit e3c3849), step avg ms at 1 / 8 workers: walls 0.65 / 0.42, town 3.28 / 1.87,
   pile 2.29 / 0.90, lumber 0.18 / 0.16, tower 5.00 / 2.47, ruins 0.13 / 0.11, yard 0.14 / 0.13, keep 6.78 / 4.79,
   barrage 10.79 / 5.29, siege 19.08 / 10.46, track 0.14 / 0.15, mech 0.09 / 0.11.
-- The lag experiment's capture (every body, contact and joint, each step) costs the town's physics 48%: an
-  experiment's cost, not a pipeline's. Off, nothing changes.
+- The lag experiment's capture (every body, contact and joint, each step) cost the town's physics 48%: an
+  experiment's cost, not a pipeline's. Off, it changed nothing; the simplicity pass removed it after its verdict.

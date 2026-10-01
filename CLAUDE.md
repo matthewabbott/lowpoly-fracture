@@ -21,7 +21,7 @@ a track only when a decision needs its detail.
 | `include/lpf/lpmath.h`, `src/lpmath.c` | vector maths (`lpVec3`, `lpQuat`, `lpTransform`, `lpPos`, ...), Box3D's own taken over with each operation kept; the trig is hand coded for determinism |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
-| `src/phys.h`, `src/phys_box3d.c` | the physics interface: every rigid-body operation the core uses (bodies, hull shapes, joints and motors, contacts, hits, moves, overlap and casts; quickhull and GJK) on opaque handles, reports in piece and body indices and in our order; the Box3D backend is the only file that sees Box3D's headers (the build enforces it); the lag experiment (`lpWorldDef.physicsLag`) |
+| `src/phys.h`, `src/phys_box3d.c` | the physics interface: every rigid-body operation the core uses (bodies, hull shapes, joints and motors, contacts, hits, moves, overlap and casts; quickhull and GJK) on opaque handles, reports in piece and body indices and in our order; the Box3D backend is the only file that sees Box3D's headers (the build enforces it) |
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
 | `src/tasks.h/.c` | thread pool with a blocking parallel-for (fracture jobs) |

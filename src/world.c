@@ -317,7 +317,6 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	pd.hitSpeed = lpMinFloat( def->hitSpeed, def->wakeSpeed ); // hits start at the wake speed (waking fragile rubble)
 	pd.pairFilter = lpPairFilter;
 	pd.context = w;
-	pd.lag = def->physicsLag != 0;
 	w->phys = lpPhys_Create( &pd );
 	w->tasks = lpTaskPool_Create( def->workerCount );
 	lpGridInit( w );
@@ -410,7 +409,7 @@ static lpPhysShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material, const lp
 	def.friction = m->friction;
 	def.restitution = m->restitution;
 	def.material = material;
-	def.userData = pieceIndex;
+	def.piece = pieceIndex;
 	if ( body->kind == lp_kindStructure )
 	{
 		def.filter = ( lpPhysFilter ){ LP_CAT_STATIC, LP_CAT_ALL };
@@ -668,7 +667,7 @@ int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t
 	def.transform = xf;
 	def.linearVelocity = v;
 	def.angularVelocity = omega;
-	def.userData = index;
+	def.body = index;
 	if ( tier == lp_tierLight )
 	{
 		def.sleepThreshold = 0.3f; // light debris settles fast and freezes early

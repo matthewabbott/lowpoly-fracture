@@ -984,7 +984,7 @@ void lpCollectHits( lpWorld* w )
 		lpPos point = e->point;
 		if ( crush > 0.0f )
 		{
-			lpPhys_GetContactCentroid( w->phys, e->contact, &point );
+			lpPhys_GetContactCentroid( w->phys, n, &point );
 		}
 		if ( energy < 100.0f )
 		{

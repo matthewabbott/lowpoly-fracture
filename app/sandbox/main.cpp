@@ -71,7 +71,6 @@ struct Options
 {
 	int scene = lp_sceneWall;
 	int workers = 4;
-	int physicsLag = 0; // --physics-lag 1: milestone 8's experiment
 	int frames = 0; // 0 = interactive
 	std::string screenshot;
 	std::string script;
@@ -244,7 +243,6 @@ void LoadScene( int scene )
 	ld.fragmentScale = app.opt.fragmentScale;
 	ld.maxFullDebris = app.opt.maxDebris;
 	ld.workerCount = app.opt.workers;
-	ld.physicsLag = app.opt.physicsLag;
 	ld.debugLog = getenv( "LPF_DEBUG" ) != nullptr;
 	app.world = lpCreateWorld( &ld );
 	lpBuildScene( app.world, scene );
@@ -1386,8 +1384,6 @@ int main( int argc, char** argv )
 			o.scene = lpSceneFromName( v );
 		else if ( strcmp( a, "--workers" ) == 0 )
 			o.workers = atoi( v );
-		else if ( strcmp( a, "--physics-lag" ) == 0 )
-			o.physicsLag = atoi( v );
 		else if ( strcmp( a, "--input-delay" ) == 0 )
 			o.inputDelay = atoi( v ) < 0 ? 0 : atoi( v );
 		else if ( strcmp( a, "--frames" ) == 0 )
@@ -1433,7 +1429,7 @@ int main( int argc, char** argv )
 			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n"
-					"               [--input-delay ticks] [--physics-lag 0|1]\n" );
+					"               [--input-delay ticks]\n" );
 			return 1;
 		}
 		if ( takes )

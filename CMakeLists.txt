@@ -58,7 +58,7 @@ endif()
 # Warnings for our own targets
 function(lpf_warnings target)
 	if(MSVC AND NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
-		target_compile_options(${target} PRIVATE /W4 /wd4201)
+		target_compile_options(${target} PRIVATE /W4 /wd4201 /wd4100) # unused parameters, as -Wno-unused-parameter
 		if(LPF_WARNINGS_AS_ERRORS)
 			target_compile_options(${target} PRIVATE /WX)
 		endif()

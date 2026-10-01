@@ -394,7 +394,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 	lpVec3 up = lpVec3_zero;
 
 	// Velocity at the end of the step without the tyres: gravity and the springs
-	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, lpPhys_GetGravity( w->phys ) );
+	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, w->def.gravity );
 	lpVec3 omega = omega0;
 	for ( int k = 0; k < count; ++k )
 	{
@@ -549,7 +549,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		lpRecheckGround( w, wh, l->force );
 		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
 		lpBody* chassis = w->bodies.data + bodyIndex;
-		float weight = wh->sprungMass * lpLength( lpPhys_GetGravity( w->phys ) );
+		float weight = wh->sprungMass * lpLength( w->def.gravity );
 		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * weight && w->tick >= chassis->hitCheckTick + 10 )
 		{
 			chassis->hitCheckTick = w->tick;

@@ -355,7 +355,7 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
 
    **Verdict (2026-10-01).** Built as a capture as each step begins (bodies, contacts, joints, the last step's hits
    and moves); casts and overlap queries stay live. Run with `lpf_test --lag`, `lpf_bench --physics-lag 1`,
-   `sandbox --physics-lag 1`. Fracture, wakes, ghosts, debris and most stress checks hold: the poly, fracture,
+   `sandbox --physics-lag 1` (commit 0b013bd; the simplicity pass removed the code once the verdict was in). Fracture, wakes, ghosts, debris and most stress checks hold: the poly, fracture,
    world and debris suites pass, and 99 of the 109 stress, link, vehicle, system and rig tests. What breaks, each found
    by reading one kind of result live again:
    - **The servos** (the kit standing still, walking straight, losing legs, landing whole): a motor driven toward its
@@ -375,7 +375,29 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
    in a tick comes from one snapshot. The rest of the core takes a step of lag as it is. The capture itself is the
    experiment's cost, not a pipeline's (the town's physics +48%); off, the flag changes nothing (hashes identical).
 6. **The simplicity pass** (standing practice): an independent reviewer (the Codex or Kimi reviewer, or Fable) reads
-   the milestone's diff and the seam; proposals adjudicated as in milestone 9.
+   the milestone's diff and the seam; proposals adjudicated as in milestone 9. **Done** with Fable and GPT-5.6 Sol
+   (the Codex reviewer; the Kimi reviewer could not run: its CLI wants a login). Neither found a determinism or
+   lifetime bug. Taken, hash-neutral (every rung `same`, the solver's too; ASan and clang clean), 368 lines fewer:
+   - the lag experiment's code removed (its verdict is above);
+   - gravity read from `lpWorldDef` instead of a backend call;
+   - contact normals given as the push on the body's own piece, so Box3D's A-to-B convention leaves the seam
+     (`pieceIsA` gone; the negation is exact);
+   - the contact sort's engine-index tie and the overlap query's dedupe removed (neither can decide anything: one
+     shape per piece, one contact per pair of shapes; asserted instead);
+   - `userData` renamed `body` and `piece`; a hit's contact centroid asked for by the hit's index, the engine's token
+     kept in the backend;
+   - MSVC ignores unused parameters as gcc and clang already did (28 `(void)p;` gone);
+   - asserts on the point arrays and on the move sort's one-move-per-body premise;
+   - `phys.h` states the thread contract (only the hull operations run in parallel jobs), that handles are
+     generation-checked, and what a second backend can and cannot match bit for bit;
+   - a configure-time scan rejects a Box3D include by any path outside the backend (the include path alone missed
+     relative paths).
+
+   Not taken: casting point arrays across the boundary instead of copying them (C's aliasing rules; the copies cost
+   nothing beside quickhull); sorting the points within a contact (a hash change for cross-backend bit-identity the
+   outcome catalogue does not ask for). Moved to later milestones: collision classes and cast filters as data, a
+   backend switch per world, and one snapshot per tick with buffered commands (milestone 12); quickhull and GJK into a
+   geometry module of our own (milestone 11, with exact fracture).
 
 Exit: hash-neutral but for steps 4 and 5; no Box3D include outside `src/phys_box3d.c` (the lint passes); the 14-leg CI
 green; the lag verdict recorded here.
@@ -448,7 +470,8 @@ Fail fast before the integer core is built.
 - **An integer toy** on the CPU (about 1,000 lines: boxes, SAT, the block-scaled soft step, a joint, sleep): does a
   stack stand, does a rubble pile settle, how far from float are the results (red team R15)?
 - **Exact integer fracture geometry** (L2): integer sites and bisector planes, exact classification, hulls from exact
-  topology; removes the plane-shift hack and every tolerance flip in fracture.
+  topology; removes the plane-shift hack and every tolerance flip in fracture. Quickhull and GJK, physics-backend
+  services since milestone 8 (`lpPhys_CreateHull`, `lpPhys_HullDistance`), move into a geometry module of our own.
 - **The floor GPU:** E11's binaries on a GTX 1650 or 1060-class box (the integer multiply on Pascal), and on an AMD GPU
   or a Steam Deck when one is to hand.
 
@@ -464,6 +487,14 @@ with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels
 design:
 - it can step a chosen set of causal units in isolation (repair and scoped rollback re-simulate only those);
 - it keeps a short ring buffer of each changed unit's state for the last few ticks, written incrementally.
+
+And from milestone 8 (the lag verdict and the simplicity pass), for a backend that runs on the GPU:
+- the servos and the tyres run inside the step, as the core's own constraints (a motor with a position target, a
+  wheel constraint), not as core logic reading results back;
+- every read in a tick comes from one snapshot, and the core's writes are commands the step applies (a decision on
+  the physics state, such as freezing a body that is still asleep, is checked when it is applied);
+- collision filtering and cast filters are data (collision classes, bodies to skip), not callbacks into the core;
+- the seam gains a backend switch per world (today `phys_box3d.c` defines every `lpPhys_` symbol).
 
 Exit: the catalogue passes with tolerances on the integer core; the twin at 1 worker within 2.5 times Box3D (1.5 with
 AVX2); identical hashes across the CI matrix.
