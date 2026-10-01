@@ -964,17 +964,47 @@ int lpCompareBodyRef( const void* a, const void* b )
 	return ( x->generation > y->generation ) - ( x->generation < y->generation );
 }
 
-// Pieces whose shapes overlap the box, sorted and unique (query order must not leak into results).
+// A piece's local bounds carried into the world by its body's transform (still a box around the piece)
+static lpAABB lpPieceWorldBounds( lpWorldTransform xf, const lpShape* shape )
+{
+	lpVec3 e = lpAABB_Extents( shape->bounds );
+	lpVec3 x = lpAbs( lpRotateVector( xf.q, (lpVec3){ e.x, 0.0f, 0.0f } ) );
+	lpVec3 y = lpAbs( lpRotateVector( xf.q, (lpVec3){ 0.0f, e.y, 0.0f } ) );
+	lpVec3 z = lpAbs( lpRotateVector( xf.q, (lpVec3){ 0.0f, 0.0f, e.z } ) );
+	lpVec3 extent = lpAdd( lpAdd( x, y ), z );
+	lpPos center = lpTransformWorldPoint( xf, lpAABB_Center( shape->bounds ) );
+	lpAABB out = { lpSub( center, extent ), lpAdd( center, extent ) };
+	return out;
+}
+
+// Pieces whose bounds overlap the box, sorted and unique. The physics query gives the candidates (by its own, fattened
+// bounds); each is then tested with its own bounds in its body's frame, so the answer follows from our state alone,
+// not from the engine's margins or refit history (query order must not leak into results either).
 void lpQueryPieces( lpWorld* w, lpAABB box )
 {
 	const int* pieces;
 	int count = lpPhys_OverlapBox( w->phys, box, lp_physQueryAll, &pieces );
 	lpArray_Reserve( w->scratchPieces, count );
-	if ( count > 0 )
+	int kept = 0;
+	int lastBody = -1;
+	lpWorldTransform xf = lpTransform_identity;
+	for ( int i = 0; i < count; ++i )
 	{
-		memcpy( w->scratchPieces.data, pieces, (size_t)count * sizeof( int ) );
+		const lpPiece* p = w->pieces.data + pieces[i];
+		if ( p->body != lastBody )
+		{
+			lastBody = p->body;
+			xf = lpGetTransform( w, w->bodies.data + p->body );
+		}
+		lpAABB b = lpPieceWorldBounds( xf, p->shape );
+		if ( b.upperBound.x < box.lowerBound.x || b.lowerBound.x > box.upperBound.x || b.upperBound.y < box.lowerBound.y ||
+			 b.lowerBound.y > box.upperBound.y || b.upperBound.z < box.lowerBound.z || b.lowerBound.z > box.upperBound.z )
+		{
+			continue;
+		}
+		w->scratchPieces.data[kept++] = pieces[i];
 	}
-	w->scratchPieces.count = count;
+	w->scratchPieces.count = kept;
 }
 
 void lpWakeRubble( lpWorld* w, int bodyIndex )
