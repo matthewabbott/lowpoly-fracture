@@ -15,6 +15,11 @@
   this getter, and motorised hinges read their drive from it. (The getter still writes `perpAxisX/Y`, which
   `b3PrepareRevoluteJoint` recomputes anyway.)
 
+- `scheduler.c`, `b3SchedulerExecuteOne`: `b3FpGuard()` before each task puts back a floating-point control word
+  that flushes subnormals or changes rounding (MXCSR on x86, FPCR on ARM64), as our own workers do (`lpFpGuard`,
+  determinism rule 15). Scheduler threads inherit their creator's control word on POSIX, and milestone 7's experiment
+  E9 showed flush-to-zero changes the stress solver's results. Drop it if upstream ever exposes a per-task hook.
+
 ## Known issues at this commit (found in a code audit; not patched, avoided instead)
 
 - `solver.c:443`: CCD calls `world->preSolveFcn` without a NULL check. Never enable `enablePreSolveEvents` on a

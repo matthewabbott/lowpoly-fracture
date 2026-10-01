@@ -200,6 +200,7 @@ static int lpAllocLink( lpWorld* w )
 
 int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 {
+	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	if ( def->type < 0 || def->type >= lp_linkTypeCount || def->type == lp_linkWheel || def->bodyA == def->bodyB ||
 		 w->linkCount >= w->def.maxLinks )
 	{

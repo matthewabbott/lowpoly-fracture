@@ -12,6 +12,51 @@
 #include <stdio.h>
 #include <string.h>
 
+// lowpoly-fracture patch (PATCHES.md): every task runs with the deterministic floating-point control word (round to
+// nearest, no flush-to-zero, no denormals-are-zero). Worker threads inherit their creator's on POSIX, so a library
+// that changed it on the main thread before the world was made would change this engine's results.
+#if defined( _M_X64 ) || defined( __x86_64__ ) || defined( _M_IX86 ) || defined( __i386__ )
+#include <xmmintrin.h>
+static void b3FpGuard( void )
+{
+	unsigned int csr = _mm_getcsr();
+	if ( ( csr & 0xE040u ) != 0 )
+	{
+		_mm_setcsr( csr & ~0xE040u );
+	}
+}
+#elif defined( _M_ARM64 ) || defined( __aarch64__ )
+#if defined( _MSC_VER ) && !defined( __clang__ )
+#include <intrin.h>
+#ifndef ARM64_FPCR
+#define ARM64_FPCR ARM64_SYSREG( 3, 3, 4, 4, 0 )
+#endif
+static void b3FpGuard( void )
+{
+	unsigned long long fpcr = (unsigned long long)_ReadStatusReg( ARM64_FPCR );
+	if ( ( fpcr & 0x01D80003ull ) != 0 )
+	{
+		_WriteStatusReg( ARM64_FPCR, (__int64)( fpcr & ~0x01D80003ull ) );
+	}
+}
+#else
+static void b3FpGuard( void )
+{
+	unsigned long long fpcr;
+	__asm__ volatile( "mrs %0, fpcr" : "=r"( fpcr ) );
+	if ( ( fpcr & 0x01D80003ull ) != 0 )
+	{
+		fpcr &= ~0x01D80003ull;
+		__asm__ volatile( "msr fpcr, %0" : : "r"( fpcr ) );
+	}
+}
+#endif
+#else
+static void b3FpGuard( void )
+{
+}
+#endif
+
 enum b3SchedulerTaskStatus
 {
 	b3_schedulerFree = 0,
@@ -69,6 +114,7 @@ static bool b3SchedulerExecuteOne( b3Scheduler* scheduler )
 			continue;
 		}
 
+		b3FpGuard(); // lowpoly-fracture patch
 		task->callback( task->taskContext );
 
 		b3AtomicStoreInt( &task->status, b3_schedulerComplete );

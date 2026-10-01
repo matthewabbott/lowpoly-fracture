@@ -267,6 +267,7 @@ b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb )
 
 int lpCreateRig( lpWorld* w, const lpRigDef* def )
 {
+	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	if ( def->body < 0 || def->body >= w->bodies.count || def->limbs == NULL || def->limbCount < 1 ||
 		 def->limbCount > LP_MAX_RIG_LIMBS )
 	{

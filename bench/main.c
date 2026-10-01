@@ -52,6 +52,7 @@ typedef struct Result
 	int stressIterations, stressBreaks, stressSolves, stressJudged, stressWaiting, stressReduced, stressAudits;
 	int maxContacts, maxAwakeContacts, maxShapes;
 	double sumAwakeContacts;
+	int over16, over33; // ticks over a 60 Hz and a 30 Hz frame: the spikes a lockstep peer must absorb
 } Result;
 
 // Stress budgets from --stress-work (0: the world's defaults)
@@ -60,6 +61,9 @@ static int s_stressWork, s_stressStructureWork;
 // --hash-log path: every tick's hashes go to path.w<workers>.txt (cross-platform checks diff them for the first
 // differing tick)
 static const char* s_hashLog;
+
+// --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
+static const char* s_tickLog;
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
@@ -100,6 +104,18 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		{
 			fprintf( hashLog, "load %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
 					 (unsigned long long)lpWorld_HashStress( world ) );
+		}
+	}
+
+	FILE* tickLog = NULL;
+	if ( s_tickLog != NULL )
+	{
+		char path[512];
+		snprintf( path, sizeof( path ), "%s.w%d.txt", s_tickLog, workers );
+		tickLog = fopen( path, "w" );
+		if ( tickLog != NULL )
+		{
+			fprintf( tickLog, "tick stepMs fractureMs physicsMs stressMs pieces awakeDebris\n" );
 		}
 	}
 
@@ -154,15 +170,26 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.maxAwakeContacts = counters.awakeContactCount > r.maxAwakeContacts ? counters.awakeContactCount : r.maxAwakeContacts;
 		r.maxShapes = counters.shapeCount > r.maxShapes ? counters.shapeCount : r.maxShapes;
 		r.sumAwakeContacts += counters.awakeContactCount;
+		r.over16 += total[tick] > 1000.0f / 60.0f ? 1 : 0;
+		r.over33 += total[tick] > 1000.0f / 30.0f ? 1 : 0;
 		if ( hashLog != NULL )
 		{
 			fprintf( hashLog, "%d %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
 					 (unsigned long long)lpWorld_HashStress( world ) );
 		}
+		if ( tickLog != NULL )
+		{
+			fprintf( tickLog, "%d %.3f %.3f %.3f %.3f %d %d\n", tick, (double)total[tick], (double)st.fractureMs,
+					 (double)st.physicsMs, (double)st.stressMs, st.pieceCount, st.awakeDebris );
+		}
 	}
 	if ( hashLog != NULL )
 	{
 		fclose( hashLog );
+	}
+	if ( tickLog != NULL )
+	{
+		fclose( tickLog );
 	}
 	r.sumAwakeContacts /= (double)samples;
 	r.hash = lpWorld_Hash( world );
@@ -251,11 +278,16 @@ int main( int argc, char** argv )
 			s_hashLog = v;
 			++i;
 		}
+		else if ( strcmp( a, "--tick-log" ) == 0 )
+		{
+			s_tickLog = v;
+			++i;
+		}
 		else
 		{
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
-					"                 [--hash-log path]\n" );
+					"                 [--hash-log path] [--tick-log path]\n" );
 			return 1;
 		}
 	}
@@ -315,13 +347,13 @@ int main( int argc, char** argv )
 						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, \"stressJudged\": %d, "
 						 "\"stressReduced\": %d, \"stressAudits\": %d, "
 						 "\"stressWaits\": %d, \"loadMs\": %.1f, \"settleMs\": %.1f, \"settleIterations\": %d, \"pieces\": %d, "
-						 "\"bonds\": %d, \"hash\": \"%016llx\", \"solverHash\": \"%016llx\"}%s\n",
+						 "\"bonds\": %d, \"over16ms\": %d, \"over33ms\": %d, \"hash\": \"%016llx\", \"solverHash\": \"%016llx\"}%s\n",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
 						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
 						 r.stressSolves, r.stressJudged, r.stressReduced, r.stressAudits, r.stressWaiting, (double)r.loadMs,
-						 (double)r.settleMs, r.settleIterations, r.pieces, r.bonds,
+						 (double)r.settleMs, r.settleIterations, r.pieces, r.bonds, r.over16, r.over33,
 						 (unsigned long long)r.hash, (unsigned long long)r.solverHash, w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );

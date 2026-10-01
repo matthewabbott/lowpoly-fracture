@@ -37,7 +37,7 @@ void lpGridFree( lpWorld* w )
 
 static int lpGridCoord( float x )
 {
-	return (int)floorf( x * ( 1.0f / LP_GRID_CELL ) );
+	return lpFloatToInt( floorf( x * ( 1.0f / LP_GRID_CELL ) ) ); // a body flung far away stays in range
 }
 
 static int lpGridSlotOfCell( const lpWorld* w, int ix, int iz )

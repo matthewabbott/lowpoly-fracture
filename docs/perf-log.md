@@ -680,3 +680,19 @@ within 1.5 fragment sizes (0.45 m) of the hit, and severs it.
 - Bench: every other rung keeps its simulation and solver hashes (the track's too, whose car solves its stress). The
   mech rung takes new ones: 85 pieces, 20 contacts, 0.086 ms a step on one worker and 0.107 on eight (0.071 and 0.091
   before; the machine ran 10 to 20% slow on every rung today). Only its entry in the baseline was measured again.
+
+## 2026-10-01 milestone 7's close: determinism hardening
+
+What changed: portable maths only (`lpCbrt` and Box3D's trig in the core and the scenes), physics reports acted on in
+our own order (freeze candidates, hit events, contact loads, cast ties clipped one float past the best hit), fuller
+hashes (landing plans, detonators' armed flags, wheel spin, limbs' depth and tip cache), the floating-point guard per
+step, per task (ours and Box3D's scheduler) and at the float-computing API calls, the self-test at world creation, two
+random draws out of initializers, clamped float-to-int conversions.
+- Merging the cross-platform CI branch first was hash-neutral (`bench.ps1 -StrictSolver`: every rung `same`).
+- Then every simulation and solver hash changed, as intended; the baseline is regenerated (best of 3).
+- Step times against the old baseline (best of 3, ms, 1 worker / 8 workers): walls 0.63 / 0.40 (-5% / -8%), town
+  3.35 / 1.88 (+3% / -2%), keep 6.29 / 4.64 (+3% / +2%), barrage 9.62 / 4.87 (+1% / +8%), siege 16.91 / 9.28 (-1% /
+  +1%), track and mech within 5%. The rest moved with what came down (destruction is chaotic: lumber -38% contacts,
+  tower +20%, pile +3% and 10 to 15% slower), not with cost per piece. The guard and the sorts cost nothing measurable.
+- New bench outputs: `--tick-log path` (per-tick step, fracture, physics and stress times) and `over16ms` /
+  `over33ms` per run in the JSON: the spikes a lockstep peer must absorb.

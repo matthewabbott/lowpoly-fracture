@@ -106,7 +106,7 @@ What it asks of the engine:
 - rigs that adapt their locomotion and attacks to whatever is left (done for a hexapod; bipeds and humans next);
 - vital parts, pools and channels as the body's systems (a reactor, a reservoir, a computer in the mech today);
 - knockout: an impulse or acceleration at a vital that impairs control for a while (not built);
-- dents that restrict joints (milestone 10);
+- dents that restrict joints (milestone 20);
 - the player as one of these bodies too.
 
 ### First-person co-op in destructible buildings
@@ -167,10 +167,10 @@ Set by the owner on 2026-09-29, for milestone 7's choice of a multiplayer model:
 | rigs that adapt to damage (lost legs, pegs, weak and limp legs, crawling, strikes, grabs, bones) | impairment, racing | done for the hexapod; bipeds and characters not |
 | vital points and knockout | impairment | vitals via part systems; knockout not |
 | gentle contact events (jostle, tilt, tumble) and reactions | hauling | detonators done; the rest not |
-| dents (crumple, joints restricted by crumpled armour) | racing, impairment | milestone 10 |
+| dents (crumple, joints restricted by crumpled armour) | racing, impairment | milestone 20 |
 | a character controller (the player as a destructible body) | all | not started |
-| large maps: zones, far events still on time | racing, hauling | milestone 12 |
-| multiplayer | all | milestone 13 (its model chosen in milestone 7) |
+| large maps: zones, far events still on time | racing, hauling | milestone 18 |
+| multiplayer | all | lockstep, chosen in milestone 7; a first co-op in milestone 10, networking in 16 |
 | fire, smoke, flammability | hauling, racing | art pass and later |
 
 ## Outcomes to pin (first draft)

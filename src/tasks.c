@@ -48,6 +48,7 @@ struct lpTaskPool
 	int finished;
 	uint64_t batch;
 	bool quit;
+	int fpRepairs; // guarded by mutex
 };
 
 // Take items until the batch is exhausted. Called with the mutex held; returns with it held.
@@ -58,6 +59,7 @@ static void lpDrain( lpTaskPool* pool )
 		int index = pool->next++;
 		lpTaskFcn* fcn = pool->fcn;
 		void* context = pool->context;
+		pool->fpRepairs += lpFpGuard() ? 1 : 0; // every thread runs tasks with the deterministic control word
 		lpMutexUnlock( &pool->mutex );
 		fcn( index, context );
 		lpMutexLock( &pool->mutex );
@@ -173,3 +175,14 @@ void lpTaskPool_ParallelFor( lpTaskPool* pool, int count, lpTaskFcn* fcn, void* 
 	lpMutexUnlock( &pool->mutex );
 }
 
+int lpTaskPool_FpRepairs( lpTaskPool* pool )
+{
+	if ( pool == NULL )
+	{
+		return 0;
+	}
+	lpMutexLock( &pool->mutex );
+	int repairs = pool->fpRepairs;
+	lpMutexUnlock( &pool->mutex );
+	return repairs;
+}

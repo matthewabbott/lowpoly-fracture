@@ -138,6 +138,7 @@ static void lpPoseWheel( lpWorld* w, lpWheel* wh, b3WorldTransform xf, b3BodyId 
 
 int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 {
+	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	if ( def->body < 0 || def->body >= w->bodies.count || def->wheels == NULL || def->wheelCount < 1 ||
 		 def->wheelCount > LP_MAX_VEHICLE_WHEELS || w->linkCount + def->wheelCount > w->def.maxLinks )
 	{

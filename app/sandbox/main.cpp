@@ -82,6 +82,7 @@ struct Options
 	float renderScale = 1.0f;
 	bool vsync = true;
 	bool hideUi = false;
+	int inputDelay = 0; // ticks a walk or drive event waits before it applies: a feel test of lockstep's input delay
 	bool follow = false; // the camera chases the vehicle the drive events steer, or the rig the walk events walk (else the
 						 // scene's first rig)
 	bool haveCamera = false;
@@ -547,15 +548,15 @@ void ApplyEvent( const Event& e )
 void RecordAndQueue( const Event& e )
 {
 	app.live.push_back( e );
+	// %.9g everywhere: a float's exact value, so a recording replays the session it came from
 	if ( app.recordFile != nullptr && e.tool == kWalk )
 	{
-		fprintf( app.recordFile, "%lld walk %d %.6f %.6f %.6f %.6f\n", (long long)e.tick, e.piece, e.walk.forward, e.walk.strafe,
+		fprintf( app.recordFile, "%lld walk %d %.9g %.9g %.9g %.9g\n", (long long)e.tick, e.piece, e.walk.forward, e.walk.strafe,
 				 e.walk.turn, e.walk.crouch );
 		fflush( app.recordFile );
 	}
 	else if ( app.recordFile != nullptr && e.tool == kReach )
 	{
-		// %.9g: a float's exact value, so the replay strikes where this run did
 		fprintf( app.recordFile, "%lld reach %d %d %d %.9g %.9g %.9g\n", (long long)e.tick, e.piece, e.limb, e.active ? 1 : 0,
 				 e.origin.x, e.origin.y, e.origin.z );
 		fflush( app.recordFile );
@@ -567,13 +568,13 @@ void RecordAndQueue( const Event& e )
 	}
 	else if ( app.recordFile != nullptr && e.tool == kDrive )
 	{
-		fprintf( app.recordFile, "%lld drive %d %.6f %.6f %.6f %d\n", (long long)e.tick, e.piece, e.control.throttle, e.control.brake,
+		fprintf( app.recordFile, "%lld drive %d %.9g %.9g %.9g %d\n", (long long)e.tick, e.piece, e.control.throttle, e.control.brake,
 				 e.control.steer, e.control.handbrake ? 1 : 0 );
 		fflush( app.recordFile );
 	}
 	else if ( app.recordFile != nullptr )
 	{
-		fprintf( app.recordFile, "%lld %s %.6f %.6f %.6f %.6f %.6f %.6f %d\n", (long long)e.tick, ToolToken( e.tool ), e.origin.x,
+		fprintf( app.recordFile, "%lld %s %.9g %.9g %.9g %.9g %.9g %.9g %d\n", (long long)e.tick, ToolToken( e.tool ), e.origin.x,
 				 e.origin.y, e.origin.z, e.dir.x, e.dir.y, e.dir.z, e.piece );
 		fflush( app.recordFile );
 	}
@@ -583,7 +584,7 @@ void RecordAndQueue( const Event& e )
 void QueueDrive( const lpVehicleControl& control )
 {
 	Event e = {};
-	e.tick = app.tick;
+	e.tick = app.tick + app.opt.inputDelay;
 	e.tool = kDrive;
 	e.piece = app.driving;
 	e.control = control;
@@ -595,7 +596,7 @@ void QueueDrive( const lpVehicleControl& control )
 void QueueWalk( const lpRigControl& control )
 {
 	Event e = {};
-	e.tick = app.tick;
+	e.tick = app.tick + app.opt.inputDelay;
 	e.tool = kWalk;
 	e.piece = app.walking;
 	e.walk = control;
@@ -757,11 +758,20 @@ void StepSimulation()
 		ApplyEvent( app.script[app.nextScript] );
 		app.nextScript += 1;
 	}
-	for ( const Event& e : app.live )
+	// Live events whose tick has come, in input order; delayed ones (--input-delay) wait
+	size_t waiting = 0;
+	for ( size_t i = 0; i < app.live.size(); ++i )
 	{
-		ApplyEvent( e );
+		if ( app.live[i].tick <= app.tick )
+		{
+			ApplyEvent( app.live[i] );
+		}
+		else
+		{
+			app.live[waiting++] = app.live[i];
+		}
 	}
-	app.live.clear();
+	app.live.resize( waiting );
 
 	if ( app.opt.bombard > 0 )
 	{
@@ -1382,6 +1392,8 @@ int main( int argc, char** argv )
 			o.scene = lpSceneFromName( v );
 		else if ( strcmp( a, "--workers" ) == 0 )
 			o.workers = atoi( v );
+		else if ( strcmp( a, "--input-delay" ) == 0 )
+			o.inputDelay = atoi( v ) < 0 ? 0 : atoi( v );
 		else if ( strcmp( a, "--frames" ) == 0 )
 			o.frames = atoi( v );
 		else if ( strcmp( a, "--screenshot" ) == 0 )
@@ -1424,7 +1436,8 @@ int main( int argc, char** argv )
 		{
 			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
-					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n" );
+					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n"
+					"               [--input-delay ticks]\n" );
 			return 1;
 		}
 		if ( takes )

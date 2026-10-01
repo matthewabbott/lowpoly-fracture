@@ -5,6 +5,7 @@
 
 #include "lpf/lpf.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -22,6 +23,34 @@ void lpAssertFailed( const char* condition, const char* file, int line );
 // Cube root from +, -, * and / only (correctly rounded on every IEEE target). The C library's cbrtf is not correctly
 // rounded and differs between libms, so simulation and scene code never call it (determinism rule 12).
 float lpCbrt( float x );
+
+// The floating-point control word simulation threads run with: round to nearest, no flush-to-zero, no
+// denormals-are-zero (determinism rule 15). A library or driver that changed it would change results; lpFpGuard puts
+// it back and returns true when it had to. About 2 ns: called at step entry, per task in our workers and Box3D's
+// (a patch), and at the API calls that compute in float between steps.
+bool lpFpGuard( void );
+
+// Test hook: turn flush-to-zero and denormals-are-zero on for the calling thread, as a misbehaving library would
+void lpFpBreakForTest( void );
+
+// Float to int with the value clamped into int's range first: an out-of-range conversion is undefined in C and gives
+// different answers on x86 (INT_MIN) and ARM (saturation), and traps in WebAssembly (determinism rule 16). NaN gives 0.
+static inline int lpFloatToInt( float x )
+{
+	if ( x != x )
+	{
+		return 0;
+	}
+	if ( x >= 2147483520.0f ) // the largest float below 2^31
+	{
+		return 2147483520;
+	}
+	if ( x <= -2147483648.0f )
+	{
+		return INT_MIN;
+	}
+	return (int)x;
+}
 
 // The next float above x (x >= 0). Cast callbacks clip the cast here rather than at their best fraction, so a hit
 // at exactly the same fraction is still reported and the tie is broken by piece index, not by the physics engine's

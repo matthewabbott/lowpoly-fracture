@@ -17,7 +17,7 @@ a track only when a decision needs its detail.
 | path | what it is |
 |---|---|
 | `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, blows, stats, queries |
-| `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64` |
+| `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
@@ -62,10 +62,14 @@ and look at the PNG.
 
 ## Rules of the house
 
-- Determinism: no FMA or fast-math, no C-library trig in simulation code, PCG32 seeded from state, index-order
-  iteration, total-order sorts, pure parallel jobs, nothing reads the camera or the clock. A refactor that is meant to
-  be behaviour-preserving must keep the `lpf_bench` hashes identical (`tools/bench.ps1` checks them; `-StrictSolver`
-  for the stress solver's state too).
+- Determinism (docs/determinism-rules.md; bit-identical across worker counts, compilers, OSes, x64 and ARM64): no FMA
+  or fast-math, no C-library transcendentals in simulation or scene code (`lpCbrt`, `b3Atan2`, `b3ComputeCosSin`),
+  PCG32 seeded from state, index-order iteration, total-order sorts, what the physics engine reports acted on in our
+  own order, no side effects inside one call's arguments or one initializer, `lpFloatToInt` for unbounded
+  conversions, pure parallel jobs, nothing reads the camera or the clock. A refactor that is meant to be
+  behaviour-preserving must keep the `lpf_bench` hashes identical (`tools/bench.ps1` checks them; `-StrictSolver` for
+  the stress solver's state too). The `determinism` CI (GitHub Actions, 14 legs, on every push to `sandbox`) checks
+  every OS, CPU and compiler; read a run with `gh run list` / `gh run view`.
 - Performance: every per-step cap is a count, never a time budget. Log before and after numbers in docs/perf-log.md.
 - Stress solver changes: the oracle tests (`lpf_test stress TestKeepLocalHit`, `TestDriftSmallStructures`,
   `TestKeepBreach`, `TestKeepHole`) check every judgement on a reduced system against an exact solve.

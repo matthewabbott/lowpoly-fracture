@@ -601,6 +601,12 @@ uint64_t lpWorld_Hash( const lpWorld* world );
 // solver that is meant to change nothing keeps it equal, not only lpWorld_Hash.
 uint64_t lpWorld_HashStress( const lpWorld* world );
 
+// Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
+// flush-to-zero, correctly rounded sqrt and division, the min and max conventions) and the engine's own trig and cube
+// root. Returns a hash that must be equal on every machine that plays together (a session handshake compares it), and
+// counts the known answers that came out wrong in *failures (may be NULL).
+uint64_t lpDeterminismSelfTest( int* failures );
+
 typedef struct lpStats
 {
 	int pieceCount;
@@ -667,6 +673,10 @@ typedef struct lpStats
 	// Rigs (rig.c)
 	float rigMs;
 	int footCasts; // this step
+
+	// Floating-point control words found changed (flush-to-zero, rounding) and put back since the world was created:
+	// a library or driver on one of our threads changed it. Nonzero is worth a warning (determinism rule 15).
+	int fpRepairs;
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );

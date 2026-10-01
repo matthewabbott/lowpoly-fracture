@@ -3,6 +3,9 @@
 #include "test_macros.h"
 #include "test_sim.h"
 
+// lpDeterminismSelfTest's hash on every platform (set from the reference build; CI checks every leg against it)
+#define LP_SELF_TEST_HASH 0x5c6b3dd653cd0c64ull
+
 // Rifle shots walking across the brick wall, then a grenade and a cannon-sized blast
 static void Bombard( Sim* s, int tick )
 {
@@ -110,6 +113,68 @@ static int TestDeterminism( void )
 	}
 	printf( "  final hash %016llx\n", (unsigned long long)a[ticks - 1] );
 	return 0;
+}
+
+// A library that turns flush-to-zero on behind our back (milestone 7's E9: it changed the stress solver) changes
+// nothing: the step puts the control word back first, and counts it
+static int TestFpGuard( void )
+{
+	enum
+	{
+		ticks = 120
+	};
+	static uint64_t clean[ticks][2], broken[ticks][2];
+	int breaks = 0;
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSimWorkers( lp_sceneWall, 4 );
+		for ( int tick = 0; tick < ticks; ++tick )
+		{
+			Bombard( &s, tick );
+			if ( run == 1 && tick % 10 == 5 )
+			{
+				lpFpBreakForTest();
+				breaks += 1;
+			}
+			lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+			uint64_t* out = run == 0 ? clean[tick] : broken[tick];
+			out[0] = lpWorld_Hash( s.world );
+			out[1] = lpWorld_HashStress( s.world );
+		}
+		int repairs = lpWorld_GetStats( s.world ).fpRepairs;
+		DestroySim( &s );
+		if ( run == 1 && repairs != breaks )
+		{
+			printf( "  %d control words broken, %d put back\n", breaks, repairs );
+			lpFpGuard();
+			return 1;
+		}
+	}
+	lpFpGuard();
+	for ( int i = 0; i < ticks; ++i )
+	{
+		if ( clean[i][0] != broken[i][0] || clean[i][1] != broken[i][1] )
+		{
+			printf( "  diverged at tick %d with flush-to-zero turned on between steps\n", i );
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// The arithmetic every machine that plays together must share: known answers, and one hash on every platform
+// (determinism rule 15; CI runs this on every leg)
+static int TestDeterminismSelfTest( void )
+{
+	int failures = -1;
+	uint64_t hash = lpDeterminismSelfTest( &failures );
+	printf( "  self-test hash %016llx\n", (unsigned long long)hash );
+	if ( failures != 0 )
+	{
+		printf( "  %d known answers wrong\n", failures );
+		return 1;
+	}
+	return hash == LP_SELF_TEST_HASH ? 0 : 1;
 }
 
 static float LooseVolume( const lpWorld* world );
@@ -316,6 +381,8 @@ int WorldTest( void )
 	RUN_TEST( TestPull );
 	RUN_TEST( TestWallDamage );
 	RUN_TEST( TestDeterminism );
+	RUN_TEST( TestFpGuard );
+	RUN_TEST( TestDeterminismSelfTest );
 	RUN_TEST( TestHouseCollapse );
 	return 0;
 }

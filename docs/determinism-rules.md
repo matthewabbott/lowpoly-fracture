@@ -1,16 +1,21 @@
 # Determinism rules
 
-Same inputs in the same order must give bit-identical simulation state, whatever the worker count. This is what
-makes replays, lockstep multiplayer and golden-hash tests possible. Box3D guarantees it for the physics; these rules
-keep the destruction layer (`src/`) and the app from breaking it.
+Same inputs in the same order must give bit-identical simulation state, whatever the worker count, compiler,
+operating system or CPU (x64 and ARM64, and x64 under emulation on ARM64). This is what makes replays, lockstep
+multiplayer and golden-hash tests possible. Box3D guarantees it for the physics; these rules keep the destruction layer
+(`src/`), the scenes and the app from breaking it. Milestone 7 measured it ([multiplayer-research.md](multiplayer-research.md)).
 
 ## Rules
 
-1. **No FMA contraction, no fast-math.** clang: `-ffp-contract=off`; MSVC: `/fp:precise` without `/fp:contract`.
+1. **No FMA contraction, no fast-math.** clang and gcc: `-ffp-contract=off` (gcc contracts by default wherever the CPU
+   has FMA, every ARM64 among them); MSVC: `/fp:precise` without `/fp:contract`.
    Set once in the top-level `CMakeLists.txt`; never add `/fp:fast`, `-ffast-math` or `/arch:AVX2` to a target
    that touches simulation state.
-2. **No trigonometry from the C library in simulation code.** Use `b3ComputeCosSin` / `b3Atan2` (Box3D's own,
-   identical everywhere). Random unit vectors use rejection sampling, not `sin`/`cos`.
+2. **No transcendental functions from the C library in simulation or scene code.** Use `b3ComputeCosSin` / `b3Atan2`
+   (Box3D's own) and `lpCbrt` (ours): built from `+ - * /`, identical everywhere. Allowed from the C library: `sqrtf`,
+   `floorf`, `ceilf`, `fabsf`, `remainderf`, `nextafterf` (exact). C libraries differ in `cbrtf`, `sinf` and `atan2f`
+   (Windows' `cbrtf` misses correct rounding on 27% of inputs), and a scene built from them differs before the first
+   step. Random unit vectors use rejection sampling, not `sin`/`cos`.
 3. **Randomness is PCG32 seeded from simulation state**: world seed, tick, piece index and generation
    (`lpMix64`). Never time, addresses or `rand()`.
 4. **Iteration order is always an index order.** Pools are arrays with LIFO free lists; nothing iterates a hash map
@@ -40,10 +45,37 @@ keep the destruction layer (`src/`) and the app from breaking it.
 11. **Hash fields, not structs with padding.** A struct copy fills its padding with whatever was on the stack (pointers,
    under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
    ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).
+12. **What the physics engine reports is acted on in our own total order.** Hit events (by piece pair, speed, point),
+   body move events (freeze candidates by body index), a body's contact list (stress loads by piece, then what it
+   touches) and casts (ties by piece index: callbacks clip one float past their best hit so an equal hit is still
+   seen) never act in the engine's report or traversal order, so a different engine, or a restored one, gives the
+   same decisions.
+13. **No side effects inside one call's arguments or one braced initializer.** C leaves their order open: two random
+   draws as arguments of one call came out in opposite orders on MSVC and gcc x64 against clang and gcc ARM64. One draw
+   per statement.
+14. **Float to int only through a clamp** (`lpFloatToInt`) when the value is not bounded: an out-of-range conversion is
+   undefined, gives `INT_MIN` on x86, saturates on ARM and traps in WebAssembly.
+15. **The floating-point control word is round to nearest, without flush-to-zero or denormals-are-zero.** A library or
+   driver can change it on our threads, and flush-to-zero changes the stress solver (milestone 7's E9). `lpFpGuard`
+   puts it back at step entry, per task in our pool and in Box3D's scheduler (a patch), and at the API calls that
+   compute in float between steps; `lpStats.fpRepairs` counts the repairs. `lpDeterminismSelfTest` checks the
+   arithmetic (no contraction, ties to even, no flush, correct rounding, the min/max convention, our trig and cube
+   root) and returns a hash that machines playing together must share.
+16. **The C runtime is linked statically on Windows.** Under x64 emulation on ARM64 (Prism, box64), calls into a
+   dynamic C library run as native ARM64 code, whose results differ.
+17. **NaN in simulation state is a bug.** It is asserted in the hash path in assert builds.
+18. **Game code that feeds the simulation follows these rules too.** The games' AI, scripts and logic either run on
+   the host and send their results as commands, or keep to the rules above under a hash check in their own CI.
 
 ## How it is checked
 
-- `lpf_test world`: `TestDeterminism` compares per-tick `lpWorld_Hash` across reruns and 1 vs 4 workers.
+- `lpf_test world`: `TestDeterminism` compares per-tick `lpWorld_Hash` across reruns and 1 vs 4 workers;
+  `TestFpGuard` turns flush-to-zero on between steps and expects identical world and solver hashes and a counted
+  repair; `TestDeterminismSelfTest` checks the self-test's known answers and its hash against the reference.
+- The `determinism` CI workflow (`.github/workflows/determinism.yml`), on every push to `sandbox` and `master`:
+  every bench rung at 1 and 8 workers on Windows (MSVC, clang-cl, ARM64), Linux (gcc, clang, x64 and ARM64) and
+  macOS (arm64, and x86_64 under Rosetta 2), plus the x64 binaries under box64 and Prism, diffed per tick against
+  Windows MSVC; `lpf_test` on every native leg; a gcc ARM64 leg with contraction on as the positive control.
 - `lpf_bench`: final hash per worker count; the run fails (exit 2) if they differ.
 - `tools/check-determinism.ps1`: runs the real sandbox with a script at 1, 4 and 8 workers and diffs the per-tick
   hash logs.
@@ -51,23 +83,12 @@ keep the destruction layer (`src/`) and the app from breaking it.
 
 ## Known limits
 
-- Cross-compiler, cross-OS and cross-ISA determinism was measured in milestone 7
-  ([research/m7-experiments.md](research/m7-experiments.md)). On the `ci-determinism` branch, with portable maths, a
-  14-leg CI is byte-identical per tick on every bench rung. It spans:
-  - Windows, Linux and macOS, on x64 and ARM64;
-  - MSVC, clang-cl, clang, gcc and AppleClang, not pinned to versions;
-  - x64 under Rosetta 2, Prism and box64.
-
-  Box3D needed no patch.
-- On `sandbox`, three hazards remain until milestone 7's hardening lands:
-  - gcc gets no `-ffp-contract=off` from our CMake;
-  - C-library `cbrtf`, `sinf` and `atan2f` in simulation and scene code (not correctly rounded, and different per C
-    library);
-  - random numbers drawn inside one call's argument list (`fracture.c:780`, `scenes.c:1699`), whose order C leaves open.
-- Under Prism and box64, C-library calls may run as native ARM64 code, so the simulation must be libm-free or link the
-  C runtime statically.
-- Flush-to-zero set by other code changes the stress solver's results while the world hash stays equal (E9). The
-  hardening adds a control-word guard, and desync checks must hash the solver's state.
+- Cross-platform determinism holds across Windows, Linux and macOS, x64 and ARM64, MSVC, clang-cl, clang, gcc and
+  AppleClang (versions not pinned), and x64 under Rosetta 2, Prism and box64 (with `BOX64_DYNAREC_FASTNAN=0` and
+  `BOX64_DYNAREC_FASTROUND=0`; its defaults differed on one transient line), as measured in milestone 7
+  ([research/m7-experiments.md](research/m7-experiments.md)) and checked by CI since. Untested: FEX, WebAssembly.
+- A desync check must hash the stress solver's state too (`lpWorld_HashStress`): flush-to-zero changed it while the
+  world hash stayed equal for 600 ticks.
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
   gravity scales that are not 1, vehicles, rigs and pools: a world without them hashes as before). Rendering and particles are deliberately
   excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.

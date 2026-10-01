@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The step: pulls, wakes, freezing settled debris into rubble, and the fixed order of everything in lpWorld_Step.
 
+#include "tasks.h"
 #include "world.h"
 
 #include <math.h>
@@ -238,6 +239,7 @@ static void lpApplyPulls( lpWorld* w )
 
 void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 {
+	lpGuardFp( w ); // a library or driver may have changed this thread's control word since the last step
 	w->stats.impactsThisStep = 0;
 	w->stats.fracturesThisStep = 0;
 	w->stats.cellsThisStep = 0;
@@ -405,6 +407,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.bondCount = w->bondCount;
 	w->stats.linkCount = w->linkCount;
 	w->stats.deferredJobs = w->deferred.count;
+	w->stats.fpRepairs = w->fpRepairs + lpTaskPool_FpRepairs( w->tasks );
 	w->stats.updateMs = b3GetMillisecondsAndReset( &ticks );
 
 	w->tick += 1;

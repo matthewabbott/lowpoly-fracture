@@ -368,7 +368,10 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			// A little tumble, seeded from the piece so it is deterministic
 			lpRandom rng;
 			lpRandom_Seed( &rng, child->seed, 17 );
-			b3Vec3 spin = { lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ), lpRandom_Range( &rng, -6.0f, 6.0f ) };
+			b3Vec3 spin; // one draw per statement: C leaves the order inside an initializer open
+			spin.x = lpRandom_Range( &rng, -6.0f, 6.0f );
+			spin.y = lpRandom_Range( &rng, -6.0f, 6.0f );
+			spin.z = lpRandom_Range( &rng, -6.0f, 6.0f );
 			// and a small kick away from the impact, so chips of one cell spread instead of flying as a clump
 			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
 			b3Vec3 kick = b3RotateVector( xf.q, b3MulSV( lpRandom_Range( &rng, 0.5f, 2.0f ), away ) );

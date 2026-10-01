@@ -303,6 +303,13 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	w->freeLink = -1;
 	w->freeWheel = -1;
 	w->audit.body = -1;
+	lpGuardFp( w );
+	int failures = 0;
+	lpDeterminismSelfTest( &failures );
+	if ( failures != 0 )
+	{
+		fprintf( stderr, "lpCreateWorld: %d determinism self-test answers are wrong on this machine\n", failures );
+	}
 	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
 	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
 	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
@@ -799,6 +806,7 @@ static int lpAddDetonator( lpWorld* w, const lpDetonatorDef* def )
 
 int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
+	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
 	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
@@ -939,6 +947,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 
 void lpWorld_AddImpact( lpWorld* w, const lpImpactDef* impact )
 {
+	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	lpArray_Push( w->impacts, *impact );
 }
 
@@ -1067,6 +1076,7 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		b3WorldTransform xf = b3Body_GetTransform( b->id );
 		b3Vec3 v = b3Body_GetLinearVelocity( b->id );
 		b3Vec3 omega = b3Body_GetAngularVelocity( b->id );
+		LP_ASSERT( b3IsValidVec3( xf.p ) && b3IsValidVec3( v ) && b3IsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
 		h = lpHashBytes( h, &xf, sizeof( xf ) );
 		h = lpHashBytes( h, &v, sizeof( v ) );
 		h = lpHashBytes( h, &omega, sizeof( omega ) );

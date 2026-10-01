@@ -138,8 +138,10 @@ static b3Vec3 lpRandomUnitVector( lpRandom* rng )
 {
 	for ( int i = 0; i < 64; ++i )
 	{
-		b3Vec3 p = { lpRandom_Range( rng, -1.0f, 1.0f ), lpRandom_Range( rng, -1.0f, 1.0f ),
-					 lpRandom_Range( rng, -1.0f, 1.0f ) };
+		b3Vec3 p; // one draw per statement: C leaves the order inside an initializer open
+		p.x = lpRandom_Range( rng, -1.0f, 1.0f );
+		p.y = lpRandom_Range( rng, -1.0f, 1.0f );
+		p.z = lpRandom_Range( rng, -1.0f, 1.0f );
 		float l2 = b3LengthSquared( p );
 		if ( l2 > 0.01f && l2 <= 1.0f )
 		{
@@ -213,7 +215,7 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 	float cellVolume = fragmentSize * fragmentSize * fragmentSize;
 
 	// A few ring and plate sites are always reserved; the inner (ejecta) sites get the rest of the budget.
-	int innerTarget = (int)( damagedVolume / cellVolume );
+	int innerTarget = lpFloatToInt( damagedVolume / cellVolume );
 	innerTarget = innerTarget < 2 ? 2 : innerTarget;
 	innerTarget = innerTarget > maxSites - 9 ? maxSites - 9 : innerTarget;
 	innerTarget = innerTarget < 2 ? 2 : innerTarget;
@@ -296,7 +298,7 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 	// At most three far sites: the rest of the piece stays in a few large plates (a log keeps two whole ends)
 	float totalVolume = extent.x * extent.y * extent.z;
 	float plate = b3MaxFloat( b3MaxFloat( 3.0f * fragmentSize, 1.2f * radius ), params->plateSize );
-	int farTarget = (int)( ( totalVolume - damagedVolume ) / ( plate * plate * plate ) );
+	int farTarget = lpFloatToInt( ( totalVolume - damagedVolume ) / ( plate * plate * plate ) );
 	farTarget = farTarget < 0 ? 0 : ( farTarget > 3 ? 3 : farTarget );
 	int farEnd = count + farTarget < maxSites ? count + farTarget : maxSites;
 	float farSpacing = 0.8f * plate;

@@ -143,27 +143,32 @@ L0 to L4 total 29 to 44 agent-weeks in T10's units, which the red team calls unc
 calendar days, and the binding cost is verification, not typing. L1a and L1b are worth having even if L3 never passes
 its gate.
 
-## 5. Proposed roadmap order (for the owner to choose)
+## 5. The roadmap that was chosen
 
-| new | milestone |
+The owner chose on 2026-09-30 to commit to the integer GPU core now, rather than gate it on the floor GPU's result, and
+to hold the first co-op test early, on Box3D. The pinned order is in [roadmap.md](roadmap.md):
+
+| # | milestone |
 |---|---|
-| 7 | this research, closed by **L0 hardening** (widened with the lag and spike experiments); meanwhile, buy a GTX 1060 and run E11 on it and on any AMD GPU, and run the owner's feel test of a delayed first-person body |
-| 8 | engine surface and diagnostics (as written) |
-| 9 | **commands and hashes (L1a)**, with exact fracture geometry (L2) in parallel; ends in a two-process lockstep smoke test |
-| 10 | the simplicity review, outcome catalogue first, scoped by the GTX 1060 result (to what survives the core swap if L3 is on) |
-| 11 | **the snapshot (L1b)**, then, if the floor GPU pays, the integer CPU toy and **the integer core with a CPU twin (L3)** |
-| 12 | **the core on the GPU (L4)**; Box3D deleted at its end if the gate passes |
-| 13 | profiling and a performance review (of the architecture that will ship) |
-| 14 | large-map zones and persistence (per-zone snapshots, bake and forget, wake storms) |
-| 15 | networking (thin under lockstep; may move up to right after 11's snapshot if a game needs co-op first) |
-| 16 | dents |
-| 17 | art polish and demo views, with the cosmetic layer |
+| 7 | this research, closed by **determinism hardening** (L0) |
+| 8 | **the physics seam:** every Box3D call behind one interface; the one-tick-lag experiment |
+| 9 | the outcome catalogue (the new core's contract), the engine surface, a seams-first review |
+| 10 | **commands and hashes (L1a)** and the first two-process co-op, on Box3D |
+| 11 | integer groundwork: the integer toy, exact fracture geometry (L2), the floor GPU measured |
+| 12 | **the integer core with its CPU twin (L3)**, beside Box3D |
+| 13 | **the core on the GPU (L4)**; Box3D deleted if the gate passes |
+| 14 | **the snapshot (L1b)**, written once, on the integer core |
+| 15 | the character controller, as the feel test decides |
+| 16 | networking |
+| 17 | profiling and a performance review |
+| 18 | large-map zones and persistence |
+| 19 | creatures, part 2 (informed by the adaptive-locomotion deep dive) |
+| 20 | dents |
+| 21 | art polish and demo views |
 
-To place (R24): the character controller (after the feel test), versioning of the save format, field telemetry and
-desync triage, terrain.
-
-The simplicity review comes before the core rewrite because its outcome catalogue is the only way to gate a rewrite that
-changes every number, and because the subsystems it would simplify are the ones that stay on the CPU.
+The simplicity review's outcome catalogue comes before the core rewrite because it is the only way to gate a rewrite
+that changes every number. The snapshot waits for the integer core so that it is written once, on plain integers,
+instead of over Box3D's internal state first.
 
 ## 6. Risks, and hardware to acquire
 

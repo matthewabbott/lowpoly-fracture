@@ -4,6 +4,18 @@ Principle for every milestone: **buy performance headroom first, then spend it.*
 several destructible cars, and containers of sloshing volatile reagents, all at once. Every milestone logs its
 before/after numbers in [perf-log.md](perf-log.md).
 
+The direction since milestone 7 (agreed 2026-09-30, [multiplayer-research.md](multiplayer-research.md),
+[goals.md](goals.md) "North star"): lockstep multiplayer on a simulation that is deterministic from the ground up, and
+Box3D replaced by a block-scaled integer rigid-body core that runs on the GPU with a bit-identical CPU twin.
+
+Standing practices:
+- every milestone ends with a short simplicity pass by an independent reviewer (seams first: a subsystem behind a
+  clean boundary with its own outcome tests can be swapped whole);
+- performance is measured at 1 and 2 workers and on the Intel GPU as the low-end proxies (fewer busy cores, less
+  heat), as well as at 8;
+- the `determinism` CI runs on every push to `sandbox`; `master` is fast-forwarded to `sandbox` after each milestone;
+- every push range is checked for game names first (the games live in their own private repository).
+
 Order (one at a time):
 1. Chunky fracture + debris tiers (done)
 2. Toppling and stress points (done)
@@ -11,14 +23,21 @@ Order (one at a time):
 4. Stress at scale (done, but for step 6 if measurements ask for it)
 5. Articulated objects and systems (vehicles first) (done)
 6. Creatures and mechs (done)
-7. Deep research: destruction engine architecture (research done; its hardening step next)
-8. Engine surface and diagnostics
-9. Independent review: simplicity
-10. Dents (cars and armor)
-11. Profiling and a performance review
-12. Large-map physics zones
-13. Networking
-14. Art polish and demo views
+7. Deep research: destruction engine architecture (done), closed by determinism hardening
+8. The physics seam
+9. The outcome catalogue, the engine surface and a seams-first review
+10. Commands, hashes and the first co-op
+11. Integer groundwork
+12. The integer core with its CPU twin
+13. The core on the GPU
+14. The snapshot
+15. The character controller
+16. Networking
+17. Profiling and a performance review
+18. Large-map physics zones and persistence
+19. Creatures, part 2
+20. Dents (cars and armor)
+21. Art polish and demo views
 
 ## 1. Chunky fracture + debris tiers
 
@@ -180,7 +199,7 @@ Steps (each measured in [perf-log.md](perf-log.md)):
 
 8. Wrap-up: docs, the agent map, the memory note (done).
 
-Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to dents (milestone 10).
+Deferred: pools (blood, fuel, hydraulic fluid) to milestone 6; crumpling to dents (now milestone 20).
 
 Open:
 - car-on-car crashes: Box3D sweeps only against static bodies, so two fast cars could pass through each other; not
@@ -259,152 +278,203 @@ Open:
 
 ## 7. Deep research: destruction engine architecture
 
-**Research done (2026-09-30):** [multiplayer-research.md](multiplayer-research.md) is the decision record, with the
-evidence in [research/](research/).
-- **The model:** convergent lockstep.
-- **Determinism on the CPU** holds across OSes, CPUs, compilers and emulators once three hazards of ours are fixed.
-- **The GPU can join the simulation in block-scaled integers,** with a CPU twin.
+**Done (2026-09-30):** [multiplayer-research.md](multiplayer-research.md) is the decision record, with the evidence in
+[research/](research/) (ten tracks, a synthesis, a red team).
+- **The model:** convergent lockstep. Every machine runs the whole simulation from one command log; the host relays
+  inputs and keeps the clock; the local character is predicted outside the deterministic world; per-object hashes
+  localise a divergence and the host repairs that object.
+- **Determinism on the CPU** holds across Windows, Linux and macOS, x64 and ARM64, five compilers and three x64
+  emulators, once three hazards of ours were fixed.
+- **The GPU can join the simulation in block-scaled 32-bit integers,** bit-exact on NVIDIA, Intel and a CPU twin, at
+  1.16 to 1.35 times the float solve's cost; replays survived an NVIDIA driver update.
 
-**Proposed next:**
-- this milestone's hardening step (L0), widened with the lag and spike experiments;
-- a GTX 1060 bought now to measure the floor.
+**Closing step: determinism hardening (L0).**
+- the cross-platform CI (14 legs, per-tick hashes), on every push to `sandbox` and `master`;
+- portable maths only: `lpCbrt` and Box3D's trig instead of the C library's `cbrtf`, `sinf`, `atan2f`, in the core
+  and the scenes; gcc gets `-ffp-contract=off`;
+- what the physics engine reports is acted on in our own total order (freeze candidates, hit events, contact loads,
+  cast ties);
+- the hash covers the ghosts' landing plans, detonators' armed flags, wheel spin and the limbs' depth and tip cache;
+- the floating-point control word is guarded (`lpFpGuard`, a Box3D scheduler patch) and the arithmetic self-tested
+  (`lpDeterminismSelfTest`);
+- float-to-int through a clamp where unbounded; no NaN in state (asserted); no random draws inside one call's
+  arguments or one initializer;
+- the sandbox records exact floats (`%.9g`) and can delay walk and drive events (`--input-delay N`) for the owner's
+  feel test of a predicted first-person body; the bench writes per-tick times (`--tick-log`) and counts ticks over
+  16.7 and 33 ms;
+- rules 12 to 18 in [determinism-rules.md](determinism-rules.md).
 
-The reordered roadmap it proposes (its §5) waits for the owner's choice; until then the order above stands. The notes
-below framed the research.
+## 8. The physics seam
 
-Before building more: how others build destruction engines and what they give up for speed, to choose the
-architectural trade-offs worth making now. Each one made early saves reworking later, and performance outranks
-simplicity: a trade that complicates the engine is worth it if it buys bigger cities, hordes, and more debris.
+Every Box3D call (about 266 sites in 12 core files, 83 functions) goes through one internal interface, so the integer
+core can replace Box3D behind it, and so the rules about report order live in one place.
+- **Own the maths:** Box3D's maths helpers (MIT) become our `lp` types in `src/`, renamed mechanically (about 2,000
+  uses), hash-neutral.
+- **The interface:** `src/phys.h` with a Box3D backend (`src/phys_box3d.c`): bodies, hulls, the four joints, motors,
+  hit and move events, contact data, queries and casts, all returning results in our own order. No Box3D call outside
+  the backend.
+- **Exact wakes:** wake and shove queries test the pieces' real bounds instead of the tree's fat ones (T0 #4).
+- **The lag experiment** (red team R16): a flag that makes the core read physics results one tick late, as the GPU
+  pipeline will; the nine suites and the track and mech rungs decide whether the tyres, the servos and the gait
+  tolerate it.
 
-- **What must be bit-exact across machines?** The multiplayer model decides it, so it comes first. Teardown's (read
-  2026-09-29, https://blog.voxagon.se/2026/03/13/teardown-multiplayer.html): destruction is deterministic, rewritten in
-  fixed-point integer math (its voxels are discrete), and sent as commands on a reliable channel ("cut hole in this
-  shape at voxel coord x,y,z"); bodies are not simulated deterministically but synced from the server in floating
-  point (transforms and velocities, a priority queue favouring what each player sees, about 1 Mbit per client,
-  eventually consistent). Under such a hybrid, Box3D and a GPU solver may stay in float (only the host's result
-  counts), and only our destruction geometry must agree everywhere: fixed-point there is our own code, far smaller
-  than all of physics. Full lockstep needs every part of the simulation bit-exact on every machine: fixed-point
-  everywhere, which means a physics engine of our own. A cheap first experiment: the same scripts built with MSVC and
-  clang, hashes compared.
-- **Our destruction leans on physics more than Teardown's:** stress breaks joints from loads the physics produced. In a
-  hybrid, the host decides (these bonds break, this piece fractures here with this seed) and sends the decisions;
-  clients apply them identically. The research checks what else follows (links, supply, rigs).
-- **The GPU:** GPU rigid bodies (PhysX, the CUDA port of Box3D), what a fixed-point GPU solver would cost (integer
-  throughput, 64-bit products), and what can go to the GPU with no determinism at all (the cosmetic layer: dust, far
-  debris, mess).
-- **Parallel patterns that stay deterministic:** an order fixed by the data, never by the threads (graph-coloured
-  solvers as in Box2D and Box3D, Noita's checkerboard chunk updates, reductions over a tree shaped by the count alone,
-  deterministic sorts, no float atomics), or arithmetic whose order does not matter (integer or fixed-point sums,
-  binned "reproducible" float sums). GPUs round floats differently across vendors and drivers (fused multiply-adds,
-  transcendentals, denormals), so a GPU result is bit-exact only in integer or fixed-point math. Rounding a converged
-  result to a grid ("converging" to a shared answer) makes most runs agree but still flips values near a grid line:
-  it narrows desyncs without removing them.
-- **Destruction architectures to mine:** Teardown and Gustafsson's newer engine, NVIDIA Blast and its stress solver,
-  Unreal's Chaos Destruction and its cluster hierarchies, Red Faction: Guerrilla, Frostbite, Havok, Nebenan, Photon
-  Quantum's fixed-point physics, open fixed-point physics ports.
-- **Trade-offs to weigh:** destruction decided by the host and sent as commands; a harder split between simulation and
-  cosmetics, with most debris cosmetic (and on the GPU); systems at lower rates than physics (stress, supply, rigs),
-  staggered by count; precomputed fracture patterns; structures of arrays and a job graph across phases; physics
-  fidelity by distance from observers.
+Exit: hash-neutral but for the flagged run; no Box3D call outside the backend; the lag verdict recorded.
 
-Output: a report with each technique's gain, cost, determinism and fit, the trade-offs we take (each placed on the
-roadmap: a fixed-point destruction core, a GPU cosmetic layer, ...), and the multiplayer model chosen.
+## 9. The outcome catalogue, the engine surface and a seams-first review
 
-## 8. Engine surface and diagnostics
-
-The line between the engine and the games made on it: the core holds mechanisms and data-driven definitions; the kits
-in `scenes/` (the car, the crane, the hexapod) are example content, kept in the repo because the tests and the bench
-need realistic loads and because building them finds the engine's gaps (milestone 6 found four). A short pass where
-game policy leaked into the core:
-- `lpSetJoint`, as `lpSetMaterial` does for materials (the joint table is fixed today);
-- the gait as one replaceable walking policy: `rig.c` keeps the mechanism (the model, IK, capability, balance checks,
-  foothold casts, per-foot targets a game can drive itself), `gait.c` is the statically stable many-legged walker, its
-  tuning in a def instead of constants (the parity groups, the speed asked of five and four legs, crawling);
-- other constants that are game policy move into defs (a pool's leak rate, the strike speed);
-- the docs say what is engine and what is example content.
-
-Diagnostics for agents and tests (numbers, not pictures): queries for bonds (their pieces, position, load, utilization,
-health) and contacts (points and forces), and a sandbox `--dump` of the state at a tick (pieces, bonds, links, rigs)
-as JSON. Debugging milestone 6 ran on traces like these, written by hand each time; the reviewers below verify
-outcomes with them too.
-
-## 9. Independent review: simplicity
-
-The core grew by two large milestones of mechanisms tuned by iteration (special cases pile up: three tick fields decide
-when a moving body's stress is checked). Agent-friendliness comes first, and it depends on how small and plain the code
-is. Other models review it with the current engine as the source of truth:
+The catalogue is the contract the integer core must meet, so it comes before the core is replaced.
 0. **An outcome catalogue:** every behaviour we like, each pinned by a test with a tolerance or by a scripted scene with
    reference screenshots; the gaps found and filled first. The contract is the outcomes, not the bench hashes (a
-   simpler design may change the numerics). The first draft, with the goals and the feel it serves, is in
-   [goals.md](goals.md).
-1. **Reviews:** independent reviewers (Fable; GPT-6 Astra, run in Codex; the Codex and Kimi reviewers set up here),
-   each given the goals, the catalogue and the code, read-only, propose simpler or more concise ways to reach the same
-   outcomes, per subsystem, with the size they expect to save. One of them prunes, having read
-   [How Complex Systems Fail](https://how.complexsystems.fail/) first (the "bonsai agent" from the first week).
-2. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
+   simpler design, or a new physics core, changes the numerics). The first draft, with the goals and the feel it
+   serves, is in [goals.md](goals.md).
+1. **The engine surface.** The core holds mechanisms and data-driven definitions; the kits in `scenes/` (the car, the
+   crane, the hexapod) are example content, kept because the tests and the bench need realistic loads and because
+   building them finds the engine's gaps. Where game policy leaked into the core:
+   - `lpSetJoint`, as `lpSetMaterial` does for materials (the joint table is fixed today);
+   - the gait as one replaceable walking policy: `rig.c` keeps the mechanism (the model, IK, capability, balance
+     checks, foothold casts, per-foot targets a game can drive itself), `gait.c` is the statically stable many-legged
+     walker, its tuning in a def instead of constants;
+   - other constants that are game policy move into defs (a pool's leak rate, the strike speed);
+   - diagnostics for agents and tests (numbers, not pictures): queries for bonds and contacts, and a sandbox `--dump`
+     of the state at a tick as JSON.
+2. **A seams-first review:** independent reviewers (Fable; GPT-6 Astra in Codex; the Codex and Kimi reviewers), each
+   given the goals, the catalogue and the code, read-only, propose clean boundaries and simpler ways to reach the same
+   outcomes per subsystem: fracture, stress, links, wheels and rigs, the debris tiers, supply. One of them prunes,
+   having read [How Complex Systems Fail](https://how.complexsystems.fail/) first. The physics plumbing that milestone
+   12 replaces is out of scope.
+3. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
    bench does not regress beyond noise. The size of the core (tokens) is logged before and after.
 
-## 10. Dents (cars and armor)
+## 10. Commands, hashes and the first co-op
 
-- a cage lattice in object space (about 4×3×6 nodes for a car) is dented by impacts, capped per node
-- render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
-- the hull is rebuilt from the lattice only occasionally (`b3Shape_SetHull` + `ApplyMassFromShapes`)
-- dented armor around a joint narrows its limits
+The multiplayer primitive's first half (L1a in the research), and two machines playing together on today's Box3D.
+- **A command queue in the core:** every input (impacts, pulls, blows, controls, limb targets, grabs, spawns)
+  tick-stamped, with exact floats and keyed references, applied in `(peer, sequence)` order before the step; the
+  sandbox's tools and claw become commands (T0 #18, #19).
+- **Stable ids:** generations for bonds, wheels and bodies; global keys for runtime objects (T0 #13, #14).
+- **The incremental hash:** a digest per piece at creation, per-object hashes grouped under a small Merkle tree,
+  covering the stress solver's state and Box3D's contact state; `lpWorld_Hash` stays as the full check (T0 #20).
+- **Session settings and a handshake:** the counts, the build, the content hash and the self-test hash agreed before
+  play.
+- **A two-world harness** in `lpf_test`: two worlds step the same commands; an injected desync is named by object and
+  tick; repair by object image is tried and its reconvergence measured (red team R3).
+- **The first co-op:** a two-process lockstep smoke test over a plain socket (start together, the host keeps the
+  clock), with the `--input-delay` feel test's verdict applied to the walking body.
 
-## 11. Profiling and a performance review
+Exit: two processes stay in sync on a scripted session; an injected desync is named.
 
-Performance-maxxing with instruments instead of guesses: a per-phase profiler (fracture, split, stress build and
-solve, physics, links, debris), a heavy-load bench rung per game (a race with rigging, a courier run) with a frame
-budget each, then the hottest paths first.
+## 11. Integer groundwork
+
+Fail fast before the integer core is built.
+- **An integer toy** on the CPU (about 1,000 lines: boxes, SAT, the block-scaled soft step, a joint, sleep): does a
+  stack stand, does a rubble pile settle, how far from float are the results (red team R15)?
+- **Exact integer fracture geometry** (L2): integer sites and bisector planes, exact classification, hulls from exact
+  topology; removes the plane-shift hack and every tolerance flip in fracture.
+- **The floor GPU:** E11's binaries on a GTX 1650 or 1060-class box (the integer multiply on Pascal), and on an AMD GPU
+  or a Steam Deck when one is to hand.
+
+Exit: stacking holds; recorded blasts fracture exactly; the floor GPU's integer cost measured.
+
+## 12. The integer core with its CPU twin
+
+The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
+products, 64-bit world positions, per-body exponents; Box3D's graph-coloured soft step transcribed, coloured per tick
+from state; bodies, hulls, a sorted broadphase, SAT, the four joints with motors and limits, islands and sleep, GJK and
+casts; the one-tick pipeline lag as deterministic semantics. It runs behind the seam beside Box3D, switchable per world,
+with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels).
+
+Exit: the catalogue passes with tolerances on the integer core; the twin at 1 worker within 2.5 times Box3D (1.5 with
+AVX2); identical hashes across the CI matrix.
+
+## 13. The core on the GPU
+
+A Vulkan runtime (one command buffer per tick, timeline semaphores, readback), every kernel from the core's shared
+C-and-HLSL sources, differential tests against the twin on every GPU to hand, the startup self-test battery in the
+handshake with the twin as the fallback, and the GPU or the twin chosen per tick by body count (they give the same
+bits). Box3D and its patches are deleted at the end if the gate passes; if it does not, Box3D stays.
+
+Exit: 5,000 awake bodies under 16.7 ms on the low-end box; 20,000 under 8 ms of GPU time on the 3060; hashes
+identical after a driver update.
+
+## 14. The snapshot
+
+The primitive's second half (L1b): serialise and rebuild the world bit-exactly on the integer core (plain integers,
+written once): saves, late join, host migration, repair images, zone persistence, replays with seek.
+
+Exit: the round trip exact on every rung; a join measured at the town's peak.
+
+## 15. The character controller
+
+The player as a destructible body (pools, vitals, knockout), predicted as the feel test decided: a kinematic latency
+state rebased on the canonical body, or the body itself under input delay.
+
+## 16. Networking
+
+Lockstep over the snapshot and the command log: transport (Steam sockets with a direct fallback, the send rate raised
+above its default), server-timed ticks with a late-input tolerance, the latency-state character, join with a pause or
+a catch-up, host migration, per-object repair, desync reports that replay headless.
+
+Exit: a 4-player session across machines.
+
+## 17. Profiling and a performance review
+
+Performance-maxxing with instruments instead of guesses, on the architecture that ships: a per-phase profiler
+(fracture, split, stress build and solve, physics, links, debris), a heavy-load bench rung per kind of game with a frame
+budget each, a synthetic 20,000-body rung (the CPU side of a GPU core: freezing, wakes, tiers, hashing, rendering sync),
+then the hottest paths first.
 
 Outcomes may change here, as long as the feel holds:
 - **The feel goals,** written down in [goals.md](goals.md), so a taste reviewer can judge against them.
-- **The research's survey again, against profiles** (milestone 7 made it): which of the tricks it tagged pay off where
-  the time actually goes.
-- **The cosmetic layer as a lever:** determinism binds only what feeds back into play. Anything that never does (the
-  smallest debris, dust, far-off mess) may use what the simulation may not: camera distance, time budgets, the GPU, and
-  a different result on each machine. Moving more into it buys room.
-- **What the research chose** (milestone 7): the trade-offs taken, built and measured here if not before.
-- **Reviews:** independent reviewers (as in milestone 9) propose changes that trade fidelity for speed; before-and-after
-  footage of the same scripts goes to a taste reviewer (an Opus model) against the feel goals; what is kept is logged
-  with its numbers.
+- **The research's survey again, against profiles:** which of the tricks it tagged pay off where the time goes.
+- **The cosmetic layer as a lever:** determinism binds only what feeds back into play. Anything that never does (dust,
+  sparks, far-off mess) may use what the simulation may not: camera distance, time budgets, the GPU, and a different
+  result on each machine. It is not a priority.
+- **Reviews:** independent reviewers propose changes that trade fidelity for speed; before-and-after footage of the
+  same scripts goes to a taste reviewer against the feel goals; what is kept is logged with its numbers.
 
 Candidates logged so far:
 - the stress system: the cost of an iteration (65 ns per bond: a structure of arrays for the 6-vectors, precomputed
-  bond blocks instead of `lpAddBlock` per build), a parallel K·x for the biggest structures (one alone may now spend
-  4 ms a step), a two-level preconditioner reusing the rigid clusters as its coarse space, a nested-iteration settle;
+  bond blocks instead of `lpAddBlock` per build), a parallel K·x for the biggest structures, a two-level
+  preconditioner reusing the rigid clusters as its coarse space, a nested-iteration settle;
 - the creak loop over stored overloads only; budget units calibrated to time;
-- a spinning barrier in the task pool.
+- a spinning barrier in the task pool;
+- memory on the floor machine: 432-byte bodies and 296-byte pieces carrying stress and ghost fields everywhere, hulls
+  held twice, the fracture scratch (T0 #22); vehicles and rigs that never die (T0 #23).
 
-## 12. Large-map physics zones
+## 18. Large-map physics zones and persistence
 
 - **Active cells** along the track, around "observers": players, AI cars, and flagged "chunk loaders" (armed
   contraptions, timers, detonators; anything the player sets up deliberately), like Minecraft's simulation distance.
-- **Outside the active cells:**
-  - resting islands sleep
-  - loose debris is resolved by tier: snapped to the ground and frozen, or removed
-  - unstable structures are settled with the stress check
-  - flagged Rube Goldberg setups keep simulating
+  In lockstep every peer simulates the union of active cells: measure it for 8 to 12 spread-out players on the floor
+  machine (the research's flip condition for a hybrid).
+- **Outside the active cells:** resting islands sleep; loose debris is resolved by tier (snapped down and frozen, or
+  removed); unstable structures are settled with the stress check; flagged Rube Goldberg setups keep simulating.
+- **Persistence:** zones snapshot alone; a piece lives awake, asleep, frozen, then baked into its zone's static
+  geometry, and may be forgotten; the engine offers freeze, bake, wake, delete, restore-to-authored and budgets, the
+  games choose the policy. Identity is opt-in, so anonymous rubble bakes and only tagged props persist as bodies (the
+  "10,000 cabbages" problem).
+- **Wake storms:** a grenade among thousands of sleeping props wakes them in a graceful, counted wave.
 - **Determinism:** activity is derived from shared simulation state (player and car positions), never the camera.
-- **Box3D:** prefer sleep over `b3Body_Disable` (re-enabling costs a spike). The static tree scales well; use
-  `invokeContactCreation = false` for bulk static creation. Double precision is available beyond about 16 km.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
-## 13. Networking
+## 19. Creatures, part 2
 
-Options:
-- Teardown's approach: destruction is deterministic and sent as commands; bodies are server-synced with a
-  priority queue.
-  https://blog.voxagon.se/2026/03/13/teardown-multiplayer.html
-- Full lockstep on Box3D's determinism, if the toolchain is pinned.
+Bipeds and organic creatures whose locomotion adapts to damage, informed by the adaptive-locomotion deep dive in the
+research queue below: generated or searched gait catalogues snapped to a maimed body, or learned controllers in
+integer arithmetic; hopping; a capped upright assist that shrinks with capability.
 
-The research (milestone 7) chooses the model; a two-process experiment of it comes first here.
+## 20. Dents (cars and armor)
 
-## 14. Art polish and demo views
+- a cage lattice in object space (about 4×3×6 nodes for a car) is dented by impacts, capped per node
+- render vertices interpolate from the lattice (per-vertex crush weight, like GTA's vertex-colour deformation)
+- the hull is rebuilt from the lattice only occasionally (on the physics core that ships)
+- dented armor around a joint narrows its limits
+
+## 21. Art polish and demo views
 
 Shaders, palette, sky, ambient occlusion, character pipeline (RetroDiffusion low-poly GLB with auto-rigging, Meshy
 with target poly count, Blender cleanup via its MCP), point-filtered character textures. Essential for any public
-demo; deliberately last.
+demo; deliberately last. The cosmetic GPU layer (upload-only debris, dust and mess) lands here if it is wanted.
 
 Demo views that make the forces legible, for short videos (the sandbox's L already colours links by load):
 - a stress heat map on the pieces, and the load paths drawn along the bond graph;

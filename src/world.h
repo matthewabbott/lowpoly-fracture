@@ -680,6 +680,7 @@ struct lpWorld
 	uint32_t changeSerial; // stamps pieces whose bonds or loads change (lpPiece.changed)
 	int stamp;
 	int freezesThisStep;
+	int fpRepairs; // control words put back on the calling thread (lpFpGuard), since the world was made
 	lpStats stats;
 };
 
@@ -700,6 +701,12 @@ void lpWakeRubble( lpWorld* w, int bodyIndex );
 b3WorldTransform lpGetTransform( const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
 int lpCompareOrder( const void* a, const void* b );
+
+// Puts back a changed floating-point control word on the calling thread (determinism rule 15) and counts it
+static inline void lpGuardFp( lpWorld* w )
+{
+	w->fpRepairs += lpFpGuard() ? 1 : 0;
+}
 int lpCompareBodyRef( const void* a, const void* b ); // by body, then generation
 
 // Tier thresholds (volume, m^3) of a material, scaled by the world's debrisScale
