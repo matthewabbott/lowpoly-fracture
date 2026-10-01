@@ -92,7 +92,7 @@ static int lpNearestPiece( const lpWorld* w, int bodyIndex, lpPos point, float* 
 	return best;
 }
 
-static b3BodyId lpEndBody( const lpWorld* w, const lpLink* l, int k )
+static lpPhysBody lpEndBody( const lpWorld* w, const lpLink* l, int k )
 {
 	int piece = l->ends[k].piece;
 	return piece < 0 ? l->anchor[k] : w->bodies.data[w->pieces.data[piece].body].id;
@@ -108,67 +108,39 @@ static void lpBuildJoint( lpWorld* w, int index )
 {
 	lpLink* l = w->links.data + index;
 	const lpLinkDef* d = &l->def;
-	b3BodyId a = lpEndBody( w, l, 0 );
-	b3BodyId b = lpEndBody( w, l, 1 );
-	b3JointDef base = b3DefaultWeldJointDef().base; // the common part is the same for every type
-	base.bodyIdA = a;
-	base.bodyIdB = b;
-	base.localFrameA = l->ends[0].frame;
-	base.localFrameB = l->ends[1].frame;
-	base.collideConnected = d->collideConnected;
-	base.userData = (void*)(intptr_t)( index + 1 );
-
-	b3WorldId physics = w->physics;
+	lpPhysBody a = lpEndBody( w, l, 0 );
+	lpPhysBody b = lpEndBody( w, l, 1 );
+	lpPhysJointDef jd = { 0 };
+	jd.bodyA = a;
+	jd.bodyB = b;
+	jd.frameA = l->ends[0].frame;
+	jd.frameB = l->ends[1].frame;
+	jd.collideConnected = d->collideConnected;
 	switch ( d->type )
 	{
 		case lp_linkWeld:
-		{
-			b3WeldJointDef jd = b3DefaultWeldJointDef();
-			jd.base = base;
-			jd.linearHertz = d->hertz;
-			jd.angularHertz = d->hertz;
-			jd.linearDampingRatio = d->dampingRatio;
-			jd.angularDampingRatio = d->dampingRatio;
-			l->joint = b3CreateWeldJoint( physics, &jd );
+			jd.type = lp_physWeld;
+			jd.hertz = d->hertz;
+			jd.dampingRatio = d->dampingRatio;
 			break;
-		}
 		case lp_linkHinge:
-		{
-			b3RevoluteJointDef jd = b3DefaultRevoluteJointDef();
-			jd.base = base;
-			jd.enableLimit = d->lowerAngle < d->upperAngle;
+			jd.type = lp_physHinge;
 			jd.lowerAngle = d->lowerAngle;
 			jd.upperAngle = d->upperAngle;
 			jd.enableMotor = lpHasMotor( l ); // its speed and torque come from lpDriveMotors
-			l->joint = b3CreateRevoluteJoint( physics, &jd );
 			break;
-		}
 		case lp_linkBall:
-		{
-			b3SphericalJointDef jd = b3DefaultSphericalJointDef();
-			jd.base = base;
-			jd.enableConeLimit = d->coneAngle > 0.0f;
+			jd.type = lp_physBall;
 			jd.coneAngle = d->coneAngle;
 			jd.enableMotor = lpHasMotor( l );
-			l->joint = b3CreateSphericalJoint( physics, &jd );
 			break;
-		}
 		default:
-		{
-			// A rope: no spring force, only the upper length limit, so it goes slack when pushed together
-			b3DistanceJointDef jd = b3DefaultDistanceJointDef();
-			jd.base = base;
+			jd.type = lp_physRope; // only an upper length limit, so it goes slack when pushed together
 			jd.length = d->length;
-			jd.enableSpring = true;
-			jd.hertz = 0.0f;
-			jd.enableLimit = true;
-			jd.minLength = 0.0f;
-			jd.maxLength = d->length;
-			l->joint = b3CreateDistanceJoint( physics, &jd );
 			break;
-		}
 	}
-	LP_ASSERT( B3_IS_NON_NULL( l->joint ) );
+	l->joint = lpPhys_CreateJoint( w->phys, &jd );
+	LP_ASSERT( LP_PHYS_NULL( l->joint ) == false );
 	l->builtOn[0] = a;
 	l->builtOn[1] = b;
 	l->settle = LP_LINK_SETTLE;
@@ -218,7 +190,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 			continue;
 		}
 		if ( bodies[k] >= w->bodies.count || w->bodies.data[bodies[k]].alive == false ||
-			 B3_IS_NULL( w->bodies.data[bodies[k]].id ) )
+			 LP_PHYS_NULL( w->bodies.data[bodies[k]].id ) )
 		{
 			return -1; // gone, or a ghost or scrap body
 		}
@@ -262,10 +234,9 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 		}
 		else
 		{
-			b3BodyDef bd = b3DefaultBodyDef();
-			bd.type = b3_staticBody;
-			bd.position = points[k];
-			l->anchor[k] = b3CreateBody( w->physics, &bd );
+			lpPhysBodyDef bd = lpPhys_DefaultBodyDef();
+			bd.transform.p = points[k];
+			l->anchor[k] = lpPhys_CreateBody( w->phys, &bd );
 		}
 	}
 	lpBuildJoint( w, index );
@@ -353,9 +324,9 @@ static void lpReleaseLink( lpWorld* w, int index, bool broken )
 		lpReleaseWheel( w, l->wheel, broken );
 		l->wheel = -1;
 	}
-	else if ( b3Joint_IsValid( l->joint ) )
+	else if ( lpPhys_IsValidJoint( w->phys, l->joint ) )
 	{
-		b3DestroyJoint( l->joint, true ); // what it held falls
+		lpPhys_DestroyJoint( w->phys, l->joint, true ); // what it held falls
 	}
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -369,14 +340,14 @@ static void lpReleaseLink( lpWorld* w, int index, bool broken )
 				lpRequestStressCheck( w, p->body, true ); // its pull is gone (a link can break during the splits)
 			}
 		}
-		else if ( B3_IS_NON_NULL( l->anchor[k] ) )
+		else if ( LP_PHYS_NULL( l->anchor[k] ) == false )
 		{
-			b3DestroyBody( l->anchor[k] );
+			lpPhys_DestroyBody( w->phys, l->anchor[k] );
 		}
 	}
 	lpCarriersChanged( w, l->def.carries );
 	l->alive = false;
-	l->joint = b3_nullJointId;
+	l->joint = lp_nullPhysJoint;
 	l->nextFree = w->freeLink;
 	w->freeLink = index;
 	w->linkCount -= 1;
@@ -464,14 +435,14 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 }
 
 // A chip left holding a much heavier body by a link would jitter on the joint (or blow it up): it tears off instead
-static bool lpTearsOff( b3BodyId a, b3BodyId b, float ratio )
+static bool lpTearsOff( const lpWorld* w, lpPhysBody a, lpPhysBody b, float ratio )
 {
-	if ( b3Body_GetType( a ) != b3_dynamicBody || b3Body_GetType( b ) != b3_dynamicBody )
+	if ( lpPhys_IsDynamic( w->phys, a ) == false || lpPhys_IsDynamic( w->phys, b ) == false )
 	{
 		return false;
 	}
-	float ma = b3Body_GetMass( a );
-	float mb = b3Body_GetMass( b );
+	float ma = lpPhys_GetMass( w->phys, a );
+	float mb = lpPhys_GetMass( w->phys, b );
 	return lpMinFloat( ma, mb ) < ( ratio > 0.0f ? ratio : LP_LINK_TEAR_RATIO ) * lpMaxFloat( ma, mb );
 }
 
@@ -483,8 +454,8 @@ void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
 	}
 	lpLink* l = w->links.data + link;
 	l->def.length = lpMaxFloat( length, 0.01f );
-	b3DistanceJoint_SetLengthRange( l->joint, 0.0f, l->def.length );
-	b3Joint_WakeBodies( l->joint );
+	lpPhys_SetRopeLength( w->phys, l->joint, l->def.length );
+	lpPhys_WakeJoint( w->phys, l->joint );
 }
 
 void lpWorld_SetLinkTarget( lpWorld* w, int link, float angle )
@@ -515,7 +486,7 @@ void lpWorld_SetLinkTargetRotation( lpWorld* w, int link, lpQuat rotation )
 // A joint frame of a link in the world
 static lpQuat lpEndFrameRotation( const lpWorld* w, const lpLink* l, int k )
 {
-	return lpMulQuat( b3Body_GetRotation( lpEndBody( w, l, k ) ), l->ends[k].frame.q );
+	return lpMulQuat( lpPhys_GetTransform( w->phys, lpEndBody( w, l, k ) ).q, l->ends[k].frame.q );
 }
 
 // How well what a motor needs is fed at the better of its ends
@@ -576,7 +547,7 @@ void lpDriveMotors( lpWorld* w )
 		float cap = lpMotorCap( w, l );
 		if ( l->def.type == lp_linkHinge )
 		{
-			float angle = b3RevoluteJoint_GetAngle( l->joint );
+			float angle = lpPhys_GetHingeAngle( w->phys, l->joint );
 			float speed = m->gain * ( l->target - angle );
 			if ( l->feed != 0.0f )
 			{
@@ -586,7 +557,7 @@ void lpDriveMotors( lpWorld* w )
 			speed = fed > 0.0f ? lpClampFloat( speed, -top, top ) : 0.0f;
 			if ( l->motorApplied == false || speed != l->appliedSpeed )
 			{
-				b3RevoluteJoint_SetMotorSpeed( l->joint, speed );
+				lpPhys_SetHingeMotor( w->phys, l->joint, speed );
 				l->appliedSpeed = speed;
 				w->stats.motorSets += 1;
 			}
@@ -611,7 +582,7 @@ void lpDriveMotors( lpWorld* w )
 			}
 			if ( l->motorApplied == false || lpLength( lpSub( omega, l->appliedVelocity ) ) > 0.0f )
 			{
-				b3SphericalJoint_SetMotorVelocity( l->joint, omega );
+				lpPhys_SetBallMotor( w->phys, l->joint, omega );
 				l->appliedVelocity = omega;
 				w->stats.motorSets += 1;
 			}
@@ -620,15 +591,15 @@ void lpDriveMotors( lpWorld* w )
 		{
 			if ( l->def.type == lp_linkHinge )
 			{
-				b3RevoluteJoint_SetMaxMotorTorque( l->joint, cap );
+				lpPhys_SetMotorMaxTorque( w->phys, l->joint, cap );
 			}
 			else
 			{
-				b3SphericalJoint_SetMaxMotorTorque( l->joint, cap );
+				lpPhys_SetMotorMaxTorque( w->phys, l->joint, cap );
 			}
 			if ( l->motorApplied )
 			{
-				b3Joint_WakeBodies( l->joint ); // weaker or stronger (unfed, damaged, fed again): a sleeping limb must react
+				lpPhys_WakeJoint( w->phys, l->joint ); // weaker or stronger (unfed, damaged, fed again): a sleeping limb must react
 			}
 			l->appliedCap = cap;
 			w->stats.motorSets += 1;
@@ -637,7 +608,7 @@ void lpDriveMotors( lpWorld* w )
 		l->motorCap = cap;
 		if ( l->targetChanged )
 		{
-			b3Joint_WakeBodies( l->joint );
+			lpPhys_WakeJoint( w->phys, l->joint );
 			l->targetChanged = false;
 		}
 	}
@@ -658,14 +629,14 @@ void lpSyncLinks( lpWorld* w )
 			// No joint to rebuild. A mount left on a chip would be launched by its spring: the wheel tears off instead.
 			lpBody* mount = w->bodies.data + w->pieces.data[l->ends[0].piece].body;
 			mount->linkStamp = stamp;
-			if ( b3Body_GetType( mount->id ) == b3_dynamicBody &&
-				 b3Body_GetMass( mount->id ) < LP_WHEEL_TEAR_RATIO * w->wheels.data[l->wheel].sprungMass )
+			if ( lpPhys_IsDynamic( w->phys, mount->id ) &&
+				 lpPhys_GetMass( w->phys, mount->id ) < LP_WHEEL_TEAR_RATIO * w->wheels.data[l->wheel].sprungMass )
 			{
 				lpBreakLink( w, i, true );
 			}
 			continue;
 		}
-		b3BodyId bodies[2];
+		lpPhysBody bodies[2];
 		for ( int k = 0; k < 2; ++k )
 		{
 			if ( l->ends[k].piece >= 0 )
@@ -674,16 +645,16 @@ void lpSyncLinks( lpWorld* w )
 			}
 			bodies[k] = lpEndBody( w, l, k );
 		}
-		if ( b3Joint_IsValid( l->joint ) && B3_ID_EQUALS( bodies[0], l->builtOn[0] ) && B3_ID_EQUALS( bodies[1], l->builtOn[1] ) )
+		if ( lpPhys_IsValidJoint( w->phys, l->joint ) && LP_PHYS_EQUAL( bodies[0], l->builtOn[0] ) && LP_PHYS_EQUAL( bodies[1], l->builtOn[1] ) )
 		{
 			continue;
 		}
 		// An end moved to a new body (a split, an ejected cell, a ghost made whole again), or its old body is gone
-		if ( b3Joint_IsValid( l->joint ) )
+		if ( lpPhys_IsValidJoint( w->phys, l->joint ) )
 		{
-			b3DestroyJoint( l->joint, false );
+			lpPhys_DestroyJoint( w->phys, l->joint, false );
 		}
-		if ( lpTearsOff( bodies[0], bodies[1], l->def.tearRatio ) )
+		if ( lpTearsOff( w, bodies[0], bodies[1], l->def.tearRatio ) )
 		{
 			lpBreakLink( w, i, true );
 			continue;
@@ -708,25 +679,19 @@ bool lpBodyLinked( const lpWorld* w, const lpBody* b )
 
 bool lpTouchesLinked( lpWorld* w, const lpBody* b )
 {
-	int capacity = w->linkCount > 0 ? b3Body_GetContactCapacity( b->id ) : 0; // free in a world without links
-	if ( capacity == 0 )
+	if ( w->linkCount == 0 )
 	{
-		return false;
+		return false; // free in a world without links
 	}
-	lpArray_Reserve( w->scratchContacts, capacity );
-	int count = b3Body_GetContactData( b->id, w->scratchContacts.data, capacity );
+	const lpPhysContact* contacts;
+	int count = lpPhys_GetBodyContacts( w->phys, b->id, &contacts );
 	for ( int k = 0; k < count; ++k )
 	{
-		const b3ContactData* c = w->scratchContacts.data + k;
-		for ( int side = 0; side < 2; ++side )
+		int body = contacts[k].other >= 0 ? w->pieces.data[contacts[k].other].body : -1;
+		if ( body >= 0 && w->bodies.data + body != b && w->bodies.data[body].kind == lp_kindDebris &&
+			 lpBodyLinked( w, w->bodies.data + body ) )
 		{
-			intptr_t data = (intptr_t)b3Shape_GetUserData( side == 0 ? c->shapeIdA : c->shapeIdB );
-			int body = data > 0 ? w->pieces.data[data - 1].body : -1;
-			if ( body >= 0 && w->bodies.data + body != b && w->bodies.data[body].kind == lp_kindDebris &&
-				 lpBodyLinked( w, w->bodies.data + body ) )
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 	return false;
@@ -836,20 +801,20 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		{
 			// A wheel's load is its own force, exact and computed before the step (wheel.c): judged as it comes, so a
 			// hard landing breaks it in one step
-			b3BodyId mount = w->bodies.data[w->pieces.data[l->ends[0].piece].body].id;
-			if ( b3Body_IsAwake( mount ) )
+			lpPhysBody mount = w->bodies.data[w->pieces.data[l->ends[0].piece].body].id;
+			if ( lpPhys_IsAwake( w->phys, mount ) )
 			{
 				l->utilization = lpLinkLoad( l, l->torque );
 				if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
 				{
-					b3Body_SetAwake( mount, true );
+					lpPhys_SetAwake( w->phys, mount, true );
 				}
 			}
 			continue;
 		}
-		b3BodyId a = l->builtOn[0];
-		b3BodyId b = l->builtOn[1];
-		if ( b3Body_IsAwake( a ) == false && b3Body_IsAwake( b ) == false )
+		lpPhysBody a = l->builtOn[0];
+		lpPhysBody b = l->builtOn[1];
+		if ( lpPhys_IsAwake( w->phys, a ) == false && lpPhys_IsAwake( w->phys, b ) == false )
 		{
 			if ( l->settle == 0 )
 			{
@@ -857,25 +822,24 @@ void lpPollLinks( lpWorld* w, float timeStep )
 			}
 			continue; // asleep: nothing moved, nothing changed
 		}
-		l->points[0] = lpTransformWorldPoint( b3Body_GetTransform( a ), l->ends[0].frame.p );
-		l->points[1] = lpTransformWorldPoint( b3Body_GetTransform( b ), l->ends[1].frame.p );
-		l->force = b3Joint_GetConstraintForce( l->joint );
-		l->torque = b3Joint_GetConstraintTorque( l->joint );
+		l->points[0] = lpTransformWorldPoint( lpPhys_GetTransform( w->phys, a ), l->ends[0].frame.p );
+		l->points[1] = lpTransformWorldPoint( lpPhys_GetTransform( w->phys, b ), l->ends[1].frame.p );
+		lpPhys_GetJointLoad( w->phys, l->joint, &l->force, &l->torque );
 		lpVec3 held = l->torque; // what the joint holds against: the motor's own torque is not a load on it
 		if ( l->def.type == lp_linkHinge )
 		{
-			l->angle = b3RevoluteJoint_GetAngle( l->joint );
+			l->angle = lpPhys_GetHingeAngle( w->phys, l->joint );
 		}
 		if ( lpHasMotor( l ) && l->def.type == lp_linkHinge )
 		{
 			lpVec3 axis = lpRotateVector( lpEndFrameRotation( w, l, 0 ), (lpVec3){ 0.0f, 0.0f, 1.0f } );
-			float drive = b3RevoluteJoint_GetMotorTorque( l->joint );
+			float drive = lpPhys_GetHingeMotorTorque( w->phys, l->joint );
 			held = lpMulSub( held, drive, axis );
 			l->motorTorque = lpAbsFloat( drive );
 		}
 		else if ( lpHasMotor( l ) )
 		{
-			lpVec3 drive = b3SphericalJoint_GetMotorTorque( l->joint );
+			lpVec3 drive = lpPhys_GetBallMotorTorque( w->phys, l->joint );
 			held = lpSub( held, drive );
 			l->motorTorque = lpLength( drive );
 		}
@@ -889,7 +853,7 @@ void lpPollLinks( lpWorld* w, float timeStep )
 		l->utilization += 0.5f * ( lpLinkLoad( l, held ) - l->utilization );
 		if ( lpStrainLink( w, i, timeStep ) == false && l->utilization > 1.0f )
 		{
-			b3Joint_WakeBodies( l->joint ); // keep straining until it holds or gives
+			lpPhys_WakeJoint( w->phys, l->joint ); // keep straining until it holds or gives
 		}
 	}
 }
@@ -1002,7 +966,7 @@ bool lpValidateLinks( const lpWorld* w )
 			const lpLinkEnd* e = l->ends + k;
 			if ( e->piece < 0 )
 			{
-				if ( B3_IS_NULL( l->anchor[k] ) && l->wheel < 0 )
+				if ( LP_PHYS_NULL( l->anchor[k] ) && l->wheel < 0 )
 				{
 					return lpLinkFail( "link %d end %d is on the world but has no anchor body", i, k );
 				}
@@ -1015,7 +979,7 @@ bool lpValidateLinks( const lpWorld* w )
 				return lpLinkFail( "link %d end %d is on a freed or reused piece", i, k );
 			}
 			const lpBody* b = w->bodies.data + p->body;
-			if ( b->alive == false || B3_IS_NULL( b->id ) )
+			if ( b->alive == false || LP_PHYS_NULL( b->id ) )
 			{
 				return lpLinkFail( "link %d end %d is on a body with no Box3D body", i, k );
 			}
@@ -1034,9 +998,15 @@ bool lpValidateLinks( const lpWorld* w )
 		{
 			return lpLinkFail( "link %d has both ends on body %d", i, bodies[0] );
 		}
-		if ( l->wheel < 0 && ( b3Joint_IsValid( l->joint ) == false ||
-								B3_ID_EQUALS( b3Joint_GetBodyA( l->joint ), lpEndBody( w, l, 0 ) ) == false ||
-								B3_ID_EQUALS( b3Joint_GetBodyB( l->joint ), lpEndBody( w, l, 1 ) ) == false ) )
+		lpPhysBody jointA = lp_nullPhysBody;
+		lpPhysBody jointB = lp_nullPhysBody;
+		if ( l->wheel < 0 && lpPhys_IsValidJoint( w->phys, l->joint ) )
+		{
+			lpPhys_GetJointBodies( w->phys, l->joint, &jointA, &jointB );
+		}
+		if ( l->wheel < 0 && ( lpPhys_IsValidJoint( w->phys, l->joint ) == false ||
+								LP_PHYS_EQUAL( jointA, lpEndBody( w, l, 0 ) ) == false ||
+								LP_PHYS_EQUAL( jointB, lpEndBody( w, l, 1 ) ) == false ) )
 		{
 			return lpLinkFail( "link %d has a joint that is not on its ends' bodies (%d)", i, 0 );
 		}

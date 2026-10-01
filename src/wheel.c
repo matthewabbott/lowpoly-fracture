@@ -121,15 +121,15 @@ static lpQuat lpWheelRotation( const lpVehicle* v, const lpWheel* wh )
 }
 
 // Hub pose and the link's cached points (the ends of the axle, so rays and blasts find the tyre)
-static void lpPoseWheel( lpWorld* w, lpWheel* wh, lpWorldTransform xf, b3BodyId body )
+static void lpPoseWheel( lpWorld* w, lpWheel* wh, lpWorldTransform xf, lpPhysBody body )
 {
 	const lpVehicle* v = w->vehicles.data + wh->vehicle;
 	lpLink* l = w->links.data + wh->link;
 	lpVec3 hubLocal = lpMulAdd( l->ends[0].frame.p, -wh->length, v->up );
 	wh->hub.p = lpTransformWorldPoint( xf, hubLocal );
 	wh->hub.q = lpMulQuat( xf.q, lpWheelRotation( v, wh ) );
-	wh->hubVelocity = b3Body_GetWorldPointVelocity( body, wh->hub.p );
-	wh->bodyOmega = b3Body_GetAngularVelocity( body );
+	wh->hubVelocity = lpPhys_GetPointVelocity( w->phys, body, wh->hub.p );
+	wh->bodyOmega = lpPhys_GetAngularVelocity( w->phys, body );
 	lpVec3 axle = lpRotateVector( wh->hub.q, (lpVec3){ 0.5f * wh->def.width, 0.0f, 0.0f } );
 	l->points[0] = lpOffsetPos( wh->hub.p, lpNeg( axle ) );
 	l->points[1] = lpOffsetPos( wh->hub.p, axle );
@@ -144,14 +144,14 @@ int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 		return -1;
 	}
 	const lpBody* b = w->bodies.data + def->body;
-	if ( b->alive == false || B3_IS_NULL( b->id ) || b3Body_GetType( b->id ) != b3_dynamicBody )
+	if ( b->alive == false || LP_PHYS_NULL( b->id ) || lpPhys_IsDynamic( w->phys, b->id ) == false )
 	{
 		return -1;
 	}
-	lpWorldTransform xf = b3Body_GetTransform( b->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
 	lpVec3 forward = lpNormalize( def->forward );
 	lpVec3 up = lpNormalize( lpSub( def->up, lpMulSV( lpDot( def->up, forward ), forward ) ) );
-	float sprungMass = b3Body_GetMass( b->id ) / (float)def->wheelCount;
+	float sprungMass = lpPhys_GetMass( w->phys, b->id ) / (float)def->wheelCount;
 
 	int index = w->vehicles.count;
 	lpVehicle zero = { 0 };
@@ -252,40 +252,17 @@ void lpSpawnLostWheels( lpWorld* w )
 	w->lostWheels.count = 0;
 }
 
-typedef struct lpWheelCast
+typedef struct lpWheelSkip
 {
 	const lpWorld* world;
 	int chassis; // its own body: the cast passes through it
-	float fraction;
-	lpPos point;
-	lpVec3 normal;
-	int piece;
-	float friction;
-	bool hit;
-} lpWheelCast;
+} lpWheelSkip;
 
-static float lpWheelCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
-							 int triangleIndex, int childIndex, void* context )
+static bool lpWheelAccept( int piece, float fraction, void* context )
 {
-	(void)triangleIndex;
-	(void)childIndex;
-	lpWheelCast* cast = context;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
-	int piece = data > 0 ? (int)( data - 1 ) : -1;
-	if ( piece >= 0 && cast->world->pieces.data[piece].body == cast->chassis )
-	{
-		return -1.0f;
-	}
-	if ( fraction < cast->fraction || ( cast->hit && fraction == cast->fraction && piece < cast->piece ) )
-	{
-		cast->fraction = fraction;
-		cast->point = point;
-		cast->normal = normal;
-		cast->piece = piece;
-		cast->friction = userMaterialId < lp_materialCount ? lpGetMaterial( (int)userMaterialId )->friction : 0.6f;
-		cast->hit = true;
-	}
-	return lpNextUp( cast->fraction );
+	(void)fraction;
+	const lpWheelSkip* skip = context;
+	return piece < 0 || skip->world->pieces.data[piece].body != skip->chassis;
 }
 
 // Casts the tyre from the mount (the hub at full compression) down to full droop
@@ -308,14 +285,11 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 	{
 		points[k] = lpAdd( lpMulSV( rim * c[k], heading ), lpMulSV( rim * s[k], down ) );
 	}
-	b3ShapeProxy proxy = { points, LP_WHEEL_RIM, halfWidth };
-	b3QueryFilter filter = b3DefaultQueryFilter();
-	filter.categoryBits = LP_CAT_VEHICLE;
-	filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
-
-	lpWheelCast cast = { w, chassis, FLT_MAX, { 0 }, lpVec3_zero, -1, 0.6f, false };
+	lpPhysFilter filter = { LP_CAT_VEHICLE, LP_CAT_STATIC | LP_CAT_FULL };
+	lpWheelSkip skip = { w, chassis };
 	lpPos mount = lpTransformWorldPoint( xf, l->ends[0].frame.p );
-	b3World_CastShape( w->physics, mount, &proxy, lpMulSV( wh->def.maxLength, down ), filter, lpWheelCastFcn, &cast );
+	lpPhysCastHit cast = lpPhys_CastShape( w->phys, mount, points, LP_WHEEL_RIM, halfWidth, lpMulSV( wh->def.maxLength, down ),
+										   filter, lpWheelAccept, &skip );
 	w->stats.wheelCasts += 1;
 
 	wh->grounded = cast.hit;
@@ -331,7 +305,7 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 	wh->contactPoint = cast.point;
 	// A cast that starts inside the ground reports no normal: push straight up the suspension
 	wh->contactNormal = lpLengthSquared( cast.normal ) > 0.5f ? cast.normal : lpNeg( down );
-	wh->friction = cast.friction;
+	wh->friction = cast.material >= 0 && cast.material < lp_materialCount ? lpGetMaterial( cast.material )->friction : 0.6f;
 	wh->groundPiece = cast.piece;
 	wh->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
 }
@@ -344,17 +318,17 @@ static bool lpGroundLive( const lpWorld* w, const lpWheel* wh )
 		return true;
 	}
 	const lpPiece* p = w->pieces.data + wh->groundPiece;
-	return p->generation == wh->groundGeneration && p->body >= 0 && B3_IS_NON_NULL( p->shapeId );
+	return p->generation == wh->groundGeneration && p->body >= 0 && LP_PHYS_NULL( p->shapeId ) == false;
 }
 
-static b3BodyId lpGroundBody( const lpWorld* w, const lpWheel* wh )
+static lpPhysBody lpGroundBody( const lpWorld* w, const lpWheel* wh )
 {
 	if ( wh->groundPiece < 0 )
 	{
-		return b3_nullBodyId;
+		return lp_nullPhysBody;
 	}
 	const lpBody* g = w->bodies.data + w->pieces.data[wh->groundPiece].body;
-	return b3Body_GetType( g->id ) == b3_dynamicBody ? g->id : b3_nullBodyId;
+	return lpPhys_IsDynamic( w->phys, g->id ) ? g->id : lp_nullPhysBody;
 }
 
 static float lpEffectiveMass( float invMass, lpMatrix3 invI, lpVec3 r, lpVec3 d )
@@ -405,22 +379,22 @@ static void lpRecheckGround( lpWorld* w, lpWheel* wh, lpVec3 force )
 static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, int count, float timeStep )
 {
 	const lpBody* b = w->bodies.data + bodyIndex;
-	b3BodyId id = b->id;
-	float mass = b3Body_GetMass( id );
+	lpPhysBody id = b->id;
+	float mass = lpPhys_GetMass( w->phys, id );
 	if ( mass <= 0.0f )
 	{
 		return;
 	}
 	float invMass = 1.0f / mass;
-	lpMatrix3 invI = b3Body_GetWorldInverseRotationalInertia( id );
-	lpPos com = b3Body_GetWorldCenter( id );
-	lpWorldTransform xf = b3Body_GetTransform( id );
-	lpVec3 v0 = b3Body_GetLinearVelocity( id );
-	lpVec3 omega0 = b3Body_GetAngularVelocity( id );
+	lpMatrix3 invI = lpPhys_GetInvInertia( w->phys, id );
+	lpPos com = lpPhys_GetWorldCenter( w->phys, id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, id );
+	lpVec3 v0 = lpPhys_GetLinearVelocity( w->phys, id );
+	lpVec3 omega0 = lpPhys_GetAngularVelocity( w->phys, id );
 	lpVec3 up = lpVec3_zero;
 
 	// Velocity at the end of the step without the tyres: gravity and the springs
-	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, b3World_GetGravity( w->physics ) );
+	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, lpPhys_GetGravity( w->phys ) );
 	lpVec3 omega = omega0;
 	for ( int k = 0; k < count; ++k )
 	{
@@ -437,8 +411,8 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		}
 		lpVec3 n = wh->contactNormal;
 		wh->r = lpSubPos( wh->contactPoint, com );
-		b3BodyId ground = lpGroundBody( w, wh );
-		wh->groundVelocity = B3_IS_NON_NULL( ground ) ? b3Body_GetWorldPointVelocity( ground, wh->contactPoint ) : lpVec3_zero;
+		lpPhysBody ground = lpGroundBody( w, wh );
+		wh->groundVelocity = LP_PHYS_NULL( ground ) == false ? lpPhys_GetPointVelocity( w->phys, ground, wh->contactPoint ) : lpVec3_zero;
 		lpVec3 vc = lpSub( lpAdd( v0, lpCross( omega0, wh->r ) ), wh->groundVelocity );
 
 		// The spring from the cast, damped by how fast the chassis closes on the ground (a kerb does not jolt it)
@@ -561,20 +535,20 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		lpVec3 across = lpMulSV( wh->lambdaS * invStep, wh->dirS );
 		// The side force acts nearer the centre of mass, so it rolls the body less
 		lpVec3 raised = lpSub( wh->r, lpMulSV( ( 1.0f - vehicle->def.rollFactor ) * lpDot( wh->r, up ), up ) );
-		b3Body_ApplyForce( id, lpAdd( push, along ), wh->contactPoint, false );
-		b3Body_ApplyForce( id, across, lpOffsetPos( com, raised ), false );
+		lpPhys_ApplyForce( w->phys, id, lpAdd( push, along ), wh->contactPoint, false );
+		lpPhys_ApplyForce( w->phys, id, across, lpOffsetPos( com, raised ), false );
 		lpVec3 onChassis = lpAdd( lpAdd( push, along ), across );
-		b3BodyId ground = lpGroundBody( w, wh );
-		if ( B3_IS_NON_NULL( ground ) )
+		lpPhysBody ground = lpGroundBody( w, wh );
+		if ( LP_PHYS_NULL( ground ) == false )
 		{
-			b3Body_ApplyForce( ground, lpNeg( onChassis ), wh->contactPoint, true );
+			lpPhys_ApplyForce( w->phys, ground, lpNeg( onChassis ), wh->contactPoint, true );
 		}
 		wh->load = lpDot( push, wh->contactNormal );
 		l->force = lpNeg( onChassis ); // links keep the force on end B: the ground
 		lpRecheckGround( w, wh, l->force );
 		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
 		lpBody* chassis = w->bodies.data + bodyIndex;
-		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( b3World_GetGravity( w->physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
+		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( lpPhys_GetGravity( w->phys ) ) && w->tick >= chassis->hitCheckTick + 10 )
 		{
 			chassis->hitCheckTick = w->tick;
 			lpRequestStressCheck( w, bodyIndex, false );
@@ -618,7 +592,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 			wh->steer += lpClampFloat( target - wh->steer, -turn, turn );
 			if ( wake )
 			{
-				b3Body_SetAwake( w->bodies.data[lpWheelMountBody( w, wh )].id, true );
+				lpPhys_SetAwake( w->phys, w->bodies.data[lpWheelMountBody( w, wh )].id, true );
 			}
 		}
 	}
@@ -638,25 +612,25 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 			continue;
 		}
 		int body = lpWheelMountBody( w, wh );
-		b3BodyId id = w->bodies.data[body].id;
-		if ( b3Body_GetType( id ) != b3_dynamicBody )
+		lpPhysBody id = w->bodies.data[body].id;
+		if ( lpPhys_IsDynamic( w->phys, id ) == false )
 		{
 			continue;
 		}
-		if ( b3Body_IsAwake( id ) == false )
+		if ( lpPhys_IsAwake( w->phys, id ) == false )
 		{
 			// Parked: nothing moves, but the ground under it may go (it holds no Box3D contact to wake it)
-			b3BodyId ground = lpGroundLive( w, wh ) ? lpGroundBody( w, wh ) : b3_nullBodyId;
-			if ( lpGroundLive( w, wh ) == false || ( B3_IS_NON_NULL( ground ) && b3Body_IsAwake( ground ) ) )
+			lpPhysBody ground = lpGroundLive( w, wh ) ? lpGroundBody( w, wh ) : lp_nullPhysBody;
+			if ( lpGroundLive( w, wh ) == false || ( LP_PHYS_NULL( ground ) == false && lpPhys_IsAwake( w->phys, ground ) ) )
 			{
-				b3Body_SetAwake( id, true );
+				lpPhys_SetAwake( w->phys, id, true );
 			}
 			else
 			{
 				continue;
 			}
 		}
-		lpWorldTransform xf = b3Body_GetTransform( id );
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, id );
 		if ( casts < w->def.maxWheelCastsPerStep || lpGroundLive( w, wh ) == false )
 		{
 			lpCastWheel( w, wh, body, xf );
@@ -679,8 +653,8 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 			last += 1;
 		}
 		lpSolveTyres( w, body, w->scratchWheels.data + first, last - first, timeStep );
-		b3BodyId id = w->bodies.data[body].id;
-		lpWorldTransform xf = b3Body_GetTransform( id );
+		lpPhysBody id = w->bodies.data[body].id;
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, id );
 		for ( int k = first; k < last; ++k )
 		{
 			lpWheel* wh = w->wheels.data + w->scratchWheels.data[k].wheel;
@@ -789,12 +763,12 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 	}
 	if ( s.body >= 0 )
 	{
-		b3BodyId id = w->bodies.data[s.body].id;
-		lpQuat q = b3Body_GetRotation( id );
+		lpPhysBody id = w->bodies.data[s.body].id;
+		lpQuat q = lpPhys_GetTransform( w->phys, id ).q;
 		s.forward = lpRotateVector( q, v->forward );
 		s.up = lpRotateVector( q, v->up );
-		s.position = b3Body_GetWorldCenter( id );
-		s.speed = lpDot( b3Body_GetLinearVelocity( id ), s.forward );
+		s.position = lpPhys_GetWorldCenter( w->phys, id );
+		s.speed = lpDot( lpPhys_GetLinearVelocity( w->phys, id ), s.forward );
 	}
 	return s;
 }
@@ -890,7 +864,7 @@ bool lpValidateWheel( const lpWorld* w, int link )
 	{
 		return lpWheelFail( "wheel link %d and wheel %d disagree", link, l->wheel );
 	}
-	if ( l->ends[0].piece < 0 || l->ends[1].piece >= 0 || B3_IS_NON_NULL( l->joint ) )
+	if ( l->ends[0].piece < 0 || l->ends[1].piece >= 0 || LP_PHYS_NULL( l->joint ) == false )
 	{
 		return lpWheelFail( "wheel link %d has a bad end or a joint (piece %d)", link, l->ends[0].piece );
 	}
