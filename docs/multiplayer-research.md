@@ -272,3 +272,18 @@ that would settle it ([m7-redteam.md](research/m7-redteam.md)). None was fatal.
 | H4: GPU physics stays off the deterministic path | partly falsified: an integer (and a narrow float) GPU solve is deterministic across two vendors; the iGPU loss holds |
 | H5: a serialisable, command-logged, hashed world matters more than a solver rewrite | confirmed and sharpened |
 | H6: x64 under Rosetta 2, Prism and box64 stays bit-exact | confirmed; FEX open |
+
+## 9. Ideas after the research (2026-10-01)
+
+Three ideas from the owner, now in the [roadmap](roadmap.md):
+- **Repair by causal unit** (milestone 10): replace a mismatched object's whole island, structure or assembly, plus
+  every unit it touched since the last agreed tick, hidden state included, and re-simulate only those from the host's
+  image. It answers the red team's R3 (repairs that re-diverge on unshipped hidden state), and it makes partial
+  rollback exact: a causally closed region has nothing outside it to leak into.
+- **A finite speed of propagation** on the channels that reach across space within a tick (milestone 10): the stress
+  solve, supply and queries. Between islands, cause and effect already travels only as fast as matter, so this bounds
+  every cone: repair regions, rollback regions and zones that may lag (milestone 18). Collapses become cascades
+  spread over ticks.
+- **Causally scoped rollback** (milestone 16): predict the other players' inputs and, on a wrong guess, re-simulate
+  only that input's cone, so a player's own actions on the world feel instant at a cost bounded by the cone, not the
+  world. It rests on the lockstep base, which lets every machine compute the truth from confirmed inputs.

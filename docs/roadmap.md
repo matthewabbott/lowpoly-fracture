@@ -64,7 +64,7 @@ so big events (buildings falling onto buildings, barrages) keep collapses prompt
 
 Open, taken up when measurements call for them:
 - one very large structure (1000+ pieces) still solves on one thread within its share: the k-hop patch (re-solve only
-  near the damage) or a parallel K·x with fixed partitions;
+  near the damage; milestone 10 makes it stress's finite speed of propagation) or a parallel K·x with fixed partitions;
 - ground joints, so whole walls can overturn off their foundations;
 - slump (a structure that sags into a new rest pose instead of cracking), mortar relief, creak sounds.
 
@@ -356,8 +356,27 @@ The multiplayer primitive's first half (L1a in the research), and two machines p
   covering the stress solver's state and Box3D's contact state; `lpWorld_Hash` stays as the full check (T0 #20).
 - **Session settings and a handshake:** the counts, the build, the content hash and the self-test hash agreed before
   play.
+- **Causal units:** islands (bodies joined by contacts and joints), structures (a bond graph, coupled by its stress
+  solve), linked assemblies and supply networks: the groups whose members affect each other and nothing outside within
+  a tick. Hashes are grouped by unit and include each unit's hidden state (warm starts, contact caches, sleep timers,
+  solver progress).
+- **A finite speed of propagation on the non-local channels** (the owner's idea, 2026-10-01). Between islands, cause
+  and effect already travels no faster than matter moves. The channels that reach across space within a tick get a
+  speed too, a few metres per tick, tunable and perhaps per material:
+  - the stress solve (the k-hop patch, growing from a change a few hops per tick);
+  - supply (a pressure drop running down a line);
+  - queries (a bounded range, or the path counted in the cone).
+
+  Then a cause's reach after d ticks is bounded, so repair regions, rollback regions and zone boundaries are bounded
+  too. A collapse becomes a cascade spread over ticks, which also smooths the spikes. The catalogue (milestone 9)
+  judges what it does to stress outcomes, and the speed is tuned so stiff things stay stiff.
+- **Repair by causal unit:** a mismatched object's whole unit is replaced, plus every unit it touched since the last
+  tick all machines agreed on, hidden state included. Every machine, host included, restores those units to the host's
+  image of tick T and re-simulates only them from T to now; that is exact when the units were causally closed over that
+  span, and cheap because they are small.
 - **A two-world harness** in `lpf_test`: two worlds step the same commands; an injected desync is named by object and
-  tick; repair by object image is tried and its reconvergence measured (red team R3).
+  tick; repair by causal unit is tried and its reconvergence measured (red team R3); how fast real causal cones grow in
+  the bench scenes is measured.
 - **The first co-op:** a two-process lockstep smoke test over a plain socket (start together, the host keeps the
   clock), with the `--input-delay` feel test's verdict applied to the walking body.
 
@@ -381,7 +400,10 @@ The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-sc
 products, 64-bit world positions, per-body exponents; Box3D's graph-coloured soft step transcribed, coloured per tick
 from state; bodies, hulls, a sorted broadphase, SAT, the four joints with motors and limits, islands and sleep, GJK and
 casts; the one-tick pipeline lag as deterministic semantics. It runs behind the seam beside Box3D, switchable per world,
-with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels).
+with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels). Two requirements from milestone 10's
+design:
+- it can step a chosen set of causal units in isolation (repair and scoped rollback re-simulate only those);
+- it keeps a short ring buffer of each changed unit's state for the last few ticks, written incrementally.
 
 Exit: the catalogue passes with tolerances on the integer core; the twin at 1 worker within 2.5 times Box3D (1.5 with
 AVX2); identical hashes across the CI matrix.
@@ -412,7 +434,23 @@ state rebased on the canonical body, or the body itself under input delay.
 
 Lockstep over the snapshot and the command log: transport (Steam sockets with a direct fallback, the send rate raised
 above its default), server-timed ticks with a late-input tolerance, the latency-state character, join with a pause or
-a catch-up, host migration, per-object repair, desync reports that replay headless.
+a catch-up, host migration, repair by causal unit, desync reports that replay headless.
+
+**Causally scoped rollback** (the owner's idea, 2026-10-01), an option on top of lockstep, measured against plain input
+delay. Rollback netcode is itself built on deterministic lockstep: every machine predicts the other players' inputs
+(usually "the same as last tick") instead of waiting for them, and corrects itself when the real ones arrive. Classic
+rollback re-simulates the whole world for every wrong guess, which a destruction world cannot afford. Scoped:
+- On a wrong guess, only the cone of that input (bounded by the speed of propagation over the late ticks) is restored
+  to its confirmed state and re-simulated with the true input; everything outside it never depended on the guess and
+  is already right.
+- Each machine computes the truth itself from the confirmed inputs, so no state is shipped, and the corrections never
+  enter the shared history: a late joiner replays confirmed inputs only.
+- A player's own actions on the world feel instant; reality shifts under them when a guess about someone else was
+  wrong.
+- Destructive inputs (blasts, tools) probably keep their input delay: a wrong guess there would mean re-simulating a
+  collapse.
+- Without determinism the truth would have to be shipped from the host, and divergence could start anywhere, so cones
+  could not be bounded: the lockstep base is what makes it work.
 
 Exit: a 4-player session across machines.
 
@@ -454,6 +492,9 @@ Candidates logged so far:
   games choose the policy. Identity is opt-in, so anonymous rubble bakes and only tagged props persist as bodies (the
   "10,000 cabbages" problem).
 - **Wake storms:** a grenade among thousands of sleeping props wakes them in a graceful, counted wave.
+- **Zones that lag:** with a finite speed of propagation (milestone 10), a zone whose causal cone cannot reach any
+  observer in time may be simulated lazily or at a lower rate and caught up deterministically when it can; the union of
+  active zones then costs less than every zone at full rate.
 - **Determinism:** activity is derived from shared simulation state (player and car positions), never the camera.
 - **Streaming:** add bodies in batches. Rendering LOD is a separate track.
 
