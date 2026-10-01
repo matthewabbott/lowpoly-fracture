@@ -5,7 +5,7 @@ name: determinism
 
 on:
   push:
-    branches: [ci-determinism]
+    branches: [sandbox, master]
   workflow_dispatch:
 
 permissions:
@@ -54,13 +54,12 @@ jobs:
             lpf+=("-DCMAKE_C_COMPILER_LAUNCHER=sh;$GITHUB_WORKSPACE/.github/determinism/contract-launcher.sh")
           fi
           cmake -S . -B build/default "${gen[@]}" "${args[@]}" "${lpf[@]}"
-          cmake -S . -B build/portable "${gen[@]}" "${args[@]}" "${lpf[@]}" -DLPF_PORTABLE_MATH=ON
           cmake -S .github/determinism -B build/probe "${gen[@]}"
 
       - name: Build
         shell: bash
         run: |
-          for b in default portable probe; do cmake --build build/$b --config Release --parallel 4 || exit 1; done
+          for b in default probe; do cmake --build build/$b --config Release --parallel 4 || exit 1; done
 
       - name: Run
         shell: bash
@@ -84,7 +83,6 @@ jobs:
             build/probe/$sub/libm_probe_static$exe $out/probe_static | tee $out/probe_static.txt
           fi
           bash .github/determinism/ladder.sh build/default/$sub/lpf_bench$exe $out/default ${{ matrix.runner }}
-          bash .github/determinism/ladder.sh build/portable/$sub/lpf_bench$exe $out/portable ${{ matrix.runner }}
 
       - name: Tests
         shell: bash
@@ -103,7 +101,6 @@ jobs:
         run: |
           mkdir -p emu
           cp build/default/$BIN_SUB/lpf_bench$EXE emu/lpf_bench$EXE
-          cp build/portable/$BIN_SUB/lpf_bench$EXE emu/lpf_bench_portable$EXE
           cp build/probe/$BIN_SUB/libm_probe$EXE emu/libm_probe$EXE
           cp build/probe/$BIN_SUB/libm_probe_static$EXE emu/ 2>/dev/null || true
           cp .github/determinism/ladder.sh emu/
@@ -157,7 +154,7 @@ jobs:
           out=out
           mkdir -p $out/probe
           if [ "${{ matrix.emu }}" = "box64" ]; then
-            chmod +x emu/lpf_bench emu/lpf_bench_portable emu/libm_probe
+            chmod +x emu/lpf_bench emu/libm_probe
             export ${{ matrix.env }} BOX64_LOG=0 BOX64_NOBANNER=1
             run=$(command -v box64 || echo box64-build/box64)
             exe=
@@ -175,7 +172,6 @@ jobs:
             $run emu/libm_probe_static$exe $out/probe_static | tee $out/probe_static.txt
           fi
           bash emu/ladder.sh emu/lpf_bench$exe $out/default $run
-          bash emu/ladder.sh emu/lpf_bench_portable$exe $out/portable $run
           echo "not run (emulated)" > $out/test.txt
 
       - uses: actions/upload-artifact@v4

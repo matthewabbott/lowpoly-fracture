@@ -233,14 +233,14 @@ static float lpFootCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float
 			}
 		}
 	}
-	if ( fraction < cast->fraction )
+	if ( fraction < cast->fraction || ( cast->hit && fraction == cast->fraction && piece < cast->piece ) )
 	{
 		cast->fraction = fraction;
 		cast->point = point;
 		cast->piece = piece;
 		cast->hit = true;
 	}
-	return fraction;
+	return lpNextUp( cast->fraction );
 }
 
 // The ground under a planned foothold: its landing height is where a sole-sized sphere comes to rest on it

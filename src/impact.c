@@ -317,7 +317,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		{
 			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
 			b3Vec3 pv = b3Add( cellV, b3RotateVector( xf.q, b3MulSV( 2.0f, away ) ) );
-			lpEmitParticle( w, xf, cell->centroid, pv, lpCbrtf( cell->volume ), material );
+			lpEmitParticle( w, xf, cell->centroid, pv, lpCbrt( cell->volume ), material );
 			lpShape_Destroy( cell );
 			if ( hull != NULL )
 			{
@@ -854,6 +854,33 @@ static int lpCompareHits( const void* a, const void* b )
 	return ( x->key > y->key ) - ( x->key < y->key );
 }
 
+static int lpCompareHitEvents( const void* a, const void* b )
+{
+	const lpHitEvent* x = a;
+	const lpHitEvent* y = b;
+	if ( x->pair != y->pair )
+	{
+		return ( x->pair > y->pair ) - ( x->pair < y->pair );
+	}
+	if ( x->speed != y->speed )
+	{
+		return x->speed > y->speed ? -1 : 1;
+	}
+	if ( x->point.x != y->point.x )
+	{
+		return x->point.x < y->point.x ? -1 : 1;
+	}
+	if ( x->point.y != y->point.y )
+	{
+		return x->point.y < y->point.y ? -1 : 1;
+	}
+	if ( x->point.z != y->point.z )
+	{
+		return x->point.z < y->point.z ? -1 : 1;
+	}
+	return ( x->index > y->index ) - ( x->index < y->index ); // identical events: either order acts the same
+}
+
 static float lpShapeMass( b3ShapeId shapeId )
 {
 	b3BodyId body = b3Shape_GetBody( shapeId );
@@ -892,19 +919,33 @@ void lpCollectHits( lpWorld* w )
 {
 	b3ContactEvents events = b3World_GetContactEvents( w->def.physics );
 	w->scratchHits.count = 0;
+
+	// The stress checks, wakes and detonations below act in a total order of the hits, not the report order
+	w->scratchHitEvents.count = 0;
 	for ( int i = 0; i < events.hitCount; ++i )
 	{
 		const b3ContactHitEvent* e = events.hitEvents + i;
-		if ( e->approachSpeed < w->def.wakeSpeed )
-		{
-			continue;
-		}
 		intptr_t da = (intptr_t)b3Shape_GetUserData( e->shapeIdA );
 		intptr_t db = (intptr_t)b3Shape_GetUserData( e->shapeIdB );
-		if ( da <= 0 && db <= 0 )
+		if ( e->approachSpeed < w->def.wakeSpeed || ( da <= 0 && db <= 0 ) )
 		{
 			continue;
 		}
+		uint64_t lo = (uint64_t)( da > 0 ? da : 0 );
+		uint64_t hi = (uint64_t)( db > 0 ? db : 0 );
+		lpHitEvent ordered = { lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo, e->approachSpeed, e->point, i };
+		lpArray_Push( w->scratchHitEvents, ordered );
+	}
+	if ( w->scratchHitEvents.count > 1 )
+	{
+		qsort( w->scratchHitEvents.data, (size_t)w->scratchHitEvents.count, sizeof( lpHitEvent ), lpCompareHitEvents );
+	}
+
+	for ( int n = 0; n < w->scratchHitEvents.count; ++n )
+	{
+		const b3ContactHitEvent* e = events.hitEvents + w->scratchHitEvents.data[n].index;
+		intptr_t da = (intptr_t)b3Shape_GetUserData( e->shapeIdA );
+		intptr_t db = (intptr_t)b3Shape_GetUserData( e->shapeIdB );
 
 		// Something landed on or knocked a structure: its loads changed, so its stresses are checked again
 		for ( int k = 0; k < 2; ++k )
@@ -1000,7 +1041,7 @@ void lpCollectHits( lpWorld* w )
 			continue;
 		}
 
-		lpHitCandidate hit = { energy, point, ( (uint64_t)( da > 0 ? da : 0 ) << 32 ) | (uint64_t)( db > 0 ? db : 0 ) };
+		lpHitCandidate hit = { energy, point, w->scratchHitEvents.data[n].pair };
 		lpArray_Push( w->scratchHits, hit );
 	}
 
@@ -1015,7 +1056,7 @@ void lpCollectHits( lpWorld* w )
 		lpHitCandidate hit = w->scratchHits.data[i];
 		lpImpactDef impact = { 0 };
 		impact.point = hit.point;
-		impact.radius = b3ClampFloat( 0.06f * lpCbrtf( hit.energy ), 0.15f, 1.2f );
+		impact.radius = b3ClampFloat( 0.06f * lpCbrt( hit.energy ), 0.15f, 1.2f );
 		impact.energy = hit.energy;
 		lpArray_Push( w->nextImpacts, impact );
 	}

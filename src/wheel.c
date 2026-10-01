@@ -276,7 +276,7 @@ static float lpWheelCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 	{
 		return -1.0f;
 	}
-	if ( fraction < cast->fraction )
+	if ( fraction < cast->fraction || ( cast->hit && fraction == cast->fraction && piece < cast->piece ) )
 	{
 		cast->fraction = fraction;
 		cast->point = point;
@@ -285,7 +285,7 @@ static float lpWheelCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 		cast->friction = userMaterialId < lp_materialCount ? lpGetMaterial( (int)userMaterialId )->friction : 0.6f;
 		cast->hit = true;
 	}
-	return fraction;
+	return lpNextUp( cast->fraction );
 }
 
 // Casts the tyre from the mount (the hub at full compression) down to full droop
@@ -860,7 +860,7 @@ uint64_t lpHashVehicles( const lpWorld* w, uint64_t h )
 		{
 			continue;
 		}
-		float state[4] = { wh->steer, wh->length, wh->spinSpeed, wh->load };
+		float state[5] = { wh->steer, wh->length, wh->spin, wh->spinSpeed, wh->load }; // spin: a lost wheel takes its orientation
 		bool flags[3] = { wh->grounded, wh->atStop, wh->sliding };
 		h = lpHashBytes( h, state, sizeof( state ) );
 		h = lpHashBytes( h, flags, sizeof( flags ) );

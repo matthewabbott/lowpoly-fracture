@@ -131,7 +131,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, b3Vec3 gravity )
 		mass += m;
 		force = b3Add( force, load );
 		torque = b3Add( torque, b3Add( b3Cross( r, load ), p->stressLoad.t ) );
-		float own = m * lpCbrtf( p->shape->volume ) * lpCbrtf( p->shape->volume ) / 6.0f;
+		float own = m * lpCbrt( p->shape->volume ) * lpCbrt( p->shape->volume ) / 6.0f;
 		float rr = b3Dot( r, r );
 		inertia.cx = b3Add( inertia.cx, (b3Vec3){ m * ( rr - r.x * r.x ) + own, -m * r.y * r.x, -m * r.z * r.x } );
 		inertia.cy = b3Add( inertia.cy, (b3Vec3){ -m * r.x * r.y, m * ( rr - r.y * r.y ) + own, -m * r.z * r.y } );
@@ -185,6 +185,9 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	{
 		lpArray_Reserve( w->scratchContacts, capacity );
 		int count = b3Body_GetContactData( body->id, w->scratchContacts.data, capacity );
+
+		// Summed per piece in a total order (piece, then what it touches), not the physics engine's report order
+		w->scratchOrder.count = 0;
 		for ( int k = 0; k < count; ++k )
 		{
 			const b3ContactData* contact = w->scratchContacts.data + k;
@@ -196,7 +199,23 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 			{
 				continue;
 			}
-			lpPiece* piece = w->pieces.data + ( mineA ? da : db ) - 1;
+			b3ShapeId other = mineA ? contact->shapeIdB : contact->shapeIdA;
+			intptr_t otherData = mineA ? db : da;
+			lpOrder order = { ( (uint64_t)( mineA ? da : db ) << 32 ) | (uint64_t)( otherData > 0 ? otherData : 0 ),
+							  (uint32_t)other.index1, k };
+			lpArray_Push( w->scratchOrder, order );
+		}
+		if ( w->scratchOrder.count > 1 )
+		{
+			qsort( w->scratchOrder.data, (size_t)w->scratchOrder.count, sizeof( lpOrder ), lpCompareOrder );
+		}
+
+		for ( int o = 0; o < w->scratchOrder.count; ++o )
+		{
+			const b3ContactData* contact = w->scratchContacts.data + w->scratchOrder.data[o].index;
+			intptr_t da = (intptr_t)b3Shape_GetUserData( contact->shapeIdA );
+			bool mineA = da > 0 && w->pieces.data[da - 1].body == bodyIndex;
+			lpPiece* piece = w->pieces.data + ( w->scratchOrder.data[o].key >> 32 ) - 1;
 			if ( piece->anchored )
 			{
 				continue; // the ground takes it
@@ -251,7 +270,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	{
 		int pi = body->pieces.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		float size = lpCbrtf( p->shape->volume );
+		float size = lpCbrt( p->shape->volume );
 		float moved = b3Length( b3Sub( p->stressLoad.f, w->scratchLoads.data[i].f ) ) +
 					  b3Length( b3Sub( p->stressLoad.t, w->scratchLoads.data[i].t ) ) / size;
 		change += moved;
@@ -533,7 +552,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 			b3Vec3 r = b3Sub( p->shape->centroid, body->reliefCenter );
 			b3Vec3 w0 = body->reliefOmega;
 			b3Vec3 accel = b3Add( b3Add( body->reliefAccel, b3Cross( body->reliefAlpha, r ) ), b3Cross( w0, b3Cross( w0, r ) ) );
-			float own = mass * lpCbrtf( p->shape->volume ) * lpCbrtf( p->shape->volume ) / 6.0f;
+			float own = mass * lpCbrt( p->shape->volume ) * lpCbrt( p->shape->volume ) / 6.0f;
 			f[i].f = b3MulSub( f[i].f, mass / scale, accel );
 			f[i].t = b3MulSV( -own / scale, body->reliefAlpha );
 		}
@@ -551,7 +570,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 	s->nodeArm.count = n;
 	for ( int i = 0; i < n; ++i )
 	{
-		s->nodeArm.data[i] = lpCbrtf( w->pieces.data[s->nodes.data[i]].shape->volume );
+		s->nodeArm.data[i] = lpCbrt( w->pieces.data[s->nodes.data[i]].shape->volume );
 	}
 	lpSystemNodeScales( s, 1e-3f );
 	if ( job->clustered )
@@ -1222,7 +1241,7 @@ static void lpFormClusters( lpWorld* w, const lpStressJob* job )
 	{
 		lpPiece* p = w->pieces.data + s->nodes.data[i];
 		sets[i] = (lpClusterSet){ i, 1, p->shape->bounds, p->slenderRho < w->def.stressGlue, 0 };
-		meanSize += lpCbrtf( p->shape->volume );
+		meanSize += lpCbrt( p->shape->volume );
 		p->cluster = 0;
 	}
 	float radius = LP_CLUSTER_RADIUS * meanSize / (float)n;

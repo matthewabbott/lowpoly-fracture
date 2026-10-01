@@ -1054,7 +1054,7 @@ static int TestRigGrabs( void )
 	int rig = lpAddHexapod( s.world, b3Vec3_zero, 0.0f, 0 );
 	Run( &s, 30 );
 	b3Pos foot = lpWorld_GetLimbState( s.world, rig, 0 ).foot;
-	float half = 0.5f * cbrtf( 200.0f / lpGetMaterial( lp_metal )->density );
+	float half = 0.5f * lpCbrt( 200.0f / lpGetMaterial( lp_metal )->density );
 	lpPartDef box = lpDefaultPartDef();
 	box.halfExtents = (b3Vec3){ half, half, half };
 	box.material = lp_metal;

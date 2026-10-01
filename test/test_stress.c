@@ -1148,7 +1148,7 @@ static int TestReliefBalances( void )
 		b3Vec3 r = b3Sub( p->shape->centroid, b->reliefCenter );
 		b3Vec3 accel = b3Add( b3Add( b->reliefAccel, b3Cross( b->reliefAlpha, r ) ), b3Cross( b->reliefOmega, b3Cross( b->reliefOmega, r ) ) );
 		b3Vec3 f = b3Sub( b3Add( p->stressLoad.f, b3MulSV( m, g ) ), b3MulSV( m, accel ) );
-		float own = m * cbrtf( p->shape->volume ) * cbrtf( p->shape->volume ) / 6.0f;
+		float own = m * lpCbrt( p->shape->volume ) * lpCbrt( p->shape->volume ) / 6.0f;
 		b3Vec3 t = b3Sub( p->stressLoad.t, b3MulSV( own, b->reliefAlpha ) );
 		force = b3Add( force, f );
 		torque = b3Add( torque, b3Add( b3Cross( r, f ), t ) );

@@ -3,7 +3,7 @@
 
     summarize.py <artifacts dir> <summary.md>
 
-Each leg is a directory det-<leg> holding default/ and portable/ ladders (hashes.txt, ticks/<rung>.w<N>.txt),
+Each leg is a directory det-<leg> holding a default/ ladder (hashes.txt, ticks/<rung>.w<N>.txt),
 probe/*.bin (libm results), probe.txt, info.txt and test.txt. The reference leg is windows-x64-msvc."""
 import os
 import sys
@@ -71,8 +71,7 @@ def main():
                "otherwise the first differing tick (`load` = right after the scene was built). An exit code other "
                "than 0 means the leg's own worker counts disagreed (lpf_bench exit 2).\n")
 
-    for variant, title in (("default", "Default build (C-library cbrtf/atan2f/sinf)"),
-                           ("portable", "LPF_PORTABLE_MATH=ON (no C-library roots or trig in the core and scenes)")):
+    for variant, title in (("default", "The build (portable maths: no C-library roots or trig in the core and scenes)"),):
         ref_hashes = read_hashes(ref_dir, variant)
         leg_hashes = {leg: read_hashes(os.path.join(root, f"det-{leg}"), variant) for leg in legs}
         out.append(f"\n## {title}\n")

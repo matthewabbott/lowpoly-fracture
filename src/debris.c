@@ -358,6 +358,7 @@ typedef struct lpStaticRay
 	b3Pos point;
 	b3Vec3 normal;
 	bool hit;
+	int piece;
 } lpStaticRay;
 
 // Ghosts land on static things only (structures, rubble, the ground); they fly through moving bodies
@@ -378,15 +379,17 @@ static float lpStaticRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 	{
 		return -1.0f;
 	}
-	if ( fraction < ray->fraction )
+	int piece = (int)( data - 1 );
+	if ( fraction < ray->fraction || ( ray->hit && fraction == ray->fraction && piece < ray->piece ) )
 	{
 		ray->fraction = fraction;
 		ray->point = point;
 		// A ray that starts inside a shape reports it with no normal: the ghost is already in, so it lands upward
 		ray->normal = b3LengthSquared( normal ) > 0.5f ? normal : (b3Vec3){ 0.0f, 1.0f, 0.0f };
 		ray->hit = true;
+		ray->piece = piece;
 	}
-	return fraction;
+	return lpNextUp( ray->fraction );
 }
 
 // Settle on the landing surface: the lowest vertex along the normal touches it. Steep surfaces (walls) deflect the
@@ -468,7 +471,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			casts += 1;
 			float n = (float)LP_GHOST_PLAN_TICKS;
 			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
-			lpStaticRay ray = { w, 2.0f, { 0 }, b3Vec3_zero, false };
+			lpStaticRay ray = { w, 2.0f, { 0 }, b3Vec3_zero, false, -1 };
 			b3World_CastRay( w->def.physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
 			b->planTicks = LP_GHOST_PLAN_TICKS;
 			b->landIn = -1;

@@ -605,12 +605,16 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
 			const lpLimb* limb = r->limbs + i;
-			int ints[3] = { limb->joints, limb->tipBody, limb->groundPiece };
+			int ints[4] = { limb->joints, limb->tipBody, limb->groundPiece, limb->tipJoints };
+			uint32_t tip[2] = { limb->tipGeneration, limb->tipTopology };
 			uint8_t limbFlags[9] = { limb->attached ? 1 : 0, limb->able ? 1 : 0,	   limb->planted ? 1 : 0,
 									 limb->swinging ? 1 : 0, limb->castLate ? 1 : 0, limb->grounded ? 1 : 0,
 									 limb->arrived ? 1 : 0,	 limb->reachWanted ? 1 : 0,	   limb->reaching ? 1 : 0 };
 			h = lpHashBytes( h, ints, sizeof( ints ) );
+			h = lpHashBytes( h, tip, sizeof( tip ) );
 			h = lpHashBytes( h, limbFlags, sizeof( limbFlags ) );
+			h = lpHashBytes( h, &limb->depth, sizeof( limb->depth ) ); // gates able and the stand height
+			h = lpHashBytes( h, &limb->neutral, sizeof( limb->neutral ) );
 			h = lpHashBytes( h, &limb->foot, sizeof( limb->foot ) );
 			h = lpHashBytes( h, limb->q, sizeof( limb->q ) );
 			h = lpHashBytes( h, &limb->swingClock, sizeof( limb->swingClock ) );

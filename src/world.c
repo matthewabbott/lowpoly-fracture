@@ -385,6 +385,8 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->deferred );
 	lpArray_Free( w->scratchLoose );
 	lpArray_Free( w->scratchHits );
+	lpArray_Free( w->scratchHitEvents );
+	lpArray_Free( w->scratchOrder );
 	lpArray_Free( w->scratchComponents );
 	lpGridFree( w );
 	lpFree( w );
@@ -573,7 +575,7 @@ void lpTryBond( lpWorld* w, int a, int b )
 	{
 		// A weld: a nominal square patch facing from one centroid to the other
 		float v = pa->shape->volume < pb->shape->volume ? pa->shape->volume : pb->shape->volume;
-		contact.area = 0.5f * lpCbrtf( v * v );
+		contact.area = 0.5f * lpCbrt( v * v );
 		contact.centroid = b3MulSV( 0.5f, b3Add( pa->shape->centroid, pb->shape->centroid ) );
 		b3Vec3 d = b3Sub( pb->shape->centroid, pa->shape->centroid );
 		contact.normal = b3LengthSquared( d ) > 1e-12f ? b3Normalize( d ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
@@ -630,7 +632,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 		}
 		if ( emitDust )
 		{
-			float size = b3MinFloat( lpCbrtf( p->shape->volume ), 0.3f );
+			float size = b3MinFloat( lpCbrt( p->shape->volume ), 0.3f );
 			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : b3Vec3_zero, size, p->material );
 		}
 		p->shapeId = b3_nullShapeId; // destroyed with the body
@@ -960,6 +962,21 @@ int lpCompareInt( const void* a, const void* b )
 	return ( x > y ) - ( x < y );
 }
 
+int lpCompareOrder( const void* a, const void* b )
+{
+	const lpOrder* x = a;
+	const lpOrder* y = b;
+	if ( x->key != y->key )
+	{
+		return ( x->key > y->key ) - ( x->key < y->key );
+	}
+	if ( x->tie != y->tie )
+	{
+		return ( x->tie > y->tie ) - ( x->tie < y->tie );
+	}
+	return ( x->index > y->index ) - ( x->index < y->index );
+}
+
 int lpCompareBodyRef( const void* a, const void* b )
 {
 	const lpBodyRef* x = a;
@@ -1039,6 +1056,12 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			h = lpHashBytes( h, &b->q, sizeof( b->q ) );
 			h = lpHashBytes( h, &b->v, sizeof( b->v ) );
 			h = lpHashBytes( h, &b->omega, sizeof( b->omega ) );
+			// the landing plan and the sinking decide where and when it stops
+			h = lpHashBytes( h, &b->planTicks, sizeof( b->planTicks ) );
+			h = lpHashBytes( h, &b->landIn, sizeof( b->landIn ) );
+			h = lpHashBytes( h, &b->landPoint, sizeof( b->landPoint ) );
+			h = lpHashBytes( h, &b->landNormal, sizeof( b->landNormal ) );
+			h = lpHashBytes( h, &b->sinkTicks, sizeof( b->sinkTicks ) );
 			continue;
 		}
 		b3WorldTransform xf = b3Body_GetTransform( b->id );
@@ -1077,6 +1100,11 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			h = lpHashBytes( h, &bond->b, sizeof( int ) );
 			h = lpHashBytes( h, &bond->health, sizeof( float ) );
 		}
+	}
+	for ( int i = 0; i < w->detonators.count; ++i )
+	{
+		uint8_t armed = w->detonators.data[i].armed ? 1 : 0;
+		h = lpHashBytes( h, &armed, sizeof( armed ) );
 	}
 	return lpHashLinks( w, h );
 }
@@ -1172,23 +1200,58 @@ static bool lpRayNearSegment( b3Vec3 d, b3Vec3 p, b3Vec3 q, float radius, float*
 	return true;
 }
 
+typedef struct lpClosestRay
+{
+	float fraction;
+	b3Pos point;
+	b3Vec3 normal;
+	int piece;
+	bool hit;
+} lpClosestRay;
+
+// The closest hit past the origin (a ray starting inside a shape ignores it), ties broken by piece index rather than
+// by the physics engine's traversal order
+static float lpClosestRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+							  int triangleIndex, int childIndex, void* context )
+{
+	(void)userMaterialId;
+	(void)triangleIndex;
+	(void)childIndex;
+	if ( fraction == 0.0f )
+	{
+		return -1.0f;
+	}
+	lpClosestRay* ray = context;
+	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
+	int piece = data > 0 ? (int)( data - 1 ) : -1;
+	if ( fraction < ray->fraction || ( ray->hit && fraction == ray->fraction && piece < ray->piece ) )
+	{
+		ray->fraction = fraction;
+		ray->point = point;
+		ray->normal = normal;
+		ray->piece = piece;
+		ray->hit = true;
+	}
+	return lpNextUp( ray->fraction );
+}
+
 lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
 {
 	lpRayHit hit = { 0 };
 	hit.piece = -1;
 	hit.body = -1;
 	hit.link = -1;
-	b3RayResult result = b3World_CastRayClosest( w->def.physics, origin, translation, b3DefaultQueryFilter() );
+	lpClosestRay result = { 2.0f, { 0 }, b3Vec3_zero, -1, false }; // above any hit, so a hit at the very end counts
+	b3World_CastRay( w->def.physics, origin, translation, b3DefaultQueryFilter(), lpClosestRayFcn, &result );
 	float nearest = result.hit ? result.fraction : 2.0f; // a rope at the very end of the ray still counts
 	if ( result.hit )
 	{
 		hit.hit = true;
 		hit.point = result.point;
 		hit.normal = result.normal;
-		intptr_t data = (intptr_t)b3Shape_GetUserData( result.shapeId );
-		if ( data > 0 )
+		if ( result.piece >= 0 )
 		{
-			hit.piece = (int)( data - 1 );
+			hit.piece = result.piece;
 			hit.body = w->pieces.data[hit.piece].body;
 		}
 	}

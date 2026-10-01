@@ -19,15 +19,21 @@
 
 void lpAssertFailed( const char* condition, const char* file, int line );
 
-// Cube root. The C library's cbrtf is not correctly rounded, so libms can differ in its last bit. LPF_PORTABLE_MATH
-// (a research option for cross-platform checks, off by default because it changes every hash) swaps in lpCbrt,
-// which uses only +, -, * and / (correctly rounded on every IEEE target).
-#if defined( LPF_PORTABLE_MATH )
+// Cube root from +, -, * and / only (correctly rounded on every IEEE target). The C library's cbrtf is not correctly
+// rounded and differs between libms, so simulation and scene code never call it (determinism rule 12).
 float lpCbrt( float x );
-#define lpCbrtf( x ) lpCbrt( x )
-#else
-#define lpCbrtf( x ) cbrtf( x )
-#endif
+
+// The next float above x (x >= 0). Cast callbacks clip the cast here rather than at their best fraction, so a hit
+// at exactly the same fraction is still reported and the tie is broken by piece index, not by the physics engine's
+// traversal order.
+static inline float lpNextUp( float x )
+{
+	uint32_t u;
+	memcpy( &u, &x, sizeof( u ) );
+	u += 1u;
+	memcpy( &x, &u, sizeof( x ) );
+	return x;
+}
 
 void* lpAlloc( size_t size );
 void* lpRealloc( void* p, size_t size );

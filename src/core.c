@@ -30,7 +30,6 @@ void lpFree( void* p )
 	free( p );
 }
 
-#if defined( LPF_PORTABLE_MATH )
 float lpCbrt( float x )
 {
 	if ( !( x == x ) || x == 0.0f || x - x != 0.0f )
@@ -59,7 +58,6 @@ float lpCbrt( float x )
 	float r = (float)( t * scale );
 	return x < 0.0f ? -r : r;
 }
-#endif
 
 void lpRandom_Seed( lpRandom* rng, uint64_t seed, uint64_t stream )
 {

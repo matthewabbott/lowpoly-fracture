@@ -29,6 +29,7 @@ static void lpFreezeOrKill( lpWorld* w )
 {
 	b3BodyEvents events = b3World_GetBodyEvents( w->def.physics );
 	w->scratchBodies.count = 0;
+	int firstNew = w->freezeCandidates.count;
 	for ( int i = 0; i < events.moveCount; ++i )
 	{
 		const b3BodyMoveEvent* e = events.moveEvents + i;
@@ -52,6 +53,13 @@ static void lpFreezeOrKill( lpWorld* w )
 			b->freezePending = true;
 			lpArray_Push( w->freezeCandidates, bodyIndex );
 		}
+	}
+
+	// This step's new candidates in index order, not the physics engine's event order (the cap below takes them in
+	// list order)
+	if ( w->freezeCandidates.count - firstNew > 1 )
+	{
+		qsort( w->freezeCandidates.data + firstNew, (size_t)( w->freezeCandidates.count - firstNew ), sizeof( int ), lpCompareInt );
 	}
 
 	// Freeze sleepers that are old enough. Fresh debris wedged in its hole can fall asleep before anything pushed
@@ -143,7 +151,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 		{
 			lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
 		}
-		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( lpCbrtf( p->shape->volume ), 0.3f ), p->material );
+		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( lpCbrt( p->shape->volume ), 0.3f ), p->material );
 		b->volume -= p->shape->volume;
 		lpDetachPieceShape( w, pieceIndex );
 		lpFreePieceSlot( w, pieceIndex );
