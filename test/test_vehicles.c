@@ -10,24 +10,24 @@
 static void AddStrip( Sim* s, float halfWidth, float z0, float z1 )
 {
 	lpPartDef part = lpDefaultPartDef();
-	part.halfExtents = (b3Vec3){ halfWidth, 0.5f, 0.5f * ( z1 - z0 ) };
+	part.halfExtents = (lpVec3){ halfWidth, 0.5f, 0.5f * ( z1 - z0 ) };
 	part.material = lp_ground;
 	part.anchored = true;
 	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = (b3Pos){ 0.0f, -0.5f, 0.5f * ( z0 + z1 ) };
+	def.transform.p = (lpPos){ 0.0f, -0.5f, 0.5f * ( z0 + z1 ) };
 	def.parts = &part;
 	def.partCount = 1;
 	lpCreateObject( s->world, &def );
 }
 
-static int AddStatic( Sim* s, b3Vec3 center, b3Vec3 half, b3Quat q, int material )
+static int AddStatic( Sim* s, lpVec3 center, lpVec3 half, lpQuat q, int material )
 {
 	lpPartDef part = lpDefaultPartDef();
 	part.halfExtents = half;
 	part.material = (uint8_t)material;
 	part.anchored = true;
 	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = (b3Pos){ center.x, center.y, center.z };
+	def.transform.p = (lpPos){ center.x, center.y, center.z };
 	def.transform.q = q;
 	def.parts = &part;
 	def.partCount = 1;
@@ -43,22 +43,22 @@ typedef struct Car
 // A box car facing +z: a wooden chassis (length 4 m, width 1.8 m, `height` thick, in `parts` slabs along z) on four
 // wheels at its bottom corners, rear-wheel drive, front steering, handbrake on the rear. The chassis's bottom is at
 // `bottom`; at rest on flat ground it sits about 0.72 m up.
-static Car AddCar( Sim* s, b3Vec3 at, b3Quat q, float bottom, float height, int parts, b3Vec3 velocity )
+static Car AddCar( Sim* s, lpVec3 at, lpQuat q, float bottom, float height, int parts, lpVec3 velocity )
 {
 	lpPartDef slabs[4];
 	float length = 4.0f / (float)parts;
 	for ( int i = 0; i < parts; ++i )
 	{
 		slabs[i] = lpDefaultPartDef();
-		slabs[i].halfExtents = (b3Vec3){ 0.9f, 0.5f * height, 0.5f * length };
-		slabs[i].transform.p = (b3Vec3){ 0.0f, 0.5f * height, -2.0f + ( (float)i + 0.5f ) * length };
+		slabs[i].halfExtents = (lpVec3){ 0.9f, 0.5f * height, 0.5f * length };
+		slabs[i].transform.p = (lpVec3){ 0.0f, 0.5f * height, -2.0f + ( (float)i + 0.5f ) * length };
 		slabs[i].material = lp_wood;
 		slabs[i].color = 0x3060A0u;
-		slabs[i].grainAxis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+		slabs[i].grainAxis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ at.x, at.y + bottom, at.z };
+	def.transform.p = (lpPos){ at.x, at.y + bottom, at.z };
 	def.transform.q = q;
 	def.parts = slabs;
 	def.partCount = parts;
@@ -71,34 +71,34 @@ static Car AddCar( Sim* s, b3Vec3 at, b3Quat q, float bottom, float height, int 
 	{
 		float x = ( i & 1 ) ? 0.8f : -0.8f;
 		float z = ( i & 2 ) ? 1.4f : -1.4f; // wheels 2 and 3 in front
-		b3Vec3 local = { x, 0.0f, z };
-		b3Vec3 world = b3RotateVector( q, local );
+		lpVec3 local = { x, 0.0f, z };
+		lpVec3 world = lpRotateVector( q, local );
 		wheels[i] = lpDefaultWheelDef();
-		wheels[i].mount = (b3Pos){ at.x + world.x, at.y + bottom + world.y, at.z + world.z };
+		wheels[i].mount = (lpPos){ at.x + world.x, at.y + bottom + world.y, at.z + world.z };
 		wheels[i].driveShare = ( i & 2 ) ? 0.0f : 0.5f;
 		wheels[i].steerFactor = ( i & 2 ) ? 1.0f : 0.0f;
 		wheels[i].handbrake = ( i & 2 ) == 0;
 	}
 	lpVehicleDef vd = lpDefaultVehicleDef();
 	vd.body = car.body;
-	vd.forward = b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } );
-	vd.up = b3RotateVector( q, (b3Vec3){ 0.0f, 1.0f, 0.0f } );
+	vd.forward = lpRotateVector( q, (lpVec3){ 0.0f, 0.0f, 1.0f } );
+	vd.up = lpRotateVector( q, (lpVec3){ 0.0f, 1.0f, 0.0f } );
 	vd.wheels = wheels;
 	vd.wheelCount = 4;
 	car.vehicle = lpCreateVehicle( s->world, &vd );
 	return car;
 }
 
-static b3WorldTransform Pose( const Sim* s, int body )
+static lpWorldTransform Pose( const Sim* s, int body )
 {
-	b3WorldTransform xf = { 0 };
+	lpWorldTransform xf = { 0 };
 	lpWorld_GetBodyTransform( s->world, body, &xf );
 	return xf;
 }
 
 static float Upright( const Sim* s, int body )
 {
-	return b3RotateVector( Pose( s, body ).q, (b3Vec3){ 0.0f, 1.0f, 0.0f } ).y;
+	return lpRotateVector( Pose( s, body ).q, (lpVec3){ 0.0f, 1.0f, 0.0f } ).y;
 }
 
 static void Drive( Sim* s, int vehicle, float throttle, float brake, float steer, bool handbrake )
@@ -117,7 +117,7 @@ static void Step( Sim* s )
 static int TestWheelRestHeight( void )
 {
 	Sim s = CreateSim( -1 );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.85f, 0.4f, 1, b3Vec3_zero );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.85f, 0.4f, 1, lpVec3_zero );
 	ENSURE( car.vehicle == 0 );
 	int asleepAt = -1;
 	for ( int t = 0; t < 180; ++t )
@@ -151,13 +151,13 @@ static int TestWheelHighSpeedStable( void )
 {
 	Sim s = CreateSim( -1 );
 	AddStrip( &s, 12.0f, -20.0f, 480.0f );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f, 0.4f, 1, (b3Vec3){ 0.0f, 0.0f, 40.0f } );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f, 0.4f, 1, (lpVec3){ 0.0f, 0.0f, 40.0f } );
 	Drive( &s, car.vehicle, 1.0f, 0.0f, 0.0f, false );
 	float worstUp = 1.0f, worstDrift = 0.0f, lowest = 1e9f, highest = -1e9f;
 	for ( int t = 0; t < 600; ++t )
 	{
 		Step( &s );
-		b3WorldTransform xf = Pose( &s, car.body );
+		lpWorldTransform xf = Pose( &s, car.body );
 		ENSURE( isfinite( (float)xf.p.x ) && isfinite( (float)xf.p.y ) && isfinite( (float)xf.p.z ) );
 		worstUp = fminf( worstUp, Upright( &s, car.body ) );
 		worstDrift = fmaxf( worstDrift, fabsf( (float)xf.p.x ) );
@@ -181,8 +181,8 @@ static int TestWheelSteerNoFlip( void )
 {
 	lpWorldDef ld = lpDefaultWorldDef();
 	Sim s = CreateSimDef( ld, -1 );
-	AddStatic( &s, (b3Vec3){ 0.0f, -0.5f, 0.0f }, (b3Vec3){ 150.0f, 0.5f, 150.0f }, b3Quat_identity, lp_ground );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, -100.0f }, b3Quat_identity, 0.75f, 0.4f, 1, (b3Vec3){ 0.0f, 0.0f, 30.0f } );
+	AddStatic( &s, (lpVec3){ 0.0f, -0.5f, 0.0f }, (lpVec3){ 150.0f, 0.5f, 150.0f }, lpQuat_identity, lp_ground );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, -100.0f }, lpQuat_identity, 0.75f, 0.4f, 1, (lpVec3){ 0.0f, 0.0f, 30.0f } );
 	Drive( &s, car.vehicle, 0.0f, 0.0f, 0.0f, false );
 	Run( &s, 30 );
 	Drive( &s, car.vehicle, 0.0f, 0.0f, 1.0f, false );
@@ -209,8 +209,8 @@ static int TestWheelKerb( void )
 {
 	Sim s = CreateSim( -1 );
 	AddStrip( &s, 12.0f, -40.0f, 120.0f );
-	AddStatic( &s, (b3Vec3){ 0.0f, 0.1f, 20.0f + 30.0f }, (b3Vec3){ 8.0f, 0.1f, 30.0f }, b3Quat_identity, lp_stone );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f, 0.4f, 1, (b3Vec3){ 0.0f, 0.0f, 15.0f } );
+	AddStatic( &s, (lpVec3){ 0.0f, 0.1f, 20.0f + 30.0f }, (lpVec3){ 8.0f, 0.1f, 30.0f }, lpQuat_identity, lp_stone );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f, 0.4f, 1, (lpVec3){ 0.0f, 0.0f, 15.0f } );
 	Drive( &s, car.vehicle, 0.3f, 0.0f, 0.0f, false );
 	Run( &s, 30 );
 	float rest = (float)Pose( &s, car.body ).p.y;
@@ -236,15 +236,15 @@ static int TestWheelParkedOnSlope( void )
 {
 	Sim s = CreateSim( -1 );
 	float angle = 15.0f * 3.14159265f / 180.0f;
-	b3Quat tilt = b3MakeQuatFromAxisAngle( (b3Vec3){ 1.0f, 0.0f, 0.0f }, -angle ); // rises toward +z
-	AddStatic( &s, (b3Vec3){ 0.0f, 3.0f, 0.0f }, (b3Vec3){ 6.0f, 0.5f, 20.0f }, tilt, lp_ground );
-	b3Vec3 top = b3Add( (b3Vec3){ 0.0f, 3.0f, 0.0f }, b3RotateVector( tilt, (b3Vec3){ 0.0f, 0.5f, 0.0f } ) );
-	Car car = AddCar( &s, top, tilt, 0.8f, 0.4f, 1, b3Vec3_zero );
+	lpQuat tilt = lpMakeQuatFromAxisAngle( (lpVec3){ 1.0f, 0.0f, 0.0f }, -angle ); // rises toward +z
+	AddStatic( &s, (lpVec3){ 0.0f, 3.0f, 0.0f }, (lpVec3){ 6.0f, 0.5f, 20.0f }, tilt, lp_ground );
+	lpVec3 top = lpAdd( (lpVec3){ 0.0f, 3.0f, 0.0f }, lpRotateVector( tilt, (lpVec3){ 0.0f, 0.5f, 0.0f } ) );
+	Car car = AddCar( &s, top, tilt, 0.8f, 0.4f, 1, lpVec3_zero );
 	Drive( &s, car.vehicle, 0.0f, 0.0f, 0.0f, true );
 	Run( &s, 90 );
-	b3Pos held = Pose( &s, car.body ).p;
+	lpPos held = Pose( &s, car.body ).p;
 	Run( &s, 120 );
-	float creep = b3Length( b3SubPos( Pose( &s, car.body ).p, held ) );
+	float creep = lpLength( lpSubPos( Pose( &s, car.body ).p, held ) );
 	Drive( &s, car.vehicle, 0.0f, 0.0f, 0.0f, false );
 	Run( &s, 120 );
 	lpVehicleState vs = lpWorld_GetVehicleState( s.world, car.vehicle );
@@ -262,7 +262,7 @@ static int TestWheelBreaksOnHardLanding( void )
 	{
 		Sim s = CreateSim( -1 );
 		float drop = pass == 0 ? 1.0f : 8.0f;
-		Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f + drop, 0.4f, 1, b3Vec3_zero );
+		Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f + drop, 0.4f, 1, lpVec3_zero );
 		int bodiesBefore = lpWorld_GetStats( s.world ).debrisBodies;
 		Run( &s, 150 );
 		lpVehicleState vs = lpWorld_GetVehicleState( s.world, car.vehicle );
@@ -288,11 +288,11 @@ static int TestWheelBreaksOnHardLanding( void )
 static int TestWheelFollowsFracture( void )
 {
 	Sim s = CreateSim( -1 );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f, 0.4f, 2, b3Vec3_zero );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f, 0.4f, 2, lpVec3_zero );
 	Run( &s, 60 );
 	lpWheelState before = lpWorld_GetWheelState( s.world, lpWorld_GetVehicleWheel( s.world, car.vehicle, 3 ) );
 	lpImpactDef blast = { 0 };
-	blast.point = b3OffsetPos( before.hub.p, (b3Vec3){ 0.0f, 0.4f, 0.0f } );
+	blast.point = lpOffsetPos( before.hub.p, (lpVec3){ 0.0f, 0.4f, 0.0f } );
 	blast.radius = 1.4f;
 	blast.energy = 80000.0f;
 	blast.impulse = 6.0f;
@@ -316,7 +316,7 @@ static int TestWheelFollowsFracture( void )
 static int TestWheelSplitHalfRolls( void )
 {
 	Sim s = CreateSim( -1 );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f, 0.4f, 2, b3Vec3_zero );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f, 0.4f, 2, lpVec3_zero );
 	Run( &s, 60 );
 	const lpBody* b = s.world->bodies.data + car.body;
 	int cut = 0;
@@ -366,18 +366,18 @@ static int TestWheelLoadsBridge( void )
 		for ( int k = 0; k < 2; ++k )
 		{
 			parts[count] = lpDefaultPartDef();
-			parts[count].halfExtents = (b3Vec3){ 3.0f, 0.5f, 0.5f };
-			parts[count].transform.p = (b3Vec3){ 0.0f, -0.5f, k == 0 ? -0.5f : 8.5f };
+			parts[count].halfExtents = (lpVec3){ 3.0f, 0.5f, 0.5f };
+			parts[count].transform.p = (lpVec3){ 0.0f, -0.5f, k == 0 ? -0.5f : 8.5f };
 			parts[count].anchored = true;
 			count += 1;
 		}
 		for ( int k = 0; k < 4; ++k )
 		{
 			parts[count] = lpDefaultPartDef();
-			parts[count].halfExtents = (b3Vec3){ 0.35f, 0.03f, 5.0f };
-			parts[count].transform.p = (b3Vec3){ -1.05f + 0.7f * (float)k, 0.03f, 4.0f };
+			parts[count].halfExtents = (lpVec3){ 0.35f, 0.03f, 5.0f };
+			parts[count].transform.p = (lpVec3){ -1.05f + 0.7f * (float)k, 0.03f, 4.0f };
 			parts[count].material = lp_wood;
-			parts[count].grainAxis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+			parts[count].grainAxis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 			count += 1;
 		}
 		lpObjectDef def = lpDefaultObjectDef();
@@ -387,7 +387,7 @@ static int TestWheelLoadsBridge( void )
 		lpWorld_SettleStructures( s.world );
 
 		// The light car's chassis is a thin slab; the truck's is a thick one
-		Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.06f, -12.0f }, b3Quat_identity, 0.8f, pass == 0 ? 0.2f : 0.7f, 1, b3Vec3_zero );
+		Car car = AddCar( &s, (lpVec3){ 0.0f, 0.06f, -12.0f }, lpQuat_identity, 0.8f, pass == 0 ? 0.2f : 0.7f, 1, lpVec3_zero );
 		masses[pass] = b3Body_GetMass( s.world->bodies.data[car.body].id );
 		Drive( &s, car.vehicle, 0.4f, 0.0f, 0.0f, false );
 		for ( int t = 0; t < 420; ++t )
@@ -409,8 +409,8 @@ static uint64_t DriveUnderFire( int workers, int ticks )
 {
 	Sim s = CreateSimWorkers( -1, workers );
 	AddStrip( &s, 20.0f, -40.0f, 200.0f );
-	Car car = AddCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, b3Quat_identity, 0.75f, 0.4f, 2, b3Vec3_zero );
-	Car other = AddCar( &s, (b3Vec3){ 4.0f, 0.0f, 30.0f }, b3Quat_identity, 0.75f, 0.4f, 1, b3Vec3_zero );
+	Car car = AddCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, lpQuat_identity, 0.75f, 0.4f, 2, lpVec3_zero );
+	Car other = AddCar( &s, (lpVec3){ 4.0f, 0.0f, 30.0f }, lpQuat_identity, 0.75f, 0.4f, 1, lpVec3_zero );
 	(void)other;
 	for ( int t = 0; t < ticks; ++t )
 	{
@@ -430,7 +430,7 @@ static uint64_t DriveUnderFire( int workers, int ticks )
 		{
 			lpWheelState ws = lpWorld_GetWheelState( s.world, lpWorld_GetVehicleWheel( s.world, car.vehicle, 0 ) );
 			lpImpactDef blast = { 0 };
-			blast.point = b3OffsetPos( ws.hub.p, (b3Vec3){ 0.5f, 0.0f, 0.0f } );
+			blast.point = lpOffsetPos( ws.hub.p, (lpVec3){ 0.5f, 0.0f, 0.0f } );
 			blast.radius = 1.4f;
 			blast.energy = 80000.0f;
 			blast.impulse = 6.0f;
@@ -517,13 +517,13 @@ typedef struct Crash
 static Crash CarIntoWall( float speed )
 {
 	Sim s = CreateSim( -1 );
-	AddStatic( &s, (b3Vec3){ 0.0f, 0.9f, 0.15f }, (b3Vec3){ 4.0f, 0.9f, 0.15f }, b3Quat_identity, lp_brick );
+	AddStatic( &s, (lpVec3){ 0.0f, 0.9f, 0.15f }, (lpVec3){ 4.0f, 0.9f, 0.15f }, lpQuat_identity, lp_brick );
 	lpWorld_SettleStructures( s.world );
-	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
+	int vehicle = lpAddCar( s.world, (lpVec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
 	lpVehicleState vs = lpWorld_GetVehicleState( s.world, vehicle );
 	const lpBody* car = s.world->bodies.data + vs.body;
 	float volume = car->volume;
-	b3Body_SetLinearVelocity( car->id, (b3Vec3){ 0.0f, 0.0f, speed } );
+	b3Body_SetLinearVelocity( car->id, (lpVec3){ 0.0f, 0.0f, speed } );
 	Run( &s, 120 );
 	vs = lpWorld_GetVehicleState( s.world, vehicle );
 	Crash c = { 0 };
@@ -574,11 +574,11 @@ static int TestCarWallCrash( void )
 static int TestCarTankShot( void )
 {
 	Sim s = CreateSim( -1 );
-	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 1 );
+	int vehicle = lpAddCar( s.world, (lpVec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 1 );
 	Run( &s, 30 );
 	ENSURE( lpWorld_GetVehicleState( s.world, vehicle ).power == 1.0f );
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 1.2f, -2.4f };
+	im.point = (lpPos){ 0.0f, 1.2f, -2.4f };
 	im.radius = 1.4f;
 	im.energy = 80000.0f;
 	im.impulse = 12.0f;
@@ -601,11 +601,11 @@ static int TestCarTankShot( void )
 static int TestCarEngineShot( void )
 {
 	Sim s = CreateSim( -1 );
-	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 2 );
+	int vehicle = lpAddCar( s.world, (lpVec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 2 );
 	Run( &s, 30 );
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 1.0f, 1.8f }; // at the front block's face: its bolts go, the floor pan does not crack
-	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.point = (lpPos){ 0.0f, 1.0f, 1.8f }; // at the front block's face: its bolts go, the floor pan does not crack
+	im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 	im.radius = 0.5f;
 	im.energy = 12000.0f;
 	im.impulse = 20.0f;
@@ -626,12 +626,12 @@ static int TestWheelCost( void )
 	for ( int pass = 0; pass < 2; ++pass )
 	{
 		Sim s = CreateSim( -1 );
-		AddStatic( &s, (b3Vec3){ 0.0f, -0.5f, 100.0f }, (b3Vec3){ 60.0f, 0.5f, 160.0f }, b3Quat_identity, lp_ground );
+		AddStatic( &s, (lpVec3){ 0.0f, -0.5f, 100.0f }, (lpVec3){ 60.0f, 0.5f, 160.0f }, lpQuat_identity, lp_ground );
 		Car cars[64];
 		for ( int i = 0; i < counts[pass]; ++i )
 		{
-			b3Vec3 at = { -42.0f + 12.0f * (float)( i % 8 ), 0.0f, 8.0f * (float)( i / 8 ) };
-			cars[i] = AddCar( &s, at, b3Quat_identity, 0.75f, 0.4f, 1, (b3Vec3){ 0.0f, 0.0f, 10.0f } );
+			lpVec3 at = { -42.0f + 12.0f * (float)( i % 8 ), 0.0f, 8.0f * (float)( i / 8 ) };
+			cars[i] = AddCar( &s, at, lpQuat_identity, 0.75f, 0.4f, 1, (lpVec3){ 0.0f, 0.0f, 10.0f } );
 			Drive( &s, cars[i].vehicle, 0.5f, 0.0f, 0.0f, false );
 		}
 		Run( &s, 30 );

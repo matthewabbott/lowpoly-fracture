@@ -26,7 +26,7 @@ static float lpLattice( int x, int y, int z, uint32_t seed )
 }
 
 // Trilinear value noise in [0, 1). Rendering only, so float floor is fine here.
-static float lpValueNoise( b3Vec3 p, uint32_t seed )
+static float lpValueNoise( lpVec3 p, uint32_t seed )
 {
 	float fx = floorf( p.x ), fy = floorf( p.y ), fz = floorf( p.z );
 	int x = (int)fx, y = (int)fy, z = (int)fz;
@@ -69,7 +69,7 @@ static uint32_t lpMixColor( uint32_t a, uint32_t b, float t )
 }
 
 // 0xRRGGBB of a cut face of `material` at object-space point p
-static uint32_t lpInteriorColor( uint8_t material, b3Vec3 p, b3Vec3 axis )
+static uint32_t lpInteriorColor( uint8_t material, lpVec3 p, lpVec3 axis )
 {
 	const lpMaterialDef* m = lpGetMaterial( material );
 	uint32_t base = m->interiorColor;
@@ -79,42 +79,42 @@ static uint32_t lpInteriorColor( uint8_t material, b3Vec3 p, b3Vec3 axis )
 		case lp_wood:
 		{
 			// Growth rings around the grain axis, wobbled by noise, plus streaks along the grain
-			b3Vec3 along = b3MulSV( b3Dot( p, axis ), axis );
-			b3Vec3 across = b3Sub( p, along );
-			float r = b3Length( across );
-			float wobble = lpValueNoise( b3MulSV( 3.0f, p ), 11u );
+			lpVec3 along = lpMulSV( lpDot( p, axis ), axis );
+			lpVec3 across = lpSub( p, along );
+			float r = lpLength( across );
+			float wobble = lpValueNoise( lpMulSV( 3.0f, p ), 11u );
 			float ring = r * 14.0f + 1.5f * wobble;
 			ring -= floorf( ring );
 			uint32_t dark = lpScaleColor( base, 0.72f );
-			float streak = lpValueNoise( b3Add( b3MulSV( 0.6f, along ), b3MulSV( 9.0f, across ) ), 23u );
+			float streak = lpValueNoise( lpAdd( lpMulSV( 0.6f, along ), lpMulSV( 9.0f, across ) ), 23u );
 			uint32_t c = ring < 0.35f ? dark : base;
 			return lpScaleColor( c, 0.88f + 0.22f * streak );
 		}
 
 		case lp_brick:
 		{
-			float n = lpValueNoise( b3MulSV( 7.0f, p ), 5u );
+			float n = lpValueNoise( lpMulSV( 7.0f, p ), 5u );
 			return lpScaleColor( base, 0.82f + 0.3f * n );
 		}
 
 		case lp_stone:
 		case lp_concrete:
 		{
-			float n = lpValueNoise( b3MulSV( 5.0f, p ), 7u );
-			float speck = lpValueNoise( b3MulSV( 23.0f, p ), 9u );
+			float n = lpValueNoise( lpMulSV( 5.0f, p ), 7u );
+			float speck = lpValueNoise( lpMulSV( 23.0f, p ), 9u );
 			uint32_t c = lpScaleColor( base, 0.86f + 0.22f * n );
 			return speck > 0.82f ? lpScaleColor( c, 0.7f ) : c;
 		}
 
 		case lp_plaster:
 		{
-			float n = lpValueNoise( b3MulSV( 4.0f, p ), 3u );
+			float n = lpValueNoise( lpMulSV( 4.0f, p ), 3u );
 			return lpScaleColor( base, 0.94f + 0.08f * n );
 		}
 
 		case lp_foliage:
 		{
-			float n = lpValueNoise( b3MulSV( 3.0f, p ), 13u );
+			float n = lpValueNoise( lpMulSV( 3.0f, p ), 13u );
 			return lpMixColor( base, 0x6B8F2Au, 0.5f * n );
 		}
 
@@ -155,7 +155,7 @@ int lpBuildFacetMesh( const lpShape* shape, const lpFacetParams* params, lpVerte
 		{
 			// Authored surface: a small per-plane brightness jitter gives the faceted look. Keyed by the plane, not
 			// the piece, so coplanar faces of neighbouring cells match and intact surfaces stay seamless.
-			b3Vec3 n = face->plane.normal;
+			lpVec3 n = face->plane.normal;
 			int qx = (int)floorf( n.x * 64.0f + 0.5f );
 			int qy = (int)floorf( n.y * 64.0f + 0.5f );
 			int qz = (int)floorf( n.z * 64.0f + 0.5f );
@@ -166,25 +166,25 @@ int lpBuildFacetMesh( const lpShape* shape, const lpFacetParams* params, lpVerte
 		}
 		else
 		{
-			b3Vec3 c = b3Vec3_zero;
+			lpVec3 c = lpVec3_zero;
 			for ( int k = 0; k < face->count; ++k )
 			{
-				c = b3Add( c, shape->vertices[shape->indices[face->first + k]] );
+				c = lpAdd( c, shape->vertices[shape->indices[face->first + k]] );
 			}
-			c = b3MulSV( 1.0f / (float)face->count, c );
+			c = lpMulSV( 1.0f / (float)face->count, c );
 			rgb = lpInteriorColor( face->material, c, params->axis );
 		}
 		uint32_t color = lpToRGBA( rgb );
 
-		b3Vec3 n = face->plane.normal;
+		lpVec3 n = face->plane.normal;
 		int8_t normal[4] = { lpSnorm8( n.x ), lpSnorm8( n.y ), lpSnorm8( n.z ), 0 };
 
-		b3Vec3 a = shape->vertices[shape->indices[face->first]];
+		lpVec3 a = shape->vertices[shape->indices[face->first]];
 		for ( int k = 1; k + 1 < face->count; ++k )
 		{
-			b3Vec3 b = shape->vertices[shape->indices[face->first + k]];
-			b3Vec3 d = shape->vertices[shape->indices[face->first + k + 1]];
-			b3Vec3 tri[3] = { a, b, d };
+			lpVec3 b = shape->vertices[shape->indices[face->first + k]];
+			lpVec3 d = shape->vertices[shape->indices[face->first + k + 1]];
+			lpVec3 tri[3] = { a, b, d };
 			for ( int t = 0; t < 3; ++t )
 			{
 				lpVertex* v = vertices + count++;

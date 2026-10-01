@@ -36,7 +36,7 @@ void lpBuildScene( lpWorld* world, int scene );
 
 // A square stone keep, 15 m across, with `floors` wooden floors (1 to 6; four make about 2000 pieces), its front door
 // facing +z. Returns its body.
-int lpAddKeep( lpWorld* world, b3Vec3 base, int floors );
+int lpAddKeep( lpWorld* world, lpVec3 base, int floors );
 
 // Scripted bombardment for benchmarks and demos: at some ticks, casts a ray from a moving attacker into the scene
 // and queues a grenade (or every fourth time a cannon blast) where it hits. Deterministic for a deterministic world.
@@ -77,7 +77,7 @@ enum
 // steering, an engine (feeds power, needs fuel), a fuel tank (feeds fuel, and goes off), a steering box (feeds
 // steering, needs power), hood, boot, doors, pillars and roof bolted on, glass, rubber bumpers, and four wheels (rear
 // drive, front steering, the handbrake on the rear). About 1.7 t. style picks the paint. Returns the vehicle.
-int lpAddCar( lpWorld* world, b3Vec3 base, float yaw, int style );
+int lpAddCar( lpWorld* world, lpVec3 base, float yaw, int style );
 
 // The crane's links, by lpLinkDef.userId
 enum
@@ -90,7 +90,7 @@ enum
 // A tower crane at base: a steel base plate and a timber mast set in it (a structure, which carries the crane through
 // its links), a slewing deck, a 10 m jib along +x and a winch rope to a steel load of loadMass kg. Returns the
 // structure's body.
-int lpAddCrane( lpWorld* world, b3Vec3 base, float loadMass );
+int lpAddCrane( lpWorld* world, lpVec3 base, float loadMass );
 
 // The hexapod's hinges, by lpLinkDef.userId: lp_linkHexapod + 16 * leg + joint (joint 0 the hip's yaw, 1 the femur,
 // 2 the knee; legs 0 to 2 the right front, middle and rear, 3 to 5 the left rear, middle and front)
@@ -106,7 +106,7 @@ enum
 // control (both need power); the frame, the legs and their hinges carry all three, and every servo needs hydraulics
 // and control (unfed, it goes limp). The reservoir holds 100 of fluid: a cut line leaks until its valves close, 3 s
 // later. The femur and knee jam as they are damaged. style picks the paint. Returns the rig.
-int lpAddHexapod( lpWorld* world, b3Vec3 base, float yaw, int style );
+int lpAddHexapod( lpWorld* world, lpVec3 base, float yaw, int style );
 
 // A grab: welds a reaching limb's foot (a claw) to the piece it touches (lpLimbState.touching). Returns the link, or -1
 // if it touches nothing. Destroy the link to let go; lose the claw and the load drops with it.

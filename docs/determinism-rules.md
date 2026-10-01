@@ -11,8 +11,8 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    has FMA, every ARM64 among them); MSVC: `/fp:precise` without `/fp:contract`.
    Set once in the top-level `CMakeLists.txt`; never add `/fp:fast`, `-ffast-math` or `/arch:AVX2` to a target
    that touches simulation state.
-2. **No transcendental functions from the C library in simulation or scene code.** Use `b3ComputeCosSin` / `b3Atan2`
-   (Box3D's own) and `lpCbrt` (ours): built from `+ - * /`, identical everywhere. Allowed from the C library: `sqrtf`,
+2. **No transcendental functions from the C library in simulation or scene code.** Use `lpComputeCosSin` / `lpAtan2`
+   (`lpmath.h`, from Box3D) and `lpCbrt`: built from `+ - * /`, identical everywhere. Allowed from the C library: `sqrtf`,
    `floorf`, `ceilf`, `fabsf`, `remainderf`, `nextafterf` (exact). C libraries differ in `cbrtf`, `sinf` and `atan2f`
    (Windows' `cbrtf` misses correct rounding on 27% of inputs), and a scene built from them differs before the first
    step. Random unit vectors use rejection sampling, not `sin`/`cos`.

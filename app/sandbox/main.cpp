@@ -387,8 +387,8 @@ void LoadScript( const std::string& path )
 // Deterministic: everything below depends only on the event and the world state at this tick.
 void ApplyEvent( const Event& e )
 {
-	b3Vec3 origin = { e.origin.x, e.origin.y, e.origin.z };
-	b3Vec3 dir = { e.dir.x, e.dir.y, e.dir.z };
+	lpVec3 origin = { e.origin.x, e.origin.y, e.origin.z };
+	lpVec3 dir = { e.dir.x, e.dir.y, e.dir.z };
 
 	if ( e.tool == kDrive )
 	{
@@ -406,7 +406,7 @@ void ApplyEvent( const Event& e )
 
 	if ( e.tool == kReach )
 	{
-		lpWorld_SetLimbTarget( app.world, e.piece, e.limb, e.active, b3Pos{ e.origin.x, e.origin.y, e.origin.z } );
+		lpWorld_SetLimbTarget( app.world, e.piece, e.limb, e.active, lpPos{ e.origin.x, e.origin.y, e.origin.z } );
 		app.playerRig = e.piece;
 		return;
 	}
@@ -448,10 +448,10 @@ void ApplyEvent( const Event& e )
 	if ( e.tool == ToolFlask )
 	{
 		// A chunky hexagonal bottle with a neck
-		b3Vec3 points[15];
+		lpVec3 points[15];
 		for ( int i = 0; i < 6; ++i )
 		{
-			b3CosSin cs = b3ComputeCosSin( 1.0471976f * (float)i );
+			lpCosSin cs = lpComputeCosSin( 1.0471976f * (float)i );
 			points[i] = { 0.09f * cs.cosine, -0.12f, 0.09f * cs.sine };
 			points[6 + i] = { 0.09f * cs.cosine, 0.06f, 0.09f * cs.sine };
 		}
@@ -465,10 +465,10 @@ void ApplyEvent( const Event& e )
 		part.color = 0x6FD68Au;
 		lpObjectDef def = lpDefaultObjectDef();
 		def.isStatic = false;
-		def.transform.p = b3MulAdd( origin, 0.8f, dir );
+		def.transform.p = lpMulAdd( origin, 0.8f, dir );
 		def.parts = &part;
 		def.partCount = 1;
-		def.linearVelocity = b3Add( b3MulSV( 16.0f, dir ), b3Vec3{ 0.0f, 2.5f, 0.0f } );
+		def.linearVelocity = lpAdd( lpMulSV( 16.0f, dir ), lpVec3{ 0.0f, 2.5f, 0.0f } );
 		def.angularVelocity = { 4.0f, 1.0f, 7.0f };
 		def.detonator.triggerSpeed = 4.5f;
 		def.detonator.radius = 1.8f;
@@ -480,14 +480,14 @@ void ApplyEvent( const Event& e )
 
 	if ( e.tool == ToolBall )
 	{
-		b3Vec3 points[20];
+		lpVec3 points[20];
 		for ( int i = 0; i < 20; ++i )
 		{
 			// golden-spiral points on a sphere: a chunky low-poly ball
 			float y = 1.0f - 2.0f * ( (float)i + 0.5f ) / 20.0f;
 			float r = sqrtf( 1.0f - y * y );
 			float a = 2.39996323f * (float)i;
-			b3CosSin cs = b3ComputeCosSin( a );
+			lpCosSin cs = lpComputeCosSin( a );
 			points[i] = { 0.3f * r * cs.cosine, 0.3f * y, 0.3f * r * cs.sine };
 		}
 		lpPartDef part = lpDefaultPartDef();
@@ -497,16 +497,16 @@ void ApplyEvent( const Event& e )
 		part.color = 0x3A3D42u;
 		lpObjectDef def = lpDefaultObjectDef();
 		def.isStatic = false;
-		def.transform.p = b3MulAdd( origin, 1.0f, dir );
+		def.transform.p = lpMulAdd( origin, 1.0f, dir );
 		def.parts = &part;
 		def.partCount = 1;
-		def.linearVelocity = b3MulSV( 45.0f, dir );
+		def.linearVelocity = lpMulSV( 45.0f, dir );
 		lpCreateObject( app.world, &def );
 		return;
 	}
 
 	float range = e.tool == ToolHammer ? 4.0f : 250.0f;
-	lpRayHit hit = lpWorld_CastRay( app.world, origin, b3MulSV( range, dir ) );
+	lpRayHit hit = lpWorld_CastRay( app.world, origin, lpMulSV( range, dir ) );
 	if ( hit.hit == false )
 	{
 		return;
@@ -718,14 +718,14 @@ void QueueFire()
 void BeginGrab()
 {
 	V3 f = Forward();
-	b3Vec3 origin = { app.camPos.x, app.camPos.y, app.camPos.z };
-	lpRayHit hit = lpWorld_CastRay( app.world, origin, b3Vec3{ 40.0f * f.x, 40.0f * f.y, 40.0f * f.z } );
+	lpVec3 origin = { app.camPos.x, app.camPos.y, app.camPos.z };
+	lpRayHit hit = lpWorld_CastRay( app.world, origin, lpVec3{ 40.0f * f.x, 40.0f * f.y, 40.0f * f.z } );
 	app.grabPiece = -1;
 	if ( hit.hit && hit.piece >= 0 )
 	{
 		app.grabPiece = hit.piece;
 		app.grabGeneration = lpWorld_GetPieceInfo( app.world, hit.piece ).generation;
-		b3Vec3 local = lpWorld_ToBodyFrame( app.world, hit.piece, hit.point );
+		lpVec3 local = lpWorld_ToBodyFrame( app.world, hit.piece, hit.point );
 		app.grabLocal = { local.x, local.y, local.z };
 		V3 p = { (float)hit.point.x, (float)hit.point.y, (float)hit.point.z };
 		app.grabDistance = sqrtf( Dot( p - app.camPos, p - app.camPos ) );
@@ -864,7 +864,7 @@ void AppendRopes( std::vector<Particle>& out )
 void DrawLinks( ImDrawList* dl )
 {
 	ImVec2 size = ImGui::GetIO().DisplaySize;
-	auto project = [&]( b3Pos w, ImVec2* out ) {
+	auto project = [&]( lpPos w, ImVec2* out ) {
 		const float* m = app.viewProj.m;
 		float x = (float)w.x, y = (float)w.y, z = (float)w.z;
 		float cx = m[0] * x + m[4] * y + m[8] * z + m[12];

@@ -171,7 +171,7 @@ float lpLightVolume( const lpWorld* w, int material )
 lpObjectDef lpDefaultObjectDef( void )
 {
 	lpObjectDef def = { 0 };
-	def.transform = b3Transform_identity;
+	def.transform = lpTransform_identity;
 	def.isStatic = true;
 	def.gravityScale = 1.0f;
 	return def;
@@ -180,8 +180,8 @@ lpObjectDef lpDefaultObjectDef( void )
 lpPartDef lpDefaultPartDef( void )
 {
 	lpPartDef def = { 0 };
-	def.halfExtents = (b3Vec3){ 0.5f, 0.5f, 0.5f };
-	def.transform = b3Transform_identity;
+	def.halfExtents = (lpVec3){ 0.5f, 0.5f, 0.5f };
+	def.transform = lpTransform_identity;
 	def.material = lp_stone;
 	def.color = 0x9A968Cu;
 	return def;
@@ -311,7 +311,7 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 		fprintf( stderr, "lpCreateWorld: %d determinism self-test answers are wrong on this machine\n", failures );
 	}
 	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
-	b3World_SetHitEventThreshold( def->physics, b3MinFloat( def->hitSpeed, def->wakeSpeed ) );
+	b3World_SetHitEventThreshold( def->physics, lpMinFloat( def->hitSpeed, def->wakeSpeed ) );
 	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
 	w->tasks = lpTaskPool_Create( def->workerCount );
 	lpGridInit( w );
@@ -535,14 +535,14 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	bond->b = a < b ? b : a;
 	bond->area = contact->area;
 	bond->centroid = contact->centroid;
-	bond->normal = a < b ? contact->normal : b3Neg( contact->normal ); // always from bond->a toward bond->b
+	bond->normal = a < b ? contact->normal : lpNeg( contact->normal ); // always from bond->a toward bond->b
 	bond->h1 = contact->h1;
 	bond->h2 = contact->h2;
 	bond->joint = joint;
 	bond->strain = 0.0f;
 	bond->rho = 0.0f;
-	bond->force = b3Vec3_zero;
-	bond->moment = b3Vec3_zero;
+	bond->force = lpVec3_zero;
+	bond->moment = lpVec3_zero;
 	bond->health = strengthA < strengthB ? strengthA : strengthB;
 	bond->strength = bond->health;
 	bond->alive = true;
@@ -583,32 +583,32 @@ void lpTryBond( lpWorld* w, int a, int b )
 		// A weld: a nominal square patch facing from one centroid to the other
 		float v = pa->shape->volume < pb->shape->volume ? pa->shape->volume : pb->shape->volume;
 		contact.area = 0.5f * lpCbrt( v * v );
-		contact.centroid = b3MulSV( 0.5f, b3Add( pa->shape->centroid, pb->shape->centroid ) );
-		b3Vec3 d = b3Sub( pb->shape->centroid, pa->shape->centroid );
-		contact.normal = b3LengthSquared( d ) > 1e-12f ? b3Normalize( d ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		contact.centroid = lpMulSV( 0.5f, lpAdd( pa->shape->centroid, pb->shape->centroid ) );
+		lpVec3 d = lpSub( pb->shape->centroid, pa->shape->centroid );
+		contact.normal = lpLengthSquared( d ) > 1e-12f ? lpNormalize( d ) : (lpVec3){ 0.0f, 1.0f, 0.0f };
 		contact.h1 = 0.5f * sqrtf( contact.area );
 		contact.h2 = contact.h1;
 		lpAddBond( w, a, b, &contact, joint );
 	}
 }
 
-b3WorldTransform lpGetTransform( const lpBody* b )
+lpWorldTransform lpGetTransform( const lpBody* b )
 {
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
-		b3Vec3 offset = b3RotateVector( b->q, b->localCenter );
-		b3WorldTransform xf = { b3OffsetPos( b->com, b3Neg( offset ) ), b->q };
+		lpVec3 offset = lpRotateVector( b->q, b->localCenter );
+		lpWorldTransform xf = { lpOffsetPos( b->com, lpNeg( offset ) ), b->q };
 		return xf;
 	}
 	return b3Body_GetTransform( b->id );
 }
 
 // Emit a cosmetic particle at a body-frame point, coloured and shaped by the material
-void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint8_t material )
+void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material )
 {
 	const lpMaterialDef* m = lpGetMaterial( material );
 	uint32_t rgb = m->interiorColor;
-	b3Pos p = b3TransformWorldPoint( xf, localPoint );
+	lpPos p = lpTransformWorldPoint( xf, localPoint );
 	lpParticle particle;
 	particle.position[0] = (float)p.x;
 	particle.position[1] = (float)p.y;
@@ -627,7 +627,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	lpBody* b = w->bodies.data + bodyIndex;
 	LP_ASSERT( b->alive );
 	bool loose = b->kind == lp_kindGhost || b->kind == lp_kindScrap;
-	b3WorldTransform xf = lpGetTransform( b );
+	lpWorldTransform xf = lpGetTransform( b );
 
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
@@ -639,8 +639,8 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 		}
 		if ( emitDust )
 		{
-			float size = b3MinFloat( lpCbrt( p->shape->volume ), 0.3f );
-			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : b3Vec3_zero, size, p->material );
+			float size = lpMinFloat( lpCbrt( p->shape->volume ), 0.3f );
+			lpEmitParticle( w, xf, p->shape->centroid, loose ? b->v : lpVec3_zero, size, p->material );
 		}
 		p->shapeId = b3_nullShapeId; // destroyed with the body
 		lpFreePieceSlot( w, pieceIndex );
@@ -662,7 +662,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	w->freeBody = bodyIndex;
 }
 
-int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega,
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
 						  float gravityScale )
 {
 	int index = lpAllocBody( w );
@@ -696,20 +696,20 @@ void lpMarkDirty( lpWorld* w, int bodyIndex )
 	}
 }
 
-static b3Vec3 lpBoxAxis( b3Vec3 h, b3Quat q, bool longest )
+static lpVec3 lpBoxAxis( lpVec3 h, lpQuat q, bool longest )
 {
-	b3Vec3 axis = { 1.0f, 0.0f, 0.0f };
+	lpVec3 axis = { 1.0f, 0.0f, 0.0f };
 	float best = h.x;
 	if ( longest ? h.y > best : h.y < best )
 	{
-		axis = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		axis = (lpVec3){ 0.0f, 1.0f, 0.0f };
 		best = h.y;
 	}
 	if ( longest ? h.z > best : h.z < best )
 	{
-		axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+		axis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 	}
-	return b3RotateVector( q, axis );
+	return lpRotateVector( q, axis );
 }
 
 typedef struct lpSweepItem
@@ -759,7 +759,7 @@ static void lpBondParts( lpWorld* w, int bodyIndex, int first )
 	lpSweepItem* items = lpAlloc( sizeof( lpSweepItem ) * (size_t)n );
 	for ( int k = 0; k < n; ++k )
 	{
-		b3AABB box = w->pieces.data[b->pieces.data[first + k]].shape->bounds;
+		lpAABB box = w->pieces.data[b->pieces.data[first + k]].shape->bounds;
 		items[k] = (lpSweepItem){ box.lowerBound.x, box.upperBound.x, first + k };
 	}
 	qsort( items, (size_t)n, sizeof( lpSweepItem ), lpCompareSweep );
@@ -821,7 +821,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	{
 		const lpPartDef* part = def->parts + i;
 		bool ok;
-		b3Vec3 extents = { 0.5f, 0.5f, 0.5f };
+		lpVec3 extents = { 0.5f, 0.5f, 0.5f };
 		if ( part->pointCount == 0 )
 		{
 			lpPoly_MakeBox( poly, part->halfExtents, part->transform, part->material );
@@ -833,8 +833,8 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 			ok = lpPoly_MakeFromPoints( poly, part->points, part->pointCount, part->material );
 			if ( ok )
 			{
-				b3AABB box = lpPoly_ComputeBounds( poly );
-				extents = b3MulSV( 0.5f, b3Sub( box.upperBound, box.lowerBound ) );
+				lpAABB box = lpPoly_ComputeBounds( poly );
+				extents = lpMulSV( 0.5f, lpSub( box.upperBound, box.lowerBound ) );
 			}
 		}
 		if ( ok == false )
@@ -867,24 +867,24 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		p->pool = 0;
 		if ( part->system.pool > 0.0f && p->sources != 0 )
 		{
-			lpPool pool = { part->system.pool, part->system.pool, 0.0f, b3MaxFloat( part->system.seal, 0.0f ), -1.0f, 0.0f, 16 };
+			lpPool pool = { part->system.pool, part->system.pool, 0.0f, lpMaxFloat( part->system.seal, 0.0f ), -1.0f, 0.0f, 16 };
 			lpArray_Push( w->pools, pool );
 			p->pool = w->pools.count;
 		}
 
-		b3Quat q = part->pointCount == 0 ? part->transform.q : b3Quat_identity;
+		lpQuat q = part->pointCount == 0 ? part->transform.q : lpQuat_identity;
 		int pattern = lpGetMaterial( part->material )->pattern;
 		bool glass = pattern == lp_breakRadial;
-		if ( b3LengthSquared( part->grainAxis ) > 0.0f )
+		if ( lpLengthSquared( part->grainAxis ) > 0.0f )
 		{
-			p->axis = b3Normalize( part->grainAxis );
+			p->axis = lpNormalize( part->grainAxis );
 		}
 		else if ( pattern == lp_breakMasonry )
 		{
 			// Bricks run horizontally along the wall: across the wall's thinnest axis and the vertical
-			b3Vec3 thin = lpBoxAxis( extents, q, false );
-			b3Vec3 run = b3Cross( (b3Vec3){ 0.0f, 1.0f, 0.0f }, thin );
-			p->axis = b3LengthSquared( run ) > 1e-6f ? b3Normalize( run ) : (b3Vec3){ 1.0f, 0.0f, 0.0f };
+			lpVec3 thin = lpBoxAxis( extents, q, false );
+			lpVec3 run = lpCross( (lpVec3){ 0.0f, 1.0f, 0.0f }, thin );
+			p->axis = lpLengthSquared( run ) > 1e-6f ? lpNormalize( run ) : (lpVec3){ 1.0f, 0.0f, 0.0f };
 		}
 		else
 		{
@@ -933,7 +933,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 
 	lpBondParts( w, bodyIndex, first );
 
-	w->bodies.data[bodyIndex].inertiaRadius = b3MaxFloat( def->inertiaRadius, 0.0f );
+	w->bodies.data[bodyIndex].inertiaRadius = lpMaxFloat( def->inertiaRadius, 0.0f );
 	if ( type == b3_dynamicBody )
 	{
 		lpApplyMass( w->bodies.data + bodyIndex );
@@ -998,7 +998,7 @@ int lpCompareBodyRef( const void* a, const void* b )
 }
 
 // Pieces whose shapes overlap the box, sorted and unique (query order must not leak into results).
-void lpQueryPieces( lpWorld* w, b3AABB box )
+void lpQueryPieces( lpWorld* w, lpAABB box )
 {
 	w->scratchPieces.count = 0;
 	b3World_OverlapAABB( w->def.physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, w );
@@ -1073,10 +1073,10 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 			h = lpHashBytes( h, &b->sinkTicks, sizeof( b->sinkTicks ) );
 			continue;
 		}
-		b3WorldTransform xf = b3Body_GetTransform( b->id );
-		b3Vec3 v = b3Body_GetLinearVelocity( b->id );
-		b3Vec3 omega = b3Body_GetAngularVelocity( b->id );
-		LP_ASSERT( b3IsValidVec3( xf.p ) && b3IsValidVec3( v ) && b3IsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
+		lpWorldTransform xf = b3Body_GetTransform( b->id );
+		lpVec3 v = b3Body_GetLinearVelocity( b->id );
+		lpVec3 omega = b3Body_GetAngularVelocity( b->id );
+		LP_ASSERT( lpIsValidVec3( xf.p ) && lpIsValidVec3( v ) && lpIsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
 		h = lpHashBytes( h, &xf, sizeof( xf ) );
 		h = lpHashBytes( h, &v, sizeof( v ) );
 		h = lpHashBytes( h, &omega, sizeof( omega ) );
@@ -1090,8 +1090,8 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 		}
 		h = lpHashBytes( h, &p->body, sizeof( p->body ) );
 		h = lpHashBytes( h, &p->shape->volume, sizeof( float ) );
-		h = lpHashBytes( h, &p->shape->centroid, sizeof( b3Vec3 ) );
-		h = lpHashBytes( h, p->shape->vertices, sizeof( b3Vec3 ) * (size_t)p->shape->vertexCount );
+		h = lpHashBytes( h, &p->shape->centroid, sizeof( lpVec3 ) );
+		h = lpHashBytes( h, p->shape->vertices, sizeof( lpVec3 ) * (size_t)p->shape->vertexCount );
 		h = lpHashBytes( h, p->bonds.data, sizeof( int ) * (size_t)p->bonds.count );
 		if ( ( p->carries | p->needs ) != 0 )
 		{
@@ -1170,11 +1170,11 @@ uint64_t lpWorld_HashStress( const lpWorld* w )
 
 // Closest approach of the segment from the origin along d to the segment p-q: the fraction along d and the point on
 // p-q, if they pass within `radius`
-static bool lpRayNearSegment( b3Vec3 d, b3Vec3 p, b3Vec3 q, float radius, float* fraction, b3Vec3* point )
+static bool lpRayNearSegment( lpVec3 d, lpVec3 p, lpVec3 q, float radius, float* fraction, lpVec3* point )
 {
-	b3Vec3 e = b3Sub( q, p );
-	b3Vec3 r = b3Neg( p );
-	float a = b3Dot( d, d ), ee = b3Dot( e, e ), f = b3Dot( e, r ), c = b3Dot( d, r ), b = b3Dot( d, e );
+	lpVec3 e = lpSub( q, p );
+	lpVec3 r = lpNeg( p );
+	float a = lpDot( d, d ), ee = lpDot( e, e ), f = lpDot( e, r ), c = lpDot( d, r ), b = lpDot( d, e );
 	float s = 0.0f, t = 0.0f;
 	if ( a <= 1e-12f )
 	{
@@ -1182,26 +1182,26 @@ static bool lpRayNearSegment( b3Vec3 d, b3Vec3 p, b3Vec3 q, float radius, float*
 	}
 	if ( ee <= 1e-12f )
 	{
-		s = b3ClampFloat( -c / a, 0.0f, 1.0f );
+		s = lpClampFloat( -c / a, 0.0f, 1.0f );
 	}
 	else
 	{
 		float denom = a * ee - b * b;
-		s = denom > 1e-12f ? b3ClampFloat( ( b * f - c * ee ) / denom, 0.0f, 1.0f ) : 0.0f;
+		s = denom > 1e-12f ? lpClampFloat( ( b * f - c * ee ) / denom, 0.0f, 1.0f ) : 0.0f;
 		t = ( b * s + f ) / ee;
 		if ( t < 0.0f )
 		{
 			t = 0.0f;
-			s = b3ClampFloat( -c / a, 0.0f, 1.0f );
+			s = lpClampFloat( -c / a, 0.0f, 1.0f );
 		}
 		else if ( t > 1.0f )
 		{
 			t = 1.0f;
-			s = b3ClampFloat( ( b - c ) / a, 0.0f, 1.0f );
+			s = lpClampFloat( ( b - c ) / a, 0.0f, 1.0f );
 		}
 	}
-	b3Vec3 onRope = b3MulAdd( p, t, e );
-	if ( b3Length( b3Sub( b3MulSV( s, d ), onRope ) ) > radius )
+	lpVec3 onRope = lpMulAdd( p, t, e );
+	if ( lpLength( lpSub( lpMulSV( s, d ), onRope ) ) > radius )
 	{
 		return false;
 	}
@@ -1213,15 +1213,15 @@ static bool lpRayNearSegment( b3Vec3 d, b3Vec3 p, b3Vec3 q, float radius, float*
 typedef struct lpClosestRay
 {
 	float fraction;
-	b3Pos point;
-	b3Vec3 normal;
+	lpPos point;
+	lpVec3 normal;
 	int piece;
 	bool hit;
 } lpClosestRay;
 
 // The closest hit past the origin (a ray starting inside a shape ignores it), ties broken by piece index rather than
 // by the physics engine's traversal order
-static float lpClosestRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+static float lpClosestRayFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
 							  int triangleIndex, int childIndex, void* context )
 {
 	(void)userMaterialId;
@@ -1245,13 +1245,13 @@ static float lpClosestRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, flo
 	return lpNextUp( ray->fraction );
 }
 
-lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
+lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 {
 	lpRayHit hit = { 0 };
 	hit.piece = -1;
 	hit.body = -1;
 	hit.link = -1;
-	lpClosestRay result = { 2.0f, { 0 }, b3Vec3_zero, -1, false }; // above any hit, so a hit at the very end counts
+	lpClosestRay result = { 2.0f, { 0 }, lpVec3_zero, -1, false }; // above any hit, so a hit at the very end counts
 	b3World_CastRay( w->def.physics, origin, translation, b3DefaultQueryFilter(), lpClosestRayFcn, &result );
 	float nearest = result.hit ? result.fraction : 2.0f; // a rope at the very end of the ray still counts
 	if ( result.hit )
@@ -1272,17 +1272,17 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, b3Pos origin, b3Vec3 translation )
 	{
 		const lpLink* l = w->links.data + i;
 		float fraction;
-		b3Vec3 point;
+		lpVec3 point;
 		float radius = l->wheel >= 0 ? w->wheels.data[l->wheel].def.radius : 0.05f;
 		if ( l->alive && ( l->def.type == lp_linkRope || l->wheel >= 0 ) &&
-			 lpRayNearSegment( translation, b3SubPos( l->points[0], origin ), b3SubPos( l->points[1], origin ), radius,
+			 lpRayNearSegment( translation, lpSubPos( l->points[0], origin ), lpSubPos( l->points[1], origin ), radius,
 							   &fraction, &point ) &&
 			 fraction < nearest )
 		{
 			nearest = fraction;
 			hit.hit = true;
-			hit.point = b3OffsetPos( origin, point );
-			hit.normal = b3Normalize( b3Neg( translation ) );
+			hit.point = lpOffsetPos( origin, point );
+			hit.normal = lpNormalize( lpNeg( translation ) );
 			hit.piece = -1;
 			hit.body = -1;
 			hit.link = i;
@@ -1311,7 +1311,7 @@ int lpWorld_GetBodyCapacity( const lpWorld* w )
 	return w->bodies.count;
 }
 
-bool lpWorld_GetBodyTransform( const lpWorld* w, int body, b3WorldTransform* transform )
+bool lpWorld_GetBodyTransform( const lpWorld* w, int body, lpWorldTransform* transform )
 {
 	const lpBody* b = w->bodies.data + body;
 	if ( b->alive == false )
@@ -1472,8 +1472,8 @@ bool lpWorld_Validate( const lpWorld* w )
 			continue;
 		}
 		liveBonds += 1;
-		float len2 = b3LengthSquared( bond->normal );
-		if ( b3AbsFloat( len2 - 1.0f ) > 1e-3f || ( bond->h1 > 0.0f && bond->h2 > 0.0f ) == false )
+		float len2 = lpLengthSquared( bond->normal );
+		if ( lpAbsFloat( len2 - 1.0f ) > 1e-3f || ( bond->h1 > 0.0f && bond->h2 > 0.0f ) == false )
 		{
 			return lpFail( "bond %d has a bad contact patch (joins %d and %d)", i, bond->a, bond->b );
 		}

@@ -68,7 +68,7 @@ typedef struct lpSlenderCut
 typedef struct lpStressReduced
 {
 	lpPartition partition;
-	LP_ARRAY( b3Vec3 ) nodeRef; // each fine node's reference point: its piece's centroid
+	LP_ARRAY( lpVec3 ) nodeRef; // each fine node's reference point: its piece's centroid
 	lpStressSystem system;		// P^T K P; its x is the correction y
 	uint32_t topology;			// of the body when built
 	uint32_t clusterStamp;
@@ -80,7 +80,7 @@ typedef struct lpClusterSet
 {
 	int parent;
 	int size;
-	b3AABB box;
+	lpAABB box;
 	bool eligible;
 	int id;
 } lpClusterSet;
@@ -91,8 +91,8 @@ typedef struct lpStressJob
 {
 	int body;
 	lpStressSystem* system; // the body's
-	b3WorldTransform xf;
-	b3Vec3 gravity;			  // body frame
+	lpWorldTransform xf;
+	lpVec3 gravity;			  // body frame
 	int nodeCount, edgeCount; // counted before the build, for the budget
 	int budget;				  // iterations granted this step
 	bool continuing;		  // pick up the solve in progress (r, p and the system, rz in solve)
@@ -117,7 +117,7 @@ typedef struct lpLinkEnd
 {
 	int piece;
 	uint32_t generation;
-	b3Transform frame;
+	lpTransform frame;
 } lpLinkEnd;
 
 typedef struct lpLink
@@ -127,11 +127,11 @@ typedef struct lpLink
 	b3JointId joint;
 	b3BodyId builtOn[2]; // the Box3D bodies the joint was made on; when an end's body changes, it is rebuilt
 	b3BodyId anchor[2];	 // the static body of a world end
-	b3Pos points[2];	 // world points of the ends, cached at the last step either end was awake
-	b3Vec3 force;		 // on end B, world, N
-	b3Vec3 torque;
-	b3Vec3 stressForce;	  // the force and torque its structure ends were last re-checked for (world)
-	b3Vec3 stressTorque;
+	lpPos points[2];	 // world points of the ends, cached at the last step either end was awake
+	lpVec3 force;		 // on end B, world, N
+	lpVec3 torque;
+	lpVec3 stressForce;	  // the force and torque its structure ends were last re-checked for (world)
+	lpVec3 stressTorque;
 	uint64_t recheckTick; // tick + 1 of that re-check (0: never)
 	float utilization; // load over limit, smoothed
 	float strain;	   // breaks at 1
@@ -143,11 +143,11 @@ typedef struct lpLink
 	// Motor (hinges and ball joints with def.motor): its target, what was last given to Box3D (set again only when it
 	// changes; a rebuilt joint gets it all again), and what it did
 	float target;
-	b3Quat targetRotation;
+	lpQuat targetRotation;
 	bool targetChanged;
 	bool motorApplied;
 	float appliedSpeed;
-	b3Vec3 appliedVelocity;
+	lpVec3 appliedVelocity;
 	float appliedCap;
 	float motorCap;
 	float motorTorque;
@@ -177,23 +177,23 @@ typedef struct lpWheel
 	float slip;	  // sideways speed at the contact before the solve, m/s
 	bool grounded;
 	bool atStop; // bottomed out: the cast started inside the ground
-	b3Pos contactPoint;
-	b3Vec3 contactNormal; // out of the ground
+	lpPos contactPoint;
+	lpVec3 contactNormal; // out of the ground
 	int groundPiece;	  // -1: none
 	uint32_t groundGeneration;
-	b3WorldTransform hub; // world, at the last step its chassis was awake
-	b3Vec3 hubVelocity;
-	b3Vec3 bodyOmega;
-	b3Vec3 stressForce; // what its ground structure was last re-checked for (world)
+	lpWorldTransform hub; // world, at the last step its chassis was awake
+	lpVec3 hubVelocity;
+	lpVec3 bodyOmega;
+	lpVec3 stressForce; // what its ground structure was last re-checked for (world)
 	int stressBody;		// that structure (-1: none)
 	uint64_t recheckTick;
 	bool sliding;	// its grip gave at the last solve: it slides on with less
 	float friction; // of the ground
 	// This step's solve (world)
-	b3Vec3 suspension; // force on the chassis
-	b3Vec3 r;		   // contact point from the chassis's centre of mass
-	b3Vec3 dirF, dirS; // along and across the tyre, in the ground's plane
-	b3Vec3 groundVelocity;
+	lpVec3 suspension; // force on the chassis
+	lpVec3 r;		   // contact point from the chassis's centre of mass
+	lpVec3 dirF, dirS; // along and across the tyre, in the ground's plane
+	lpVec3 groundVelocity;
 	float massN, massF, massS;
 	float lambdaN, lambdaF, lambdaS;
 	int nextFree;
@@ -209,8 +209,8 @@ typedef struct lpBodyWheel
 typedef struct lpVehicle
 {
 	lpVehicleDef def; // wheels cleared
-	b3Vec3 forward;	  // chassis body frame
-	b3Vec3 up;
+	lpVec3 forward;	  // chassis body frame
+	lpVec3 up;
 	lpVehicleControl control;
 	bool controlChanged;
 	bool alive;
@@ -227,7 +227,7 @@ typedef struct lpLimb
 	uint32_t gen[LP_MAX_LIMB_JOINTS]; // each link's generation at creation (a slot reused by another link is not it)
 	float lower[LP_MAX_LIMB_JOINTS];  // the angles its targets keep within (just inside the hinge's limits)
 	float upper[LP_MAX_LIMB_JOINTS];
-	b3Vec3 defFoot; // the foot as created, in the frame of the last link's outer body
+	lpVec3 defFoot; // the foot as created, in the frame of the last link's outer body
 	// Capability, every step
 	int joints;		// links on in a chain from the torso
 	int rootBody;	// the body of its first link's inner end (-1: that link is gone)
@@ -235,7 +235,7 @@ typedef struct lpLimb
 	uint32_t tipGeneration;
 	uint32_t tipTopology;
 	int tipJoints;	// joints when the foot was found
-	b3Vec3 foot;	// in tipBody's frame
+	lpVec3 foot;	// in tipBody's frame
 	float strength; // of its weakest joint's servo, 0 to 1
 	float reach;
 	float depth;	// below the torso's frame, how far the foot reaches at its neutral point (found with the foot)
@@ -245,19 +245,19 @@ typedef struct lpLimb
 	float residual; // how far its IK fell short, m
 	float q[LP_MAX_LIMB_JOINTS]; // the angles last given to its servos
 	// Gait (gait.c)
-	b3Vec3 neutral; // torso frame: where its foot rests under the torso, as created
+	lpVec3 neutral; // torso frame: where its foot rests under the torso, as created
 	bool swinging;
 	float swingClock; // s into its swing
 	bool castLate;	  // the second foothold cast (two thirds through) is done
 	bool grounded;	  // the last cast found ground
-	b3Pos liftoff;	  // world
-	b3Pos landing;
-	b3Pos hold;		  // world: where a planted foot is kept
+	lpPos liftoff;	  // world
+	lpPos landing;
+	lpPos hold;		  // world: where a planted foot is kept
 	float holdClock;  // s since it was set down
 	bool arrived;	  // it got there: the hold is fixed
 	// Reaching (lpWorld_SetLimbTarget)
 	bool reachWanted; // told to reach
-	b3Pos reachPoint; // world
+	lpPos reachPoint; // world
 	bool reaching;	  // out of the gait, reaching
 	int touching;	  // the piece its foot touches while reaching (-1: none)
 	int groundPiece;  // under the foothold (-1: none, or not a piece)
@@ -268,15 +268,15 @@ typedef struct lpLimb
 typedef struct lpRig
 {
 	lpRigDef def; // limbs cleared
-	b3Vec3 forward; // torso body frame (the creation body's; bodies split off it share it)
-	b3Vec3 up;
+	lpVec3 forward; // torso body frame (the creation body's; bodies split off it share it)
+	lpVec3 up;
 	lpRigControl control;
 	bool controlChanged;
 	bool alive;
 	int body; // the torso this step (-1: none)
 	int limbCount;
 	lpLimb limbs[LP_MAX_RIG_LIMBS];
-	b3WorldTransform desired; // where the torso's frame is pushed: level, at its height, moving with the controls
+	lpWorldTransform desired; // where the torso's frame is pushed: level, at its height, moving with the controls
 	float height;			  // the torso's frame above its planted feet, this step
 	bool idle;				  // targets frozen: standing still, settled
 	int calm;				  // steps settled and still toward the idle latch
@@ -291,9 +291,9 @@ typedef struct lpRig
 // A wheel that came off, spawned as an object of its own at the start of the next step
 typedef struct lpLostWheel
 {
-	b3WorldTransform hub;
-	b3Vec3 velocity;
-	b3Vec3 omega;
+	lpWorldTransform hub;
+	lpVec3 velocity;
+	lpVec3 omega;
 	float radius, width;
 	uint8_t material;
 	uint32_t color;
@@ -314,8 +314,8 @@ typedef struct lpPiece
 	b3ShapeId shapeId; // null while the piece is on a ghost or scrap body
 	LP_ARRAY( int ) bonds;
 	LP_ARRAY( int ) links; // links with an end on this piece
-	b3Plane anchorPlane;
-	b3Vec3 axis; // grain axis (wood) or pane normal (glass), body frame
+	lpPlane anchorPlane;
+	lpVec3 axis; // grain axis (wood) or pane normal (glass), body frame
 	uint32_t color;
 	uint32_t seed;
 	uint32_t generation;
@@ -358,13 +358,13 @@ typedef struct lpBond
 	float area;
 	float health;		// J/m^2 of damage left
 	float strength;		// health when intact
-	b3Vec3 centroid;	// body frame
-	b3Vec3 normal;		// unit, body frame, from piece a toward piece b
+	lpVec3 centroid;	// body frame
+	lpVec3 normal;		// unit, body frame, from piece a toward piece b
 	float h1, h2;		// half-extents of the contact patch along lpContactBasis( normal )
 	float strain;		// stress overload accumulated over checks; the bond breaks at 1
 	float rho;			// utilization at the last converged check (1 = at its limit)
-	b3Vec3 force;		// it carries at the last converged check (newtons, body frame, lpEdgeForce's sign: tension along +normal)
-	b3Vec3 moment;
+	lpVec3 force;		// it carries at the last converged check (newtons, body frame, lpEdgeForce's sign: tension along +normal)
+	lpVec3 moment;
 	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
 	int nextFree;
@@ -428,33 +428,33 @@ typedef struct lpBody
 	// alpha and omega in its frame, about reliefCenter), sampled with its loads
 	bool solveStress;
 	int stressPin;
-	b3Vec3 reliefAccel;
-	b3Vec3 reliefAlpha;
-	b3Vec3 reliefOmega;
-	b3Vec3 reliefCenter;
+	lpVec3 reliefAccel;
+	lpVec3 reliefAlpha;
+	lpVec3 reliefOmega;
+	lpVec3 reliefCenter;
 	// Its velocities at the end of the last two steps (world), for the acceleration it actually had: a crash's contact
 	// is gone by the time it is checked (the impact broke it). stepTick: the tick of the newer; stepPair: the older is
 	// from the step before.
-	b3Vec3 stepV[2];
-	b3Vec3 stepOmega[2];
+	lpVec3 stepV[2];
+	lpVec3 stepOmega[2];
 	uint64_t stepTick;
 	bool stepPair;
 	// Struck at hitTick, at hitPoint (body frame), on hitMaterial: what it did not sample enters there (the pin is the
 	// piece nearest it; the struck one may be broken by then), and its crumpling spreads the stop
-	b3Vec3 hitPoint;
+	lpVec3 hitPoint;
 	uint8_t hitMaterial;
 	uint64_t hitTick;
 
 	// Ghost and scrap state. The body frame is com - q * localCenter, so piece geometry stays in object space.
-	b3Pos com;
-	b3Quat q;
-	b3Vec3 v;
-	b3Vec3 omega;
-	b3Vec3 localCenter;
+	lpPos com;
+	lpQuat q;
+	lpVec3 v;
+	lpVec3 omega;
+	lpVec3 localCenter;
 	int planTicks; // ticks the last landing cast still covers
 	int landIn;	   // ticks until the planned landing, or -1
-	b3Pos landPoint;
-	b3Vec3 landNormal;
+	lpPos landPoint;
+	lpVec3 landNormal;
 	int sinkTicks; // scrap over budget sinks into the ground, then goes
 
 	// Loose-debris grid (ghosts and scrap), intrusive per-slot lists
@@ -493,16 +493,16 @@ typedef struct lpPendingBlast
 typedef struct lpPull
 {
 	int piece;
-	b3Vec3 localPoint;
-	b3Pos target;
+	lpVec3 localPoint;
+	lpPos target;
 	float maxAccel;
 	float maxMass;
 } lpPull;
 
 typedef struct lpBlow
 {
-	b3Pos origin;
-	b3Vec3 direction;
+	lpPos origin;
+	lpVec3 direction;
 	float range;
 	float cosAngle;
 	float speed;
@@ -510,14 +510,14 @@ typedef struct lpBlow
 
 typedef struct lpWake
 {
-	b3Vec3 center;
+	lpVec3 center;
 	float radius;
 } lpWake;
 
 typedef struct lpForce
 {
-	b3Pos point;
-	b3Vec3 direction;
+	lpPos point;
+	lpVec3 direction;
 	float radius;
 	float impulse;
 	bool explosion;
@@ -528,7 +528,7 @@ typedef struct lpComponent
 	int first; // into scratchQueue
 	int count;
 	float volume;
-	b3Vec3 centroid; // body frame, volume weighted
+	lpVec3 centroid; // body frame, volume weighted
 	bool anchored;
 	int material; // of the largest piece
 	float largest;
@@ -537,7 +537,7 @@ typedef struct lpComponent
 typedef struct lpHitCandidate
 {
 	float energy;
-	b3Pos point;
+	lpPos point;
 	uint64_t key;
 } lpHitCandidate;
 
@@ -555,7 +555,7 @@ typedef struct lpHitEvent
 {
 	uint64_t pair; // the two pieces' index + 1, smaller first (0: a shape that is not a piece)
 	float speed;
-	b3Pos point;
+	lpPos point;
 	int index; // into the step's hit events
 } lpHitEvent;
 
@@ -565,8 +565,8 @@ typedef struct lpHitEvent
 typedef struct lpFractureJob
 {
 	int piece;
-	b3Vec3 localImpact; // body frame
-	b3Vec3 center;		// piece centroid; the fracture runs in a frame centered here
+	lpVec3 localImpact; // body frame
+	lpVec3 center;		// piece centroid; the fracture runs in a frame centered here
 	lpImpactDef impact; // what broke it: new bonds between its cells start with the damage it did there
 	lpPoly poly;
 	lpFractureInput input;
@@ -693,12 +693,12 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex );
 bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex );
 void lpDetachPieceShape( lpWorld* w, int pieceIndex );
 void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust );
-int lpCreateBodyInternal( lpWorld* w, b3WorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, b3Vec3 v, b3Vec3 omega,
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
 						  float gravityScale );
-void lpEmitParticle( lpWorld* w, b3WorldTransform xf, b3Vec3 localPoint, b3Vec3 velocity, float size, uint8_t material );
-void lpQueryPieces( lpWorld* w, b3AABB box );
+void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material );
+void lpQueryPieces( lpWorld* w, lpAABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
-b3WorldTransform lpGetTransform( const lpBody* b );
+lpWorldTransform lpGetTransform( const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
 int lpCompareOrder( const void* a, const void* b );
 
@@ -743,9 +743,9 @@ bool lpValidateLinks( const lpWorld* w );
 void lpFreeLinks( lpWorld* w, bool physicsAlive );
 // A wheel's link: end 0 on the piece nearest the mount (within reach), end 1 on nothing, no joint. Returns -1 when no
 // piece of the body is near enough.
-int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float strength, int wheel );
+int lpCreateWheelLink( lpWorld* w, int body, lpPos mount, float maxForce, float strength, int wheel );
 // Distance from the origin to the segment a-b
-float lpSegmentDistance( b3Vec3 a, b3Vec3 b );
+float lpSegmentDistance( lpVec3 a, lpVec3 b );
 
 // vehicles (wheel.c): lpSpawnLostWheels at the start of a step (wheels that came off last step become objects);
 // lpStepVehicles just before the physics step (steering, suspension casts, the tyre solve, forces)
@@ -753,7 +753,7 @@ void lpSpawnLostWheels( lpWorld* w );
 void lpStepVehicles( lpWorld* w, float timeStep );
 void lpReleaseWheel( lpWorld* w, int wheel, bool comesOff ); // its link is going
 // Wheels standing on a structure load it (stress.c): force on the ground at the contact, world
-void lpAddWheelLoads( lpWorld* w, int bodyIndex, b3WorldTransform xf );
+void lpAddWheelLoads( lpWorld* w, int bodyIndex, lpWorldTransform xf );
 uint64_t lpHashVehicles( const lpWorld* w, uint64_t h );
 
 // supply (supply.c): recomputed once a step, after lpSyncLinks, when a carrier's connections changed
@@ -790,18 +790,18 @@ static inline void lpApplyMass( const lpBody* b )
 // stance, swings and targets: lpWalkRig in gait.c)
 void lpStepRigs( lpWorld* w, float timeStep );
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep );
-b3Vec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, b3Quat torso ); // against gravity (the rig's own up without it)
-b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb );
+lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso ); // against gravity (the rig's own up without it)
+lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb );
 // Joint speeds that move a limb's foot at `velocity` (torso frame): damped least squares on its Jacobian
-void lpLimbSpeeds( int joints, const b3Vec3* axes, const b3Vec3* origins, b3Vec3 foot, b3Vec3 velocity, float* out );
+void lpLimbSpeeds( int joints, const lpVec3* axes, const lpVec3* origins, lpVec3 foot, lpVec3 velocity, float* out );
 uint64_t lpHashRigs( const lpWorld* w, uint64_t h );
 bool lpValidateRigs( const lpWorld* w );
 void lpFreeRigs( lpWorld* w );
 // A limb's kinematics in the torso frame (tests reach them too): the foot (in the tip's frame) of its first `joints`
 // links at the angles q, each joint's signed axis and point into axes and origins; and IK, the angles (q, warm on
 // entry) that put the foot at target within the limits, returning how far short it falls
-b3Vec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, b3Vec3 foot, b3Vec3* axes, b3Vec3* origins );
-float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, b3Vec3 foot, b3Vec3 target, float* q );
+lpVec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, lpVec3 foot, lpVec3* axes, lpVec3* origins );
+float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, lpVec3 foot, lpVec3 target, float* q );
 // What a motorised link's servo can put in now: its max torque by its health and supply, its hold torque (or what a
 // jam holds) unfed; and of that, what it can drive with
 float lpMotorCap( const lpWorld* w, const lpLink* l );
@@ -830,9 +830,9 @@ float lpLightVolume( const lpWorld* w, int material );
 // ---- debris tiers (debris.c) ----
 
 // A new ghost body at a body-frame transform; add pieces with lpAddLoosePiece, then call lpFinishLoose.
-int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float gravityScale );
+int lpBeginGhost( lpWorld* w, lpWorldTransform xf, lpVec3 v, lpVec3 omega, float gravityScale );
 void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex );
-void lpFinishLoose( lpWorld* w, int bodyIndex, b3WorldTransform xf );
+void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf );
 
 // In-place tier changes of a body (same body index, so rendering and references stay valid)
 void lpConvertToGhost( lpWorld* w, int bodyIndex );
@@ -845,7 +845,7 @@ void lpGridFree( lpWorld* w );
 void lpGridRemove( lpWorld* w, int bodyIndex );
 
 // Loose (ghost/scrap) bodies whose centre lies in the box, sorted by index, into w->scratchLoose.
-void lpQueryLoose( lpWorld* w, b3AABB box );
+void lpQueryLoose( lpWorld* w, lpAABB box );
 
 void lpStepGhosts( lpWorld* w, float timeStep );
 void lpApplyLooseForce( lpWorld* w, const lpForce* force );

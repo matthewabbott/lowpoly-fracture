@@ -34,7 +34,7 @@ lpLinkDef lpDefaultLinkDef( int type )
 	def.type = type;
 	def.bodyA = -1;
 	def.bodyB = -1;
-	def.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+	def.axis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 	def.dampingRatio = 1.0f;
 	def.motor.maxSpeed = 2.0f;
 	def.motor.gain = 6.0f;
@@ -65,18 +65,18 @@ lpLinkDef lpDefaultLinkDef( int type )
 }
 
 // A rotation taking z to the axis (hinge, spring and cone axes are the frames' z)
-static b3Quat lpAxisRotation( b3Vec3 axis )
+static lpQuat lpAxisRotation( lpVec3 axis )
 {
-	float length = b3Length( axis );
-	b3Vec3 z = length > 1e-6f ? b3MulSV( 1.0f / length, axis ) : (b3Vec3){ 0.0f, 0.0f, 1.0f };
-	return b3ComputeQuatBetweenUnitVectors( (b3Vec3){ 0.0f, 0.0f, 1.0f }, z );
+	float length = lpLength( axis );
+	lpVec3 z = length > 1e-6f ? lpMulSV( 1.0f / length, axis ) : (lpVec3){ 0.0f, 0.0f, 1.0f };
+	return lpComputeQuatBetweenUnitVectors( (lpVec3){ 0.0f, 0.0f, 1.0f }, z );
 }
 
 // The piece of a body nearest a world point, and how far outside it the point is
-static int lpNearestPiece( const lpWorld* w, int bodyIndex, b3Pos point, float* distance )
+static int lpNearestPiece( const lpWorld* w, int bodyIndex, lpPos point, float* distance )
 {
 	const lpBody* b = w->bodies.data + bodyIndex;
-	b3Vec3 local = b3InvTransformWorldPoint( lpGetTransform( b ), point );
+	lpVec3 local = lpInvTransformWorldPoint( lpGetTransform( b ), point );
 	int best = -1;
 	*distance = FLT_MAX;
 	for ( int k = 0; k < b->pieces.count; ++k )
@@ -194,7 +194,7 @@ static int lpAllocLink( lpWorld* w )
 	}
 	w->links.data[index].nextFree = -1;
 	w->links.data[index].wheel = -1;
-	w->links.data[index].targetRotation = b3Quat_identity;
+	w->links.data[index].targetRotation = lpQuat_identity;
 	return index;
 }
 
@@ -207,14 +207,14 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 		return -1;
 	}
 	int bodies[2] = { def->bodyA, def->bodyB };
-	b3Pos points[2] = { def->anchorA, def->type == lp_linkRope ? def->anchorB : def->anchorA };
-	b3Quat q = lpAxisRotation( def->axis );
+	lpPos points[2] = { def->anchorA, def->type == lp_linkRope ? def->anchorB : def->anchorA };
+	lpQuat q = lpAxisRotation( def->axis );
 	lpLinkEnd ends[2];
 	for ( int k = 0; k < 2; ++k )
 	{
 		if ( bodies[k] < 0 )
 		{
-			ends[k] = (lpLinkEnd){ -1, 0, { b3Vec3_zero, q } }; // the anchor body sits at the point, unrotated
+			ends[k] = (lpLinkEnd){ -1, 0, { lpVec3_zero, q } }; // the anchor body sits at the point, unrotated
 			continue;
 		}
 		if ( bodies[k] >= w->bodies.count || w->bodies.data[bodies[k]].alive == false ||
@@ -228,11 +228,11 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 		{
 			return -1;
 		}
-		b3WorldTransform xf = lpGetTransform( w->bodies.data + bodies[k] );
+		lpWorldTransform xf = lpGetTransform( w->bodies.data + bodies[k] );
 		ends[k].piece = piece;
 		ends[k].generation = w->pieces.data[piece].generation;
-		ends[k].frame.p = b3InvTransformWorldPoint( xf, points[k] );
-		ends[k].frame.q = b3InvMulQuat( xf.q, q );
+		ends[k].frame.p = lpInvTransformWorldPoint( xf, points[k] );
+		ends[k].frame.q = lpInvMulQuat( xf.q, q );
 	}
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -247,9 +247,9 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	l->def = *def;
 	if ( def->type == lp_linkRope && l->def.length <= 0.0f )
 	{
-		l->def.length = b3Length( b3SubPos( points[1], points[0] ) );
+		l->def.length = lpLength( lpSubPos( points[1], points[0] ) );
 	}
-	l->def.length = b3MaxFloat( l->def.length, 0.01f );
+	l->def.length = lpMaxFloat( l->def.length, 0.01f );
 	l->health = def->strength;
 	l->alive = true;
 	for ( int k = 0; k < 2; ++k )
@@ -274,7 +274,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	return index;
 }
 
-int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float strength, int wheel )
+int lpCreateWheelLink( lpWorld* w, int body, lpPos mount, float maxForce, float strength, int wheel )
 {
 	float distance;
 	int piece = lpNearestPiece( w, body, mount, &distance );
@@ -282,7 +282,7 @@ int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float 
 	{
 		return -1;
 	}
-	b3WorldTransform xf = lpGetTransform( w->bodies.data + body );
+	lpWorldTransform xf = lpGetTransform( w->bodies.data + body );
 	int index = lpAllocLink( w );
 	lpLink* l = w->links.data + index;
 	l->def = lpDefaultLinkDef( lp_linkWheel );
@@ -294,8 +294,8 @@ int lpCreateWheelLink( lpWorld* w, int body, b3Pos mount, float maxForce, float 
 	l->health = strength;
 	l->alive = true;
 	l->wheel = wheel;
-	l->ends[0] = (lpLinkEnd){ piece, w->pieces.data[piece].generation, { b3InvTransformWorldPoint( xf, mount ), b3Quat_identity } };
-	l->ends[1] = (lpLinkEnd){ -1, 0, b3Transform_identity };
+	l->ends[0] = (lpLinkEnd){ piece, w->pieces.data[piece].generation, { lpInvTransformWorldPoint( xf, mount ), lpQuat_identity } };
+	l->ends[1] = (lpLinkEnd){ -1, 0, lpTransform_identity };
 	l->points[0] = mount;
 	l->points[1] = mount;
 	lpArray_Push( w->pieces.data[piece].links, index );
@@ -329,7 +329,7 @@ static void lpLinkDust( lpWorld* w, const lpLink* l, int index, int motes )
 			continue;
 		}
 		const lpPiece* p = w->pieces.data + piece;
-		b3WorldTransform xf = lpGetTransform( w->bodies.data + p->body );
+		lpWorldTransform xf = lpGetTransform( w->bodies.data + p->body );
 		uint64_t h = lpMix64( ( w->tick << 24 ) ^ (uint64_t)( 2 * index + k ) );
 		for ( int m = 0; m < motes; ++m )
 		{
@@ -337,7 +337,7 @@ static void lpLinkDust( lpWorld* w, const lpLink* l, int index, int motes )
 			float rx = (float)( h & 0xFFFF ) / 65535.0f - 0.5f;
 			float rz = (float)( ( h >> 16 ) & 0xFFFF ) / 65535.0f - 0.5f;
 			float rs = (float)( ( h >> 32 ) & 0xFFFF ) / 65535.0f;
-			b3Vec3 v = { 0.8f * rx, -0.2f - 0.4f * rs, 0.8f * rz };
+			lpVec3 v = { 0.8f * rx, -0.2f - 0.4f * rs, 0.8f * rz };
 			lpEmitParticle( w, xf, l->ends[k].frame.p, v, 0.02f + 0.02f * rs, p->material );
 		}
 	}
@@ -453,7 +453,7 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 		lpLink* l = w->links.data + move.link;
 		if ( l->def.motor.jam > 0.0f && l->def.strength > 0.0f )
 		{
-			l->health = b3MaxFloat( l->health - LP_JAM_KNOCK * l->def.strength, 0.1f * l->def.strength );
+			l->health = lpMaxFloat( l->health - LP_JAM_KNOCK * l->def.strength, 0.1f * l->def.strength );
 		}
 		lpLinkEnd* e = l->ends + move.end;
 		e->piece = child;
@@ -472,7 +472,7 @@ static bool lpTearsOff( b3BodyId a, b3BodyId b, float ratio )
 	}
 	float ma = b3Body_GetMass( a );
 	float mb = b3Body_GetMass( b );
-	return b3MinFloat( ma, mb ) < ( ratio > 0.0f ? ratio : LP_LINK_TEAR_RATIO ) * b3MaxFloat( ma, mb );
+	return lpMinFloat( ma, mb ) < ( ratio > 0.0f ? ratio : LP_LINK_TEAR_RATIO ) * lpMaxFloat( ma, mb );
 }
 
 void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
@@ -482,7 +482,7 @@ void lpWorld_SetRopeLength( lpWorld* w, int link, float length )
 		return;
 	}
 	lpLink* l = w->links.data + link;
-	l->def.length = b3MaxFloat( length, 0.01f );
+	l->def.length = lpMaxFloat( length, 0.01f );
 	b3DistanceJoint_SetLengthRange( l->joint, 0.0f, l->def.length );
 	b3Joint_WakeBodies( l->joint );
 }
@@ -496,14 +496,14 @@ void lpWorld_SetLinkTarget( lpWorld* w, int link, float angle )
 	}
 }
 
-void lpWorld_SetLinkTargetRotation( lpWorld* w, int link, b3Quat rotation )
+void lpWorld_SetLinkTargetRotation( lpWorld* w, int link, lpQuat rotation )
 {
 	if ( link < 0 || link >= w->links.count || w->links.data[link].alive == false )
 	{
 		return;
 	}
 	lpLink* l = w->links.data + link;
-	b3Quat q = b3NormalizeQuat( rotation );
+	lpQuat q = lpNormalizeQuat( rotation );
 	if ( q.s != l->targetRotation.s || q.v.x != l->targetRotation.v.x || q.v.y != l->targetRotation.v.y ||
 		 q.v.z != l->targetRotation.v.z )
 	{
@@ -513,9 +513,9 @@ void lpWorld_SetLinkTargetRotation( lpWorld* w, int link, b3Quat rotation )
 }
 
 // A joint frame of a link in the world
-static b3Quat lpEndFrameRotation( const lpWorld* w, const lpLink* l, int k )
+static lpQuat lpEndFrameRotation( const lpWorld* w, const lpLink* l, int k )
 {
-	return b3MulQuat( b3Body_GetRotation( lpEndBody( w, l, k ) ), l->ends[k].frame.q );
+	return lpMulQuat( b3Body_GetRotation( lpEndBody( w, l, k ) ), l->ends[k].frame.q );
 }
 
 // How well what a motor needs is fed at the better of its ends
@@ -530,7 +530,7 @@ static float lpMotorFeed( const lpWorld* w, const lpLink* l )
 	{
 		if ( l->ends[k].piece >= 0 )
 		{
-			fed = b3MaxFloat( fed, lpSupplyOf( w->pieces.data + l->ends[k].piece, l->def.motor.needs ) );
+			fed = lpMaxFloat( fed, lpSupplyOf( w->pieces.data + l->ends[k].piece, l->def.motor.needs ) );
 		}
 	}
 	return fed;
@@ -543,12 +543,12 @@ static float lpMotorJam( const lpLink* l )
 	{
 		return 0.0f;
 	}
-	return l->def.motor.jam * b3ClampFloat( 1.0f - l->health / l->def.strength, 0.0f, 1.0f );
+	return l->def.motor.jam * lpClampFloat( 1.0f - l->health / l->def.strength, 0.0f, 1.0f );
 }
 
 float lpMotorDrive( const lpWorld* w, const lpLink* l )
 {
-	float health = l->def.strength > 0.0f ? b3MaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
+	float health = l->def.strength > 0.0f ? lpMaxFloat( l->health / l->def.strength, 0.1f ) : 1.0f;
 	return l->def.motor.maxTorque * health * lpMotorFeed( w, l );
 }
 
@@ -556,7 +556,7 @@ float lpMotorCap( const lpWorld* w, const lpLink* l )
 {
 	const lpMotorDef* m = &l->def.motor;
 	float fed = lpMotorFeed( w, l );
-	float hold = b3MaxFloat( m->holdTorque, lpMotorJam( l ) * m->maxTorque ); // a jammed joint sticks
+	float hold = lpMaxFloat( m->holdTorque, lpMotorJam( l ) * m->maxTorque ); // a jammed joint sticks
 	return lpMotorDrive( w, l ) + hold * ( 1.0f - fed );
 }
 
@@ -583,7 +583,7 @@ void lpDriveMotors( lpWorld* w )
 				speed += l->feed; // its rig's motion this step: servos with different gains or clamps still move together
 			}
 			float top = m->maxSpeed * ( 1.0f - lpMotorJam( l ) ); // a jammed joint turns slower
-			speed = fed > 0.0f ? b3ClampFloat( speed, -top, top ) : 0.0f;
+			speed = fed > 0.0f ? lpClampFloat( speed, -top, top ) : 0.0f;
 			if ( l->motorApplied == false || speed != l->appliedSpeed )
 			{
 				b3RevoluteJoint_SetMotorSpeed( l->joint, speed );
@@ -594,22 +594,22 @@ void lpDriveMotors( lpWorld* w )
 		else
 		{
 			// The rotation from where frame B is (relative to frame A) to where it should be, as a rotation vector
-			b3Quat qA = lpEndFrameRotation( w, l, 0 );
-			b3Quat relative = b3InvMulQuat( qA, lpEndFrameRotation( w, l, 1 ) );
-			b3Quat error = b3MulQuat( l->targetRotation, b3Conjugate( relative ) );
+			lpQuat qA = lpEndFrameRotation( w, l, 0 );
+			lpQuat relative = lpInvMulQuat( qA, lpEndFrameRotation( w, l, 1 ) );
+			lpQuat error = lpMulQuat( l->targetRotation, lpConjugate( relative ) );
 			if ( error.s < 0.0f )
 			{
-				error = (b3Quat){ b3Neg( error.v ), -error.s };
+				error = (lpQuat){ lpNeg( error.v ), -error.s };
 			}
-			float sine = b3Length( error.v );
-			b3Vec3 omega = b3Vec3_zero;
+			float sine = lpLength( error.v );
+			lpVec3 omega = lpVec3_zero;
 			if ( sine > 1e-6f && fed > 0.0f )
 			{
-				float angle = 2.0f * b3Atan2( sine, error.s );
-				float speed = b3MinFloat( m->gain * angle, m->maxSpeed * ( 1.0f - lpMotorJam( l ) ) );
-				omega = b3RotateVector( qA, b3MulSV( speed / sine, error.v ) );
+				float angle = 2.0f * lpAtan2( sine, error.s );
+				float speed = lpMinFloat( m->gain * angle, m->maxSpeed * ( 1.0f - lpMotorJam( l ) ) );
+				omega = lpRotateVector( qA, lpMulSV( speed / sine, error.v ) );
 			}
-			if ( l->motorApplied == false || b3Length( b3Sub( omega, l->appliedVelocity ) ) > 0.0f )
+			if ( l->motorApplied == false || lpLength( lpSub( omega, l->appliedVelocity ) ) > 0.0f )
 			{
 				b3SphericalJoint_SetMotorVelocity( l->joint, omega );
 				l->appliedVelocity = omega;
@@ -693,12 +693,12 @@ void lpSyncLinks( lpWorld* w )
 	}
 }
 
-float lpSegmentDistance( b3Vec3 a, b3Vec3 b )
+float lpSegmentDistance( lpVec3 a, lpVec3 b )
 {
-	b3Vec3 ab = b3Sub( b, a );
-	float length2 = b3Dot( ab, ab );
-	float t = length2 > 0.0f ? b3ClampFloat( -b3Dot( a, ab ) / length2, 0.0f, 1.0f ) : 0.0f;
-	return b3Length( b3MulAdd( a, t, ab ) );
+	lpVec3 ab = lpSub( b, a );
+	float length2 = lpDot( ab, ab );
+	float t = length2 > 0.0f ? lpClampFloat( -lpDot( a, ab ) / length2, 0.0f, 1.0f ) : 0.0f;
+	return lpLength( lpMulAdd( a, t, ab ) );
 }
 
 bool lpBodyLinked( const lpWorld* w, const lpBody* b )
@@ -739,10 +739,10 @@ bool lpTouchesLinked( lpWorld* w, const lpBody* b )
 // landing is checked with the loads it has then. Jolted by a hard hit, it is checked as the loads come, for 10 steps.
 static void lpRecheckStructures( lpWorld* w, lpLink* l )
 {
-	float force = b3Length( b3Sub( l->force, l->stressForce ) );
-	float torque = b3Length( b3Sub( l->torque, l->stressTorque ) );
-	bool changed = force > 0.25f * b3MaxFloat( b3Length( l->force ), b3Length( l->stressForce ) ) + 10.0f ||
-				   torque > 0.25f * b3MaxFloat( b3Length( l->torque ), b3Length( l->stressTorque ) ) + 10.0f;
+	float force = lpLength( lpSub( l->force, l->stressForce ) );
+	float torque = lpLength( lpSub( l->torque, l->stressTorque ) );
+	bool changed = force > 0.25f * lpMaxFloat( lpLength( l->force ), lpLength( l->stressForce ) ) + 10.0f ||
+				   torque > 0.25f * lpMaxFloat( lpLength( l->torque ), lpLength( l->stressTorque ) ) + 10.0f;
 	bool jolted[2] = { false, false };
 	for ( int k = 0; k < 2; ++k )
 	{
@@ -780,22 +780,22 @@ static void lpRecheckStructures( lpWorld* w, lpLink* l )
 }
 
 // Load over limit, weakened by blast damage, clamped. The torque is what the joint holds against, without its motor's.
-static float lpLinkLoad( const lpLink* l, b3Vec3 torque )
+static float lpLinkLoad( const lpLink* l, lpVec3 torque )
 {
 	float u = 0.0f;
 	if ( l->def.maxForce > 0.0f )
 	{
-		u = b3Length( l->force ) / l->def.maxForce;
+		u = lpLength( l->force ) / l->def.maxForce;
 	}
 	if ( l->def.maxTorque > 0.0f )
 	{
-		u = b3MaxFloat( u, b3Length( torque ) / l->def.maxTorque );
+		u = lpMaxFloat( u, lpLength( torque ) / l->def.maxTorque );
 	}
 	if ( l->def.strength > 0.0f )
 	{
-		u /= b3MaxFloat( l->health / l->def.strength, 0.1f );
+		u /= lpMaxFloat( l->health / l->def.strength, 0.1f );
 	}
-	return b3MinFloat( u, LP_LINK_CLAMP );
+	return lpMinFloat( u, LP_LINK_CLAMP );
 }
 
 // Strain and break an overloaded link; true when it broke
@@ -857,27 +857,27 @@ void lpPollLinks( lpWorld* w, float timeStep )
 			}
 			continue; // asleep: nothing moved, nothing changed
 		}
-		l->points[0] = b3TransformWorldPoint( b3Body_GetTransform( a ), l->ends[0].frame.p );
-		l->points[1] = b3TransformWorldPoint( b3Body_GetTransform( b ), l->ends[1].frame.p );
+		l->points[0] = lpTransformWorldPoint( b3Body_GetTransform( a ), l->ends[0].frame.p );
+		l->points[1] = lpTransformWorldPoint( b3Body_GetTransform( b ), l->ends[1].frame.p );
 		l->force = b3Joint_GetConstraintForce( l->joint );
 		l->torque = b3Joint_GetConstraintTorque( l->joint );
-		b3Vec3 held = l->torque; // what the joint holds against: the motor's own torque is not a load on it
+		lpVec3 held = l->torque; // what the joint holds against: the motor's own torque is not a load on it
 		if ( l->def.type == lp_linkHinge )
 		{
 			l->angle = b3RevoluteJoint_GetAngle( l->joint );
 		}
 		if ( lpHasMotor( l ) && l->def.type == lp_linkHinge )
 		{
-			b3Vec3 axis = b3RotateVector( lpEndFrameRotation( w, l, 0 ), (b3Vec3){ 0.0f, 0.0f, 1.0f } );
+			lpVec3 axis = lpRotateVector( lpEndFrameRotation( w, l, 0 ), (lpVec3){ 0.0f, 0.0f, 1.0f } );
 			float drive = b3RevoluteJoint_GetMotorTorque( l->joint );
-			held = b3MulSub( held, drive, axis );
-			l->motorTorque = b3AbsFloat( drive );
+			held = lpMulSub( held, drive, axis );
+			l->motorTorque = lpAbsFloat( drive );
 		}
 		else if ( lpHasMotor( l ) )
 		{
-			b3Vec3 drive = b3SphericalJoint_GetMotorTorque( l->joint );
-			held = b3Sub( held, drive );
-			l->motorTorque = b3Length( drive );
+			lpVec3 drive = b3SphericalJoint_GetMotorTorque( l->joint );
+			held = lpSub( held, drive );
+			l->motorTorque = lpLength( drive );
 		}
 		if ( l->settle > 0 )
 		{
@@ -915,7 +915,7 @@ lpLinkState lpWorld_GetLinkState( const lpWorld* w, int link )
 	s.bodyB = l->ends[1].piece >= 0 ? w->pieces.data[l->ends[1].piece].body : -1;
 	s.pointA = l->points[0];
 	s.pointB = l->points[1];
-	s.slack = l->def.type == lp_linkRope && b3Length( b3SubPos( s.pointB, s.pointA ) ) < l->def.length - 0.01f;
+	s.slack = l->def.type == lp_linkRope && lpLength( lpSubPos( s.pointB, s.pointA ) ) < l->def.length - 0.01f;
 	s.force = l->force;
 	s.torque = l->torque;
 	s.utilization = l->utilization;
@@ -960,7 +960,7 @@ uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
 		if ( lpHasMotor( l ) ) // only motorised links: old hashes stay valid
 		{
 			h = lpHashBytes( h, &l->target, sizeof( float ) );
-			h = lpHashBytes( h, &l->targetRotation, sizeof( b3Quat ) );
+			h = lpHashBytes( h, &l->targetRotation, sizeof( lpQuat ) );
 			h = lpHashBytes( h, &l->motorCap, sizeof( float ) );
 			if ( l->feed != 0.0f ) // only rigs set it: old hashes stay valid
 			{

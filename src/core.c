@@ -175,8 +175,8 @@ uint64_t lpDeterminismSelfTest( int* failures )
 		{ one / three, 0x3EAAAAABu },					  // so is division
 		{ tenth, 0x3DCCCCCDu },							  // literals
 		{ floorf( -half ), 0xBF800000u },				  // floor
-		{ b3MinFloat( zero, -zero ), 0x80000000u },		  // min keeps the second operand on a tie
-		{ b3MaxFloat( -zero, zero ), 0x00000000u },		  // and max
+		{ lpMinFloat( zero, -zero ), 0x80000000u },		  // min keeps the second operand on a tie
+		{ lpMaxFloat( -zero, zero ), 0x00000000u },		  // and max
 		{ (float)(int)( two * three + half ), 0x40C00000u } // float to int truncates
 	};
 
@@ -193,10 +193,10 @@ uint64_t lpDeterminismSelfTest( int* failures )
 	for ( int i = 0; i < 16; ++i )
 	{
 		float angle = ( (float)i - 7.5f ) * 0.41f * two;
-		b3CosSin cs = b3ComputeCosSin( angle );
+		lpCosSin cs = lpComputeCosSin( angle );
 		h = lpMix64( h ^ lpBits( cs.cosine ) );
 		h = lpMix64( h ^ lpBits( cs.sine ) );
-		h = lpMix64( h ^ lpBits( b3Atan2( cs.sine * three, cs.cosine - half ) ) );
+		h = lpMix64( h ^ lpBits( lpAtan2( cs.sine * three, cs.cosine - half ) ) );
 		h = lpMix64( h ^ lpBits( lpCbrt( angle * angle * angle + tenth ) ) );
 	}
 

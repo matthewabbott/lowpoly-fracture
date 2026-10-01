@@ -9,6 +9,7 @@
 #pragma once
 
 #include "box3d/box3d.h"
+#include "lpf/lpmath.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -209,13 +210,13 @@ typedef struct lpPartSystem
 // One convex part of an object, in object space. A box when pointCount is zero, else the hull of points.
 typedef struct lpPartDef
 {
-	b3Vec3 halfExtents;
-	b3Transform transform;
-	const b3Vec3* points;
+	lpVec3 halfExtents;
+	lpTransform transform;
+	const lpVec3* points;
 	int pointCount;
 	uint8_t material;
 	uint32_t color;	  // exterior 0xRRGGBB
-	b3Vec3 grainAxis; // object space; zero picks the longest box axis
+	lpVec3 grainAxis; // object space; zero picks the longest box axis
 	bool anchored;	  // rests on a foundation: bonded to the world through its bottom face
 	uint8_t joint;	  // lpJointId where this part meets its neighbours (lp_jointAuto: by material)
 	lpPartSystem system;
@@ -224,12 +225,12 @@ typedef struct lpPartDef
 
 typedef struct lpObjectDef
 {
-	b3WorldTransform transform;
+	lpWorldTransform transform;
 	bool isStatic; // structures stay static until pieces break loose
 	const lpPartDef* parts;
 	int partCount;
-	b3Vec3 linearVelocity;
-	b3Vec3 angularVelocity;
+	lpVec3 linearVelocity;
+	lpVec3 angularVelocity;
 	lpDetonatorDef detonator; // the parts without one of their own share it: they go off together, as one
 	float gravityScale;		  // "fairy dust": 1 is normal weight, 0 floats; everything that breaks off keeps it
 	uint32_t userId;		  // the game's id for the object, kept by every piece made from it
@@ -287,9 +288,9 @@ typedef struct lpLinkDef
 	int type;					  // lpLinkType
 	int bodyA;					  // body index at creation (the piece nearest the anchor holds it); -1 = the world
 	int bodyB;					  // likewise; A != B
-	b3Pos anchorA;				  // world: the joint point, or the rope's end on A
-	b3Pos anchorB;				  // world: the rope's end on B (ropes only)
-	b3Vec3 axis;				  // hinge axis, ball cone axis (world, unit)
+	lpPos anchorA;				  // world: the joint point, or the rope's end on A
+	lpPos anchorB;				  // world: the rope's end on B (ropes only)
+	lpVec3 axis;				  // hinge axis, ball cone axis (world, unit)
 	float length;				  // rope: longest length; 0 = the distance between its ends at creation
 	float lowerAngle, upperAngle; // hinge, radians from the pose at creation; equal = free
 	float coneAngle;			  // ball: 0 = free
@@ -319,7 +320,7 @@ void lpWorld_SetRopeLength( lpWorld* world, int link, float length );
 // A motorised hinge's target angle (radians from its pose at creation), or a ball joint's target rotation of its B frame
 // relative to its A frame (identity: its pose at creation). They persist, and are part of the state (hashed).
 void lpWorld_SetLinkTarget( lpWorld* world, int link, float angle );
-void lpWorld_SetLinkTargetRotation( lpWorld* world, int link, b3Quat rotation );
+void lpWorld_SetLinkTargetRotation( lpWorld* world, int link, lpQuat rotation );
 
 typedef struct lpLinkState
 {
@@ -328,9 +329,9 @@ typedef struct lpLinkState
 	int type;
 	uint32_t generation;  // bumped each time the link slot is reused
 	int bodyA, bodyB;	  // current bodies of the two ends (-1: the world)
-	b3Pos pointA, pointB; // world points of the two ends
-	b3Vec3 force;		  // on B, world, N, at the last step either end was awake
-	b3Vec3 torque;
+	lpPos pointA, pointB; // world points of the two ends
+	lpVec3 force;		  // on B, world, N, at the last step either end was awake
+	lpVec3 torque;
 	float utilization; // load over limit, smoothed; over 1 the link strains
 	float strain;	   // it breaks at 1
 	float health;	   // what is left of its strength after blasts
@@ -356,7 +357,7 @@ int lpWorld_GetLinkCapacity( const lpWorld* world ); // every link index is belo
 
 typedef struct lpWheelDef
 {
-	b3Pos mount;	   // world, at creation: the top of the suspension, within 0.25 m of a piece of the chassis
+	lpPos mount;	   // world, at creation: the top of the suspension, within 0.25 m of a piece of the chassis
 	float radius;	   // of the tyre
 	float width;
 	float restLength;  // suspension length (mount to hub) at which the spring carries nothing
@@ -381,8 +382,8 @@ lpWheelDef lpDefaultWheelDef( void );
 typedef struct lpVehicleDef
 {
 	int body;			  // the chassis at creation: a dynamic body
-	b3Vec3 forward;		  // world, at creation
-	b3Vec3 up;			  // likewise; the suspension casts along -up
+	lpVec3 forward;		  // world, at creation
+	lpVec3 up;			  // likewise; the suspension casts along -up
 	const lpWheelDef* wheels;
 	int wheelCount;		  // at most 16
 	float maxDriveForce;  // N at full throttle, shared by the driven wheels
@@ -423,9 +424,9 @@ typedef struct lpVehicleState
 	int steerable;	// attached wheels that steer
 	float power;	// share of its drive force it can deliver
 	float speed;	// m/s along its forward direction, of `body`
-	b3Pos position; // of `body`'s centre of mass
-	b3Vec3 forward; // world directions of `body`
-	b3Vec3 up;
+	lpPos position; // of `body`'s centre of mass
+	lpVec3 forward; // world directions of `body`
+	lpVec3 up;
 	lpVehicleControl control;
 } lpVehicleState;
 
@@ -440,13 +441,13 @@ typedef struct lpWheelState
 	bool grounded;
 	int vehicle;
 	int body;			  // the chassis body it is mounted on
-	b3WorldTransform hub; // the tyre: its axle is the transform's x, turned by steering and spin
+	lpWorldTransform hub; // the tyre: its axle is the transform's x, turned by steering and spin
 	float radius, width;
 	float length;		  // of the suspension, mount to hub
 	float load;			  // N on the ground
 	float slip;			  // sideways sliding speed at the contact, m/s
 	int groundPiece;	  // -1 in the air (or on ground that is not a piece)
-	b3Pos contactPoint;
+	lpPos contactPoint;
 } lpWheelState;
 
 // Cached at the last step the chassis was awake: safe at any time
@@ -468,14 +469,14 @@ typedef struct lpLimbDef
 {
 	int links[LP_MAX_LIMB_JOINTS]; // motorised hinges from the body outward, each on the body the one before it turns
 	int linkCount;				   // 1 to LP_MAX_LIMB_JOINTS
-	b3Pos foot;					   // world, at creation: the point it stands on, on the last link's outer body
+	lpPos foot;					   // world, at creation: the point it stands on, on the last link's outer body
 } lpLimbDef;
 
 typedef struct lpRigDef
 {
 	int body;		// the torso at creation: every limb's first link has an end on it
-	b3Vec3 forward; // world, at creation
-	b3Vec3 up;
+	lpVec3 forward; // world, at creation
+	lpVec3 up;
 	const lpLimbDef* limbs;
 	int limbCount;		// 1 to LP_MAX_RIG_LIMBS, in order around the body: each limb's neighbours are the ones next to it
 	float standHeight;	// of the torso's frame above its feet at full strength; 0: as created
@@ -520,9 +521,9 @@ typedef struct lpRigState
 	bool crawling;	// too few able limbs to walk: on its belly, dragging itself a foot at a time
 	float height;	// of the torso's frame above its planted feet
 	float speed;	// m/s along its forward direction
-	b3Pos position; // of the torso's frame
-	b3Vec3 forward; // world directions of the torso
-	b3Vec3 up;
+	lpPos position; // of the torso's frame
+	lpVec3 forward; // world directions of the torso
+	lpVec3 up;
 	lpRigControl control;
 } lpRigState;
 
@@ -539,7 +540,7 @@ typedef struct lpLimbState
 	float strength; // of its weakest joint's servo: damage and supply, 0 to 1
 	float reach;	// from its first joint to its foot, m
 	float depth;	// how far below the torso's frame the foot reaches at its rest point (a stump reaches less), m
-	b3Pos foot;		// world
+	lpPos foot;		// world
 	int footBody;	// the body its foot is on (-1: detached)
 	bool reaching;	// out of the gait, reaching for its target
 	int touching;	// reaching: the piece its foot touches (-1: none), for a grab
@@ -551,14 +552,14 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* world, int rig, int limb );
 // mass over their feet by the margin (until then the body leans toward them, and the limb's state says it is not
 // reaching yet), and IK drives its foot at the point within what is left of its chain and its servos' caps: a weak limb
 // swings slower and hits softer. Persistent and hashed, like the controls; turned off, the limb steps back into the gait.
-void lpWorld_SetLimbTarget( lpWorld* world, int rig, int limb, bool active, b3Pos point );
+void lpWorld_SetLimbTarget( lpWorld* world, int rig, int limb, bool active, lpPos point );
 
 // ---- impacts ----
 
 typedef struct lpImpactDef
 {
-	b3Pos point;
-	b3Vec3 direction; // unit; pushes loose pieces this way (zero for radial)
+	lpPos point;
+	lpVec3 direction; // unit; pushes loose pieces this way (zero for radial)
 	float radius;
 	float energy;  // joules
 	float impulse; // directional: N*s given to loose pieces (capped at 12 m/s); explosion: outward speed at the center, m/s
@@ -570,7 +571,7 @@ void lpWorld_AddImpact( lpWorld* world, const lpImpactDef* impact );
 
 // Leaf blower: wakes rubble, scrap and ghosts in a cone and pushes them along the direction (light things strongly,
 // heavy things barely). Call every tick while blowing; applied at the next step.
-void lpWorld_Blow( lpWorld* world, b3Pos origin, b3Vec3 direction, float range, float halfAngleRadians, float speed );
+void lpWorld_Blow( lpWorld* world, lpPos origin, lpVec3 direction, float range, float halfAngleRadians, float speed );
 
 // Make a body full physics again (a thrown or launched piece). Ghost and scrap bodies get a Box3D body back.
 void lpWorld_PromoteBody( lpWorld* world, int body );
@@ -583,9 +584,9 @@ void lpWorld_SetGravityScale( lpWorld* world, int body, float scale );
 // step. localPoint is in the piece's body frame (lpRayHit gives world points: convert with lpWorld_ToBodyFrame).
 // Structures cannot be pulled; frozen rubble wakes up. The pull accelerates at most maxAccel and treats bodies
 // heavier than maxMass as maxMass (so a crane can lift a beam but not a house).
-void lpWorld_Pull( lpWorld* world, int piece, b3Vec3 localPoint, b3Pos target, float maxAccel, float maxMass );
-b3Vec3 lpWorld_ToBodyFrame( const lpWorld* world, int piece, b3Pos worldPoint );
-b3Pos lpWorld_ToWorldFrame( const lpWorld* world, int piece, b3Vec3 localPoint );
+void lpWorld_Pull( lpWorld* world, int piece, lpVec3 localPoint, lpPos target, float maxAccel, float maxMass );
+lpVec3 lpWorld_ToBodyFrame( const lpWorld* world, int piece, lpPos worldPoint );
+lpPos lpWorld_ToWorldFrame( const lpWorld* world, int piece, lpVec3 localPoint );
 
 void lpWorld_Step( lpWorld* world, float timeStep, int subStepCount );
 
@@ -685,15 +686,15 @@ lpStats lpWorld_GetStats( const lpWorld* world );
 
 typedef struct lpRayHit
 {
-	b3Pos point;
-	b3Vec3 normal;
+	lpPos point;
+	lpVec3 normal;
 	int piece;
 	int body;
 	int link; // a rope was hit first (piece and body are -1 then); -1 otherwise
 	bool hit;
 } lpRayHit;
 
-lpRayHit lpWorld_CastRay( const lpWorld* world, b3Pos origin, b3Vec3 translation );
+lpRayHit lpWorld_CastRay( const lpWorld* world, lpPos origin, lpVec3 translation );
 
 // ---- rendering access ----
 
@@ -724,7 +725,7 @@ float lpWorld_GetPieceSupply( const lpWorld* world, int piece, int channel );
 float lpWorld_GetPiecePool( const lpWorld* world, int piece, float* leak );
 
 int lpWorld_GetBodyCapacity( const lpWorld* world );
-bool lpWorld_GetBodyTransform( const lpWorld* world, int body, b3WorldTransform* transform );
+bool lpWorld_GetBodyTransform( const lpWorld* world, int body, lpWorldTransform* transform );
 
 // Triangles (3 vertices each, no index buffer). Returns the vertex count, or -1 if capacity is too small.
 int lpWorld_BuildPieceMesh( const lpWorld* world, int piece, lpVertex* vertices, int capacity );

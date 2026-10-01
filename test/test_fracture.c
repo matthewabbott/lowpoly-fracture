@@ -7,7 +7,7 @@
 static int CheckTiling( const lpPoly* parent, lpShape** cells, int count, float relativeTolerance )
 {
 	float parentVolume;
-	b3Vec3 c;
+	lpVec3 c;
 	lpPoly_ComputeMass( parent, &parentVolume, &c );
 
 	lpPoly poly;
@@ -32,15 +32,15 @@ static void FreeCells( lpShape** cells, int count )
 
 static lpFractureInput SlabInput( lpPoly* slab, int pattern )
 {
-	lpPoly_MakeBox( slab, (b3Vec3){ 1.5f, 1.0f, 0.15f }, b3Transform_identity, 0 );
+	lpPoly_MakeBox( slab, (lpVec3){ 1.5f, 1.0f, 0.15f }, lpTransform_identity, 0 );
 	lpFractureInput input = { 0 };
 	input.parent = slab;
-	input.impact = (b3Vec3){ 0.3f, 0.2f, 0.15f };
+	input.impact = (lpVec3){ 0.3f, 0.2f, 0.15f };
 	input.radius = 0.8f;
 	input.fragmentSize = 0.14f;
 	input.maxCells = 64;
 	input.pattern = pattern;
-	input.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	input.axis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	input.stretch = 5.0f;
 	input.interiorMaterial = 3;
 	input.seed = 99;
@@ -64,7 +64,7 @@ static int TestImpactPattern( void )
 	int nearCount = 0, farCount = 0;
 	for ( int i = 0; i < count; ++i )
 	{
-		float d = b3Distance( cells[i]->centroid, input.impact );
+		float d = lpDistance( cells[i]->centroid, input.impact );
 		if ( d < 0.4f )
 		{
 			nearVolume += cells[i]->volume;
@@ -96,7 +96,7 @@ static int TestGrainPattern( void )
 	float along = 0.0f, across = 0.0f;
 	for ( int i = 0; i < count; ++i )
 	{
-		b3AABB b = cells[i]->bounds;
+		lpAABB b = cells[i]->bounds;
 		along += b.upperBound.x - b.lowerBound.x;
 		across += b.upperBound.y - b.lowerBound.y;
 	}
@@ -108,15 +108,15 @@ static int TestGrainPattern( void )
 static int TestRadialPattern( void )
 {
 	lpPoly pane;
-	lpPoly_MakeBox( &pane, (b3Vec3){ 1.0f, 0.8f, 0.02f }, b3Transform_identity, 0 );
+	lpPoly_MakeBox( &pane, (lpVec3){ 1.0f, 0.8f, 0.02f }, lpTransform_identity, 0 );
 	lpFractureInput input = { 0 };
 	input.parent = &pane;
-	input.impact = (b3Vec3){ 0.2f, -0.1f, 0.02f };
+	input.impact = (lpVec3){ 0.2f, -0.1f, 0.02f };
 	input.radius = 0.9f;
 	input.fragmentSize = 0.07f;
 	input.maxCells = 128;
 	input.pattern = lp_breakRadial;
-	input.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+	input.axis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 	input.seed = 5;
 	input.tolerance = 1e-4f;
 
@@ -137,7 +137,7 @@ static int TestFractureDeterminism( void )
 		lpFractureInput input = SlabInput( &slab, pattern );
 		if ( pattern == lp_breakRadial )
 		{
-			input.axis = (b3Vec3){ 0.0f, 0.0f, 1.0f };
+			input.axis = (lpVec3){ 0.0f, 0.0f, 1.0f };
 		}
 		lpShape* a[LP_MAX_SITES];
 		lpShape* b[LP_MAX_SITES];
@@ -147,8 +147,8 @@ static int TestFractureDeterminism( void )
 		uint64_t ha = LP_HASH_INIT, hb = LP_HASH_INIT;
 		for ( int i = 0; i < na; ++i )
 		{
-			ha = lpHashBytes( ha, a[i]->vertices, sizeof( b3Vec3 ) * (size_t)a[i]->vertexCount );
-			hb = lpHashBytes( hb, b[i]->vertices, sizeof( b3Vec3 ) * (size_t)b[i]->vertexCount );
+			ha = lpHashBytes( ha, a[i]->vertices, sizeof( lpVec3 ) * (size_t)a[i]->vertexCount );
+			hb = lpHashBytes( hb, b[i]->vertices, sizeof( lpVec3 ) * (size_t)b[i]->vertexCount );
 		}
 		ENSURE( ha == hb );
 		FreeCells( a, na );
@@ -167,10 +167,10 @@ static int TestFractureFuzz( void )
 	for ( int trial = 0; trial < 60; ++trial )
 	{
 		lpPoly parent;
-		b3Vec3 points[16];
+		lpVec3 points[16];
 		for ( int i = 0; i < 16; ++i )
 		{
-			points[i] = (b3Vec3){ lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -0.6f, 0.6f ),
+			points[i] = (lpVec3){ lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -0.6f, 0.6f ),
 								  lpRandom_Range( &rng, -0.4f, 0.4f ) };
 		}
 		if ( lpPoly_MakeFromPoints( &parent, points, 16, 0 ) == false )
@@ -184,7 +184,7 @@ static int TestFractureFuzz( void )
 		input.fragmentSize = lpRandom_Range( &rng, 0.08f, 0.2f );
 		input.maxCells = 64;
 		input.pattern = trial % 3;
-		input.axis = b3Normalize( (b3Vec3){ 1.0f, lpRandom_Range( &rng, -0.3f, 0.3f ), 0.0f } );
+		input.axis = lpNormalize( (lpVec3){ 1.0f, lpRandom_Range( &rng, -0.3f, 0.3f ), 0.0f } );
 		input.stretch = 4.0f;
 		input.seed = (uint64_t)trial;
 		input.tolerance = 2e-5f;
@@ -196,7 +196,7 @@ static int TestFractureFuzz( void )
 		if ( count > 0 )
 		{
 			float pv, sum = 0.0f;
-			b3Vec3 pc;
+			lpVec3 pc;
 			lpPoly_ComputeMass( &parent, &pv, &pc );
 			for ( int i = 0; i < count; ++i )
 			{
@@ -223,17 +223,17 @@ static int TestFractureFuzz( void )
 static int TestMasonryGrid( void )
 {
 	lpPoly slab;
-	lpPoly_MakeBox( &slab, (b3Vec3){ 1.6f, 0.8f, 0.15f }, b3Transform_identity, 0 );
+	lpPoly_MakeBox( &slab, (lpVec3){ 1.6f, 0.8f, 0.15f }, lpTransform_identity, 0 );
 	float h = 0.15f, l = 0.3f;
-	b3Vec3 origin = { -1.6f, -0.8f, 0.0f }; // the grid's origin: the slab's lower corner, in its own frame
+	lpVec3 origin = { -1.6f, -0.8f, 0.0f }; // the grid's origin: the slab's lower corner, in its own frame
 	lpFractureInput input = { 0 };
 	input.parent = &slab;
-	input.impact = (b3Vec3){ 0.1f, 0.05f, 0.15f };
+	input.impact = (lpVec3){ 0.1f, 0.05f, 0.15f };
 	input.radius = 0.7f;
 	input.fragmentSize = 0.16f;
 	input.maxCells = 80;
 	input.pattern = lp_breakMasonry;
-	input.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	input.axis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	input.courseHeight = h;
 	input.brickLength = l;
 	input.gridOrigin = origin;
@@ -262,8 +262,8 @@ static int TestMasonryGrid( void )
 			{
 				continue;
 			}
-			b3Vec3 n = face->plane.normal;
-			float d = face->plane.offset - b3Dot( n, origin );
+			lpVec3 n = face->plane.normal;
+			float d = face->plane.offset - lpDot( n, origin );
 			if ( fabsf( n.y ) > 0.999f )
 			{
 				float k = d / ( h * n.y );
@@ -285,17 +285,17 @@ static int TestMasonryGrid( void )
 static int TestChipCell( void )
 {
 	lpPoly box;
-	lpPoly_MakeBox( &box, (b3Vec3){ 0.3f, 0.05f, 0.08f }, b3Transform_identity, 0 );
+	lpPoly_MakeBox( &box, (lpVec3){ 0.3f, 0.05f, 0.08f }, lpTransform_identity, 0 );
 	lpShape* cell = lpShape_Create( &box );
 	ENSURE( cell != NULL );
-	b3Vec3 grain = { 1.0f, 0.0f, 0.0f };
+	lpVec3 grain = { 1.0f, 0.0f, 0.0f };
 	int total = 0;
 	for ( int trial = 0; trial < 40; ++trial )
 	{
 		lpRandom rng;
 		lpRandom_Seed( &rng, (uint64_t)trial, 5 );
 		int splits = 1 + trial % 3;
-		b3Vec3 axis = trial % 2 == 0 ? grain : b3Vec3_zero;
+		lpVec3 axis = trial % 2 == 0 ? grain : lpVec3_zero;
 		lpShape* chips[8];
 		int count = lpChipCell( cell, splits, axis, 0, 1e-6f, &rng, chips, 8 );
 		ENSURE( count == 0 || ( count >= 2 && count <= splits + 1 ) );
@@ -308,7 +308,7 @@ static int TestChipCell( void )
 				{
 					if ( chips[i]->faces[f].tag == LP_TAG_CUT )
 					{
-						ENSURE( fabsf( b3Dot( chips[i]->faces[f].plane.normal, grain ) ) < 1e-3f );
+						ENSURE( fabsf( lpDot( chips[i]->faces[f].plane.normal, grain ) ) < 1e-3f );
 					}
 				}
 			}

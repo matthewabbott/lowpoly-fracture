@@ -13,8 +13,8 @@ static void Bombard( Sim* s, int tick )
 	{
 		int k = tick / 10;
 		lpImpactDef im = { 0 };
-		im.point = (b3Pos){ -2.5f + 0.25f * (float)k, 0.6f + 0.1f * (float)( k % 7 ), -3.85f };
-		im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+		im.point = (lpPos){ -2.5f + 0.25f * (float)k, 0.6f + 0.1f * (float)( k % 7 ), -3.85f };
+		im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 		im.radius = 0.35f;
 		im.energy = 4000.0f;
 		im.impulse = 20.0f;
@@ -23,7 +23,7 @@ static void Bombard( Sim* s, int tick )
 	if ( tick == 120 )
 	{
 		lpImpactDef im = { 0 };
-		im.point = (b3Pos){ 2.0f, 1.2f, -3.6f };
+		im.point = (lpPos){ 2.0f, 1.2f, -3.6f };
 		im.radius = 1.4f;
 		im.energy = 80000.0f;
 		im.impulse = 12.0f;
@@ -33,7 +33,7 @@ static void Bombard( Sim* s, int tick )
 	if ( tick == 150 )
 	{
 		lpImpactDef im = { 0 };
-		im.point = (b3Pos){ 0.0f, 2.0f, -8.6f };
+		im.point = (lpPos){ 0.0f, 2.0f, -8.6f };
 		im.radius = 1.8f;
 		im.energy = 300000.0f;
 		im.impulse = 18.0f;
@@ -190,7 +190,7 @@ static int TestHouseCollapse( void )
 		if ( tick == 10 || tick == 40 )
 		{
 			lpImpactDef im = { 0 };
-			im.point = (b3Pos){ tick == 10 ? -3.2f : 3.2f, 1.0f, -3.5f };
+			im.point = (lpPos){ tick == 10 ? -3.2f : 3.2f, 1.0f, -3.5f };
 			im.radius = 2.2f;
 			im.energy = 400000.0f;
 			im.impulse = 15.0f;
@@ -214,10 +214,10 @@ static int TestHouseCollapse( void )
 static int TestDetonator( void )
 {
 	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
-	b3Vec3 points[8];
+	lpVec3 points[8];
 	for ( int i = 0; i < 8; ++i )
 	{
-		points[i] = (b3Vec3){ ( i & 1 ) ? 0.08f : -0.08f, ( i & 2 ) ? 0.12f : -0.12f, ( i & 4 ) ? 0.08f : -0.08f };
+		points[i] = (lpVec3){ ( i & 1 ) ? 0.08f : -0.08f, ( i & 2 ) ? 0.12f : -0.12f, ( i & 4 ) ? 0.08f : -0.08f };
 	}
 	lpPartDef part = lpDefaultPartDef();
 	part.points = points;
@@ -225,8 +225,8 @@ static int TestDetonator( void )
 	part.material = lp_glass;
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Vec3){ 1.0f, 1.5f, 0.0f };
-	def.linearVelocity = (b3Vec3){ 0.0f, 1.0f, -16.0f };
+	def.transform.p = (lpVec3){ 1.0f, 1.5f, 0.0f };
+	def.linearVelocity = (lpVec3){ 0.0f, 1.0f, -16.0f };
 	def.parts = &part;
 	def.partCount = 1;
 	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
@@ -252,18 +252,18 @@ static int TestDetonatorIndexReuse( void )
 {
 	Sim s = CreateSimWorkers( -1, 1 );
 	lpPartDef part = lpDefaultPartDef();
-	part.halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+	part.halfExtents = (lpVec3){ 0.2f, 0.2f, 0.2f };
 	part.material = lp_metal; // does not fracture, so the blast only sets it off
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ 0.0f, 0.2f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.2f, 0.0f };
 	def.parts = &part;
 	def.partCount = 1;
 	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
 	int armed = lpCreateObject( s.world, &def );
 
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.5f, 0.2f, 0.0f };
+	im.point = (lpPos){ 0.5f, 0.2f, 0.0f };
 	im.radius = 1.4f;
 	im.energy = 80000.0f;
 	im.explosion = true;
@@ -274,7 +274,7 @@ static int TestDetonatorIndexReuse( void )
 	// Its slot is freed (as when its own fracture empties it) and taken by a new object far away
 	lpDestroyBody( s.world, armed, false );
 	def.detonator = (lpDetonatorDef){ 0 };
-	def.transform.p = (b3Pos){ 30.0f, 0.2f, 0.0f };
+	def.transform.p = (lpPos){ 30.0f, 0.2f, 0.0f };
 	int other = lpCreateObject( s.world, &def );
 	ENSURE( other == armed );
 	Run( &s, 2 );
@@ -309,16 +309,16 @@ static int TestPull( void )
 		}
 	}
 	ENSURE( piece >= 0 );
-	b3Vec3 local = s.world->pieces.data[piece].shape->centroid;
-	b3Pos start = lpWorld_ToWorldFrame( s.world, piece, local );
-	b3Pos target = { start.x, start.y + 3.0f, start.z + 2.0f };
+	lpVec3 local = s.world->pieces.data[piece].shape->centroid;
+	lpPos start = lpWorld_ToWorldFrame( s.world, piece, local );
+	lpPos target = { start.x, start.y + 3.0f, start.z + 2.0f };
 	for ( int tick = 0; tick < 120; ++tick )
 	{
 		lpWorld_Pull( s.world, piece, local, target, 40.0f, 400.0f );
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 	}
-	b3Pos end = lpWorld_ToWorldFrame( s.world, piece, local );
-	float error = b3Length( b3SubPos( end, target ) );
+	lpPos end = lpWorld_ToWorldFrame( s.world, piece, local );
+	float error = lpLength( lpSubPos( end, target ) );
 	printf( "  pulled from (%.2f %.2f %.2f) to (%.2f %.2f %.2f), error %.3f m\n", (double)start.x, (double)start.y, (double)start.z,
 			(double)end.x, (double)end.y, (double)end.z, (double)error );
 	ENSURE( error < 0.3f );
@@ -336,8 +336,8 @@ static int TestRefractureBonds( void )
 		if ( tick % 8 == 1 )
 		{
 			lpImpactDef im = { 0 };
-			im.point = (b3Pos){ -1.5f + 0.05f * (float)tick, 1.5f, -3.85f };
-			im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+			im.point = (lpPos){ -1.5f + 0.05f * (float)tick, 1.5f, -3.85f };
+			im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 			im.radius = 0.8f;
 			im.energy = 9000.0f;
 			lpWorld_AddImpact( s.world, &im );

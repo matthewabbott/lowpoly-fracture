@@ -20,23 +20,23 @@ static float StructureVolume( const lpWorld* w )
 }
 
 // Volume-weighted world centroid of every piece of `material`
-static b3Vec3 MaterialCentroid( const lpWorld* w, int material )
+static lpVec3 MaterialCentroid( const lpWorld* w, int material )
 {
-	b3Vec3 sum = b3Vec3_zero;
+	lpVec3 sum = lpVec3_zero;
 	float total = 0.0f;
 	for ( int i = 0; i < w->pieces.count; ++i )
 	{
 		const lpPiece* p = w->pieces.data + i;
-		b3WorldTransform xf;
+		lpWorldTransform xf;
 		if ( p->body < 0 || p->material != material || lpWorld_GetBodyTransform( w, p->body, &xf ) == false )
 		{
 			continue;
 		}
-		b3Vec3 c = b3ToVec3( b3TransformWorldPoint( xf, p->shape->centroid ) );
-		sum = b3MulAdd( sum, p->shape->volume, c );
+		lpVec3 c = lpToVec3( lpTransformWorldPoint( xf, p->shape->centroid ) );
+		sum = lpMulAdd( sum, p->shape->volume, c );
 		total += p->shape->volume;
 	}
-	return total > 0.0f ? b3MulSV( 1.0f / total, sum ) : b3Vec3_zero;
+	return total > 0.0f ? lpMulSV( 1.0f / total, sum ) : lpVec3_zero;
 }
 
 // Every scene's structures stand on their own: nothing detaches at rest, and the stress solve settles
@@ -72,13 +72,13 @@ static bool CantileverFalls( float length, float gravityScale )
 	Sim s = CreateSim( -1 );
 	lpPartDef parts[2];
 	parts[0] = lpDefaultPartDef();
-	parts[0].halfExtents = (b3Vec3){ 0.5f, 0.5f, 0.5f };
-	parts[0].transform.p = (b3Vec3){ 0.0f, 0.5f, 0.0f };
+	parts[0].halfExtents = (lpVec3){ 0.5f, 0.5f, 0.5f };
+	parts[0].transform.p = (lpVec3){ 0.0f, 0.5f, 0.0f };
 	parts[0].anchored = true;
 	parts[0].joint = lp_jointMortar;
 	parts[1] = lpDefaultPartDef();
-	parts[1].halfExtents = (b3Vec3){ 0.5f * length, 0.3f, 0.2f };
-	parts[1].transform.p = (b3Vec3){ 0.5f + 0.5f * length, 0.6f, 0.0f };
+	parts[1].halfExtents = (lpVec3){ 0.5f * length, 0.3f, 0.2f };
+	parts[1].transform.p = (lpVec3){ 0.5f + 0.5f * length, 0.6f, 0.0f };
 	parts[1].joint = lp_jointMortar;
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = true;
@@ -119,7 +119,7 @@ static int TowerWedge( int workers, int maxStressWork, float* drift, uint64_t* h
 	}
 	Sim s = CreateSimDef( ld, lp_sceneTower );
 	Run( &s, 2 );
-	b3Vec3 start = MaterialCentroid( s.world, lp_stone );
+	lpVec3 start = MaterialCentroid( s.world, lp_stone );
 
 	// Free the wedge's pieces from their bonds; they split off as debris and are then removed
 	lpBody* tower = NULL;
@@ -138,9 +138,9 @@ static int TowerWedge( int workers, int maxStressWork, float* drift, uint64_t* h
 	for ( int k = 0; k < tower->pieces.count; ++k )
 	{
 		lpPiece* p = s.world->pieces.data + tower->pieces.data[k];
-		b3Vec3 c = p->shape->centroid; // the tower's body frame is the world frame shifted to (0, 0, -8)
-		float angle = b3Atan2( c.x, c.z ); // 0 toward the camera (+z)
-		if ( c.y > 1.4f && c.y < 4.2f && b3AbsFloat( angle ) < 1.95f )
+		lpVec3 c = p->shape->centroid; // the tower's body frame is the world frame shifted to (0, 0, -8)
+		float angle = lpAtan2( c.x, c.z ); // 0 toward the camera (+z)
+		if ( c.y > 1.4f && c.y < 4.2f && lpAbsFloat( angle ) < 1.95f )
 		{
 			while ( p->bonds.count > 0 )
 			{
@@ -166,7 +166,7 @@ static int TowerWedge( int workers, int maxStressWork, float* drift, uint64_t* h
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 		*peakWork = s.world->stressWork > *peakWork ? s.world->stressWork : *peakWork;
 	}
-	b3Vec3 end = MaterialCentroid( s.world, lp_stone );
+	lpVec3 end = MaterialCentroid( s.world, lp_stone );
 	*drift = sqrtf( ( end.x - start.x ) * ( end.x - start.x ) + ( end.z - start.z ) * ( end.z - start.z ) );
 	*hash = lpWorld_Hash( s.world );
 	printf( "  %d workers, stress work %d: removed %d blocks, stone centroid drifted %.2f m, peak work %d\n", workers,
@@ -209,8 +209,8 @@ static int TestDamagedWallSettles( void )
 		if ( tick < 100 && tick % 5 == 0 )
 		{
 			lpImpactDef im = { 0 };
-			im.point = (b3Pos){ -2.0f + 0.2f * (float)( tick / 5 ), 1.0f + 0.1f * (float)( tick % 3 ), -3.85f };
-			im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+			im.point = (lpPos){ -2.0f + 0.2f * (float)( tick / 5 ), 1.0f + 0.1f * (float)( tick % 3 ), -3.85f };
+			im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 			im.radius = 0.35f;
 			im.energy = 4000.0f;
 			im.impulse = 20.0f;
@@ -242,21 +242,21 @@ static int BeamRun( bool loaded, float* stoneY, float* biggestWood )
 	for ( int i = 0; i < 2; ++i )
 	{
 		parts[i] = lpDefaultPartDef();
-		parts[i].halfExtents = (b3Vec3){ 0.1f, 0.5f, 0.1f };
-		parts[i].transform.p = (b3Vec3){ i == 0 ? -2.8f : 2.8f, 0.5f, 0.0f };
+		parts[i].halfExtents = (lpVec3){ 0.1f, 0.5f, 0.1f };
+		parts[i].transform.p = (lpVec3){ i == 0 ? -2.8f : 2.8f, 0.5f, 0.0f };
 		parts[i].material = lp_wood;
 		parts[i].anchored = true;
 	}
 	parts[2] = lpDefaultPartDef();
-	parts[2].halfExtents = (b3Vec3){ 3.0f, 0.025f, 0.1f };
-	parts[2].transform.p = (b3Vec3){ 0.0f, 1.025f, 0.0f };
+	parts[2].halfExtents = (lpVec3){ 3.0f, 0.025f, 0.1f };
+	parts[2].transform.p = (lpVec3){ 0.0f, 1.025f, 0.0f };
 	parts[2].material = lp_wood;
-	parts[2].grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	parts[2].grainAxis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	parts[3] = lpDefaultPartDef();
-	parts[3].halfExtents = (b3Vec3){ 0.25f, 0.25f, 0.1f };
-	parts[3].transform.p = (b3Vec3){ 0.0f, 1.3f, 0.0f };
+	parts[3].halfExtents = (lpVec3){ 0.25f, 0.25f, 0.1f };
+	parts[3].transform.p = (lpVec3){ 0.0f, 1.3f, 0.0f };
 	parts[3].material = lp_stone;
-	parts[3].halfExtents = (b3Vec3){ 0.25f, 0.25f, 0.25f };
+	parts[3].halfExtents = (lpVec3){ 0.25f, 0.25f, 0.25f };
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = true;
 	def.parts = parts;
@@ -268,12 +268,12 @@ static int BeamRun( bool loaded, float* stoneY, float* biggestWood )
 	for ( int i = 0; i < s.world->pieces.count; ++i )
 	{
 		const lpPiece* piece = s.world->pieces.data + i;
-		b3WorldTransform xf;
+		lpWorldTransform xf;
 		if ( piece->body < 0 || lpWorld_GetBodyTransform( s.world, piece->body, &xf ) == false )
 		{
 			continue;
 		}
-		b3Vec3 c = b3ToVec3( b3TransformWorldPoint( xf, piece->shape->centroid ) );
+		lpVec3 c = lpToVec3( lpTransformWorldPoint( xf, piece->shape->centroid ) );
 		if ( piece->material == lp_stone )
 		{
 			*stoneY = c.y < *stoneY ? c.y : *stoneY;
@@ -305,8 +305,8 @@ static int TestMasonryWallHole( void )
 {
 	Sim s = CreateSim( lp_sceneWall );
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 1.4f, -3.85f };
-	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.point = (lpPos){ 0.0f, 1.4f, -3.85f };
+	im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 	im.radius = 1.4f;
 	im.energy = 80000.0f;
 	im.impulse = 12.0f;
@@ -341,10 +341,10 @@ static int RuinsBody( const lpWorld* w, float x )
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		const lpBody* b = w->bodies.data + i;
-		b3WorldTransform xf;
+		lpWorldTransform xf;
 		if ( b->alive && b->kind == lp_kindStructure && b->pieces.count > 0 &&
 			 w->pieces.data[b->pieces.data[0]].material != lp_ground && lpWorld_GetBodyTransform( w, i, &xf ) &&
-			 b3AbsFloat( (float)xf.p.x - x ) < 0.01f )
+			 lpAbsFloat( (float)xf.p.x - x ) < 0.01f )
 		{
 			return i;
 		}
@@ -366,7 +366,7 @@ static float BodyVolume( const lpWorld* w, int bodyIndex )
 
 // Knock pieces out of a structure, as if blasted away without the blast: those whose centroid (body frame) lies in
 // [lo, hi] lose their bonds and anchors, split off on the next step and are removed. Returns how many.
-static int KnockOut( Sim* s, int bodyIndex, b3Vec3 lo, b3Vec3 hi )
+static int KnockOut( Sim* s, int bodyIndex, lpVec3 lo, lpVec3 hi )
 {
 	int removed[128];
 	int count = 0;
@@ -374,7 +374,7 @@ static int KnockOut( Sim* s, int bodyIndex, b3Vec3 lo, b3Vec3 hi )
 	for ( int k = 0; k < body->pieces.count && count < 128; ++k )
 	{
 		lpPiece* p = s->world->pieces.data + body->pieces.data[k];
-		b3Vec3 c = p->shape->centroid;
+		lpVec3 c = p->shape->centroid;
 		if ( c.x > lo.x && c.x < hi.x && c.y > lo.y && c.y < hi.y && c.z > lo.z && c.z < hi.z )
 		{
 			while ( p->bonds.count > 0 )
@@ -409,7 +409,7 @@ static int TestArchKeystone( void )
 	Run( &s, 300 );
 	float stood = BodyVolume( s.world, arch );
 
-	int removed = KnockOut( &s, arch, (b3Vec3){ -0.3f, 3.0f, -1.0f }, (b3Vec3){ 0.3f, 4.0f, 1.0f } );
+	int removed = KnockOut( &s, arch, (lpVec3){ -0.3f, 3.0f, -1.0f }, (lpVec3){ 0.3f, 4.0f, 1.0f } );
 	float before = BodyVolume( s.world, arch );
 	Run( &s, 300 );
 	float after = BodyVolume( s.world, arch );
@@ -430,18 +430,18 @@ static int TestColonnade( void )
 	int colonnade = RuinsBody( s.world, 0.0f );
 	ENSURE( colonnade >= 0 );
 	float column = 0.4f * 3.0f * 0.4f, lastLintel = 2.8f * 0.35f * 0.5f;
-	int removed = KnockOut( &s, colonnade, (b3Vec3){ 2.3f, 0.0f, -1.0f }, (b3Vec3){ 2.9f, 3.0f, 1.0f } );
+	int removed = KnockOut( &s, colonnade, (lpVec3){ 2.3f, 0.0f, -1.0f }, (lpVec3){ 2.9f, 3.0f, 1.0f } );
 	Run( &s, 300 );
 	float after = BodyVolume( s.world, colonnade );
 	float highest = -1.0f; // the highest stone that has come loose
 	for ( int i = 0; i < s.world->pieces.count; ++i )
 	{
 		const lpPiece* p = s.world->pieces.data + i;
-		b3WorldTransform xf;
+		lpWorldTransform xf;
 		if ( p->body >= 0 && p->material == lp_stone && s.world->bodies.data[p->body].kind != lp_kindStructure &&
 			 lpWorld_GetBodyTransform( s.world, p->body, &xf ) )
 		{
-			b3Vec3 c = b3ToVec3( b3TransformWorldPoint( xf, p->shape->centroid ) );
+			lpVec3 c = lpToVec3( lpTransformWorldPoint( xf, p->shape->centroid ) );
 			highest = c.x > -1.0f && c.x < 9.0f && c.y > highest ? c.y : highest;
 		}
 	}
@@ -492,7 +492,7 @@ typedef struct KeepRun
 // an impact, blast it
 typedef void KeepPrepare( lpWorld* w, int keep );
 
-static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps, KeepPrepare* prepare )
+static KeepRun KeepDamageDef( lpWorldDef def, lpVec3 lo, lpVec3 hi, const lpImpactDef* impact, int steps, KeepPrepare* prepare )
 {
 	KeepRun r = { 0 };
 	Sim s = CreateSimDef( def, lp_sceneKeep );
@@ -545,7 +545,7 @@ static KeepRun KeepDamageDef( lpWorldDef def, b3Vec3 lo, b3Vec3 hi, const lpImpa
 	return r;
 }
 
-static KeepRun KeepDamage( int workers, b3Vec3 lo, b3Vec3 hi, const lpImpactDef* impact, int steps )
+static KeepRun KeepDamage( int workers, lpVec3 lo, lpVec3 hi, const lpImpactDef* impact, int steps )
 {
 	lpWorldDef def = lpDefaultWorldDef();
 	def.workerCount = workers;
@@ -555,8 +555,8 @@ static KeepRun KeepDamage( int workers, b3Vec3 lo, b3Vec3 hi, const lpImpactDef*
 static lpImpactDef KeepCannon( void )
 {
 	lpImpactDef impact = { 0 };
-	impact.point = (b3Pos){ 2.0f, 6.0f, -2.5f };
-	impact.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	impact.point = (lpPos){ 2.0f, 6.0f, -2.5f };
+	impact.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 	impact.radius = 2.0f;
 	impact.energy = 250000.0f;
 	impact.impulse = 18.0f;
@@ -605,8 +605,8 @@ static int TestScenesSettle( void )
 
 // The whole ground floor of the keep's front knocked out: the wall above hangs from the corners and the cross wall,
 // some joints give, and the keep stands. Prints how long the stress solve takes to decide (the milestone's target).
-static const b3Vec3 lp_breachLo = { -7.6f, -1.0f, 6.2f };
-static const b3Vec3 lp_breachHi = { 7.6f, 3.6f, 7.6f };
+static const lpVec3 lp_breachLo = { -7.6f, -1.0f, 6.2f };
+static const lpVec3 lp_breachHi = { 7.6f, 3.6f, 7.6f };
 
 static int TestKeepBreach( void )
 {
@@ -629,7 +629,7 @@ static int TestKeepHole( void )
 {
 	const int steps = 600;
 	lpImpactDef impact = KeepCannon();
-	KeepRun r = KeepDamageDef( lpDefaultWorldDef(), b3Vec3_zero, b3Vec3_zero, &impact, steps, EnableOracle );
+	KeepRun r = KeepDamageDef( lpDefaultWorldDef(), lpVec3_zero, lpVec3_zero, &impact, steps, EnableOracle );
 	PrintKeepRun( "cannon hole", r, steps );
 	printf( "  reduced solves %d: worst joint off by %.3f against exact ones, %d of %d joints flipped\n", r.oracleSolves,
 			(double)r.oracleWorst, r.oracleFlips, r.oracleJoints );
@@ -661,9 +661,9 @@ static lpStressEdge ChainEdge( int a, int b )
 	e.a = a;
 	e.b = b;
 	e.bond = b;
-	e.ra = (b3Vec3){ 0.5f, 0.0f, 0.0f };
-	e.rb = (b3Vec3){ -0.5f, 0.0f, 0.0f };
-	e.n = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	e.ra = (lpVec3){ 0.5f, 0.0f, 0.0f };
+	e.rb = (lpVec3){ -0.5f, 0.0f, 0.0f };
+	e.n = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	lpContactBasis( e.n, &e.t1, &e.t2 );
 	e.kn = 1.0f;
 	e.ks = 0.4f;
@@ -688,23 +688,23 @@ static void BuildChain( lpStressSystem* s, int count, const float* weights )
 	lpVec6* x = s->vectors.data;
 	for ( int i = 0; i < count; ++i )
 	{
-		x[i] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
-		x[count + i] = (lpVec6){ { 0.0f, -weights[i], 0.0f }, b3Vec3_zero };
+		x[i] = (lpVec6){ lpVec3_zero, lpVec3_zero };
+		x[count + i] = (lpVec6){ { 0.0f, -weights[i], 0.0f }, lpVec3_zero };
 	}
 }
 
-static void ChainEdgeForce( const lpStressSystem* s, const lpVec6* x, int edge, b3Vec3* force, b3Vec3* moment )
+static void ChainEdgeForce( const lpStressSystem* s, const lpVec6* x, int edge, lpVec3* force, lpVec3* moment )
 {
 	lpEdgeForce( s->edges.data + edge, x, force, moment );
 }
 
 // Groups for the chain: nodes before `first` on their own, the rest one rigid cluster
-static void ChainPartition( lpPartition* part, const b3Vec3* nodeRef, int count, int first )
+static void ChainPartition( lpPartition* part, const lpVec3* nodeRef, int count, int first )
 {
 	memset( part, 0, sizeof( *part ) );
 	lpArray_Reserve( part->group, count );
 	part->group.count = count;
-	b3Vec3 sum = b3Vec3_zero;
+	lpVec3 sum = lpVec3_zero;
 	for ( int i = 0; i < count; ++i )
 	{
 		part->group.data[i] = i < first ? i : first;
@@ -715,10 +715,10 @@ static void ChainPartition( lpPartition* part, const b3Vec3* nodeRef, int count,
 		}
 		else
 		{
-			sum = b3Add( sum, nodeRef[i] );
+			sum = lpAdd( sum, nodeRef[i] );
 		}
 	}
-	lpArray_Push( part->ref, b3MulSV( 1.0f / (float)( count - first ), sum ) );
+	lpArray_Push( part->ref, lpMulSV( 1.0f / (float)( count - first ), sum ) );
 	lpArray_Push( part->members, count - first );
 	part->groupCount = first + 1;
 }
@@ -732,17 +732,17 @@ static int TestSolveSystem( void )
 		count = 8
 	};
 	float weights[count];
-	b3Vec3 nodeRef[count];
+	lpVec3 nodeRef[count];
 	for ( int i = 0; i < count; ++i )
 	{
 		weights[i] = 1.0f;
-		nodeRef[i] = (b3Vec3){ (float)i, 0.0f, 0.0f };
+		nodeRef[i] = (lpVec3){ (float)i, 0.0f, 0.0f };
 	}
 	lpStressSystem fine;
 	BuildChain( &fine, count, weights );
 	lpSolveState state = { 0 };
 	lpSystemSolve( &fine, 1000, 1e-7, 0.05f, false, &state );
-	b3Vec3 force, moment;
+	lpVec3 force, moment;
 	ChainEdgeForce( &fine, fine.vectors.data, 0, &force, &moment );
 	printf( "  chain of %d: %d iterations, root force (%.4f %.4f %.4f), moment (%.4f %.4f %.4f)\n", count, state.iterations,
 			(double)force.x, (double)force.y, (double)force.z, (double)moment.x, (double)moment.y, (double)moment.z );
@@ -759,7 +759,7 @@ static int TestSolveSystem( void )
 	lpVec6* y = reduced.vectors.data;
 	for ( int g = 0; g < 4; ++g )
 	{
-		y[g] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
+		y[g] = (lpVec6){ lpVec3_zero, lpVec3_zero };
 	}
 	lpPartitionRestrict( &part, nodeRef, fine.vectors.data + count, count, y + 4 );
 	state = (lpSolveState){ 0 };
@@ -769,7 +769,7 @@ static int TestSolveSystem( void )
 	lpPartitionProlong( &part, nodeRef, y, count, moved );
 	for ( int k = 0; k < 4; ++k )
 	{
-		b3Vec3 fk, mk, clusteredF, clusteredM;
+		lpVec3 fk, mk, clusteredF, clusteredM;
 		ChainEdgeForce( &fine, fine.vectors.data, k, &fk, &mk );
 		ChainEdgeForce( &fine, moved, k, &clusteredF, &clusteredM );
 		ENSURE_NEAR( clusteredF.y, fk.y, 1e-3f );
@@ -788,18 +788,18 @@ static int TestSolveSystem( void )
 	lpSystemApply( &fine, fine.vectors.data, kx );
 	for ( int i = 0; i < count; ++i )
 	{
-		residual[i].f = b3Sub( fresh.vectors.data[count + i].f, kx[i].f );
-		residual[i].t = b3Sub( fresh.vectors.data[count + i].t, kx[i].t );
+		residual[i].f = lpSub( fresh.vectors.data[count + i].f, kx[i].f );
+		residual[i].t = lpSub( fresh.vectors.data[count + i].t, kx[i].t );
 	}
 	for ( int g = 0; g < 4; ++g )
 	{
-		y[g] = (lpVec6){ b3Vec3_zero, b3Vec3_zero };
+		y[g] = (lpVec6){ lpVec3_zero, lpVec3_zero };
 	}
 	lpPartitionRestrict( &part, nodeRef, residual, count, y + 4 );
 	reduced.loadNorm2 = 0.0;
 	for ( int i = 0; i < count; ++i )
 	{
-		reduced.loadNorm2 += (double)b3Dot( fresh.vectors.data[count + i].f, fresh.vectors.data[count + i].f );
+		reduced.loadNorm2 += (double)lpDot( fresh.vectors.data[count + i].f, fresh.vectors.data[count + i].f );
 	}
 	state = (lpSolveState){ 0 };
 	lpSystemSolve( &reduced, 1000, 1e-7, 0.05f, false, &state );
@@ -808,10 +808,10 @@ static int TestSolveSystem( void )
 	float worst = 0.0f;
 	for ( int k = 0; k < count; ++k )
 	{
-		b3Vec3 fk, mk, deltaF, deltaM;
+		lpVec3 fk, mk, deltaF, deltaM;
 		ChainEdgeForce( &fresh, fresh.vectors.data, k, &fk, &mk );
 		ChainEdgeForce( &fresh, moved, k, &deltaF, &deltaM );
-		worst = b3MaxFloat( worst, b3AbsFloat( deltaF.y - fk.y ) + b3AbsFloat( deltaM.z - mk.z ) / 8.0f );
+		worst = lpMaxFloat( worst, lpAbsFloat( deltaF.y - fk.y ) + lpAbsFloat( deltaM.z - mk.z ) / 8.0f );
 	}
 	printf( "  delta form after a load change, clustered tip: %d iterations, worst edge error %.2e\n", state.iterations,
 			(double)worst );
@@ -837,11 +837,11 @@ static int TestReducedAssembly( void )
 	lpRandom rng;
 	lpRandom_Seed( &rng, 7, 3 );
 	lpStressSystem fine = { 0 };
-	b3Vec3 nodeRef[count];
+	lpVec3 nodeRef[count];
 	for ( int i = 0; i < count; ++i )
 	{
 		lpArray_Push( fine.nodes, i );
-		nodeRef[i] = (b3Vec3){ lpRandom_Range( &rng, -3.0f, 3.0f ), lpRandom_Range( &rng, 0.0f, 6.0f ), lpRandom_Range( &rng, -3.0f, 3.0f ) };
+		nodeRef[i] = (lpVec3){ lpRandom_Range( &rng, -3.0f, 3.0f ), lpRandom_Range( &rng, 0.0f, 6.0f ), lpRandom_Range( &rng, -3.0f, 3.0f ) };
 	}
 	for ( int k = 0; k < edgeCount; ++k )
 	{
@@ -852,12 +852,12 @@ static int TestReducedAssembly( void )
 			e.b = (int)( lpRandom_Next( &rng ) % count );
 		}
 		while ( e.b == e.a );
-		b3Vec3 pa = e.a >= 0 ? nodeRef[e.a] : (b3Vec3){ nodeRef[e.b].x, -0.5f, nodeRef[e.b].z };
-		b3Vec3 contact = b3Lerp( pa, nodeRef[e.b], lpRandom_Range( &rng, 0.3f, 0.7f ) );
+		lpVec3 pa = e.a >= 0 ? nodeRef[e.a] : (lpVec3){ nodeRef[e.b].x, -0.5f, nodeRef[e.b].z };
+		lpVec3 contact = lpLerp( pa, nodeRef[e.b], lpRandom_Range( &rng, 0.3f, 0.7f ) );
 		e.bond = k;
-		e.ra = b3Sub( contact, pa );
-		e.rb = b3Sub( contact, nodeRef[e.b] );
-		e.n = b3Normalize( b3Sub( nodeRef[e.b], pa ) );
+		e.ra = lpSub( contact, pa );
+		e.rb = lpSub( contact, nodeRef[e.b] );
+		e.n = lpNormalize( lpSub( nodeRef[e.b], pa ) );
 		lpContactBasis( e.n, &e.t1, &e.t2 );
 		e.kn = lpRandom_Range( &rng, 0.2f, 2.0f );
 		e.ks = 0.4f * e.kn;
@@ -903,7 +903,7 @@ static int TestReducedAssembly( void )
 		if ( g < 0 )
 		{
 			g = part.groupCount++;
-			lpArray_Push( part.ref, b3Vec3_zero );
+			lpArray_Push( part.ref, lpVec3_zero );
 			lpArray_Push( part.members, 0 );
 			if ( groupOf[i] >= 0 )
 			{
@@ -912,19 +912,19 @@ static int TestReducedAssembly( void )
 		}
 		lpArray_Push( part.group, g );
 		part.members.data[g] += 1;
-		part.ref.data[g] = b3Add( part.ref.data[g], nodeRef[i] );
+		part.ref.data[g] = lpAdd( part.ref.data[g], nodeRef[i] );
 	}
 	for ( int g = 0; g < part.groupCount; ++g )
 	{
-		part.ref.data[g] = b3MulSV( 1.0f / (float)part.members.data[g], part.ref.data[g] );
+		part.ref.data[g] = lpMulSV( 1.0f / (float)part.members.data[g], part.ref.data[g] );
 	}
 	lpSystemReduce( &fine, nodeRef, &part, &reduced );
 	int m = part.groupCount;
 	lpVec6 y[count], kry[count], py[count], kpy[count], ptkpy[count];
 	for ( int g = 0; g < m; ++g )
 	{
-		y[g].f = (b3Vec3){ lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ) };
-		y[g].t = (b3Vec3){ lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ) };
+		y[g].f = (lpVec3){ lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ) };
+		y[g].t = (lpVec3){ lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ), lpRandom_Range( &rng, -0.3f, 0.3f ) };
 	}
 	lpSystemApply( &reduced, y, kry );
 	memset( py, 0, sizeof( py ) );
@@ -934,8 +934,8 @@ static int TestReducedAssembly( void )
 	float worst = 0.0f, largest = 0.0f;
 	for ( int g = 0; g < m; ++g )
 	{
-		worst = b3MaxFloat( worst, b3Length( b3Sub( kry[g].f, ptkpy[g].f ) ) + b3Length( b3Sub( kry[g].t, ptkpy[g].t ) ) );
-		largest = b3MaxFloat( largest, b3Length( ptkpy[g].f ) + b3Length( ptkpy[g].t ) );
+		worst = lpMaxFloat( worst, lpLength( lpSub( kry[g].f, ptkpy[g].f ) ) + lpLength( lpSub( kry[g].t, ptkpy[g].t ) ) );
+		largest = lpMaxFloat( largest, lpLength( ptkpy[g].f ) + lpLength( ptkpy[g].t ) );
 	}
 	printf( "  %d nodes in %d groups, %d of %d edges left: |K_r y - P^T K P y| %.2e of %.2e\n", count, m, reduced.edges.count,
 			fine.edges.count, (double)worst, (double)largest );
@@ -951,8 +951,8 @@ static int TestReducedAssembly( void )
 // A few stones knocked out of the keep's upper front wall, solved exactly (no clusters) and as a correction with the
 // keep's lightly loaded parts moving as rigid clusters: the clustered solve decides sooner, each of its judgements is
 // checked against an exact solve of the same change, and the same joints give
-static const b3Vec3 lp_localLo = { 2.9f, 7.1f, 6.2f };
-static const b3Vec3 lp_localHi = { 5.1f, 8.5f, 7.6f };
+static const lpVec3 lp_localLo = { 2.9f, 7.1f, 6.2f };
+static const lpVec3 lp_localHi = { 5.1f, 8.5f, 7.6f };
 
 static int TestKeepLocalHit( void )
 {
@@ -994,7 +994,7 @@ static int TestDriftSmallStructures( void )
 		failed += tests[i]();
 		printf( "  %s: %d reduced solves, worst joint within twice its limit off by %.3f, %d joints flipped\n", names[i],
 				lp_testOracleSolves - solves, (double)lp_testOracleWorst, lp_testOracleFlips - flips );
-		lp_testOracleWorst = b3MaxFloat( worst, lp_testOracleWorst );
+		lp_testOracleWorst = lpMaxFloat( worst, lp_testOracleWorst );
 	}
 	lp_testLargeNodes = 0;
 	printf( "  %d reduced solves checked, worst joint off by %.3f, %d of %d joints flipped\n", lp_testOracleSolves,
@@ -1083,24 +1083,24 @@ static int TestKeepAudit( void )
 
 // A wooden beam of `parts` equal parts along x (solid joints between them), `length` long, 0.1 m square; moving, its
 // stress solved when asked, or a structure with its middle part anchored
-static int AddBeam( Sim* s, b3Vec3 center, float length, int parts, bool isStatic, bool anchorMiddle )
+static int AddBeam( Sim* s, lpVec3 center, float length, int parts, bool isStatic, bool anchorMiddle )
 {
 	lpPartDef defs[8];
 	float each = length / (float)parts;
 	for ( int k = 0; k < parts; ++k )
 	{
 		defs[k] = lpDefaultPartDef();
-		defs[k].halfExtents = (b3Vec3){ 0.5f * each, 0.05f, 0.05f };
-		defs[k].transform.p = (b3Vec3){ -0.5f * length + ( (float)k + 0.5f ) * each, 0.0f, 0.0f };
+		defs[k].halfExtents = (lpVec3){ 0.5f * each, 0.05f, 0.05f };
+		defs[k].transform.p = (lpVec3){ -0.5f * length + ( (float)k + 0.5f ) * each, 0.0f, 0.0f };
 		defs[k].material = lp_wood;
 		defs[k].joint = lp_jointSolid;
-		defs[k].grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+		defs[k].grainAxis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 		defs[k].anchored = anchorMiddle && k == parts / 2;
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = isStatic;
 	def.solveStress = isStatic == false;
-	def.transform.p = (b3Pos){ center.x, center.y, center.z };
+	def.transform.p = (lpPos){ center.x, center.y, center.z };
 	def.parts = defs;
 	def.partCount = parts;
 	return lpCreateObject( s->world, &def );
@@ -1133,30 +1133,30 @@ static float PeakRho( const Sim* s, int body )
 static int TestReliefBalances( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddBeam( &s, (b3Vec3){ 0.0f, 0.3f, 0.0f }, 3.0f, 3, false, false );
+	int body = AddBeam( &s, (lpVec3){ 0.0f, 0.3f, 0.0f }, 3.0f, 3, false, false );
 	lpWorld_SetGravityScale( s.world, body, 1.0f );
 	Run( &s, 5 );
 	CheckNow( &s, body );
 	const lpBody* b = s.world->bodies.data + body;
-	b3Vec3 g = b3InvRotateVector( b3Body_GetRotation( b->id ), (b3Vec3){ 0.0f, -10.0f, 0.0f } );
-	b3Vec3 force = b3Vec3_zero, torque = b3Vec3_zero;
+	lpVec3 g = lpInvRotateVector( b3Body_GetRotation( b->id ), (lpVec3){ 0.0f, -10.0f, 0.0f } );
+	lpVec3 force = lpVec3_zero, torque = lpVec3_zero;
 	float weight = 0.0f;
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
 		const lpPiece* p = s.world->pieces.data + b->pieces.data[k];
 		float m = p->shape->volume * lpGetMaterial( p->material )->density;
-		b3Vec3 r = b3Sub( p->shape->centroid, b->reliefCenter );
-		b3Vec3 accel = b3Add( b3Add( b->reliefAccel, b3Cross( b->reliefAlpha, r ) ), b3Cross( b->reliefOmega, b3Cross( b->reliefOmega, r ) ) );
-		b3Vec3 f = b3Sub( b3Add( p->stressLoad.f, b3MulSV( m, g ) ), b3MulSV( m, accel ) );
+		lpVec3 r = lpSub( p->shape->centroid, b->reliefCenter );
+		lpVec3 accel = lpAdd( lpAdd( b->reliefAccel, lpCross( b->reliefAlpha, r ) ), lpCross( b->reliefOmega, lpCross( b->reliefOmega, r ) ) );
+		lpVec3 f = lpSub( lpAdd( p->stressLoad.f, lpMulSV( m, g ) ), lpMulSV( m, accel ) );
 		float own = m * lpCbrt( p->shape->volume ) * lpCbrt( p->shape->volume ) / 6.0f;
-		b3Vec3 t = b3Sub( p->stressLoad.t, b3MulSV( own, b->reliefAlpha ) );
-		force = b3Add( force, f );
-		torque = b3Add( torque, b3Add( b3Cross( r, f ), t ) );
+		lpVec3 t = lpSub( p->stressLoad.t, lpMulSV( own, b->reliefAlpha ) );
+		force = lpAdd( force, f );
+		torque = lpAdd( torque, lpAdd( lpCross( r, f ), t ) );
 		weight += m * 10.0f;
 	}
 	printf( "  pin piece %d; unbalanced force %.2e and torque %.2e N*m against a weight of %.0f N, acceleration %.3f m/s^2\n",
-			b->stressPin, b3Length( force ), b3Length( torque ), weight, b3Length( b->reliefAccel ) );
-	ENSURE( b->stressPin >= 0 && b3Length( force ) < 1e-3f * weight && b3Length( torque ) < 1e-3f * weight );
+			b->stressPin, lpLength( force ), lpLength( torque ), weight, lpLength( b->reliefAccel ) );
+	ENSURE( b->stressPin >= 0 && lpLength( force ) < 1e-3f * weight && lpLength( torque ) < 1e-3f * weight );
 	DestroySim( &s );
 	return 0;
 }
@@ -1165,8 +1165,8 @@ static int TestReliefBalances( void )
 static int TestReliefFreeFall( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddBeam( &s, (b3Vec3){ 0.0f, 20.0f, 0.0f }, 3.0f, 3, false, false );
-	b3Body_SetAngularVelocity( s.world->bodies.data[body].id, (b3Vec3){ 0.0f, 0.0f, 0.5f } );
+	int body = AddBeam( &s, (lpVec3){ 0.0f, 20.0f, 0.0f }, 3.0f, 3, false, false );
+	b3Body_SetAngularVelocity( s.world->bodies.data[body].id, (lpVec3){ 0.0f, 0.0f, 0.5f } );
 	Run( &s, 5 );
 	CheckNow( &s, body );
 	float peak = PeakRho( &s, body );
@@ -1182,22 +1182,22 @@ static int TestReliefMatchesSupported( void )
 {
 	Sim s = CreateSim( -1 );
 	lpPartDef ridge = lpDefaultPartDef();
-	ridge.halfExtents = (b3Vec3){ 0.4f, 0.5f, 0.3f };
+	ridge.halfExtents = (lpVec3){ 0.4f, 0.5f, 0.3f };
 	ridge.anchored = true;
 	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = (b3Pos){ 0.0f, 0.5f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.5f, 0.0f };
 	def.parts = &ridge;
 	def.partCount = 1;
 	lpCreateObject( s.world, &def );
 	lpWorld_SettleStructures( s.world );
-	int moving = AddBeam( &s, (b3Vec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, false, false );
+	int moving = AddBeam( &s, (lpVec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, false, false );
 	Run( &s, 20 );
 	CheckNow( &s, moving );
 	float relieved = PeakRho( &s, moving );
 	DestroySim( &s );
 
 	Sim t = CreateSim( -1 );
-	int fixed = AddBeam( &t, (b3Vec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, true, true );
+	int fixed = AddBeam( &t, (lpVec3){ 0.0f, 1.05f, 0.0f }, 5.0f, 5, true, true );
 	lpWorld_SettleStructures( t.world );
 	float anchored = PeakRho( &t, fixed );
 	printf( "  peak joint utilization: balanced on a ridge %.4f, its middle anchored %.4f\n", relieved, anchored );
@@ -1215,15 +1215,15 @@ static int TestReliefLandingSnaps( void )
 	{
 		Sim s = CreateSim( -1 );
 		lpPartDef ridge = lpDefaultPartDef();
-		ridge.halfExtents = (b3Vec3){ 0.1f, 0.5f, 0.5f };
+		ridge.halfExtents = (lpVec3){ 0.1f, 0.5f, 0.5f };
 		ridge.anchored = true;
 		lpObjectDef def = lpDefaultObjectDef();
-		def.transform.p = (b3Pos){ 0.0f, 0.5f, 0.0f };
+		def.transform.p = (lpPos){ 0.0f, 0.5f, 0.0f };
 		def.parts = &ridge;
 		def.partCount = 1;
 		lpCreateObject( s.world, &def );
 		lpWorld_SettleStructures( s.world );
-		int beam = AddBeam( &s, (b3Vec3){ 0.0f, 1.05f + drops[k], 0.0f }, 4.0f, 2, false, false );
+		int beam = AddBeam( &s, (lpVec3){ 0.0f, 1.05f + drops[k], 0.0f }, 4.0f, 2, false, false );
 		int breaks = 0;
 		for ( int t = 0; t < 90; ++t )
 		{
@@ -1253,18 +1253,18 @@ static int CrashEngine( float speed, int workers, uint64_t* hash )
 {
 	Sim s = CreateSimWorkers( -1, workers );
 	lpPartDef wall = lpDefaultPartDef();
-	wall.halfExtents = (b3Vec3){ 4.0f, 0.9f, 0.15f };
+	wall.halfExtents = (lpVec3){ 4.0f, 0.9f, 0.15f };
 	wall.material = lp_brick;
 	wall.anchored = true;
 	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = (b3Pos){ 0.0f, 0.9f, 0.15f };
+	def.transform.p = (lpPos){ 0.0f, 0.9f, 0.15f };
 	def.parts = &wall;
 	def.partCount = 1;
 	lpCreateObject( s.world, &def );
 	lpWorld_SettleStructures( s.world );
-	int vehicle = lpAddCar( s.world, (b3Vec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
+	int vehicle = lpAddCar( s.world, (lpVec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
 	int car = lpWorld_GetVehicleState( s.world, vehicle ).body;
-	b3Body_SetLinearVelocity( s.world->bodies.data[car].id, (b3Vec3){ 0.0f, 0.0f, speed } );
+	b3Body_SetLinearVelocity( s.world->bodies.data[car].id, (lpVec3){ 0.0f, 0.0f, speed } );
 	Run( &s, 60 );
 	car = lpWorld_GetVehicleState( s.world, vehicle ).body;
 	int off = 0;

@@ -12,8 +12,8 @@ static void lpApplyWakes( lpWorld* w )
 	for ( int i = 0; i < w->pendingWakes.count; ++i )
 	{
 		lpWake wake = w->pendingWakes.data[i];
-		b3Vec3 r = { wake.radius, wake.radius, wake.radius };
-		lpQueryPieces( w, (b3AABB){ b3Sub( wake.center, r ), b3Add( wake.center, r ) } );
+		lpVec3 r = { wake.radius, wake.radius, wake.radius };
+		lpQueryPieces( w, (lpAABB){ lpSub( wake.center, r ), lpAdd( wake.center, r ) } );
 		for ( int k = 0; k < w->scratchPieces.count; ++k )
 		{
 			lpPiece* p = w->pieces.data + w->scratchPieces.data[k];
@@ -137,7 +137,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 		lpDestroyBody( w, bodyIndex, true );
 		return;
 	}
-	b3WorldTransform xf = lpGetTransform( b );
+	lpWorldTransform xf = lpGetTransform( b );
 	int kept = 0;
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
@@ -152,7 +152,7 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 		{
 			lpBreakBond( w, p->bonds.data[p->bonds.count - 1] );
 		}
-		lpEmitParticle( w, xf, p->shape->centroid, b3Vec3_zero, b3MinFloat( lpCbrt( p->shape->volume ), 0.3f ), p->material );
+		lpEmitParticle( w, xf, p->shape->centroid, lpVec3_zero, lpMinFloat( lpCbrt( p->shape->volume ), 0.3f ), p->material );
 		b->volume -= p->shape->volume;
 		lpDetachPieceShape( w, pieceIndex );
 		lpFreePieceSlot( w, pieceIndex );
@@ -166,30 +166,30 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 	lpMarkDirty( w, bodyIndex );
 }
 
-void lpWorld_Pull( lpWorld* w, int piece, b3Vec3 localPoint, b3Pos target, float maxAccel, float maxMass )
+void lpWorld_Pull( lpWorld* w, int piece, lpVec3 localPoint, lpPos target, float maxAccel, float maxMass )
 {
 	lpPull pull = { piece, localPoint, target, maxAccel, maxMass };
 	lpArray_Push( w->pulls, pull );
 }
 
-b3Vec3 lpWorld_ToBodyFrame( const lpWorld* w, int piece, b3Pos worldPoint )
+lpVec3 lpWorld_ToBodyFrame( const lpWorld* w, int piece, lpPos worldPoint )
 {
 	const lpPiece* p = w->pieces.data + piece;
 	if ( p->body < 0 )
 	{
-		return b3Vec3_zero;
+		return lpVec3_zero;
 	}
-	return b3InvTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), worldPoint );
+	return lpInvTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), worldPoint );
 }
 
-b3Pos lpWorld_ToWorldFrame( const lpWorld* w, int piece, b3Vec3 localPoint )
+lpPos lpWorld_ToWorldFrame( const lpWorld* w, int piece, lpVec3 localPoint )
 {
 	const lpPiece* p = w->pieces.data + piece;
 	if ( p->body < 0 )
 	{
-		return b3ToPos( localPoint );
+		return lpToPos( localPoint );
 	}
-	return b3TransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), localPoint );
+	return lpTransformWorldPoint( lpGetTransform( w->bodies.data + p->body ), localPoint );
 }
 
 // Spring-damper toward the target, mass-normalized and clamped, with gravity compensation up to maxMass
@@ -216,23 +216,23 @@ static void lpApplyPulls( lpWorld* w )
 		}
 		lpWakeRubble( w, bodyIndex );
 
-		b3Pos point = b3TransformWorldPoint( b3Body_GetTransform( b->id ), pull.localPoint );
-		b3Vec3 v = b3Body_GetWorldPointVelocity( b->id, point );
-		b3Vec3 error = b3SubPos( pull.target, point );
-		b3Vec3 accel = b3Sub( b3MulSV( 60.0f, error ), b3MulSV( 14.0f, v ) );
-		float a = b3Length( accel );
+		lpPos point = lpTransformWorldPoint( b3Body_GetTransform( b->id ), pull.localPoint );
+		lpVec3 v = b3Body_GetWorldPointVelocity( b->id, point );
+		lpVec3 error = lpSubPos( pull.target, point );
+		lpVec3 accel = lpSub( lpMulSV( 60.0f, error ), lpMulSV( 14.0f, v ) );
+		float a = lpLength( accel );
 		if ( a > pull.maxAccel )
 		{
-			accel = b3MulSV( pull.maxAccel / a, accel );
+			accel = lpMulSV( pull.maxAccel / a, accel );
 		}
 		float mass = b3Body_GetMass( b->id );
-		float m = b3MinFloat( mass, pull.maxMass );
-		b3Vec3 g = b3MulSV( b->gravityScale, b3World_GetGravity( w->def.physics ) );
-		b3Vec3 force = b3Sub( b3MulSV( m, accel ), b3MulSV( m, g ) );
+		float m = lpMinFloat( mass, pull.maxMass );
+		lpVec3 g = lpMulSV( b->gravityScale, b3World_GetGravity( w->def.physics ) );
+		lpVec3 force = lpSub( lpMulSV( m, accel ), lpMulSV( m, g ) );
 		b3Body_ApplyForce( b->id, force, point, true );
 		// A little angular damping so held things do not spin forever
-		b3Vec3 omega = b3Body_GetAngularVelocity( b->id );
-		b3Body_SetAngularVelocity( b->id, b3MulSV( 0.97f, omega ) );
+		lpVec3 omega = b3Body_GetAngularVelocity( b->id );
+		b3Body_SetAngularVelocity( b->id, lpMulSV( 0.97f, omega ) );
 	}
 	w->pulls.count = 0;
 }

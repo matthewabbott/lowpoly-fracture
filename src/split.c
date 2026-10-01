@@ -40,7 +40,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		{
 			continue;
 		}
-		lpComponent fresh = { w->scratchQueue.count, 0, 0.0f, b3Vec3_zero, false, 0, 0.0f };
+		lpComponent fresh = { w->scratchQueue.count, 0, 0.0f, lpVec3_zero, false, 0, 0.0f };
 		lpArray_Push( w->scratchComponents, fresh );
 		lpComponent* c = w->scratchComponents.data + w->scratchComponents.count - 1;
 
@@ -57,7 +57,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 				c->largest = p->shape->volume;
 				c->material = p->material;
 			}
-			c->centroid = b3MulAdd( c->centroid, p->shape->volume, p->shape->centroid );
+			c->centroid = lpMulAdd( c->centroid, p->shape->volume, p->shape->centroid );
 			c->anchored = c->anchored || p->anchored;
 			for ( int k = 0; k < p->bonds.count; ++k )
 			{
@@ -70,7 +70,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 				}
 			}
 		}
-		c->centroid = b3MulSV( 1.0f / c->volume, c->centroid );
+		c->centroid = lpMulSV( 1.0f / c->volume, c->centroid );
 	}
 
 	lpComponent* components = w->scratchComponents.data;
@@ -98,10 +98,10 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		}
 	}
 
-	b3WorldTransform xf = b3Body_GetTransform( body->id );
-	b3Vec3 v = b3Body_GetLinearVelocity( body->id );
-	b3Vec3 omega = b3Body_GetAngularVelocity( body->id );
-	b3Vec3 localCenter = b3Body_GetLocalCenter( body->id );
+	lpWorldTransform xf = b3Body_GetTransform( body->id );
+	lpVec3 v = b3Body_GetLinearVelocity( body->id );
+	lpVec3 omega = b3Body_GetAngularVelocity( body->id );
+	lpVec3 localCenter = b3Body_GetLocalCenter( body->id );
 	bool isDynamic = b3Body_GetType( body->id ) == b3_dynamicBody;
 
 	int movedAny = 0;
@@ -115,24 +115,24 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		}
 
 		// Frozen rubble resting on what just left must be able to fall
-		b3AABB wakeBox = { comp->centroid, comp->centroid };
+		lpAABB wakeBox = { comp->centroid, comp->centroid };
 		for ( int k = 0; k < comp->count; ++k )
 		{
 			lpPiece* p = w->pieces.data + w->scratchQueue.data[comp->first + k];
-			wakeBox.lowerBound = b3Min( wakeBox.lowerBound, p->shape->bounds.lowerBound );
-			wakeBox.upperBound = b3Max( wakeBox.upperBound, p->shape->bounds.upperBound );
+			wakeBox.lowerBound = lpMin( wakeBox.lowerBound, p->shape->bounds.lowerBound );
+			wakeBox.upperBound = lpMax( wakeBox.upperBound, p->shape->bounds.upperBound );
 		}
-		b3Vec3 wakeCenter = b3ToVec3( b3TransformWorldPoint( xf, b3AABB_Center( wakeBox ) ) );
-		float wakeRadius = b3Length( b3AABB_Extents( wakeBox ) ) + 0.3f;
+		lpVec3 wakeCenter = lpToVec3( lpTransformWorldPoint( xf, lpAABB_Center( wakeBox ) ) );
+		float wakeRadius = lpLength( lpAABB_Extents( wakeBox ) ) + 0.3f;
 		lpArray_Push( w->pendingWakes, ( (lpWake){ wakeCenter, wakeRadius } ) );
 
-		b3Vec3 compV = v;
+		lpVec3 compV = v;
 		if ( isDynamic )
 		{
-			b3Vec3 r = b3RotateVector( xf.q, b3Sub( comp->centroid, localCenter ) );
-			compV = b3Add( v, b3Cross( omega, r ) );
+			lpVec3 r = lpRotateVector( xf.q, lpSub( comp->centroid, localCenter ) );
+			compV = lpAdd( v, lpCross( omega, r ) );
 		}
-		b3Vec3 compOmega = isDynamic ? omega : b3Vec3_zero;
+		lpVec3 compOmega = isDynamic ? omega : lpVec3_zero;
 
 		// The piece's tier follows its size
 		if ( comp->volume < lpParticleVolume( w, comp->material ) )

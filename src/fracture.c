@@ -8,12 +8,12 @@
 // damage radius that shape a jagged rim, and at most three far sites that keep the rest of the piece in large plates.
 typedef struct lpSiteParams
 {
-	b3Vec3 impact;
+	lpVec3 impact;
 	float radius;
 	float fragmentSize;
 	float plateSize;
 	int maxSites;
-	b3Vec3 grainAxis; // ring sites stay out of a 25 degree cone around this axis; zero for none
+	lpVec3 grainAxis; // ring sites stay out of a 25 degree cone around this axis; zero for none
 	float stretch;	  // the parent is squashed along grainAxis by this (> 1): distances along it count this much more
 	int ringSites;	  // how many ring sites to aim for (0 for none: a broken log end is one piece)
 } lpSiteParams;
@@ -51,10 +51,10 @@ static void lpSortKeys( uint64_t* keys, int count )
 // Voronoi cell of site `index`, clipped to the parent. Returns the cell in `out`. Returns false if the
 // cell is empty or a clip failed. Neighbor sites are visited nearest first, and the search stops once the
 // next site is farther than twice the current cell radius (no further plane can cut).
-static bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int siteCount, int index, uint8_t material,
+static bool lpComputeVoronoiCell( const lpPoly* parent, const lpVec3* sites, int siteCount, int index, uint8_t material,
 						   float tolerance, lpPoly* scratch, lpPoly* out, lpFractureStats* stats )
 {
-	b3Vec3 site = sites[index];
+	lpVec3 site = sites[index];
 
 	uint64_t keys[LP_MAX_SITES];
 	int keyCount = 0;
@@ -65,7 +65,7 @@ static bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int
 			continue;
 		}
 		// Non-negative floats order like their bit patterns
-		float d2 = b3DistanceSquared( site, sites[j] );
+		float d2 = lpDistanceSquared( site, sites[j] );
 		keys[keyCount++] = ( (uint64_t)lpFloatBits( d2 ) << 32 ) | (uint32_t)j;
 	}
 	lpSortKeys( keys, keyCount );
@@ -86,10 +86,10 @@ static bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int
 		}
 
 		int j = (int)( keys[k] & 0xFFFFFFFFu );
-		b3Vec3 other = sites[j];
-		b3Vec3 normal = b3Normalize( b3Sub( other, site ) );
-		b3Vec3 mid = b3MulSV( 0.5f, b3Add( site, other ) );
-		b3Plane plane = { normal, b3Dot( normal, mid ) };
+		lpVec3 other = sites[j];
+		lpVec3 normal = lpNormalize( lpSub( other, site ) );
+		lpVec3 mid = lpMulSV( 0.5f, lpAdd( site, other ) );
+		lpPlane plane = { normal, lpDot( normal, mid ) };
 
 		lpClipResult result = lpPoly_Clip( current, plane, material, j, tolerance, next );
 
@@ -124,9 +124,9 @@ static bool lpComputeVoronoiCell( const lpPoly* parent, const b3Vec3* sites, int
 
 // ---- site generation ----
 
-static b3Vec3 lpRandomInBox( lpRandom* rng, b3AABB box )
+static lpVec3 lpRandomInBox( lpRandom* rng, lpAABB box )
 {
-	return (b3Vec3){
+	return (lpVec3){
 		lpRandom_Range( rng, box.lowerBound.x, box.upperBound.x ),
 		lpRandom_Range( rng, box.lowerBound.y, box.upperBound.y ),
 		lpRandom_Range( rng, box.lowerBound.z, box.upperBound.z ),
@@ -134,28 +134,28 @@ static b3Vec3 lpRandomInBox( lpRandom* rng, b3AABB box )
 }
 
 // Uniform unit vector by rejection sampling: no trigonometry, so bit-identical everywhere.
-static b3Vec3 lpRandomUnitVector( lpRandom* rng )
+static lpVec3 lpRandomUnitVector( lpRandom* rng )
 {
 	for ( int i = 0; i < 64; ++i )
 	{
-		b3Vec3 p; // one draw per statement: C leaves the order inside an initializer open
+		lpVec3 p; // one draw per statement: C leaves the order inside an initializer open
 		p.x = lpRandom_Range( rng, -1.0f, 1.0f );
 		p.y = lpRandom_Range( rng, -1.0f, 1.0f );
 		p.z = lpRandom_Range( rng, -1.0f, 1.0f );
-		float l2 = b3LengthSquared( p );
+		float l2 = lpLengthSquared( p );
 		if ( l2 > 0.01f && l2 <= 1.0f )
 		{
-			return b3MulSV( 1.0f / sqrtf( l2 ), p );
+			return lpMulSV( 1.0f / sqrtf( l2 ), p );
 		}
 	}
-	return (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	return (lpVec3){ 0.0f, 1.0f, 0.0f };
 }
 
-static bool lpIsTooClose( b3Vec3 p, const b3Vec3* sites, int count, float spacingSquared )
+static bool lpIsTooClose( lpVec3 p, const lpVec3* sites, int count, float spacingSquared )
 {
 	for ( int i = 0; i < count; ++i )
 	{
-		if ( b3DistanceSquared( p, sites[i] ) < spacingSquared )
+		if ( lpDistanceSquared( p, sites[i] ) < spacingSquared )
 		{
 			return true;
 		}
@@ -171,39 +171,39 @@ static float lpOverlap1( float lo, float hi, float a, float b )
 }
 
 // Distance from the focus in unsquashed (real) space, so the damage sphere stays a sphere on a grained piece
-static float lpSiteDistance( const lpSiteParams* params, b3Vec3 p, b3Vec3 focus )
+static float lpSiteDistance( const lpSiteParams* params, lpVec3 p, lpVec3 focus )
 {
-	b3Vec3 v = b3Sub( p, focus );
+	lpVec3 v = lpSub( p, focus );
 	if ( params->stretch > 1.0f )
 	{
-		v = b3MulAdd( v, ( params->stretch - 1.0f ) * b3Dot( v, params->grainAxis ), params->grainAxis );
+		v = lpMulAdd( v, ( params->stretch - 1.0f ) * lpDot( v, params->grainAxis ), params->grainAxis );
 	}
-	return b3Length( v );
+	return lpLength( v );
 }
 
-static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, b3Vec3* sites )
+static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* params, lpRandom* rng, lpVec3* sites )
 {
 	int maxSites = params->maxSites < LP_MAX_SITES ? params->maxSites : LP_MAX_SITES;
 	float radius = params->radius;
 	float fragmentSize = params->fragmentSize;
-	b3AABB bounds = lpPoly_ComputeBounds( parent );
-	b3Vec3 focus = b3Clamp( params->impact, bounds.lowerBound, bounds.upperBound );
-	b3Vec3 extent = b3Sub( bounds.upperBound, bounds.lowerBound );
+	lpAABB bounds = lpPoly_ComputeBounds( parent );
+	lpVec3 focus = lpClamp( params->impact, bounds.lowerBound, bounds.upperBound );
+	lpVec3 extent = lpSub( bounds.upperBound, bounds.lowerBound );
 
 	// Sites too close to the surface make thin slivers against it; keep them in by a margin, but never so much that
 	// a thin plank or pane has no room left.
 	float spacing = 0.7f * fragmentSize;
-	float thinnest = 0.5f * b3MinFloat( extent.x, b3MinFloat( extent.y, extent.z ) );
-	float margin = b3MinFloat( 0.5f * spacing, 0.45f * thinnest );
-	float minRadius = b3MaxFloat( 0.15f * radius, spacing );
+	float thinnest = 0.5f * lpMinFloat( extent.x, lpMinFloat( extent.y, extent.z ) );
+	float margin = lpMinFloat( 0.5f * spacing, 0.45f * thinnest );
+	float minRadius = lpMaxFloat( 0.15f * radius, spacing );
 
 	// Box around the damage sphere: an ellipsoid with semi-axis radius / stretch along the grain when squashed
-	b3Vec3 reach = { radius, radius, radius };
+	lpVec3 reach = { radius, radius, radius };
 	if ( params->stretch > 1.0f )
 	{
-		b3Vec3 a = params->grainAxis;
+		lpVec3 a = params->grainAxis;
 		float f = 1.0f - 1.0f / ( params->stretch * params->stretch );
-		reach = (b3Vec3){ radius * sqrtf( 1.0f - f * a.x * a.x ), radius * sqrtf( 1.0f - f * a.y * a.y ),
+		reach = (lpVec3){ radius * sqrtf( 1.0f - f * a.x * a.x ), radius * sqrtf( 1.0f - f * a.y * a.y ),
 						  radius * sqrtf( 1.0f - f * a.z * a.z ) };
 	}
 
@@ -221,15 +221,15 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 	innerTarget = innerTarget < 2 ? 2 : innerTarget;
 
 	int count = 0;
-	b3AABB innerBox = {
-		b3Max( bounds.lowerBound, b3Sub( focus, reach ) ),
-		b3Min( bounds.upperBound, b3Add( focus, reach ) ),
+	lpAABB innerBox = {
+		lpMax( bounds.lowerBound, lpSub( focus, reach ) ),
+		lpMin( bounds.upperBound, lpAdd( focus, reach ) ),
 	};
 
 	int attempts = 30 * innerTarget + 64;
 	for ( int a = 0; a < attempts && count < innerTarget; ++a )
 	{
-		b3Vec3 p = lpRandomInBox( rng, innerBox );
+		lpVec3 p = lpRandomInBox( rng, innerBox );
 		float d = lpSiteDistance( params, p, focus );
 		if ( d > radius )
 		{
@@ -252,22 +252,22 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 	// end of a log) a jagged rim of a few big facets. Sites near the grain axis are skipped so the rim cuts across the
 	// grain at varied angles instead of splitting the log lengthwise.
 	int ringTarget = params->ringSites;
-	float ringSpacing = b3MaxFloat( spacing, 0.6f * radius );
+	float ringSpacing = lpMaxFloat( spacing, 0.6f * radius );
 	int ringEnd = count + ringTarget < maxSites ? count + ringTarget : maxSites;
-	bool avoidAxis = b3LengthSquared( params->grainAxis ) > 0.0f;
+	bool avoidAxis = lpLengthSquared( params->grainAxis ) > 0.0f;
 	for ( int a = 0; a < 12 * ringTarget && count < ringEnd; ++a )
 	{
-		b3Vec3 dir = lpRandomUnitVector( rng );
-		if ( avoidAxis && b3AbsFloat( b3Dot( dir, params->grainAxis ) ) > 0.906f ) // within 25 degrees
+		lpVec3 dir = lpRandomUnitVector( rng );
+		if ( avoidAxis && lpAbsFloat( lpDot( dir, params->grainAxis ) ) > 0.906f ) // within 25 degrees
 		{
 			continue;
 		}
 		if ( params->stretch > 1.0f )
 		{
-			dir = b3MulSub( dir, ( 1.0f - 1.0f / params->stretch ) * b3Dot( dir, params->grainAxis ), params->grainAxis );
+			dir = lpMulSub( dir, ( 1.0f - 1.0f / params->stretch ) * lpDot( dir, params->grainAxis ), params->grainAxis );
 		}
 		float r = radius * lpRandom_Range( rng, 0.95f, 1.5f );
-		b3Vec3 p = b3MulAdd( focus, r, dir );
+		lpVec3 p = lpMulAdd( focus, r, dir );
 		if ( lpPoly_SignedDistance( parent, p ) > -margin || lpIsTooClose( p, sites, count, ringSpacing * ringSpacing ) )
 		{
 			continue;
@@ -280,13 +280,13 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 	// face is the few jagged planes it shares with the splinter sites.
 	if ( params->stretch > 1.0f )
 	{
-		b3Vec3 a = params->grainAxis;
-		b3Vec3 center = b3Lerp( bounds.lowerBound, bounds.upperBound, 0.5f );
-		float along = b3Dot( b3Sub( focus, center ), a );
+		lpVec3 a = params->grainAxis;
+		lpVec3 center = lpLerp( bounds.lowerBound, bounds.upperBound, 0.5f );
+		float along = lpDot( lpSub( focus, center ), a );
 		for ( int side = -1; side <= 1 && count < maxSites; side += 2 )
 		{
 			float t = along + (float)side * lpRandom_Range( rng, 1.15f, 1.4f ) * radius / params->stretch;
-			b3Vec3 p = b3MulAdd( center, t, a );
+			lpVec3 p = lpMulAdd( center, t, a );
 			if ( lpPoly_SignedDistance( parent, p ) > -margin || lpIsTooClose( p, sites, count, spacing * spacing ) )
 			{
 				continue;
@@ -297,14 +297,14 @@ static int lpGenerateImpactSites( const lpPoly* parent, const lpSiteParams* para
 
 	// At most three far sites: the rest of the piece stays in a few large plates (a log keeps two whole ends)
 	float totalVolume = extent.x * extent.y * extent.z;
-	float plate = b3MaxFloat( b3MaxFloat( 3.0f * fragmentSize, 1.2f * radius ), params->plateSize );
+	float plate = lpMaxFloat( lpMaxFloat( 3.0f * fragmentSize, 1.2f * radius ), params->plateSize );
 	int farTarget = lpFloatToInt( ( totalVolume - damagedVolume ) / ( plate * plate * plate ) );
 	farTarget = farTarget < 0 ? 0 : ( farTarget > 3 ? 3 : farTarget );
 	int farEnd = count + farTarget < maxSites ? count + farTarget : maxSites;
 	float farSpacing = 0.8f * plate;
 	for ( int a = 0; a < 16 * farTarget && count < farEnd; ++a )
 	{
-		b3Vec3 p = lpRandomInBox( rng, bounds );
+		lpVec3 p = lpRandomInBox( rng, bounds );
 		if ( lpSiteDistance( params, p, focus ) < 1.4f * radius )
 		{
 			continue;
@@ -330,39 +330,39 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	lpPoly* scratch = work + 2;
 
 	*parent = *input->parent;
-	b3Vec3 impact = input->impact;
-	b3Matrix3 unsquash = { 0 };
+	lpVec3 impact = input->impact;
+	lpMatrix3 unsquash = { 0 };
 
 	bool grain = input->pattern == lp_breakGrain && input->stretch > 1.0f;
 	if ( grain )
 	{
 		// Squash along the grain: isotropic Voronoi there becomes cells `stretch` times longer after unsquashing.
-		b3Vec3 a = input->axis;
+		lpVec3 a = input->axis;
 		float s = 1.0f / input->stretch;
 		float k = s - 1.0f;
-		b3Matrix3 squash = {
+		lpMatrix3 squash = {
 			{ 1.0f + k * a.x * a.x, k * a.y * a.x, k * a.z * a.x },
 			{ k * a.x * a.y, 1.0f + k * a.y * a.y, k * a.z * a.y },
 			{ k * a.x * a.z, k * a.y * a.z, 1.0f + k * a.z * a.z },
 		};
 		float g = input->stretch - 1.0f;
-		unsquash = (b3Matrix3){
+		unsquash = (lpMatrix3){
 			{ 1.0f + g * a.x * a.x, g * a.y * a.x, g * a.z * a.x },
 			{ g * a.x * a.y, 1.0f + g * a.y * a.y, g * a.z * a.y },
 			{ g * a.x * a.z, g * a.y * a.z, 1.0f + g * a.z * a.z },
 		};
 		lpPoly_ApplyLinear( parent, squash );
-		impact = b3MulMV( squash, impact );
+		impact = lpMulMV( squash, impact );
 	}
 
-	b3Vec3 sites[LP_MAX_SITES];
+	lpVec3 sites[LP_MAX_SITES];
 	lpSiteParams params = { 0 };
 	params.impact = impact;
 	params.radius = input->radius;
 	params.fragmentSize = input->fragmentSize;
 	params.plateSize = grain ? input->plateSize / input->stretch : input->plateSize;
 	params.maxSites = input->maxCells < capacity ? input->maxCells : capacity;
-	params.grainAxis = grain ? input->axis : b3Vec3_zero;
+	params.grainAxis = grain ? input->axis : lpVec3_zero;
 	params.stretch = grain ? input->stretch : 1.0f;
 	// Walls get a ring of rim cells for a jagged hole; a snapped log keeps each end whole, its broken face already
 	// jagged from the splinters that left it.
@@ -407,7 +407,7 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 		float r2 = input->radius * input->radius;
 		for ( int c = 0; c < count; ++c )
 		{
-			if ( cells[c]->volume < input->absorbVolume && b3DistanceSquared( cells[c]->centroid, input->impact ) > r2 )
+			if ( cells[c]->volume < input->absorbVolume && lpDistanceSquared( cells[c]->centroid, input->impact ) > r2 )
 			{
 				drop[cellSites[c]] = true;
 				dropCount += 1;
@@ -445,11 +445,11 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 	lpPoly* a = work;
 	lpPoly* b = work + 1;
 
-	b3Vec3 n = input->axis;
-	b3Vec3 t = b3AbsFloat( n.x ) < 0.57f ? (b3Vec3){ 1.0f, 0.0f, 0.0f } : (b3Vec3){ 0.0f, 1.0f, 0.0f };
-	b3Vec3 u = b3Normalize( b3Cross( t, n ) );
-	b3Vec3 v = b3Cross( n, u );
-	b3Vec3 p = input->impact;
+	lpVec3 n = input->axis;
+	lpVec3 t = lpAbsFloat( n.x ) < 0.57f ? (lpVec3){ 1.0f, 0.0f, 0.0f } : (lpVec3){ 0.0f, 1.0f, 0.0f };
+	lpVec3 u = lpNormalize( lpCross( t, n ) );
+	lpVec3 v = lpCross( n, u );
+	lpVec3 p = input->impact;
 
 	// Wedge boundaries around the impact axis, jittered
 	enum
@@ -458,13 +458,13 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 		lp_maxRings = 8
 	};
 	int wedgeCount = 6 + (int)( lpRandom_Next( rng ) % 5u );
-	float step = 2.0f * B3_PI / (float)wedgeCount;
-	b3Vec3 dirs[lp_maxWedges + 1];
+	float step = 2.0f * LP_PI / (float)wedgeCount;
+	lpVec3 dirs[lp_maxWedges + 1];
 	for ( int k = 0; k < wedgeCount; ++k )
 	{
 		float angle = step * ( (float)k + lpRandom_Range( rng, -0.3f, 0.3f ) );
-		b3CosSin cs = b3ComputeCosSin( angle );
-		dirs[k] = b3Add( b3MulSV( cs.cosine, u ), b3MulSV( cs.sine, v ) );
+		lpCosSin cs = lpComputeCosSin( angle );
+		dirs[k] = lpAdd( lpMulSV( cs.cosine, u ), lpMulSV( cs.sine, v ) );
 	}
 	dirs[wedgeCount] = dirs[0];
 
@@ -481,15 +481,15 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 	int count = 0;
 	for ( int k = 0; k < wedgeCount && count < capacity; ++k )
 	{
-		b3Vec3 d0 = dirs[k];
-		b3Vec3 d1 = dirs[k + 1];
-		b3Vec3 perp0 = b3Cross( n, d0 );
-		b3Vec3 perp1 = b3Cross( n, d1 );
-		b3Vec3 mid = b3Normalize( b3Add( d0, d1 ) );
-		float cosHalf = b3Dot( mid, d0 );
+		lpVec3 d0 = dirs[k];
+		lpVec3 d1 = dirs[k + 1];
+		lpVec3 perp0 = lpCross( n, d0 );
+		lpVec3 perp1 = lpCross( n, d1 );
+		lpVec3 mid = lpNormalize( lpAdd( d0, d1 ) );
+		float cosHalf = lpDot( mid, d0 );
 
-		b3Plane side0 = { b3Neg( perp0 ), -b3Dot( perp0, p ) };
-		b3Plane side1 = { perp1, b3Dot( perp1, p ) };
+		lpPlane side0 = { lpNeg( perp0 ), -lpDot( perp0, p ) };
+		lpPlane side1 = { perp1, lpDot( perp1, p ) };
 		int32_t tag0 = 1000 + k;
 		int32_t tag1 = 1000 + ( k + 1 ) % wedgeCount;
 
@@ -500,7 +500,7 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 			lpPoly* nxt = b;
 			bool empty = false;
 
-			b3Plane planes[4];
+			lpPlane planes[4];
 			int32_t tags[4];
 			int planeCount = 0;
 			planes[planeCount] = side0;
@@ -509,12 +509,12 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 			tags[planeCount++] = tag1;
 			if ( j < ringCount )
 			{
-				planes[planeCount] = (b3Plane){ mid, b3Dot( mid, p ) + rings[j] * cosHalf };
+				planes[planeCount] = (lpPlane){ mid, lpDot( mid, p ) + rings[j] * cosHalf };
 				tags[planeCount++] = 2000 + k * 16 + j;
 			}
 			if ( j > 0 )
 			{
-				planes[planeCount] = (b3Plane){ b3Neg( mid ), -( b3Dot( mid, p ) + rings[j - 1] * cosHalf ) };
+				planes[planeCount] = (lpPlane){ lpNeg( mid ), -( lpDot( mid, p ) + rings[j - 1] * cosHalf ) };
 				tags[planeCount++] = 2000 + k * 16 + j - 1;
 			}
 
@@ -559,9 +559,9 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 }
 
 // Keep the part of `in` behind the plane (dot(n, x) <= d) in `out`; false if nothing is left
-static bool lpKeepBehind( const lpPoly* in, b3Vec3 n, float d, const lpFractureInput* input, lpPoly* out, lpFractureStats* stats )
+static bool lpKeepBehind( const lpPoly* in, lpVec3 n, float d, const lpFractureInput* input, lpPoly* out, lpFractureStats* stats )
 {
-	lpClipResult result = lpPoly_Clip( in, (b3Plane){ n, d }, input->interiorMaterial, LP_TAG_CUT, input->tolerance, out );
+	lpClipResult result = lpPoly_Clip( in, (lpPlane){ n, d }, input->interiorMaterial, LP_TAG_CUT, input->tolerance, out );
 	if ( result == lp_clipUnchanged )
 	{
 		*out = *in;
@@ -579,10 +579,10 @@ static bool lpKeepBehind( const lpPoly* in, b3Vec3 n, float d, const lpFractureI
 }
 
 // The slab of `in` between two parallel planes along `n`: lo <= dot(n, x) <= hi
-static bool lpKeepBetween( const lpPoly* in, b3Vec3 n, float lo, float hi, const lpFractureInput* input, lpPoly* scratch,
+static bool lpKeepBetween( const lpPoly* in, lpVec3 n, float lo, float hi, const lpFractureInput* input, lpPoly* scratch,
 						   lpPoly* out, lpFractureStats* stats )
 {
-	return lpKeepBehind( in, n, hi, input, scratch, stats ) && lpKeepBehind( scratch, b3Neg( n ), -lo, input, out, stats );
+	return lpKeepBehind( in, n, hi, input, scratch, stats ) && lpKeepBehind( scratch, lpNeg( n ), -lo, input, out, stats );
 }
 
 static int lpAddMasonryCell( const lpPoly* poly, lpShape** cells, int* cellSites, int count, int capacity )
@@ -612,23 +612,23 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 	{
 		lp_maxCourses = 48
 	};
-	b3Vec3 up = { 0.0f, 1.0f, 0.0f };
-	b3Vec3 run = { input->axis.x, 0.0f, input->axis.z };
-	run = b3LengthSquared( run ) > 1e-6f ? b3Normalize( run ) : (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	lpVec3 up = { 0.0f, 1.0f, 0.0f };
+	lpVec3 run = { input->axis.x, 0.0f, input->axis.z };
+	run = lpLengthSquared( run ) > 1e-6f ? lpNormalize( run ) : (lpVec3){ 1.0f, 0.0f, 0.0f };
 	float h = input->courseHeight;
 	float l = input->brickLength;
-	b3Vec3 o = input->gridOrigin;
+	lpVec3 o = input->gridOrigin;
 	const lpPoly* parent = input->parent;
 
 	float y0 = FLT_MAX, y1 = -FLT_MAX;
 	for ( int i = 0; i < parent->vertexCount; ++i )
 	{
-		float y = b3Dot( b3Sub( parent->vertices[i], o ), up );
+		float y = lpDot( lpSub( parent->vertices[i], o ), up );
 		y0 = y < y0 ? y : y0;
 		y1 = y > y1 ? y : y1;
 	}
-	float yi = b3Dot( b3Sub( input->impact, o ), up );
-	float ui = b3Dot( b3Sub( input->impact, o ), run );
+	float yi = lpDot( lpSub( input->impact, o ), up );
+	float ui = lpDot( lpSub( input->impact, o ), run );
 	float r = input->radius;
 	int k0 = (int)floorf( y0 / h + 1e-4f );
 	int k1 = (int)ceilf( y1 / h - 1e-4f ) - 1;
@@ -646,7 +646,7 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 		first[row] = 1;
 		last[row] = 0;
 		float cy = ( (float)k + 0.5f ) * h;
-		float dy = b3AbsFloat( cy - yi );
+		float dy = lpAbsFloat( cy - yi );
 		float offset = ( k & 1 ) ? 0.5f * l : 0.0f;
 		if ( dy < r )
 		{
@@ -686,18 +686,18 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 	lpPoly* brick = work + 3;
 	int count = 0;
 
-	if ( (float)low * h > y0 + 1e-3f && lpKeepBehind( parent, up, (float)low * h + b3Dot( o, up ), input, piece, stats ) )
+	if ( (float)low * h > y0 + 1e-3f && lpKeepBehind( parent, up, (float)low * h + lpDot( o, up ), input, piece, stats ) )
 	{
 		count = lpAddMasonryCell( piece, cells, cellSites, count, capacity ); // the wall below the hole
 	}
 	if ( (float)( high + 1 ) * h < y1 - 1e-3f &&
-		 lpKeepBehind( parent, b3Neg( up ), -( (float)( high + 1 ) * h + b3Dot( o, up ) ), input, piece, stats ) )
+		 lpKeepBehind( parent, lpNeg( up ), -( (float)( high + 1 ) * h + lpDot( o, up ) ), input, piece, stats ) )
 	{
 		count = lpAddMasonryCell( piece, cells, cellSites, count, capacity ); // the wall above it
 	}
 
-	float oy = b3Dot( o, up );
-	float ou = b3Dot( o, run );
+	float oy = lpDot( o, up );
+	float ou = lpDot( o, run );
 	for ( int k = low; k <= high; ++k )
 	{
 		int row = k - k0;
@@ -717,7 +717,7 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 		{
 			count = lpAddMasonryCell( piece, cells, cellSites, count, capacity );
 		}
-		if ( lpKeepBehind( slab, b3Neg( run ), -ub, input, piece, stats ) )
+		if ( lpKeepBehind( slab, lpNeg( run ), -ub, input, piece, stats ) )
 		{
 			count = lpAddMasonryCell( piece, cells, cellSites, count, capacity );
 		}
@@ -731,7 +731,7 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 				continue;
 			}
 			// Bricks near the centre shatter into chips; further out they come loose whole
-			b3Vec3 centre = b3Add( b3MulAdd( o, 0.5f * ( lo + hi ) - ou, run ), b3MulSV( ( (float)k + 0.5f ) * h, up ) );
+			lpVec3 centre = lpAdd( lpMulAdd( o, 0.5f * ( lo + hi ) - ou, run ), lpMulSV( ( (float)k + 0.5f ) * h, up ) );
 			lpShape* shape = lpShape_Create( brick );
 			if ( shape == NULL )
 			{
@@ -739,9 +739,9 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 			}
 			lpShape* chips[4];
 			int chipCount = 0;
-			if ( group == 1 && b3Distance( centre, input->impact ) < 0.5f * r && count + 4 <= capacity )
+			if ( group == 1 && lpDistance( centre, input->impact ) < 0.5f * r && count + 4 <= capacity )
 			{
-				chipCount = lpChipCell( shape, 2, b3Vec3_zero, input->interiorMaterial, 1e-5f, rng, chips, 4 );
+				chipCount = lpChipCell( shape, 2, lpVec3_zero, input->interiorMaterial, 1e-5f, rng, chips, 4 );
 			}
 			if ( chipCount > 0 )
 			{
@@ -776,16 +776,16 @@ static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape*
 	{
 		return 0;
 	}
-	b3Vec3 n = input->axis;
-	b3Vec3 t1, t2;
+	lpVec3 n = input->axis;
+	lpVec3 t1, t2;
 	lpContactBasis( n, &t1, &t2 );
 	// Two draws as statements: C leaves the order of a call's arguments unspecified (MSVC and gcc on x64 took the
 	// second first, clang and gcc on ARM64 the first), so draws inside one call's arguments differ by compiler
 	float tilt2 = lpRandom_Range( rng, -0.35f, 0.35f );
 	float tilt1 = lpRandom_Range( rng, -0.35f, 0.35f );
-	n = b3Normalize( b3Add( n, b3Add( b3MulSV( tilt1, t1 ), b3MulSV( tilt2, t2 ) ) ) );
-	b3Plane plane = { n, b3Dot( n, input->impact ) };
-	b3Plane flipped = { b3Neg( n ), -plane.offset };
+	n = lpNormalize( lpAdd( n, lpAdd( lpMulSV( tilt1, t1 ), lpMulSV( tilt2, t2 ) ) ) );
+	lpPlane plane = { n, lpDot( n, input->impact ) };
+	lpPlane flipped = { lpNeg( n ), -plane.offset };
 
 	lpPoly* halves = lpAlloc( 2 * sizeof( lpPoly ) );
 	int count = 0;
@@ -930,7 +930,7 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 			}
 			lpCellBond bond = { b, a };
 			lpShape_FaceContact( shape, f, &bond.contact );
-			bond.contact.normal = b3Neg( bond.contact.normal ); // the face is a's; the bond runs from b to a
+			bond.contact.normal = lpNeg( bond.contact.normal ); // the face is a's; the bond runs from b to a
 			if ( bond.contact.area > 1e-4f )
 			{
 				bonds[n++] = bond;
@@ -948,7 +948,7 @@ static float lpHullVolumeLowerBound( const lpShape* a, const lpShape* b )
 	float area[LP_POLY_MAX_FACES];
 	for ( int f = 0; f < a->faceCount; ++f )
 	{
-		b3Vec3 centroid;
+		lpVec3 centroid;
 		area[f] = lpShape_FaceArea( a, f, &centroid );
 	}
 	float added = 0.0f;
@@ -957,7 +957,7 @@ static float lpHullVolumeLowerBound( const lpShape* a, const lpShape* b )
 		float sum = 0.0f;
 		for ( int f = 0; f < a->faceCount; ++f )
 		{
-			float d = b3Dot( a->faces[f].plane.normal, b->vertices[k] ) - a->faces[f].plane.offset;
+			float d = lpDot( a->faces[f].plane.normal, b->vertices[k] ) - a->faces[f].plane.offset;
 			sum += d > 0.0f ? area[f] * d : 0.0f;
 		}
 		added = sum > added ? sum : added;
@@ -968,7 +968,7 @@ static float lpHullVolumeLowerBound( const lpShape* a, const lpShape* b )
 // Hull of two cells into `poly`, retagged from their faces. False if it is too much bigger than the cells were, or
 // if it would fill in the space of a cell that leaves (a notch knocked out of a log must stay a notch).
 static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int siteB, float allowedVolume,
-						 const b3Vec3* keepOut, int keepOutCount, uint8_t interiorMaterial, lpPoly* poly, b3Vec3* points )
+						 const lpVec3* keepOut, int keepOutCount, uint8_t interiorMaterial, lpPoly* poly, lpVec3* points )
 {
 	int n = a->vertexCount + b->vertexCount;
 	if ( n > LP_POLY_MAX_VERTICES )
@@ -983,14 +983,14 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 	{
 		return false;
 	}
-	memcpy( points, a->vertices, sizeof( b3Vec3 ) * (size_t)a->vertexCount );
-	memcpy( points + a->vertexCount, b->vertices, sizeof( b3Vec3 ) * (size_t)b->vertexCount );
+	memcpy( points, a->vertices, sizeof( lpVec3 ) * (size_t)a->vertexCount );
+	memcpy( points + a->vertexCount, b->vertices, sizeof( lpVec3 ) * (size_t)b->vertexCount );
 	if ( lpPoly_MakeFromPoints( poly, points, n, interiorMaterial ) == false )
 	{
 		return false;
 	}
 	float volume;
-	b3Vec3 centroid;
+	lpVec3 centroid;
 	lpPoly_ComputeMass( poly, &volume, &centroid );
 	if ( ( volume <= allowedVolume ) == false )
 	{
@@ -1023,8 +1023,8 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 				{
 					continue;
 				}
-				if ( b3Dot( face->plane.normal, other->plane.normal ) > 0.9999f &&
-					 b3AbsFloat( face->plane.offset - other->plane.offset ) < 2e-3f )
+				if ( lpDot( face->plane.normal, other->plane.normal ) > 0.9999f &&
+					 lpAbsFloat( face->plane.offset - other->plane.offset ) < 2e-3f )
 				{
 					face->tag = other->tag;
 					face->material = other->material;
@@ -1037,7 +1037,7 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 }
 
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
-				  uint8_t interiorMaterial, b3Vec3 impact )
+				  uint8_t interiorMaterial, lpVec3 impact )
 {
 	if ( ( slack > 0.0f ) == false || cellSites == NULL || count < 2 || count > LP_MAX_SITES )
 	{
@@ -1046,7 +1046,7 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 
 	int siteToCell[LP_MAX_SITES];
 	float trueVolume[LP_MAX_SITES];
-	b3Vec3 keepOut[LP_MAX_SITES + 1]; // centroids of the cells that do not merge, and the impact point
+	lpVec3 keepOut[LP_MAX_SITES + 1]; // centroids of the cells that do not merge, and the impact point
 	int keepOutCount = 0;
 	keepOut[keepOutCount++] = impact;
 	for ( int i = 0; i < LP_MAX_SITES; ++i )
@@ -1067,7 +1067,7 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 	}
 
 	lpPoly* poly = lpAlloc( sizeof( lpPoly ) );
-	b3Vec3 points[LP_POLY_MAX_VERTICES];
+	lpVec3 points[LP_POLY_MAX_VERTICES];
 	int tried[LP_MAX_SITES]; // the version of `a` each neighbour was last tried against
 	int version = 0;
 	for ( int i = 0; i < LP_MAX_SITES; ++i )
@@ -1155,7 +1155,7 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 	return kept;
 }
 
-int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
+int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
 				lpShape** chips, int capacity )
 {
 	enum
@@ -1171,12 +1171,12 @@ int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t mater
 	lpPoly* polys = lpAlloc( ( lp_maxChips + 1 ) * sizeof( lpPoly ) );
 	lpPoly* scratch = polys + lp_maxChips;
 	float volumes[lp_maxChips];
-	b3Vec3 centroids[lp_maxChips];
+	lpVec3 centroids[lp_maxChips];
 	lpShape_ToPoly( cell, polys );
 	volumes[0] = cell->volume;
 	centroids[0] = cell->centroid;
 	int count = 1;
-	bool grain = b3LengthSquared( grainAxis ) > 0.0f;
+	bool grain = lpLengthSquared( grainAxis ) > 0.0f;
 
 	for ( int s = 0; s < splits && count < capacity && count < lp_maxChips; ++s )
 	{
@@ -1191,19 +1191,19 @@ int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t mater
 			break;
 		}
 
-		b3Vec3 n = lpRandomUnitVector( rng );
+		lpVec3 n = lpRandomUnitVector( rng );
 		if ( grain )
 		{
-			n = b3MulSub( n, b3Dot( n, grainAxis ), grainAxis );
-			if ( b3LengthSquared( n ) < 1e-4f )
+			n = lpMulSub( n, lpDot( n, grainAxis ), grainAxis );
+			if ( lpLengthSquared( n ) < 1e-4f )
 			{
 				continue;
 			}
-			n = b3Normalize( n );
+			n = lpNormalize( n );
 		}
 		float reach = 0.15f * cell->radius; // no cbrtf: C-library roots are not bit-identical everywhere
-		b3Plane plane = { n, b3Dot( n, centroids[big] ) + lpRandom_Range( rng, -reach, reach ) };
-		b3Plane flipped = { b3Neg( n ), -plane.offset };
+		lpPlane plane = { n, lpDot( n, centroids[big] ) + lpRandom_Range( rng, -reach, reach ) };
+		lpPlane flipped = { lpNeg( n ), -plane.offset };
 
 		lpClipResult below = lpPoly_Clip( polys + big, plane, material, LP_TAG_CUT, 1e-5f, scratch );
 		if ( below != lp_clipCut )
@@ -1211,7 +1211,7 @@ int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t mater
 			continue;
 		}
 		float va, vb;
-		b3Vec3 ca, cb;
+		lpVec3 ca, cb;
 		lpPoly_ComputeMass( scratch, &va, &ca );
 		lpPoly* other = polys + count;
 		if ( lpPoly_Clip( polys + big, flipped, material, LP_TAG_CUT, 1e-5f, other ) != lp_clipCut )

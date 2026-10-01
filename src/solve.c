@@ -7,17 +7,17 @@
 
 static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
 
-void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, b3Vec3* force, b3Vec3* moment )
+void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, lpVec3* force, lpVec3* moment )
 {
 	lpVec6 va = e->a >= 0 ? x[e->a] : lp_vec6Zero;
 	lpVec6 vb = e->b >= 0 ? x[e->b] : lp_vec6Zero;
-	b3Vec3 delta = b3Sub( b3Add( vb.f, b3Cross( vb.t, e->rb ) ), b3Add( va.f, b3Cross( va.t, e->ra ) ) );
-	b3Vec3 phi = b3Sub( vb.t, va.t );
-	float dn = b3Dot( delta, e->n );
-	*force = b3Add( b3MulSV( e->kn * dn, e->n ), b3MulSV( e->ks, b3MulSub( delta, dn, e->n ) ) );
-	b3Vec3 m = b3MulSV( e->kt * b3Dot( phi, e->n ), e->n );
-	m = b3MulAdd( m, e->kb1 * b3Dot( phi, e->t1 ), e->t1 );
-	*moment = b3MulAdd( m, e->kb2 * b3Dot( phi, e->t2 ), e->t2 );
+	lpVec3 delta = lpSub( lpAdd( vb.f, lpCross( vb.t, e->rb ) ), lpAdd( va.f, lpCross( va.t, e->ra ) ) );
+	lpVec3 phi = lpSub( vb.t, va.t );
+	float dn = lpDot( delta, e->n );
+	*force = lpAdd( lpMulSV( e->kn * dn, e->n ), lpMulSV( e->ks, lpMulSub( delta, dn, e->n ) ) );
+	lpVec3 m = lpMulSV( e->kt * lpDot( phi, e->n ), e->n );
+	m = lpMulAdd( m, e->kb1 * lpDot( phi, e->t1 ), e->t1 );
+	*moment = lpMulAdd( m, e->kb2 * lpDot( phi, e->t2 ), e->t2 );
 }
 
 static void lpApply( const lpStressEdge* edges, int edgeCount, const lpVec6* x, lpVec6* y, int nodeCount )
@@ -29,17 +29,17 @@ static void lpApply( const lpStressEdge* edges, int edgeCount, const lpVec6* x, 
 	for ( int k = 0; k < edgeCount; ++k )
 	{
 		const lpStressEdge* e = edges + k;
-		b3Vec3 force, moment;
+		lpVec3 force, moment;
 		lpEdgeForce( e, x, &force, &moment );
 		if ( e->a >= 0 )
 		{
-			y[e->a].f = b3Sub( y[e->a].f, force );
-			y[e->a].t = b3Sub( y[e->a].t, b3Add( b3Cross( e->ra, force ), moment ) );
+			y[e->a].f = lpSub( y[e->a].f, force );
+			y[e->a].t = lpSub( y[e->a].t, lpAdd( lpCross( e->ra, force ), moment ) );
 		}
 		if ( e->b >= 0 )
 		{
-			y[e->b].f = b3Add( y[e->b].f, force );
-			y[e->b].t = b3Add( y[e->b].t, b3Add( b3Cross( e->rb, force ), moment ) );
+			y[e->b].f = lpAdd( y[e->b].f, force );
+			y[e->b].t = lpAdd( y[e->b].t, lpAdd( lpCross( e->rb, force ), moment ) );
 		}
 	}
 }
@@ -54,14 +54,14 @@ static double lpDot6( const lpVec6* a, const lpVec6* b, int n )
 	double sum = 0.0;
 	for ( int i = 0; i < n; ++i )
 	{
-		sum += (double)b3Dot( a[i].f, b[i].f ) + (double)b3Dot( a[i].t, b[i].t );
+		sum += (double)lpDot( a[i].f, b[i].f ) + (double)lpDot( a[i].t, b[i].t );
 	}
 	return sum;
 }
 
 // An edge's contribution to the block of the node it meets at arm r. The coupling between a node's translation and
 // rotation (bonds far from its reference point) is exactly what a plain diagonal preconditioner misses.
-static void lpAddBlock( lpBlock6* block, const lpStressEdge* e, b3Vec3 r )
+static void lpAddBlock( lpBlock6* block, const lpStressEdge* e, lpVec3 r )
 {
 	float n[3] = { e->n.x, e->n.y, e->n.z };
 	float t1[3] = { e->t1.x, e->t1.y, e->t1.z };
@@ -245,14 +245,14 @@ void lpSystemNodeScales( lpStressSystem* s, float floor )
 	float* scale = s->nodeScale.data;
 	for ( int i = 0; i < n; ++i )
 	{
-		scale[i] = floor + b3Length( f[i].f );
+		scale[i] = floor + lpLength( f[i].f );
 	}
 	for ( int k = 0; k < s->edges.count; ++k )
 	{
 		const lpStressEdge* e = s->edges.data + k;
-		b3Vec3 force, moment;
+		lpVec3 force, moment;
 		lpEdgeForce( e, x, &force, &moment );
-		float magnitude = b3Length( force );
+		float magnitude = lpLength( force );
 		if ( e->a >= 0 )
 		{
 			scale[e->a] += magnitude;
@@ -278,7 +278,7 @@ static bool lpNodesBalanced( const lpStressSystem* s, const lpVec6* r, float nod
 	{
 		float limit = nodeTolerance * scale[i];
 		float torque = limit * arm[i];
-		if ( b3LengthSquared( r[i].f ) > limit * limit || b3LengthSquared( r[i].t ) > torque * torque )
+		if ( lpLengthSquared( r[i].f ) > limit * limit || lpLengthSquared( r[i].t ) > torque * torque )
 		{
 			return false;
 		}
@@ -305,8 +305,8 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 		lpApply( edges, edgeCount, x, q, n );
 		for ( int i = 0; i < n; ++i )
 		{
-			r[i].f = b3Sub( f[i].f, q[i].f );
-			r[i].t = b3Sub( f[i].t, q[i].t );
+			r[i].f = lpSub( f[i].f, q[i].f );
+			r[i].t = lpSub( f[i].t, q[i].t );
 			z[i] = lpPrecondition( r[i], d + i );
 			p[i] = z[i];
 		}
@@ -331,10 +331,10 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 		float alpha = (float)( rz / pq );
 		for ( int i = 0; i < n; ++i )
 		{
-			x[i].f = b3MulAdd( x[i].f, alpha, p[i].f );
-			x[i].t = b3MulAdd( x[i].t, alpha, p[i].t );
-			r[i].f = b3MulSub( r[i].f, alpha, q[i].f );
-			r[i].t = b3MulSub( r[i].t, alpha, q[i].t );
+			x[i].f = lpMulAdd( x[i].f, alpha, p[i].f );
+			x[i].t = lpMulAdd( x[i].t, alpha, p[i].t );
+			r[i].f = lpMulSub( r[i].f, alpha, q[i].f );
+			r[i].t = lpMulSub( r[i].t, alpha, q[i].t );
 			z[i] = lpPrecondition( r[i], d + i );
 		}
 		double rz2 = lpDot6( r, z, n );
@@ -342,8 +342,8 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 		rz = rz2;
 		for ( int i = 0; i < n; ++i )
 		{
-			p[i].f = b3MulAdd( z[i].f, beta, p[i].f );
-			p[i].t = b3MulAdd( z[i].t, beta, p[i].t );
+			p[i].f = lpMulAdd( z[i].f, beta, p[i].f );
+			p[i].t = lpMulAdd( z[i].t, beta, p[i].t );
 		}
 	}
 	if ( converged == false && lpDot6( r, r, n ) <= limit && lpNodesBalanced( s, r, nodeTolerance ) )
@@ -355,11 +355,11 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 	state->converged = converged;
 }
 
-void lpSystemReduce( const lpStressSystem* fine, const b3Vec3* nodeRef, const lpPartition* part, lpStressSystem* reduced )
+void lpSystemReduce( const lpStressSystem* fine, const lpVec3* nodeRef, const lpPartition* part, lpStressSystem* reduced )
 {
 	int groups = part->groupCount;
 	const int* group = part->group.data;
-	const b3Vec3* ref = part->ref.data;
+	const lpVec3* ref = part->ref.data;
 	lpArray_Reserve( reduced->nodes, groups );
 	reduced->nodes.count = groups;
 	for ( int g = 0; g < groups; ++g )
@@ -385,11 +385,11 @@ void lpSystemReduce( const lpStressSystem* fine, const b3Vec3* nodeRef, const lp
 		}
 		if ( e.a >= 0 && part->members.data[ga] > 1 )
 		{
-			e.ra = b3Add( e.ra, b3Sub( nodeRef[e.a], ref[ga] ) );
+			e.ra = lpAdd( e.ra, lpSub( nodeRef[e.a], ref[ga] ) );
 		}
 		if ( e.b >= 0 && part->members.data[gb] > 1 )
 		{
-			e.rb = b3Add( e.rb, b3Sub( nodeRef[e.b], ref[gb] ) );
+			e.rb = lpAdd( e.rb, lpSub( nodeRef[e.b], ref[gb] ) );
 		}
 		e.a = ga;
 		e.b = gb;
@@ -401,7 +401,7 @@ void lpSystemReduce( const lpStressSystem* fine, const b3Vec3* nodeRef, const lp
 	lpSystemIncidence( reduced );
 }
 
-void lpPartitionRestrict( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced )
+void lpPartitionRestrict( const lpPartition* part, const lpVec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced )
 {
 	for ( int g = 0; g < part->groupCount; ++g )
 	{
@@ -410,20 +410,20 @@ void lpPartitionRestrict( const lpPartition* part, const b3Vec3* nodeRef, const 
 	for ( int i = 0; i < nodeCount; ++i )
 	{
 		int g = part->group.data[i];
-		b3Vec3 d = b3Sub( nodeRef[i], part->ref.data[g] );
-		reduced[g].f = b3Add( reduced[g].f, fine[i].f );
-		reduced[g].t = b3Add( reduced[g].t, b3Add( fine[i].t, b3Cross( d, fine[i].f ) ) );
+		lpVec3 d = lpSub( nodeRef[i], part->ref.data[g] );
+		reduced[g].f = lpAdd( reduced[g].f, fine[i].f );
+		reduced[g].t = lpAdd( reduced[g].t, lpAdd( fine[i].t, lpCross( d, fine[i].f ) ) );
 	}
 }
 
-void lpPartitionProlong( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* y, int nodeCount, lpVec6* fine )
+void lpPartitionProlong( const lpPartition* part, const lpVec3* nodeRef, const lpVec6* y, int nodeCount, lpVec6* fine )
 {
 	for ( int i = 0; i < nodeCount; ++i )
 	{
 		int g = part->group.data[i];
-		b3Vec3 d = b3Sub( nodeRef[i], part->ref.data[g] );
-		fine[i].f = b3Add( fine[i].f, b3Add( y[g].f, b3Cross( y[g].t, d ) ) );
-		fine[i].t = b3Add( fine[i].t, y[g].t );
+		lpVec3 d = lpSub( nodeRef[i], part->ref.data[g] );
+		fine[i].f = lpAdd( fine[i].f, lpAdd( y[g].f, lpCross( y[g].t, d ) ) );
+		fine[i].t = lpAdd( fine[i].t, y[g].t );
 	}
 }
 

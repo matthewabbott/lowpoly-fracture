@@ -9,6 +9,7 @@ add_library(lpf STATIC
 	gait.c
 	impact.c
 	link.c
+	lpmath.c
 	poly.c
 	poly.h
 	rig.c
@@ -24,6 +25,7 @@ add_library(lpf STATIC
 	world.c
 	world.h
 	../include/lpf/lpf.h
+	../include/lpf/lpmath.h
 )
 
 target_include_directories(lpf

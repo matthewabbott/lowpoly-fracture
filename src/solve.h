@@ -11,8 +11,8 @@
 // A 6-vector per node: force and torque, or translation and rotation
 typedef struct lpVec6
 {
-	b3Vec3 f;
-	b3Vec3 t;
+	lpVec3 f;
+	lpVec3 t;
 } lpVec6;
 
 // A bond as a short beam between two nodes (node -1: fixed to the world)
@@ -20,8 +20,8 @@ typedef struct lpStressEdge
 {
 	int a, b;
 	int bond;
-	b3Vec3 ra, rb; // contact centroid from each node's reference point
-	b3Vec3 n, t1, t2;
+	lpVec3 ra, rb; // contact centroid from each node's reference point
+	lpVec3 n, t1, t2;
 	float kn, ks, kb1, kb2, kt; // axial, shear, bending about t1 and t2, twist
 } lpStressEdge;
 
@@ -60,13 +60,13 @@ typedef struct lpPartition
 {
 	int groupCount;
 	LP_ARRAY( int ) group;	 // group of each node
-	LP_ARRAY( b3Vec3 ) ref;	 // reference point of each group
+	LP_ARRAY( lpVec3 ) ref;	 // reference point of each group
 	LP_ARRAY( int ) members; // nodes in each group (a group of one keeps its node's reference exactly)
 } lpPartition;
 
 // Relative motion of an edge's two sides at the contact, and the force and moment the bond carries: tension positive
 // along n, so the bond pulls side b by -force (and -moment) and side a by +force
-void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, b3Vec3* force, b3Vec3* moment );
+void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, lpVec3* force, lpVec3* moment );
 
 // y = K x, matrix free, in edge order
 void lpSystemApply( const lpStressSystem* s, const lpVec6* x, lpVec6* y );
@@ -84,13 +84,13 @@ void lpSystemIncidence( lpStressSystem* s );
 // to the groups' reference points; an edge inside a group cannot deform (the group is rigid) and is dropped. The
 // reduced nodes are the groups (each lists its first node's piece). Sized and factored; x and f are the caller's. With
 // every group of one node it is the fine system, bit for bit.
-void lpSystemReduce( const lpStressSystem* fine, const b3Vec3* nodeRef, const lpPartition* part, lpStressSystem* reduced );
+void lpSystemReduce( const lpStressSystem* fine, const lpVec3* nodeRef, const lpPartition* part, lpStressSystem* reduced );
 
 // reduced = P^T fine: each group's resultant force, and torque about its reference point
-void lpPartitionRestrict( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced );
+void lpPartitionRestrict( const lpPartition* part, const lpVec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced );
 
 // fine += P y: every node moves with its group
-void lpPartitionProlong( const lpPartition* part, const b3Vec3* nodeRef, const lpVec6* y, int nodeCount, lpVec6* fine );
+void lpPartitionProlong( const lpPartition* part, const lpVec3* nodeRef, const lpVec6* y, int nodeCount, lpVec6* fine );
 
 void lpPartitionFree( lpPartition* part );
 

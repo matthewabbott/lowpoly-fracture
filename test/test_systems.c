@@ -14,21 +14,21 @@ enum
 
 // A dynamic wooden frame (two slabs) with a small metal fuel tank bolted under its middle; `volatileTank` gives the tank
 // a detonator of its own
-static int AddRig( Sim* s, b3Vec3 at, uint32_t userId, bool volatileTank )
+static int AddRig( Sim* s, lpVec3 at, uint32_t userId, bool volatileTank )
 {
 	lpPartDef parts[3];
 	for ( int k = 0; k < 2; ++k )
 	{
 		parts[k] = lpDefaultPartDef();
-		parts[k].halfExtents = (b3Vec3){ 0.8f, 0.1f, 0.5f };
-		parts[k].transform.p = (b3Vec3){ 0.0f, 0.0f, k == 0 ? -0.5f : 0.5f };
+		parts[k].halfExtents = (lpVec3){ 0.8f, 0.1f, 0.5f };
+		parts[k].transform.p = (lpVec3){ 0.0f, 0.0f, k == 0 ? -0.5f : 0.5f };
 		parts[k].material = lp_wood;
 		parts[k].system.tag = TagFrame;
 		parts[k].system.carries = 0x3;
 	}
 	parts[2] = lpDefaultPartDef();
-	parts[2].halfExtents = (b3Vec3){ 0.25f, 0.15f, 0.25f };
-	parts[2].transform.p = (b3Vec3){ 0.0f, -0.25f, 0.0f };
+	parts[2].halfExtents = (lpVec3){ 0.25f, 0.15f, 0.25f };
+	parts[2].transform.p = (lpVec3){ 0.0f, -0.25f, 0.0f };
 	parts[2].material = lp_metal;
 	parts[2].system.tag = TagTank;
 	parts[2].system.sources = 0x1;
@@ -39,7 +39,7 @@ static int AddRig( Sim* s, b3Vec3 at, uint32_t userId, bool volatileTank )
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ at.x, at.y, at.z };
+	def.transform.p = (lpPos){ at.x, at.y, at.z };
 	def.parts = parts;
 	def.partCount = 3;
 	def.userId = userId;
@@ -67,10 +67,10 @@ static int CountPieces( const Sim* s, uint32_t userId, int part, float* volume )
 	return count;
 }
 
-static lpImpactDef Blast( b3Vec3 at, float radius, float energy )
+static lpImpactDef Blast( lpVec3 at, float radius, float energy )
 {
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ at.x, at.y, at.z };
+	im.point = (lpPos){ at.x, at.y, at.z };
 	im.radius = radius;
 	im.energy = energy;
 	im.impulse = 6.0f;
@@ -83,7 +83,7 @@ static lpImpactDef Blast( b3Vec3 at, float radius, float energy )
 static int TestPartIdentitySurvivesFracture( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddRig( &s, (b3Vec3){ 0.0f, 1.0f, 0.0f }, 77u, false );
+	int body = AddRig( &s, (lpVec3){ 0.0f, 1.0f, 0.0f }, 77u, false );
 	const lpBody* b = s.world->bodies.data + body;
 	ENSURE( b->pieces.count == 3 );
 	for ( int k = 0; k < 3; ++k )
@@ -95,7 +95,7 @@ static int TestPartIdentitySurvivesFracture( void )
 		ENSURE( p->carries == ( k < 2 ? 0x3 : 0x1 ) && p->needs == 0 ); // the tank carries what it feeds
 		ENSURE( k < 2 || p->sourceShare == 1.0f );
 	}
-	lpImpactDef im = Blast( (b3Vec3){ 0.6f, 1.2f, -0.5f }, 1.2f, 90000.0f );
+	lpImpactDef im = Blast( (lpVec3){ 0.6f, 1.2f, -0.5f }, 1.2f, 90000.0f );
 	lpWorld_AddImpact( s.world, &im );
 	Run( &s, 30 );
 	ENSURE( lpWorld_Validate( s.world ) );
@@ -124,12 +124,12 @@ static int TestPartIdentitySurvivesFracture( void )
 static int TestPartDetonatorBlowsOnlyItsPart( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddRig( &s, (b3Vec3){ 0.0f, 0.8f, 0.0f }, 5u, true );
+	int body = AddRig( &s, (lpVec3){ 0.0f, 0.8f, 0.0f }, 5u, true );
 	Run( &s, 30 );
 	ENSURE( BodyArmed( s.world, body, NULL ) );
 	// A shot at the tank sets it off
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 0.4f, 0.3f };
+	im.point = (lpPos){ 0.0f, 0.4f, 0.3f };
 	im.radius = 0.35f;
 	im.energy = 4000.0f;
 	lpWorld_AddImpact( s.world, &im );
@@ -152,24 +152,24 @@ static int TestObjectDetonatorUnchanged( void )
 {
 	Sim s = CreateSim( -1 );
 	lpPartDef part = lpDefaultPartDef();
-	part.halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
+	part.halfExtents = (lpVec3){ 0.2f, 0.2f, 0.2f };
 	part.material = lp_metal;
 	lpPartDef parts[2] = { part, part };
-	parts[1].transform.p = (b3Vec3){ 0.4f, 0.0f, 0.0f };
+	parts[1].transform.p = (lpVec3){ 0.4f, 0.0f, 0.0f };
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ 0.0f, 0.2f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.2f, 0.0f };
 	def.parts = parts;
 	def.partCount = 2;
 	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
 	int body = lpCreateObject( s.world, &def );
-	b3Pos center = b3Body_GetWorldCenter( s.world->bodies.data[body].id );
-	lpImpactDef im = Blast( (b3Vec3){ 0.9f, 0.2f, 0.0f }, 1.4f, 80000.0f );
+	lpPos center = b3Body_GetWorldCenter( s.world->bodies.data[body].id );
+	lpImpactDef im = Blast( (lpVec3){ 0.9f, 0.2f, 0.0f }, 1.4f, 80000.0f );
 	lpWorld_AddImpact( s.world, &im );
 	Run( &s, 1 );
 	ENSURE( s.world->pendingDestroy.count == 1 && s.world->nextImpacts.count >= 1 );
 	lpImpactDef blast = s.world->nextImpacts.data[0];
-	ENSURE( blast.radius == 1.8f && b3Length( b3SubPos( blast.point, center ) ) < 0.05f );
+	ENSURE( blast.radius == 1.8f && lpLength( lpSubPos( blast.point, center ) ) < 0.05f );
 	Run( &s, 1 );
 	ENSURE( s.world->bodies.data[body].alive == false );
 	ENSURE( lpWorld_Validate( s.world ) );
@@ -181,7 +181,7 @@ static int TestObjectDetonatorUnchanged( void )
 static int TestTankTornOffStaysVolatile( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddRig( &s, (b3Vec3){ 0.0f, 0.8f, 0.0f }, 9u, true );
+	int body = AddRig( &s, (lpVec3){ 0.0f, 0.8f, 0.0f }, 9u, true );
 	Run( &s, 20 );
 	// Unbolt the tank: break its bonds and let the body split
 	const lpBody* b = s.world->bodies.data + body;
@@ -203,9 +203,9 @@ static int TestTankTornOffStaysVolatile( void )
 	ENSURE( BodyArmed( s.world, tankBody, NULL ) );
 	ENSURE( BodyArmed( s.world, body, NULL ) == false ); // the frame is not volatile
 
-	b3WorldTransform xf;
+	lpWorldTransform xf;
 	lpWorld_GetBodyTransform( s.world, tankBody, &xf );
-	lpImpactDef im = Blast( (b3Vec3){ (float)xf.p.x + 0.8f, (float)xf.p.y, (float)xf.p.z }, 1.2f, 40000.0f );
+	lpImpactDef im = Blast( (lpVec3){ (float)xf.p.x + 0.8f, (float)xf.p.y, (float)xf.p.z }, 1.2f, 40000.0f );
 	lpWorld_AddImpact( s.world, &im );
 	Run( &s, 1 );
 	ENSURE( s.world->pendingDestroy.count == 1 );
@@ -223,20 +223,20 @@ enum
 };
 
 // A dynamic row of 0.4 m boxes along x resting on the ground, one object; each part's system from `systems`
-static int AddRow( Sim* s, b3Vec3 at, const lpPartSystem* systems, int count, uint32_t userId )
+static int AddRow( Sim* s, lpVec3 at, const lpPartSystem* systems, int count, uint32_t userId )
 {
 	lpPartDef parts[16];
 	for ( int k = 0; k < count; ++k )
 	{
 		parts[k] = lpDefaultPartDef();
-		parts[k].halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
-		parts[k].transform.p = (b3Vec3){ 0.4f * (float)k, 0.0f, 0.0f };
+		parts[k].halfExtents = (lpVec3){ 0.2f, 0.2f, 0.2f };
+		parts[k].transform.p = (lpVec3){ 0.4f * (float)k, 0.0f, 0.0f };
 		parts[k].material = lp_metal;
 		parts[k].system = systems[k];
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ at.x, at.y, at.z };
+	def.transform.p = (lpPos){ at.x, at.y, at.z };
 	def.parts = parts;
 	def.partCount = count;
 	def.userId = userId;
@@ -283,7 +283,7 @@ static int TestSupplyCut( void )
 	{
 		row[k] = (lpPartSystem){ 0, Fuel, 0, 0 };
 	}
-	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
+	AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
 	Run( &s, 1 );
 	ENSURE( SupplyAt( &s, 1u, 6, 0 ) == 1.0f && SupplyAt( &s, 1u, 6, 1 ) == 0.0f );
 	ENSURE( lpWorld_GetPieceInfo( s.world, PieceOf( &s, 1u, 6 ) ).supplied == Fuel );
@@ -315,7 +315,7 @@ static int TestSupplyNeeds( void )
 {
 	Sim s = CreateSim( -1 );
 	lpPartSystem row[4] = { { 0, 0, Fuel, 0 }, { 0, Fuel | Power, 0, 0 }, { 0, Fuel, Power, Fuel }, { 0, Power, 0, 0 } };
-	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 4, 2u );
+	AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, row, 4, 2u );
 	Run( &s, 1 );
 	ENSURE( SupplyAt( &s, 2u, 3, 1 ) == 1.0f );
 	Unbolt( &s, PieceOf( &s, 2u, 0 ) ); // the tank comes off
@@ -332,7 +332,7 @@ static int TestSupplyShare( void )
 {
 	Sim s = CreateSim( -1 );
 	lpPartSystem row[3] = { { 0, 0, Power, 0 }, { 0, 0, Power, 0 }, { 0, Power, 0, 0 } };
-	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 3, 3u );
+	AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, row, 3, 3u );
 	Run( &s, 1 );
 	ENSURE_NEAR( s.world->pieces.data[PieceOf( &s, 3u, 0 )].sourceShare, 0.5f, 1e-4f );
 	ENSURE( SupplyAt( &s, 3u, 2, 1 ) == 1.0f );
@@ -350,13 +350,13 @@ static int TestSupplyOverLink( void )
 	Sim s = CreateSim( -1 );
 	lpPartSystem tank = { 0, 0, Fuel, 0 };
 	lpPartSystem drum = { 0, Fuel, 0, 0 };
-	int a = AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, &tank, 1, 4u );
-	int b = AddRow( &s, (b3Vec3){ 2.0f, 0.2f, 0.0f }, &drum, 1, 5u );
+	int a = AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, &tank, 1, 4u );
+	int b = AddRow( &s, (lpVec3){ 2.0f, 0.2f, 0.0f }, &drum, 1, 5u );
 	lpLinkDef hose = lpDefaultLinkDef( lp_linkRope );
 	hose.bodyA = a;
 	hose.bodyB = b;
-	hose.anchorA = (b3Pos){ 0.2f, 0.2f, 0.0f };
-	hose.anchorB = (b3Pos){ 1.8f, 0.2f, 0.0f };
+	hose.anchorA = (lpPos){ 0.2f, 0.2f, 0.0f };
+	hose.anchorB = (lpPos){ 1.8f, 0.2f, 0.0f };
 	hose.carries = Fuel;
 	int link = lpCreateLink( s.world, &hose );
 	ENSURE( link >= 0 );
@@ -370,21 +370,21 @@ static int TestSupplyOverLink( void )
 }
 
 // A car whose wheels need power from an engine on its chassis: knock the engine off and it coasts
-static int AddPoweredCar( Sim* s, b3Vec3 at, uint32_t userId, int* vehicle )
+static int AddPoweredCar( Sim* s, lpVec3 at, uint32_t userId, int* vehicle )
 {
 	lpPartDef parts[2];
 	parts[0] = lpDefaultPartDef();
-	parts[0].halfExtents = (b3Vec3){ 0.9f, 0.15f, 2.0f };
+	parts[0].halfExtents = (lpVec3){ 0.9f, 0.15f, 2.0f };
 	parts[0].material = lp_wood;
 	parts[0].system.carries = Power;
 	parts[1] = lpDefaultPartDef();
-	parts[1].halfExtents = (b3Vec3){ 0.4f, 0.25f, 0.4f };
-	parts[1].transform.p = (b3Vec3){ 0.0f, 0.4f, 1.2f };
+	parts[1].halfExtents = (lpVec3){ 0.4f, 0.25f, 0.4f };
+	parts[1].transform.p = (lpVec3){ 0.0f, 0.4f, 1.2f };
 	parts[1].material = lp_metal;
 	parts[1].system.sources = Power;
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ at.x, at.y + 0.9f, at.z };
+	def.transform.p = (lpPos){ at.x, at.y + 0.9f, at.z };
 	def.parts = parts;
 	def.partCount = 2;
 	def.userId = userId;
@@ -393,7 +393,7 @@ static int AddPoweredCar( Sim* s, b3Vec3 at, uint32_t userId, int* vehicle )
 	for ( int i = 0; i < 4; ++i )
 	{
 		wheels[i] = lpDefaultWheelDef();
-		wheels[i].mount = (b3Pos){ at.x + ( ( i & 1 ) ? 0.78f : -0.78f ), at.y + 0.75f, at.z + ( ( i & 2 ) ? 1.4f : -1.4f ) };
+		wheels[i].mount = (lpPos){ at.x + ( ( i & 1 ) ? 0.78f : -0.78f ), at.y + 0.75f, at.z + ( ( i & 2 ) ? 1.4f : -1.4f ) };
 		wheels[i].driveShare = ( i & 2 ) ? 0.0f : 0.5f;
 		wheels[i].driveNeeds = Power;
 	}
@@ -409,7 +409,7 @@ static int TestCutPowerCoasts( void )
 {
 	Sim s = CreateSim( -1 );
 	int car;
-	AddPoweredCar( &s, (b3Vec3){ 0.0f, 0.0f, -30.0f }, 6u, &car );
+	AddPoweredCar( &s, (lpVec3){ 0.0f, 0.0f, -30.0f }, 6u, &car );
 	ENSURE( car >= 0 );
 	lpVehicleControl go = { 1.0f, 0.0f, 0.0f, false };
 	lpWorld_SetVehicleControl( s.world, car, &go );
@@ -433,17 +433,17 @@ static uint64_t SupplyUnderFire( int workers )
 {
 	Sim s = CreateSimWorkers( -1, workers );
 	int car;
-	AddPoweredCar( &s, (b3Vec3){ 0.0f, 0.0f, 0.0f }, 7u, &car );
+	AddPoweredCar( &s, (lpVec3){ 0.0f, 0.0f, 0.0f }, 7u, &car );
 	lpPartSystem row[5] = { { 0, 0, Fuel, 0 }, { 0, Fuel | Power, 0, 0 }, { 0, Fuel, Power, Fuel }, { 0, Power, 0, 0 },
 							{ 0, Power, 0, 0 } };
-	AddRow( &s, (b3Vec3){ 4.0f, 0.2f, 0.0f }, row, 5, 8u );
+	AddRow( &s, (lpVec3){ 4.0f, 0.2f, 0.0f }, row, 5, 8u );
 	lpVehicleControl go = { 1.0f, 0.0f, 0.3f, false };
 	lpWorld_SetVehicleControl( s.world, car, &go );
 	for ( int t = 0; t < 180; ++t )
 	{
 		if ( t == 40 || t == 100 )
 		{
-			lpImpactDef im = Blast( t == 40 ? (b3Vec3){ 4.8f, 0.3f, 0.5f } : (b3Vec3){ 0.5f, 1.2f, 3.0f }, 1.4f, 90000.0f );
+			lpImpactDef im = Blast( t == 40 ? (lpVec3){ 4.8f, 0.3f, 0.5f } : (lpVec3){ 0.5f, 1.2f, 3.0f }, 1.4f, 90000.0f );
 			lpWorld_AddImpact( s.world, &im );
 		}
 		Run( &s, 1 );
@@ -471,15 +471,15 @@ static int TestSupplyCost( void )
 	for ( int k = 0; k < 1000; ++k )
 	{
 		parts[k] = lpDefaultPartDef();
-		parts[k].halfExtents = (b3Vec3){ 0.1f, 0.1f, 0.1f };
-		parts[k].transform.p = (b3Vec3){ 0.2f * (float)( k % 10 ), 0.2f * (float)( ( k / 10 ) % 10 ), 0.2f * (float)( k / 100 ) };
+		parts[k].halfExtents = (lpVec3){ 0.1f, 0.1f, 0.1f };
+		parts[k].transform.p = (lpVec3){ 0.2f * (float)( k % 10 ), 0.2f * (float)( ( k / 10 ) % 10 ), 0.2f * (float)( k / 100 ) };
 		parts[k].material = lp_metal;
 		parts[k].system.carries = 0xFF;
 		parts[k].system.sources = k == 0 ? 0xFF : 0;
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ 0.0f, 0.1f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.1f, 0.0f };
 	def.parts = parts;
 	def.partCount = 1000;
 	lpCreateObject( s.world, &def );
@@ -531,7 +531,7 @@ static int TestPoolLeaksWhenCut( void )
 	{
 		row[k] = (lpPartSystem){ 0, Fuel, 0, 0 };
 	}
-	AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
+	AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, row, 7, 1u );
 	Run( &s, 2 );
 	ENSURE( PoolAt( &s, 1u, 0 ) == 1.0f && lpWorld_GetStats( s.world ).leakingPools == 0 );
 	CutBetween( &s, 1u, 3, 4 );
@@ -569,15 +569,15 @@ static int TestPoolRingDoesNotLeak( void )
 	for ( int k = 0; k < 4; ++k )
 	{
 		parts[k] = lpDefaultPartDef();
-		parts[k].halfExtents = (b3Vec3){ 0.2f, 0.2f, 0.2f };
-		parts[k].transform.p = (b3Vec3){ 0.4f * (float)( k % 2 ), 0.0f, 0.4f * (float)( k / 2 ) };
+		parts[k].halfExtents = (lpVec3){ 0.2f, 0.2f, 0.2f };
+		parts[k].transform.p = (lpVec3){ 0.4f * (float)( k % 2 ), 0.0f, 0.4f * (float)( k / 2 ) };
 		parts[k].material = lp_metal;
 		parts[k].system = (lpPartSystem){ 0, Fuel, 0, 0 };
 	}
 	parts[0].system = (lpPartSystem){ 0, 0, Fuel, 0, 100.0f, 0.0f };
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ 0.0f, 0.2f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.2f, 0.0f };
 	def.parts = parts;
 	def.partCount = 4;
 	def.userId = 9u;
@@ -601,14 +601,14 @@ static int TestPoolChippedLineLeaksALittle( void )
 	for ( int k = 0; k < 6; ++k )
 	{
 		parts[k] = lpDefaultPartDef();
-		parts[k].halfExtents = (b3Vec3){ 0.5f, 0.3f, 0.3f };
-		parts[k].transform.p = (b3Vec3){ 1.0f * (float)k, 0.0f, 0.0f };
+		parts[k].halfExtents = (lpVec3){ 0.5f, 0.3f, 0.3f };
+		parts[k].transform.p = (lpVec3){ 1.0f * (float)k, 0.0f, 0.0f };
 		parts[k].material = lp_stone;
 		parts[k].system = (lpPartSystem){ 0, Fuel, 0, 0 };
 	}
 	parts[0].system = (lpPartSystem){ 0, 0, Fuel, 0, 100.0f, 1.0f };
 	lpObjectDef def = lpDefaultObjectDef();
-	def.transform.p = (b3Pos){ 0.0f, 0.3f, 0.0f };
+	def.transform.p = (lpPos){ 0.0f, 0.3f, 0.0f };
 	def.parts = parts;
 	def.partCount = 6;
 	def.userId = 10u;
@@ -616,8 +616,8 @@ static int TestPoolChippedLineLeaksALittle( void )
 	lpWorld_SettleStructures( s.world );
 	Run( &s, 2 );
 	lpImpactDef rifle = { 0 };
-	rifle.point = (b3Pos){ 3.0f, 0.6f, 0.0f };
-	rifle.direction = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+	rifle.point = (lpPos){ 3.0f, 0.6f, 0.0f };
+	rifle.direction = (lpVec3){ 0.0f, -1.0f, 0.0f };
 	rifle.radius = 0.4f;
 	rifle.energy = 20000.0f; // a heavy round: a rifle's only scratches plate this thick
 	int piecesBefore = lpWorld_GetStats( s.world ).pieceCount;
@@ -644,7 +644,7 @@ static int TestPoolDeterminism( void )
 		{
 			row[j] = (lpPartSystem){ 0, Fuel, 0, 0 };
 		}
-		AddRow( &s, (b3Vec3){ 0.0f, 0.2f, 0.0f }, row, 5, 11u );
+		AddRow( &s, (lpVec3){ 0.0f, 0.2f, 0.0f }, row, 5, 11u );
 		Run( &s, 2 );
 		CutBetween( &s, 11u, 2, 3 );
 		Run( &s, 120 );

@@ -70,22 +70,22 @@ static bool lpControlStill( const lpRigControl* c )
 }
 
 // Level, with the rig's forward along `heading` (horizontal) and its up along worldUp
-static b3Quat lpLevelRotation( const lpRig* r, b3Vec3 heading, b3Vec3 worldUp )
+static lpQuat lpLevelRotation( const lpRig* r, lpVec3 heading, lpVec3 worldUp )
 {
-	b3Matrix3 local = { b3Cross( r->up, r->forward ), r->up, r->forward };
-	b3Matrix3 world = { b3Cross( worldUp, heading ), worldUp, heading };
-	return b3MulQuat( b3MakeQuatFromMatrix( &world ), b3Conjugate( b3MakeQuatFromMatrix( &local ) ) );
+	lpMatrix3 local = { lpCross( r->up, r->forward ), r->up, r->forward };
+	lpMatrix3 world = { lpCross( worldUp, heading ), worldUp, heading };
+	return lpMulQuat( lpMakeQuatFromMatrix( &world ), lpConjugate( lpMakeQuatFromMatrix( &local ) ) );
 }
 
-static b3Vec3 lpFlatten( b3Vec3 v, b3Vec3 up )
+static lpVec3 lpFlatten( lpVec3 v, lpVec3 up )
 {
-	return b3Sub( v, b3MulSV( b3Dot( v, up ), up ) );
+	return lpSub( v, lpMulSV( lpDot( v, up ), up ) );
 }
 
 // ---- balance ----
 
 // The rig's centre of mass: its torso and the bodies of its limbs' chains
-static b3Pos lpRigCenter( const lpWorld* w, const lpRig* r )
+static lpPos lpRigCenter( const lpWorld* w, const lpRig* r )
 {
 	int bodies[1 + LP_MAX_RIG_LIMBS * LP_MAX_LIMB_JOINTS];
 	int count = 0;
@@ -108,26 +108,26 @@ static b3Pos lpRigCenter( const lpWorld* w, const lpRig* r )
 			}
 		}
 	}
-	b3Pos origin = b3Body_GetWorldCenter( w->bodies.data[r->body].id );
-	b3Vec3 sum = b3Vec3_zero;
+	lpPos origin = b3Body_GetWorldCenter( w->bodies.data[r->body].id );
+	lpVec3 sum = lpVec3_zero;
 	float mass = 0.0f;
 	for ( int n = 0; n < count; ++n )
 	{
 		b3BodyId id = w->bodies.data[bodies[n]].id;
 		float m = b3Body_GetMass( id );
-		sum = b3MulAdd( sum, m, b3SubPos( b3Body_GetWorldCenter( id ), origin ) );
+		sum = lpMulAdd( sum, m, lpSubPos( b3Body_GetWorldCenter( id ), origin ) );
 		mass += m;
 	}
-	return mass > 0.0f ? b3OffsetPos( origin, b3MulSV( 1.0f / mass, sum ) ) : origin;
+	return mass > 0.0f ? lpOffsetPos( origin, lpMulSV( 1.0f / mass, sum ) ) : origin;
 }
 
 // How far the point lies inside the convex hull of the feet, seen along up (negative outside; -FLT_MAX with fewer than
 // three feet). Feet are 2D in the plane across up; the hull is a monotone chain over a total order.
-static float lpSupportMargin( const b3Pos* feet, const bool* use, int count, b3Pos point, b3Vec3 up )
+static float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpPos point, lpVec3 up )
 {
-	b3Vec3 e1 = b3Abs( up ).x < 0.9f ? b3Normalize( b3Cross( up, (b3Vec3){ 1.0f, 0.0f, 0.0f } ) )
-									 : b3Normalize( b3Cross( up, (b3Vec3){ 0.0f, 0.0f, 1.0f } ) );
-	b3Vec3 e2 = b3Cross( up, e1 );
+	lpVec3 e1 = lpAbs( up ).x < 0.9f ? lpNormalize( lpCross( up, (lpVec3){ 1.0f, 0.0f, 0.0f } ) )
+									 : lpNormalize( lpCross( up, (lpVec3){ 0.0f, 0.0f, 1.0f } ) );
+	lpVec3 e2 = lpCross( up, e1 );
 	float px[LP_MAX_RIG_LIMBS], py[LP_MAX_RIG_LIMBS];
 	int order[LP_MAX_RIG_LIMBS];
 	int n = 0;
@@ -135,9 +135,9 @@ static float lpSupportMargin( const b3Pos* feet, const bool* use, int count, b3P
 	{
 		if ( use[i] )
 		{
-			b3Vec3 d = b3SubPos( feet[i], point );
-			px[n] = b3Dot( d, e1 );
-			py[n] = b3Dot( d, e2 );
+			lpVec3 d = lpSubPos( feet[i], point );
+			px[n] = lpDot( d, e1 );
+			py[n] = lpDot( d, e2 );
 			order[n] = n;
 			n += 1;
 		}
@@ -193,7 +193,7 @@ static float lpSupportMargin( const b3Pos* feet, const bool* use, int count, b3P
 		float length = sqrtf( ex * ex + ey * ey );
 		if ( length > 1e-6f )
 		{
-			margin = b3MinFloat( margin, ( ex * ( -py[a] ) - ey * ( -px[a] ) ) / length );
+			margin = lpMinFloat( margin, ( ex * ( -py[a] ) - ey * ( -px[a] ) ) / length );
 		}
 	}
 	return margin;
@@ -207,12 +207,12 @@ typedef struct lpFootCast
 	const int* skip; // the rig's bodies
 	int skipCount;
 	float fraction;
-	b3Pos point;
+	lpPos point;
 	int piece;
 	bool hit;
 } lpFootCast;
 
-static float lpFootCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+static float lpFootCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
 							int triangleIndex, int childIndex, void* context )
 {
 	(void)normal;
@@ -244,7 +244,7 @@ static float lpFootCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float
 }
 
 // The ground under a planned foothold: its landing height is where a sole-sized sphere comes to rest on it
-static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, b3Vec3 up )
+static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, lpVec3 up )
 {
 	int skip[1 + LP_MAX_RIG_LIMBS * LP_MAX_LIMB_JOINTS];
 	int count = 0;
@@ -258,21 +258,21 @@ static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, b3Vec3 up 
 			skip[count++] = w->pieces.data[l->ends[1 - other->prox[k]].piece].body;
 		}
 	}
-	b3Vec3 center = b3Vec3_zero;
+	lpVec3 center = lpVec3_zero;
 	b3ShapeProxy proxy = { &center, 1, LP_GAIT_SOLE };
 	b3QueryFilter filter = b3DefaultQueryFilter();
 	filter.categoryBits = LP_CAT_VEHICLE;
 	filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
-	b3Pos from = b3OffsetPos( limb->landing, b3MulSV( LP_GAIT_CLEARANCE + LP_GAIT_SOLE, up ) );
+	lpPos from = lpOffsetPos( limb->landing, lpMulSV( LP_GAIT_CLEARANCE + LP_GAIT_SOLE, up ) );
 	lpFootCast cast = { w, skip, count, FLT_MAX, { 0 }, -1, false };
-	b3World_CastShape( w->def.physics, from, &proxy, b3MulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter,
+	b3World_CastShape( w->def.physics, from, &proxy, lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter,
 					   lpFootCastFcn, &cast );
 	w->stats.footCasts += 1;
 	limb->grounded = cast.hit;
 	limb->groundPiece = cast.hit ? cast.piece : -1;
 	limb->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
 	float drop = cast.hit ? cast.fraction * ( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ) : LP_GAIT_CLEARANCE + 0.3f;
-	limb->landing = b3OffsetPos( from, b3MulSV( -( drop + LP_GAIT_SOLE ), up ) );
+	limb->landing = lpOffsetPos( from, lpMulSV( -( drop + LP_GAIT_SOLE ), up ) );
 }
 
 // A structure a foot lands on or leaves carries a changed load: check it again (at most every 30 steps per foot)
@@ -295,48 +295,48 @@ static void lpFootMoved( lpWorld* w, lpLimb* limb )
 
 static float lpSmooth( float s )
 {
-	s = b3ClampFloat( s, 0.0f, 1.0f );
+	s = lpClampFloat( s, 0.0f, 1.0f );
 	return s * s * ( 3.0f - 2.0f * s );
 }
 
 // The foot on its arc at s (0 liftoff, 1 landing): it lifts before it crosses and comes down after, over the higher of
 // its ends by the step height
-static b3Pos lpSwingPoint( const lpLimb* limb, float s, float stepHeight, b3Vec3 up )
+static lpPos lpSwingPoint( const lpLimb* limb, float s, float stepHeight, lpVec3 up )
 {
-	b3Vec3 span = b3SubPos( limb->landing, limb->liftoff );
-	float rise = b3Dot( span, up );
-	b3Vec3 across = lpFlatten( span, up );
-	float top = b3MaxFloat( rise, 0.0f ) + stepHeight; // over the liftoff
+	lpVec3 span = lpSubPos( limb->landing, limb->liftoff );
+	float rise = lpDot( span, up );
+	lpVec3 across = lpFlatten( span, up );
+	float top = lpMaxFloat( rise, 0.0f ) + stepHeight; // over the liftoff
 	float height = s < 0.5f ? top * lpSmooth( 2.0f * s ) : top + ( rise - top ) * lpSmooth( 2.0f * s - 1.0f );
-	return b3OffsetPos( limb->liftoff, b3MulAdd( b3MulSV( lpSmooth( ( s - 0.15f ) / 0.7f ), across ), height, up ) );
+	return lpOffsetPos( limb->liftoff, lpMulAdd( lpMulSV( lpSmooth( ( s - 0.15f ) / 0.7f ), across ), height, up ) );
 }
 
 // Half a step's length at a foot drifting at `rate` under the torso: what the torso covers in one swing, so the feet that
 // swing and the feet that carry take turns of the same length (a tripod's rhythm), up to most of the stride
 static float lpHalfStep( const lpRig* r, float rate )
 {
-	return b3MinFloat( LP_GAIT_LAND * r->def.stride, 0.5f * rate * r->def.swingTime );
+	return lpMinFloat( LP_GAIT_LAND * r->def.stride, 0.5f * rate * r->def.swingTime );
 }
 
 // Where a swinging foot lands, across the ground: ahead of its neutral point by most of the stride (along the way a
 // planted foot drifts under the commanded motion), where the torso will be when it lands (moving and turning as it
 // actually is, over the swing's time left). Its height is the ground's, from the casts.
-static b3Pos lpAimLanding( const lpRig* r, const lpLimb* limb, b3WorldTransform pose, b3Vec3 heading, b3Vec3 side,
-						   b3Vec3 velocity, float spin, b3Vec3 moving, float turning, float remaining, b3Vec3 up )
+static lpPos lpAimLanding( const lpRig* r, const lpLimb* limb, lpWorldTransform pose, lpVec3 heading, lpVec3 side,
+						   lpVec3 velocity, float spin, lpVec3 moving, float turning, float remaining, lpVec3 up )
 {
-	b3CosSin turn = b3ComputeCosSin( turning * remaining );
-	b3Vec3 f = b3Add( b3MulSV( turn.cosine, heading ), b3MulSV( turn.sine, side ) );
-	b3WorldTransform then = { b3OffsetPos( pose.p, b3MulSV( remaining, moving ) ), lpLevelRotation( r, f, up ) };
-	b3Pos rest = b3TransformWorldPoint( then, limb->neutral );
-	b3Vec3 drift = b3Neg( b3Add( velocity, b3Cross( b3MulSV( spin, up ), b3SubPos( rest, then.p ) ) ) ); // a planted foot's
-	float rate = b3Length( drift );
-	b3Vec3 lead = rate > 1e-4f ? b3MulSV( -lpHalfStep( r, rate ) / rate, drift ) : b3Vec3_zero;
-	return b3OffsetPos( rest, lpFlatten( lead, up ) );
+	lpCosSin turn = lpComputeCosSin( turning * remaining );
+	lpVec3 f = lpAdd( lpMulSV( turn.cosine, heading ), lpMulSV( turn.sine, side ) );
+	lpWorldTransform then = { lpOffsetPos( pose.p, lpMulSV( remaining, moving ) ), lpLevelRotation( r, f, up ) };
+	lpPos rest = lpTransformWorldPoint( then, limb->neutral );
+	lpVec3 drift = lpNeg( lpAdd( velocity, lpCross( lpMulSV( spin, up ), lpSubPos( rest, then.p ) ) ) ); // a planted foot's
+	float rate = lpLength( drift );
+	lpVec3 lead = rate > 1e-4f ? lpMulSV( -lpHalfStep( r, rate ) / rate, drift ) : lpVec3_zero;
+	return lpOffsetPos( rest, lpFlatten( lead, up ) );
 }
 
 // Lift a foot, aim it and cast for the ground there
-static void lpLiftFoot( lpWorld* w, lpRig* r, int index, b3Pos foot, b3WorldTransform pose, b3Vec3 heading, b3Vec3 side,
-						b3Vec3 velocity, float spin, b3Vec3 moving, float turning, b3Vec3 up )
+static void lpLiftFoot( lpWorld* w, lpRig* r, int index, lpPos foot, lpWorldTransform pose, lpVec3 heading, lpVec3 side,
+						lpVec3 velocity, float spin, lpVec3 moving, float turning, lpVec3 up )
 {
 	lpLimb* limb = r->limbs + index;
 	limb->planted = false;
@@ -357,21 +357,21 @@ static void lpLiftFoot( lpWorld* w, lpRig* r, int index, b3Pos foot, b3WorldTran
 }
 
 // The body leans toward the planted feet but `skip` (the one that waits to lift), to bring its centre of mass over them
-static b3Vec3 lpLean( const lpRig* r, const b3Pos* feet, const bool* planted, int skip, b3Pos center, b3Vec3 up, float timeStep )
+static lpVec3 lpLean( const lpRig* r, const lpPos* feet, const bool* planted, int skip, lpPos center, lpVec3 up, float timeStep )
 {
-	b3Vec3 sum = b3Vec3_zero;
+	lpVec3 sum = lpVec3_zero;
 	int n = 0;
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		if ( planted[i] && i != skip )
 		{
-			sum = b3Add( sum, b3SubPos( feet[i], center ) );
+			sum = lpAdd( sum, lpSubPos( feet[i], center ) );
 			n += 1;
 		}
 	}
-	b3Vec3 toward = n > 0 ? lpFlatten( b3MulSV( 1.0f / (float)n, sum ), up ) : b3Vec3_zero;
-	float distance = b3Length( toward );
-	return distance > 1e-3f ? b3MulSV( b3MinFloat( LP_GAIT_SHIFT, distance / timeStep ) / distance, toward ) : b3Vec3_zero;
+	lpVec3 toward = n > 0 ? lpFlatten( lpMulSV( 1.0f / (float)n, sum ), up ) : lpVec3_zero;
+	float distance = lpLength( toward );
+	return distance > 1e-3f ? lpMulSV( lpMinFloat( LP_GAIT_SHIFT, distance / timeStep ) / distance, toward ) : lpVec3_zero;
 }
 
 // ---- the step ----
@@ -379,11 +379,11 @@ static b3Vec3 lpLean( const lpRig* r, const b3Pos* feet, const bool* planted, in
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 {
 	const lpBody* torso = w->bodies.data + r->body;
-	b3WorldTransform xf = lpGetTransform( torso );
-	b3Vec3 up = lpRigWorldUp( w, r, xf.q );
+	lpWorldTransform xf = lpGetTransform( torso );
+	lpVec3 up = lpRigWorldUp( w, r, xf.q );
 
 	// Feet as the model has them at the measured angles, and the planted feet's height under the torso
-	b3Pos feet[LP_MAX_RIG_LIMBS];
+	lpPos feet[LP_MAX_RIG_LIMBS];
 	bool planted[LP_MAX_RIG_LIMBS];
 	float support = 0.0f;
 	int plantedCount = 0;
@@ -400,15 +400,15 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			continue;
 		}
-		b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
 		for ( int k = 0; k < limb->joints; ++k )
 		{
 			limb->q[k] = w->links.data[limb->def.links[k]].angle;
 		}
-		feet[i] = b3TransformWorldPoint( xf, lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins ) );
+		feet[i] = lpTransformWorldPoint( xf, lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins ) );
 		if ( limb->planted )
 		{
-			support += b3Dot( b3SubPos( feet[i], xf.p ), up );
+			support += lpDot( lpSubPos( feet[i], xf.p ), up );
 			plantedCount += 1;
 		}
 	}
@@ -419,8 +419,8 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	}
 	support /= (float)plantedCount; // the planted feet's mean height, from the torso's frame
 	r->height = -support;
-	b3Vec3 torsoUp = b3RotateVector( xf.q, r->up );
-	float tilt = b3Atan2( b3Length( b3Cross( torsoUp, up ) ), b3Dot( torsoUp, up ) );
+	lpVec3 torsoUp = lpRotateVector( xf.q, r->up );
+	float tilt = lpAtan2( lpLength( lpCross( torsoUp, up ) ), lpDot( torsoUp, up ) );
 	// The height it stands at: crouched as asked, lower as its weakest planted leg weakens, no higher than its shortest able
 	// leg reaches (a stump), and down on its belly with too few legs to walk
 	int able = 0;
@@ -431,8 +431,8 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		if ( limb->able && limb->reaching == false ) // a reaching limb is out of the gait
 		{
 			able += 1;
-			shortest = b3MinFloat( shortest, limb->depth );
-			weakest = b3MinFloat( weakest, limb->strength );
+			shortest = lpMinFloat( shortest, limb->depth );
+			weakest = lpMinFloat( weakest, limb->strength );
 		}
 	}
 	// Stuck (no foot can lift without tipping it over, say one leg left on a side) it crawls too, until its legs change
@@ -443,16 +443,16 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		r->stall = 0;
 	}
 	r->crawling = able < LP_GAIT_WALKING_LEGS || r->stuck;
-	float goal = r->def.standHeight * ( 1.0f - r->def.crouchDepth * b3ClampFloat( r->control.crouch, 0.0f, 1.0f ) );
-	goal *= 1.0f - LP_GAIT_WEAK_SAG * ( 1.0f - b3ClampFloat( weakest, 0.0f, 1.0f ) );
-	goal = b3MinFloat( goal, shortest - LP_GAIT_REACH_SPARE );
-	goal = r->crawling ? r->def.bellyHeight : b3MaxFloat( goal, r->def.bellyHeight );
+	float goal = r->def.standHeight * ( 1.0f - r->def.crouchDepth * lpClampFloat( r->control.crouch, 0.0f, 1.0f ) );
+	goal *= 1.0f - LP_GAIT_WEAK_SAG * ( 1.0f - lpClampFloat( weakest, 0.0f, 1.0f ) );
+	goal = lpMinFloat( goal, shortest - LP_GAIT_REACH_SPARE );
+	goal = r->crawling ? r->def.bellyHeight : lpMaxFloat( goal, r->def.bellyHeight );
 	bool still = lpControlStill( &r->control );
 
 	// Idle: the targets stay frozen until the controls change or something knocks it well off its stance
 	if ( r->idle )
 	{
-		bool knocked = b3AbsFloat( r->height - goal ) > 2.5f * LP_GAIT_CALM_HEIGHT || tilt > 3.0f * LP_GAIT_CALM_TILT;
+		bool knocked = lpAbsFloat( r->height - goal ) > 2.5f * LP_GAIT_CALM_HEIGHT || tilt > 3.0f * LP_GAIT_CALM_TILT;
 		if ( r->controlChanged == false && ( b3Body_IsAwake( torso->id ) == false || knocked == false ) )
 		{
 			return;
@@ -463,14 +463,14 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 
 	// The commanded motion: heading turned, velocity along it (no faster than the gait's cadence keeps up), both slowed
 	// where a planted foot is overstretched
-	b3WorldTransform old = r->desired;
-	b3Vec3 heading = lpFlatten( b3RotateVector( old.q, r->forward ), up );
-	heading = b3LengthSquared( heading ) > 1e-8f ? b3Normalize( heading ) : lpFlatten( b3RotateVector( xf.q, r->forward ), up );
-	b3Vec3 side = b3Cross( up, heading ); // left
-	float top = b3MinFloat( r->def.maxSpeed, LP_GAIT_KEEP_UP * 2.0f * LP_GAIT_LAND * r->def.stride / r->def.swingTime );
+	lpWorldTransform old = r->desired;
+	lpVec3 heading = lpFlatten( lpRotateVector( old.q, r->forward ), up );
+	heading = lpLengthSquared( heading ) > 1e-8f ? lpNormalize( heading ) : lpFlatten( lpRotateVector( xf.q, r->forward ), up );
+	lpVec3 side = lpCross( up, heading ); // left
+	float top = lpMinFloat( r->def.maxSpeed, LP_GAIT_KEEP_UP * 2.0f * LP_GAIT_LAND * r->def.stride / r->def.swingTime );
 	// Fewer legs swing in more turns, each foot carrying longer: on five it keeps half its pace, on four a third
 	top *= r->crawling ? LP_GAIT_CRAWL_SPEED : ( able >= 6 ? 1.0f : ( able == 5 ? 0.5f : 0.35f ) );
-	b3Vec3 velocity = b3MulSV( top, b3Sub( b3MulSV( r->control.forward, heading ), b3MulSV( r->control.strafe, side ) ) );
+	lpVec3 velocity = lpMulSV( top, lpSub( lpMulSV( r->control.forward, heading ), lpMulSV( r->control.strafe, side ) ) );
 	float spin = -r->control.turn * r->def.maxTurn; // rad/s about up, left for positive
 	float stretch[LP_MAX_RIG_LIMBS]; // how far each foot has drifted from neutral, of the stride
 	float urgency[LP_MAX_RIG_LIMBS]; // moving: how far behind it is along its drift, of its half-step; still: of the stride
@@ -482,29 +482,29 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		urgency[i] = 0.0f;
 		if ( limb->attached )
 		{
-			b3Vec3 off = lpFlatten( b3SubPos( feet[i], b3TransformWorldPoint( old, limb->neutral ) ), up );
-			stretch[i] = b3Length( off ) / r->def.stride;
-			b3Vec3 drift = b3Neg( b3Add( velocity, b3Cross( b3MulSV( spin, up ), b3SubPos( feet[i], old.p ) ) ) );
-			float rate = b3Length( drift );
+			lpVec3 off = lpFlatten( lpSubPos( feet[i], lpTransformWorldPoint( old, limb->neutral ) ), up );
+			stretch[i] = lpLength( off ) / r->def.stride;
+			lpVec3 drift = lpNeg( lpAdd( velocity, lpCross( lpMulSV( spin, up ), lpSubPos( feet[i], old.p ) ) ) );
+			float rate = lpLength( drift );
 			float half = lpHalfStep( r, rate ); // it landed about this far ahead; it steps once about this far behind
-			urgency[i] = rate > 0.05f * r->def.maxSpeed ? b3Dot( off, drift ) / ( rate * b3MaxFloat( half, 0.02f ) ) : stretch[i];
+			urgency[i] = rate > 0.05f * r->def.maxSpeed ? lpDot( off, drift ) / ( rate * lpMaxFloat( half, 0.02f ) ) : stretch[i];
 			if ( stretch[i] >= 1.0f )
 			{
-				urgency[i] = b3MaxFloat( urgency[i], 1.0f + stretch[i] ); // past its stride any way (a slip, a rock): due first
+				urgency[i] = lpMaxFloat( urgency[i], 1.0f + stretch[i] ); // past its stride any way (a slip, a rock): due first
 			}
-			worst = limb->planted ? b3MaxFloat( worst, stretch[i] ) : worst;
+			worst = limb->planted ? lpMaxFloat( worst, stretch[i] ) : worst;
 		}
 	}
-	float pace = b3ClampFloat( 1.0f - ( worst - 1.0f ) / LP_GAIT_OVERREACH, 0.0f, 1.0f );
-	b3Vec3 wanted = velocity; // as commanded, before its feet held it back
-	velocity = b3MulSV( pace, velocity );
+	float pace = lpClampFloat( 1.0f - ( worst - 1.0f ) / LP_GAIT_OVERREACH, 0.0f, 1.0f );
+	lpVec3 wanted = velocity; // as commanded, before its feet held it back
+	velocity = lpMulSV( pace, velocity );
 	spin *= pace;
 	r->pace = pace;
 
 	// Swings under way: their time, their aim (re-aimed across the ground as the torso goes; the ground's height from the
 	// casts), the second cast, landing
-	b3Vec3 moving = lpFlatten( b3Body_GetLinearVelocity( torso->id ), up ); // the torso, as it actually is
-	float turning = b3Dot( b3Body_GetAngularVelocity( torso->id ), up );
+	lpVec3 moving = lpFlatten( b3Body_GetLinearVelocity( torso->id ), up ); // the torso, as it actually is
+	float turning = lpDot( b3Body_GetAngularVelocity( torso->id ), up );
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		lpLimb* limb = r->limbs + i;
@@ -514,9 +514,9 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		}
 		limb->swingClock += timeStep;
 		float s = limb->swingClock / r->def.swingTime;
-		float remaining = b3MaxFloat( r->def.swingTime - limb->swingClock, 0.0f );
-		b3Pos aim = lpAimLanding( r, limb, old, heading, side, velocity, spin, moving, turning, remaining, up );
-		limb->landing = b3OffsetPos( aim, b3MulSV( b3Dot( b3SubPos( limb->landing, aim ), up ), up ) );
+		float remaining = lpMaxFloat( r->def.swingTime - limb->swingClock, 0.0f );
+		lpPos aim = lpAimLanding( r, limb, old, heading, side, velocity, spin, moving, turning, remaining, up );
+		limb->landing = lpOffsetPos( aim, lpMulSV( lpDot( lpSubPos( limb->landing, aim ), up ), up ) );
 		if ( s >= 0.66f && limb->castLate == false && w->stats.footCasts < w->def.maxFootCastsPerStep )
 		{
 			limb->castLate = true;
@@ -545,7 +545,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		if ( limb->planted )
 		{
 			limb->holdClock += timeStep;
-			float off = b3Length( b3SubPos( feet[i], limb->hold ) );
+			float off = lpLength( lpSubPos( feet[i], limb->hold ) );
 			if ( limb->arrived == false && ( off < LP_GAIT_ARRIVED || limb->holdClock > LP_GAIT_ARRIVE_TIME ) )
 			{
 				limb->hold = feet[i];
@@ -560,20 +560,20 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 				// The servos hold their angles as stiffly as they can, so feet held a centimetre apart from where the legs'
 				// geometry has them would push against each other through the ground: the hold eases toward the model's
 				// foot, slowly enough to push the torso along
-				limb->hold = b3OffsetPos( limb->hold, b3MulSV( timeStep / LP_GAIT_EASE_TIME, b3SubPos( feet[i], limb->hold ) ) );
+				limb->hold = lpOffsetPos( limb->hold, lpMulSV( timeStep / LP_GAIT_EASE_TIME, lpSubPos( feet[i], limb->hold ) ) );
 			}
 		}
 	}
 
 	// Liftoffs: the most stretched foot first; its nearest able neighbours around the body planted, and the centre of mass
 	// inside the other planted feet by the margin, now and where the torso will be when it lands
-	b3Pos center = lpRigCenter( w, r );
-	b3Pos later = b3OffsetPos( center, b3MulSV( r->def.swingTime, moving ) );
+	lpPos center = lpRigCenter( w, r );
+	lpPos later = lpOffsetPos( center, lpMulSV( r->def.swingTime, moving ) );
 
 	// Limbs told to reach leave the gait once the others hold the centre of mass by the margin (crawling, its belly does);
 	// until then the body leans toward them. Told to stop, a limb steps back in (below: a limb neither planted nor
 	// swinging swings to a foothold).
-	b3Vec3 reachLean = b3Vec3_zero;
+	lpVec3 reachLean = lpVec3_zero;
 	for ( int i = 0; i < r->limbCount; ++i )
 	{
 		lpLimb* limb = r->limbs + i;
@@ -603,7 +603,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		limb->reaching = true;
 	}
 	float threshold = still ? LP_GAIT_TIDY : LP_GAIT_DUE;
-	b3Vec3 shift = b3Vec3_zero;
+	lpVec3 shift = lpVec3_zero;
 	bool waited = false;
 	// Feet that swing together are every other able leg around the body (on six, the two tripods; with an odd number
 	// that does not go round, and only the neighbour rule holds): each able limb's place in that ring, and the parity of
@@ -656,7 +656,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			continue;
 		}
 		planted[pick] = false;
-		float margin = b3MinFloat( lpSupportMargin( feet, planted, r->limbCount, center, up ),
+		float margin = lpMinFloat( lpSupportMargin( feet, planted, r->limbCount, center, up ),
 								   lpSupportMargin( feet, planted, r->limbCount, later, up ) );
 		if ( margin < r->def.margin && r->crawling == false ) // crawling, its belly holds it
 		{
@@ -684,54 +684,54 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		}
 	}
 
-	shift = b3LengthSquared( shift ) > 0.0f ? shift : reachLean;
-	r->waiting = waited || b3LengthSquared( reachLean ) > 0.0f;
+	shift = lpLengthSquared( shift ) > 0.0f ? shift : reachLean;
+	r->waiting = waited || lpLengthSquared( reachLean ) > 0.0f;
 	// Told to move and getting nowhere (its feet may still step: one leg left on a side lifts nothing and the others
 	// shuffle) for a while, it is stuck
-	float asked = b3Length( wanted );
-	float made = asked > 1e-3f ? b3Dot( moving, wanted ) / asked : 0.0f;
+	float asked = lpLength( wanted );
+	float made = asked > 1e-3f ? lpDot( moving, wanted ) / asked : 0.0f;
 	bool getting = asked < 1e-3f || made > LP_GAIT_STALL_PACE * asked; // turning on the spot asks for no speed
 	r->stall = still == false && getting == false ? r->stall + 1 : 0;
 	r->stuck = r->stuck || r->stall >= LP_GAIT_STALL_TICKS;
 
 	// The desired pose: turned and moved by the controls (and leaning for balance), never far ahead of the torso, level,
 	// climbing toward its height over the planted feet
-	b3Vec3 measured = lpFlatten( b3RotateVector( xf.q, r->forward ), up );
-	measured = b3LengthSquared( measured ) > 1e-8f ? b3Normalize( measured ) : heading;
-	float yawError = b3Atan2( b3Dot( b3Cross( measured, heading ), up ), b3Dot( measured, heading ) );
-	float yaw = b3ClampFloat( yawError + spin * timeStep, -LP_GAIT_LEAD_TURN, LP_GAIT_LEAD_TURN ) - yawError;
-	b3CosSin cs = b3ComputeCosSin( yaw );
-	heading = b3Add( b3MulSV( cs.cosine, heading ), b3MulSV( cs.sine, side ) );
-	b3Vec3 ahead = b3MulAdd( b3SubPos( old.p, xf.p ), timeStep, b3Add( velocity, shift ) ); // from the torso's frame
+	lpVec3 measured = lpFlatten( lpRotateVector( xf.q, r->forward ), up );
+	measured = lpLengthSquared( measured ) > 1e-8f ? lpNormalize( measured ) : heading;
+	float yawError = lpAtan2( lpDot( lpCross( measured, heading ), up ), lpDot( measured, heading ) );
+	float yaw = lpClampFloat( yawError + spin * timeStep, -LP_GAIT_LEAD_TURN, LP_GAIT_LEAD_TURN ) - yawError;
+	lpCosSin cs = lpComputeCosSin( yaw );
+	heading = lpAdd( lpMulSV( cs.cosine, heading ), lpMulSV( cs.sine, side ) );
+	lpVec3 ahead = lpMulAdd( lpSubPos( old.p, xf.p ), timeStep, lpAdd( velocity, shift ) ); // from the torso's frame
 	// It may run a little ahead of the torso (the servos' gains pull the torso along), and further behind (a torso that
 	// runs ahead is held back instead of dragging it along)
-	b3Vec3 flat = lpFlatten( ahead, up );
-	float lead = b3Length( flat );
+	lpVec3 flat = lpFlatten( ahead, up );
+	float lead = lpLength( flat );
 	if ( lead > LP_GAIT_LAG )
 	{
-		flat = b3MulSV( LP_GAIT_LAG / lead, flat );
+		flat = lpMulSV( LP_GAIT_LAG / lead, flat );
 	}
-	float pull = b3Length( velocity );
-	float forward = pull > 1e-4f ? b3Dot( flat, velocity ) / pull : 0.0f;
+	float pull = lpLength( velocity );
+	float forward = pull > 1e-4f ? lpDot( flat, velocity ) / pull : 0.0f;
 	if ( forward > LP_GAIT_LEAD )
 	{
-		flat = b3MulAdd( flat, ( LP_GAIT_LEAD - forward ) / pull, velocity );
+		flat = lpMulAdd( flat, ( LP_GAIT_LEAD - forward ) / pull, velocity );
 	}
 	// Falling (dropped, or its legs knocked from under it), it follows the torso down: pushed back up to where it was, it
 	// would land and spring up again
-	float height = b3Dot( b3SubPos( old.p, xf.p ), up ) - support; // the desired pose's, over the feet
-	if ( b3Dot( b3Body_GetLinearVelocity( torso->id ), up ) < -LP_GAIT_FALLING )
+	float height = lpDot( lpSubPos( old.p, xf.p ), up ) - support; // the desired pose's, over the feet
+	if ( lpDot( b3Body_GetLinearVelocity( torso->id ), up ) < -LP_GAIT_FALLING )
 	{
-		height = b3MinFloat( height, r->height + LP_GAIT_LEAD );
+		height = lpMinFloat( height, r->height + LP_GAIT_LEAD );
 	}
-	float climb = b3ClampFloat( goal - height, -LP_GAIT_CLIMB * timeStep, LP_GAIT_CLIMB * timeStep );
+	float climb = lpClampFloat( goal - height, -LP_GAIT_CLIMB * timeStep, LP_GAIT_CLIMB * timeStep );
 	height += climb;
-	r->desired.p = b3OffsetPos( xf.p, b3MulAdd( flat, support + height, up ) );
+	r->desired.p = lpOffsetPos( xf.p, lpMulAdd( flat, support + height, up ) );
 	r->desired.q = lpLevelRotation( r, heading, up );
 	// The feedforward is the commanded motion only: the pull that keeps the pose near the torso is left to the servos'
 	// gains (fed forward, a torso running ahead would push itself on faster)
-	b3Vec3 linear = b3MulAdd( b3Add( velocity, shift ), climb / timeStep, up );
-	b3Vec3 angular = b3MulSV( spin, up );
+	lpVec3 linear = lpMulAdd( lpAdd( velocity, shift ), climb / timeStep, up );
+	lpVec3 angular = lpMulSV( spin, up );
 
 	// An attached limb too weak or too short to stand is held clear of the ground, tucked under its hip
 	for ( int i = 0; i < r->limbCount; ++i )
@@ -741,9 +741,9 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			continue;
 		}
-		b3Vec3 target = b3MulAdd( b3Sub( limb->neutral, b3MulSV( b3Dot( limb->neutral, r->up ), r->up ) ), -LP_GAIT_TUCK * r->def.standHeight,
+		lpVec3 target = lpMulAdd( lpSub( limb->neutral, lpMulSV( lpDot( limb->neutral, r->up ), r->up ) ), -LP_GAIT_TUCK * r->def.standHeight,
 								  r->up );
-		target = b3Lerp( b3MulSV( 0.6f, target ), target, 0.5f ); // drawn in toward the torso
+		target = lpLerp( lpMulSV( 0.6f, target ), target, 0.5f ); // drawn in toward the torso
 		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
 		for ( int k = 0; k < limb->joints; ++k )
 		{
@@ -761,21 +761,21 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			continue;
 		}
-		b3Pos foot = limb->reaching ? limb->reachPoint : limb->hold;
-		b3Vec3 motion = b3Vec3_zero; // of the foot in the world
+		lpPos foot = limb->reaching ? limb->reachPoint : limb->hold;
+		lpVec3 motion = lpVec3_zero; // of the foot in the world
 		if ( limb->swinging )
 		{
 			float s0 = limb->swingClock / r->def.swingTime;
 			float s1 = ( limb->swingClock + timeStep ) / r->def.swingTime;
 			foot = lpSwingPoint( limb, s1, r->def.stepHeight, up );
-			motion = b3MulSV( 1.0f / timeStep, b3SubPos( foot, lpSwingPoint( limb, s0, r->def.stepHeight, up ) ) );
+			motion = lpMulSV( 1.0f / timeStep, lpSubPos( foot, lpSwingPoint( limb, s0, r->def.stepHeight, up ) ) );
 		}
-		b3Vec3 target = b3InvTransformWorldPoint( r->desired, foot );
+		lpVec3 target = lpInvTransformWorldPoint( r->desired, foot );
 		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
-		b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-		b3Vec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
-		b3Vec3 arm = b3SubPos( foot, r->desired.p );
-		b3Vec3 relative = b3InvRotateVector( r->desired.q, b3Sub( motion, b3Add( linear, b3Cross( angular, arm ) ) ) );
+		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
+		lpVec3 arm = lpSubPos( foot, r->desired.p );
+		lpVec3 relative = lpInvRotateVector( r->desired.q, lpSub( motion, lpAdd( linear, lpCross( angular, arm ) ) ) );
 		float feed[LP_MAX_LIMB_JOINTS];
 		lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
 		if ( limb->reaching )
@@ -786,7 +786,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			{
 				const lpLink* l = w->links.data + limb->def.links[k];
 				float fastest = l->def.motor.maxSpeed;
-				feed[k] = b3ClampFloat( LP_GAIT_STRIKE * ( limb->q[k] - l->angle ), -fastest, fastest );
+				feed[k] = lpClampFloat( LP_GAIT_STRIKE * ( limb->q[k] - l->angle ), -fastest, fastest );
 			}
 		}
 		for ( int k = 0; k < limb->joints; ++k )
@@ -802,7 +802,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	{
 		swinging = swinging || r->limbs[i].swinging || r->limbs[i].reaching;
 	}
-	bool settled = b3AbsFloat( height - goal ) < 0.001f && b3AbsFloat( r->height - goal ) < LP_GAIT_CALM_HEIGHT &&
+	bool settled = lpAbsFloat( height - goal ) < 0.001f && lpAbsFloat( r->height - goal ) < LP_GAIT_CALM_HEIGHT &&
 				   tilt < LP_GAIT_CALM_TILT && swinging == false && waited == false;
 	r->calm = still && settled ? r->calm + 1 : 0;
 	if ( r->calm >= LP_GAIT_CALM_TICKS )

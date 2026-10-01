@@ -68,7 +68,7 @@ static const char* s_tickLog;
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
 	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (b3Vec3){ 0.0f, -10.0f, 0.0f };
+	wd.gravity = (lpVec3){ 0.0f, -10.0f, 0.0f };
 	wd.workerCount = (uint32_t)workers;
 	b3WorldId physics = b3CreateWorld( &wd );
 

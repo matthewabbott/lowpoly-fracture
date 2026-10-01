@@ -95,7 +95,7 @@ static void lpGridUpdate( lpWorld* w, int bodyIndex )
 	}
 }
 
-void lpQueryLoose( lpWorld* w, b3AABB box )
+void lpQueryLoose( lpWorld* w, lpAABB box )
 {
 	w->scratchLoose.count = 0;
 	int x0 = lpGridCoord( box.lowerBound.x ), x1 = lpGridCoord( box.upperBound.x );
@@ -126,7 +126,7 @@ void lpQueryLoose( lpWorld* w, b3AABB box )
 					continue;
 				}
 				b->stamp = stamp;
-				b3Vec3 c = b3ToVec3( b->com );
+				lpVec3 c = lpToVec3( b->com );
 				if ( c.x < box.lowerBound.x || c.x > box.upperBound.x || c.y < box.lowerBound.y || c.y > box.upperBound.y ||
 					 c.z < box.lowerBound.z || c.z > box.upperBound.z )
 				{
@@ -144,20 +144,20 @@ void lpQueryLoose( lpWorld* w, b3AABB box )
 
 // ---- loose bodies ----
 
-static b3Vec3 lpVolumeCenter( const lpWorld* w, const lpBody* b )
+static lpVec3 lpVolumeCenter( const lpWorld* w, const lpBody* b )
 {
-	b3Vec3 c = b3Vec3_zero;
+	lpVec3 c = lpVec3_zero;
 	float v = 0.0f;
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
 		const lpShape* s = w->pieces.data[b->pieces.data[i]].shape;
-		c = b3MulAdd( c, s->volume, s->centroid );
+		c = lpMulAdd( c, s->volume, s->centroid );
 		v += s->volume;
 	}
-	return v > 0.0f ? b3MulSV( 1.0f / v, c ) : c;
+	return v > 0.0f ? lpMulSV( 1.0f / v, c ) : c;
 }
 
-int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float gravityScale )
+int lpBeginGhost( lpWorld* w, lpWorldTransform xf, lpVec3 v, lpVec3 omega, float gravityScale )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
@@ -169,7 +169,7 @@ int lpBeginGhost( lpWorld* w, b3WorldTransform xf, b3Vec3 v, b3Vec3 omega, float
 	b->q = xf.q;
 	b->v = v;
 	b->omega = omega;
-	b->localCenter = b3Vec3_zero;
+	b->localCenter = lpVec3_zero;
 	b->planTicks = 0;
 	b->landIn = -1;
 	b->sinkTicks = 0;
@@ -188,12 +188,12 @@ void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 	b->volume += p->shape->volume;
 }
 
-void lpFinishLoose( lpWorld* w, int bodyIndex, b3WorldTransform xf )
+void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
 	b->localCenter = lpVolumeCenter( w, b );
 	b->q = xf.q;
-	b->com = b3TransformWorldPoint( xf, b->localCenter );
+	b->com = lpTransformWorldPoint( xf, b->localCenter );
 	lpGridInsert( w, bodyIndex );
 }
 
@@ -201,11 +201,11 @@ void lpFinishLoose( lpWorld* w, int bodyIndex, b3WorldTransform xf )
 static void lpMakeLoose( lpWorld* w, int bodyIndex, uint8_t kind )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
-	b3WorldTransform xf = b3Body_GetTransform( b->id );
-	b3Vec3 lc = lpVolumeCenter( w, b );
-	b3Pos com = b3TransformWorldPoint( xf, lc );
-	b3Vec3 v = b3Vec3_zero;
-	b3Vec3 omega = b3Vec3_zero;
+	lpWorldTransform xf = b3Body_GetTransform( b->id );
+	lpVec3 lc = lpVolumeCenter( w, b );
+	lpPos com = lpTransformWorldPoint( xf, lc );
+	lpVec3 v = lpVec3_zero;
+	lpVec3 omega = lpVec3_zero;
 	if ( kind == lp_kindGhost && b3Body_GetType( b->id ) == b3_dynamicBody )
 	{
 		v = b3Body_GetWorldPointVelocity( b->id, com );
@@ -260,8 +260,8 @@ void lpConvertToScrap( lpWorld* w, int bodyIndex )
 	if ( b->kind == lp_kindGhost )
 	{
 		b->kind = lp_kindScrap;
-		b->v = b3Vec3_zero;
-		b->omega = b3Vec3_zero;
+		b->v = lpVec3_zero;
+		b->omega = lpVec3_zero;
 		b->landIn = -1;
 		return;
 	}
@@ -305,7 +305,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
-		b3WorldTransform xf = lpGetTransform( b );
+		lpWorldTransform xf = lpGetTransform( b );
 		b3BodyDef def = b3DefaultBodyDef();
 		def.type = b3_dynamicBody;
 		def.position = xf.p;
@@ -343,26 +343,26 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 // ---- ghosts ----
 
 // Same as Box3D's internal b3IntegrateRotation: q2 = normalize(q1 + 0.5 * omega * q1)
-static b3Quat lpIntegrateRotation( b3Quat q1, b3Vec3 deltaRotation )
+static lpQuat lpIntegrateRotation( lpQuat q1, lpVec3 deltaRotation )
 {
-	b3Quat qd = { b3MulSV( 0.5f, deltaRotation ), 0.0f };
-	qd = b3MulQuat( qd, q1 );
-	b3Quat q2 = { b3Add( q1.v, qd.v ), qd.s + q1.s };
-	return b3NormalizeQuat( q2 );
+	lpQuat qd = { lpMulSV( 0.5f, deltaRotation ), 0.0f };
+	qd = lpMulQuat( qd, q1 );
+	lpQuat q2 = { lpAdd( q1.v, qd.v ), qd.s + q1.s };
+	return lpNormalizeQuat( q2 );
 }
 
 typedef struct lpStaticRay
 {
 	const lpWorld* world;
 	float fraction;
-	b3Pos point;
-	b3Vec3 normal;
+	lpPos point;
+	lpVec3 normal;
 	bool hit;
 	int piece;
 } lpStaticRay;
 
 // Ghosts land on static things only (structures, rubble, the ground); they fly through moving bodies
-static float lpStaticRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+static float lpStaticRayFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
 							 int triangleIndex, int childIndex, void* context )
 {
 	(void)userMaterialId;
@@ -385,7 +385,7 @@ static float lpStaticRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 		ray->fraction = fraction;
 		ray->point = point;
 		// A ray that starts inside a shape reports it with no normal: the ghost is already in, so it lands upward
-		ray->normal = b3LengthSquared( normal ) > 0.5f ? normal : (b3Vec3){ 0.0f, 1.0f, 0.0f };
+		ray->normal = lpLengthSquared( normal ) > 0.5f ? normal : (lpVec3){ 0.0f, 1.0f, 0.0f };
 		ray->hit = true;
 		ray->piece = piece;
 	}
@@ -397,12 +397,12 @@ static float lpStaticRayFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 static void lpLand( lpWorld* w, int bodyIndex )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
-	b3Vec3 n = b->landNormal;
+	lpVec3 n = b->landNormal;
 	if ( n.y < 0.5f )
 	{
-		float vn = b3Dot( b->v, n );
-		b->v = b3MulSV( 0.25f, b3MulAdd( b->v, -2.0f * vn, n ) );
-		b->com = b3OffsetPos( b->landPoint, b3MulSV( 0.05f, n ) );
+		float vn = lpDot( b->v, n );
+		b->v = lpMulSV( 0.25f, lpMulAdd( b->v, -2.0f * vn, n ) );
+		b->com = lpOffsetPos( b->landPoint, lpMulSV( 0.05f, n ) );
 		b->planTicks = 0;
 		b->landIn = -1;
 		lpGridUpdate( w, bodyIndex );
@@ -415,14 +415,14 @@ static void lpLand( lpWorld* w, int bodyIndex )
 		const lpShape* s = w->pieces.data[b->pieces.data[i]].shape;
 		for ( int k = 0; k < s->vertexCount; ++k )
 		{
-			b3Vec3 r = b3RotateVector( b->q, b3Sub( s->vertices[k], b->localCenter ) );
-			float d = -b3Dot( r, n );
+			lpVec3 r = lpRotateVector( b->q, lpSub( s->vertices[k], b->localCenter ) );
+			float d = -lpDot( r, n );
 			support = d > support ? d : support;
 		}
 	}
-	b->com = b3OffsetPos( b->landPoint, b3MulSV( support, n ) );
-	b->v = b3Vec3_zero;
-	b->omega = b3Vec3_zero;
+	b->com = lpOffsetPos( b->landPoint, lpMulSV( support, n ) );
+	b->v = lpVec3_zero;
+	b->omega = lpVec3_zero;
 	b->kind = lp_kindScrap;
 	b->planTicks = 0;
 	b->landIn = -1;
@@ -431,7 +431,7 @@ static void lpLand( lpWorld* w, int bodyIndex )
 
 void lpStepGhosts( lpWorld* w, float timeStep )
 {
-	b3Vec3 g = b3World_GetGravity( w->def.physics );
+	lpVec3 g = b3World_GetGravity( w->def.physics );
 	int casts = 0;
 	float plan = (float)LP_GHOST_PLAN_TICKS * timeStep;
 
@@ -460,7 +460,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 		{
 			continue;
 		}
-		b3Vec3 gb = b3MulSV( b->gravityScale, g );
+		lpVec3 gb = lpMulSV( b->gravityScale, g );
 
 		// Flight plan: cast along the chord of the next few ticks of the ballistic arc. The arc bows off the chord by
 		// g T^2 / 8 (about 2 cm for 8 ticks), which is invisible. A hit gives the landing tick. The chord ends where
@@ -470,8 +470,8 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 		{
 			casts += 1;
 			float n = (float)LP_GHOST_PLAN_TICKS;
-			b3Vec3 chord = b3Add( b3MulSV( plan, b->v ), b3MulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
-			lpStaticRay ray = { w, 2.0f, { 0 }, b3Vec3_zero, false, -1 };
+			lpVec3 chord = lpAdd( lpMulSV( plan, b->v ), lpMulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
+			lpStaticRay ray = { w, 2.0f, { 0 }, lpVec3_zero, false, -1 };
 			b3World_CastRay( w->def.physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
 			b->planTicks = LP_GHOST_PLAN_TICKS;
 			b->landIn = -1;
@@ -484,9 +484,9 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			}
 		}
 
-		b->v = b3MulAdd( b->v, timeStep, gb );
-		b->com = b3OffsetPos( b->com, b3MulSV( timeStep, b->v ) );
-		b->q = lpIntegrateRotation( b->q, b3MulSV( timeStep, b->omega ) );
+		b->v = lpMulAdd( b->v, timeStep, gb );
+		b->com = lpOffsetPos( b->com, lpMulSV( timeStep, b->v ) );
+		b->q = lpIntegrateRotation( b->q, lpMulSV( timeStep, b->omega ) );
 		b->planTicks -= 1;
 
 		if ( b->landIn > 0 )
@@ -534,14 +534,14 @@ static void lpLoosen( lpBody* b )
 
 void lpApplyLooseForce( lpWorld* w, const lpForce* force )
 {
-	b3Vec3 c = b3ToVec3( force->point );
-	b3Vec3 r = { force->radius, force->radius, force->radius };
-	lpQueryLoose( w, (b3AABB){ b3Sub( c, r ), b3Add( c, r ) } );
+	lpVec3 c = lpToVec3( force->point );
+	lpVec3 r = { force->radius, force->radius, force->radius };
+	lpQueryLoose( w, (lpAABB){ lpSub( c, r ), lpAdd( c, r ) } );
 	for ( int k = 0; k < w->scratchLoose.count; ++k )
 	{
 		lpBody* b = w->bodies.data + w->scratchLoose.data[k];
-		b3Vec3 rel = b3SubPos( b->com, force->point );
-		float d = b3Length( rel );
+		lpVec3 rel = lpSubPos( b->com, force->point );
+		float d = lpLength( rel );
 		if ( d > force->radius )
 		{
 			continue;
@@ -550,14 +550,14 @@ void lpApplyLooseForce( lpWorld* w, const lpForce* force )
 		lpLoosen( b );
 		if ( force->explosion )
 		{
-			b3Vec3 away = d > 1e-4f ? b3MulSV( 1.0f / d, rel ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
-			away = b3Normalize( b3Add( b3Add( away, force->direction ), (b3Vec3){ 0.0f, 0.35f, 0.0f } ) );
-			b->v = b3MulAdd( b->v, force->impulse * f, away );
+			lpVec3 away = d > 1e-4f ? lpMulSV( 1.0f / d, rel ) : (lpVec3){ 0.0f, 1.0f, 0.0f };
+			away = lpNormalize( lpAdd( lpAdd( away, force->direction ), (lpVec3){ 0.0f, 0.35f, 0.0f } ) );
+			b->v = lpMulAdd( b->v, force->impulse * f, away );
 		}
 		else
 		{
-			float dv = b3MinFloat( force->impulse * f / lpLooseMass( w, b ), 12.0f );
-			b->v = b3MulAdd( b->v, dv, force->direction );
+			float dv = lpMinFloat( force->impulse * f / lpLooseMass( w, b ), 12.0f );
+			b->v = lpMulAdd( b->v, dv, force->direction );
 		}
 	}
 }
@@ -574,19 +574,19 @@ void lpShove( lpWorld* w, float timeStep )
 		{
 			continue;
 		}
-		b3Vec3 v = b3Body_GetLinearVelocity( mover->id );
-		float speed = b3Length( v );
+		lpVec3 v = b3Body_GetLinearVelocity( mover->id );
+		float speed = lpLength( v );
 		if ( speed < 2.0f || b3Body_GetMass( mover->id ) < 60.0f )
 		{
 			continue;
 		}
 		movers += 1;
 
-		b3AABB box = b3Body_ComputeAABB( mover->id );
-		b3Vec3 ahead = b3MulSV( 2.0f * timeStep, v );
-		box.lowerBound = b3Min( box.lowerBound, b3Add( box.lowerBound, ahead ) );
-		box.upperBound = b3Max( box.upperBound, b3Add( box.upperBound, ahead ) );
-		b3Vec3 moverCenter = b3ToVec3( b3Body_GetWorldCenter( mover->id ) );
+		lpAABB box = b3Body_ComputeAABB( mover->id );
+		lpVec3 ahead = lpMulSV( 2.0f * timeStep, v );
+		box.lowerBound = lpMin( box.lowerBound, lpAdd( box.lowerBound, ahead ) );
+		box.upperBound = lpMax( box.upperBound, lpAdd( box.upperBound, ahead ) );
+		lpVec3 moverCenter = lpToVec3( b3Body_GetWorldCenter( mover->id ) );
 
 		lpQueryPieces( w, box );
 		w->stamp += 1;
@@ -603,11 +603,11 @@ void lpShove( lpWorld* w, float timeStep )
 			lpWakeRubble( w, bi );
 			if ( b->tier == lp_tierLight )
 			{
-				b3Pos c = b3Body_GetWorldCenter( b->id );
-				b3Vec3 out = b3Sub( b3ToVec3( c ), moverCenter );
+				lpPos c = b3Body_GetWorldCenter( b->id );
+				lpVec3 out = lpSub( lpToVec3( c ), moverCenter );
 				out.y = 0.0f;
-				out = b3Normalize( out );
-				b3Vec3 push = b3Add( b3MulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, c ) ), b3MulSV( 1.5f, out ) );
+				out = lpNormalize( out );
+				lpVec3 push = lpAdd( lpMulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, c ) ), lpMulSV( 1.5f, out ) );
 				push.y += 1.0f;
 				b3Body_SetLinearVelocity( b->id, push );
 			}
@@ -617,19 +617,19 @@ void lpShove( lpWorld* w, float timeStep )
 		for ( int k = 0; k < w->scratchLoose.count; ++k )
 		{
 			lpBody* b = w->bodies.data + w->scratchLoose.data[k];
-			b3Vec3 out = b3Sub( b3ToVec3( b->com ), moverCenter );
+			lpVec3 out = lpSub( lpToVec3( b->com ), moverCenter );
 			out.y = 0.0f;
-			out = b3Normalize( out );
+			out = lpNormalize( out );
 			lpLoosen( b );
-			b->v = b3Add( b3MulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, b->com ) ), b3MulSV( 1.5f, out ) );
+			b->v = lpAdd( lpMulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, b->com ) ), lpMulSV( 1.5f, out ) );
 			b->v.y += 1.0f;
 		}
 	}
 }
 
-void lpWorld_Blow( lpWorld* w, b3Pos origin, b3Vec3 direction, float range, float halfAngleRadians, float speed )
+void lpWorld_Blow( lpWorld* w, lpPos origin, lpVec3 direction, float range, float halfAngleRadians, float speed )
 {
-	lpBlow blow = { origin, b3Normalize( direction ), range, b3ComputeCosSin( halfAngleRadians ).cosine, speed };
+	lpBlow blow = { origin, lpNormalize( direction ), range, lpComputeCosSin( halfAngleRadians ).cosine, speed };
 	lpArray_Push( w->blows, blow );
 }
 
@@ -638,11 +638,11 @@ void lpApplyBlows( lpWorld* w )
 	for ( int i = 0; i < w->blows.count; ++i )
 	{
 		lpBlow blow = w->blows.data[i];
-		b3Vec3 o = b3ToVec3( blow.origin );
-		b3Vec3 e = b3MulAdd( o, blow.range, blow.direction );
-		float spread = blow.range * sqrtf( b3MaxFloat( 1.0f - blow.cosAngle * blow.cosAngle, 0.0f ) ) + 0.5f;
-		b3Vec3 pad = { spread, spread, spread };
-		b3AABB box = { b3Sub( b3Min( o, e ), pad ), b3Add( b3Max( o, e ), pad ) };
+		lpVec3 o = lpToVec3( blow.origin );
+		lpVec3 e = lpMulAdd( o, blow.range, blow.direction );
+		float spread = blow.range * sqrtf( lpMaxFloat( 1.0f - blow.cosAngle * blow.cosAngle, 0.0f ) ) + 0.5f;
+		lpVec3 pad = { spread, spread, spread };
+		lpAABB box = { lpSub( lpMin( o, e ), pad ), lpAdd( lpMax( o, e ), pad ) };
 
 		lpQueryPieces( w, box );
 		w->stamp += 1;
@@ -656,34 +656,34 @@ void lpApplyBlows( lpWorld* w )
 				continue;
 			}
 			b->stamp = stamp;
-			b3Pos c = b3Body_GetWorldCenter( b->id );
-			b3Vec3 rel = b3SubPos( c, blow.origin );
-			float d = b3Length( rel );
-			if ( d > blow.range || d < 1e-3f || b3Dot( rel, blow.direction ) < blow.cosAngle * d )
+			lpPos c = b3Body_GetWorldCenter( b->id );
+			lpVec3 rel = lpSubPos( c, blow.origin );
+			float d = lpLength( rel );
+			if ( d > blow.range || d < 1e-3f || lpDot( rel, blow.direction ) < blow.cosAngle * d )
 			{
 				continue;
 			}
 			float f = 1.0f - d / blow.range;
 			lpWakeRubble( w, bi );
 			float mass = b3Body_GetMass( b->id );
-			float dv = blow.speed * f * b3ClampFloat( 25.0f / b3MaxFloat( mass, 0.01f ), 0.05f, 1.0f );
-			b3Vec3 push = b3MulAdd( b3MulSV( dv, blow.direction ), 0.3f * dv, (b3Vec3){ 0.0f, 1.0f, 0.0f } );
-			b3Body_ApplyLinearImpulse( b->id, b3MulSV( mass, push ), c, true );
+			float dv = blow.speed * f * lpClampFloat( 25.0f / lpMaxFloat( mass, 0.01f ), 0.05f, 1.0f );
+			lpVec3 push = lpMulAdd( lpMulSV( dv, blow.direction ), 0.3f * dv, (lpVec3){ 0.0f, 1.0f, 0.0f } );
+			b3Body_ApplyLinearImpulse( b->id, lpMulSV( mass, push ), c, true );
 		}
 
 		lpQueryLoose( w, box );
 		for ( int k = 0; k < w->scratchLoose.count; ++k )
 		{
 			lpBody* b = w->bodies.data + w->scratchLoose.data[k];
-			b3Vec3 rel = b3SubPos( b->com, blow.origin );
-			float d = b3Length( rel );
-			if ( d > blow.range || d < 1e-3f || b3Dot( rel, blow.direction ) < blow.cosAngle * d )
+			lpVec3 rel = lpSubPos( b->com, blow.origin );
+			float d = lpLength( rel );
+			if ( d > blow.range || d < 1e-3f || lpDot( rel, blow.direction ) < blow.cosAngle * d )
 			{
 				continue;
 			}
 			float f = 1.0f - d / blow.range;
 			lpLoosen( b );
-			b->v = b3MulAdd( b3MulAdd( b->v, blow.speed * f, blow.direction ), 0.3f * blow.speed * f, (b3Vec3){ 0.0f, 1.0f, 0.0f } );
+			b->v = lpMulAdd( lpMulAdd( b->v, blow.speed * f, blow.direction ), 0.3f * blow.speed * f, (lpVec3){ 0.0f, 1.0f, 0.0f } );
 		}
 	}
 	w->blows.count = 0;
@@ -816,7 +816,7 @@ void lpEnforceBudgets( lpWorld* w )
 			}
 			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow
 			if ( w->def.freezeRubble && w->tick - b->createdTick >= 240 && w->freezesThisStep < w->def.maxFreezesPerStep &&
-				 b3Length( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
+				 lpLength( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
 				 lpTouchesLinked( w, b ) == false )
 			{
 				b->kind = lp_kindRubble;

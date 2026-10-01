@@ -12,7 +12,7 @@
 typedef struct lpFacetParams
 {
 	uint32_t exteriorColor; // 0xRRGGBB
-	b3Vec3 axis;			// grain axis in the body frame
+	lpVec3 axis;			// grain axis in the body frame
 } lpFacetParams;
 
 // Returns the vertex count (3 per triangle), or -1 if capacity is too small.

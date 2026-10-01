@@ -15,26 +15,26 @@ static const uint8_t lp_boxLoops[6][4] = {
 	{ 0, 2, 3, 1 }, // -z
 };
 
-static const b3Vec3 lp_boxNormals[6] = {
+static const lpVec3 lp_boxNormals[6] = {
 	{ 1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f },
 	{ 0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, -1.0f },
 };
 
-void lpPoly_MakeBox( lpPoly* poly, b3Vec3 h, b3Transform transform, uint8_t material )
+void lpPoly_MakeBox( lpPoly* poly, lpVec3 h, lpTransform transform, uint8_t material )
 {
 	for ( int i = 0; i < 8; ++i )
 	{
-		b3Vec3 p = { ( i & 1 ) ? h.x : -h.x, ( i & 2 ) ? h.y : -h.y, ( i & 4 ) ? h.z : -h.z };
-		poly->vertices[i] = b3TransformPoint( transform, p );
+		lpVec3 p = { ( i & 1 ) ? h.x : -h.x, ( i & 2 ) ? h.y : -h.y, ( i & 4 ) ? h.z : -h.z };
+		poly->vertices[i] = lpTransformPoint( transform, p );
 	}
 	poly->vertexCount = 8;
 
 	for ( int f = 0; f < 6; ++f )
 	{
 		lpFace* face = poly->faces + f;
-		b3Vec3 n = b3RotateVector( transform.q, lp_boxNormals[f] );
+		lpVec3 n = lpRotateVector( transform.q, lp_boxNormals[f] );
 		face->plane.normal = n;
-		face->plane.offset = b3Dot( n, poly->vertices[lp_boxLoops[f][0]] );
+		face->plane.offset = lpDot( n, poly->vertices[lp_boxLoops[f][0]] );
 		face->first = (uint16_t)( 4 * f );
 		face->count = 4;
 		face->material = material;
@@ -55,8 +55,8 @@ bool lpPoly_MakeFromHull( lpPoly* poly, const b3HullData* hull, uint8_t material
 		return false;
 	}
 
-	const b3Vec3* points = b3GetHullPoints( hull );
-	const b3Plane* planes = b3GetHullPlanes( hull );
+	const lpVec3* points = b3GetHullPoints( hull );
+	const lpPlane* planes = b3GetHullPlanes( hull );
 	const b3HullFace* faces = b3GetHullFaces( hull );
 	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
 
@@ -96,7 +96,7 @@ bool lpPoly_MakeFromHull( lpPoly* poly, const b3HullData* hull, uint8_t material
 	return true;
 }
 
-bool lpPoly_MakeFromPoints( lpPoly* poly, const b3Vec3* points, int count, uint8_t material )
+bool lpPoly_MakeFromPoints( lpPoly* poly, const lpVec3* points, int count, uint8_t material )
 {
 	b3HullData* hull = b3CreateHull( points, count, LP_POLY_MAX_VERTICES );
 	if ( hull == NULL )
@@ -108,43 +108,43 @@ bool lpPoly_MakeFromPoints( lpPoly* poly, const b3Vec3* points, int count, uint8
 	return ok;
 }
 
-void lpPoly_Translate( lpPoly* poly, b3Vec3 translation )
+void lpPoly_Translate( lpPoly* poly, lpVec3 translation )
 {
 	for ( int i = 0; i < poly->vertexCount; ++i )
 	{
-		poly->vertices[i] = b3Add( poly->vertices[i], translation );
+		poly->vertices[i] = lpAdd( poly->vertices[i], translation );
 	}
 	for ( int i = 0; i < poly->faceCount; ++i )
 	{
-		b3Plane* plane = &poly->faces[i].plane;
-		plane->offset += b3Dot( plane->normal, translation );
+		lpPlane* plane = &poly->faces[i].plane;
+		plane->offset += lpDot( plane->normal, translation );
 	}
 }
 
 // Plane through a convex face loop by Newell's method: robust for any vertex order and count.
-static b3Plane lpNewellPlane( const lpPoly* poly, const lpFace* face )
+static lpPlane lpNewellPlane( const lpPoly* poly, const lpFace* face )
 {
-	b3Vec3 n = b3Vec3_zero;
-	b3Vec3 c = b3Vec3_zero;
+	lpVec3 n = lpVec3_zero;
+	lpVec3 c = lpVec3_zero;
 	for ( int k = 0; k < face->count; ++k )
 	{
-		b3Vec3 a = poly->vertices[poly->indices[face->first + k]];
-		b3Vec3 b = poly->vertices[poly->indices[face->first + ( k + 1 ) % face->count]];
+		lpVec3 a = poly->vertices[poly->indices[face->first + k]];
+		lpVec3 b = poly->vertices[poly->indices[face->first + ( k + 1 ) % face->count]];
 		n.x += ( a.y - b.y ) * ( a.z + b.z );
 		n.y += ( a.z - b.z ) * ( a.x + b.x );
 		n.z += ( a.x - b.x ) * ( a.y + b.y );
-		c = b3Add( c, a );
+		c = lpAdd( c, a );
 	}
-	c = b3MulSV( 1.0f / (float)face->count, c );
-	n = b3Normalize( n );
-	return (b3Plane){ n, b3Dot( n, c ) };
+	c = lpMulSV( 1.0f / (float)face->count, c );
+	n = lpNormalize( n );
+	return (lpPlane){ n, lpDot( n, c ) };
 }
 
-void lpPoly_ApplyLinear( lpPoly* poly, b3Matrix3 m )
+void lpPoly_ApplyLinear( lpPoly* poly, lpMatrix3 m )
 {
 	for ( int i = 0; i < poly->vertexCount; ++i )
 	{
-		poly->vertices[i] = b3MulMV( m, poly->vertices[i] );
+		poly->vertices[i] = lpMulMV( m, poly->vertices[i] );
 	}
 	for ( int i = 0; i < poly->faceCount; ++i )
 	{
@@ -152,7 +152,7 @@ void lpPoly_ApplyLinear( lpPoly* poly, b3Matrix3 m )
 	}
 }
 
-lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out )
+lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out )
 {
 	LP_ASSERT( in != out );
 
@@ -162,7 +162,7 @@ lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int
 	float maxS = -FLT_MAX;
 	for ( int i = 0; i < vertexCount; ++i )
 	{
-		float si = b3Dot( plane.normal, in->vertices[i] ) - plane.offset;
+		float si = lpDot( plane.normal, in->vertices[i] ) - plane.offset;
 		s[i] = si;
 		minS = si < minS ? si : minS;
 		maxS = si > maxS ? si : maxS;
@@ -186,7 +186,7 @@ lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int
 		bool isClose = false;
 		for ( int i = 0; i < vertexCount; ++i )
 		{
-			if ( b3AbsFloat( s[i] - shift ) < tolerance )
+			if ( lpAbsFloat( s[i] - shift ) < tolerance )
 			{
 				isClose = true;
 				break;
@@ -203,7 +203,7 @@ lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int
 	for ( int i = 0; i < vertexCount; ++i )
 	{
 		float si = s[i] - shift;
-		if ( b3AbsFloat( si ) < tolerance )
+		if ( lpAbsFloat( si ) < tolerance )
 		{
 			si = -tolerance;
 		}
@@ -300,10 +300,10 @@ lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int
 						return lp_clipOverflow;
 					}
 					float t = s[a] / ( s[a] - s[b] );
-					b3Vec3 pa = in->vertices[a];
-					b3Vec3 pb = in->vertices[b];
+					lpVec3 pa = in->vertices[a];
+					lpVec3 pb = in->vertices[b];
 					v = outVertexCount++;
-					out->vertices[v] = b3Add( pa, b3MulSV( t, b3Sub( pb, pa ) ) );
+					out->vertices[v] = lpAdd( pa, lpMulSV( t, lpSub( pb, pa ) ) );
 					crossA[crossCount] = (uint8_t)a;
 					crossB[crossCount] = (uint8_t)b;
 					crossVertex[crossCount] = v;
@@ -399,29 +399,29 @@ lpClipResult lpPoly_Clip( const lpPoly* in, b3Plane plane, uint8_t material, int
 	return lp_clipCut;
 }
 
-void lpPoly_ComputeMass( const lpPoly* poly, float* volume, b3Vec3* centroid )
+void lpPoly_ComputeMass( const lpPoly* poly, float* volume, lpVec3* centroid )
 {
 	// Reference point inside the polyhedron keeps the tetrahedra small, for precision
-	b3Vec3 r = b3Vec3_zero;
+	lpVec3 r = lpVec3_zero;
 	for ( int i = 0; i < poly->vertexCount; ++i )
 	{
-		r = b3Add( r, poly->vertices[i] );
+		r = lpAdd( r, poly->vertices[i] );
 	}
-	r = b3MulSV( 1.0f / (float)poly->vertexCount, r );
+	r = lpMulSV( 1.0f / (float)poly->vertexCount, r );
 
 	float v6 = 0.0f;
-	b3Vec3 c = b3Vec3_zero;
+	lpVec3 c = lpVec3_zero;
 	for ( int f = 0; f < poly->faceCount; ++f )
 	{
 		const lpFace* face = poly->faces + f;
-		b3Vec3 a = b3Sub( poly->vertices[poly->indices[face->first]], r );
+		lpVec3 a = lpSub( poly->vertices[poly->indices[face->first]], r );
 		for ( int k = 1; k + 1 < face->count; ++k )
 		{
-			b3Vec3 b = b3Sub( poly->vertices[poly->indices[face->first + k]], r );
-			b3Vec3 d = b3Sub( poly->vertices[poly->indices[face->first + k + 1]], r );
-			float t = b3Dot( a, b3Cross( b, d ) );
+			lpVec3 b = lpSub( poly->vertices[poly->indices[face->first + k]], r );
+			lpVec3 d = lpSub( poly->vertices[poly->indices[face->first + k + 1]], r );
+			float t = lpDot( a, lpCross( b, d ) );
 			v6 += t;
-			c = b3Add( c, b3MulSV( t, b3Add( b3Add( a, b ), d ) ) );
+			c = lpAdd( c, lpMulSV( t, lpAdd( lpAdd( a, b ), d ) ) );
 		}
 	}
 
@@ -429,7 +429,7 @@ void lpPoly_ComputeMass( const lpPoly* poly, float* volume, b3Vec3* centroid )
 	if ( v6 > 0.0f )
 	{
 		// centroid of tetra (r, a, b, d) is r + (a + b + d) / 4
-		*centroid = b3Add( r, b3MulSV( 1.0f / ( 4.0f * v6 ), c ) );
+		*centroid = lpAdd( r, lpMulSV( 1.0f / ( 4.0f * v6 ), c ) );
 	}
 	else
 	{
@@ -437,40 +437,40 @@ void lpPoly_ComputeMass( const lpPoly* poly, float* volume, b3Vec3* centroid )
 	}
 }
 
-b3AABB lpPoly_ComputeBounds( const lpPoly* poly )
+lpAABB lpPoly_ComputeBounds( const lpPoly* poly )
 {
-	b3AABB box = { poly->vertices[0], poly->vertices[0] };
+	lpAABB box = { poly->vertices[0], poly->vertices[0] };
 	for ( int i = 1; i < poly->vertexCount; ++i )
 	{
-		box.lowerBound = b3Min( box.lowerBound, poly->vertices[i] );
-		box.upperBound = b3Max( box.upperBound, poly->vertices[i] );
+		box.lowerBound = lpMin( box.lowerBound, poly->vertices[i] );
+		box.upperBound = lpMax( box.upperBound, poly->vertices[i] );
 	}
 	return box;
 }
 
-float lpPoly_MaxDistanceSquared( const lpPoly* poly, b3Vec3 point )
+float lpPoly_MaxDistanceSquared( const lpPoly* poly, lpVec3 point )
 {
 	float m = 0.0f;
 	for ( int i = 0; i < poly->vertexCount; ++i )
 	{
-		float d = b3DistanceSquared( poly->vertices[i], point );
+		float d = lpDistanceSquared( poly->vertices[i], point );
 		m = d > m ? d : m;
 	}
 	return m;
 }
 
-static float lpPlanesDistance( const lpFace* faces, int faceCount, b3Vec3 point )
+static float lpPlanesDistance( const lpFace* faces, int faceCount, lpVec3 point )
 {
 	float m = -FLT_MAX;
 	for ( int f = 0; f < faceCount; ++f )
 	{
-		float d = b3Dot( faces[f].plane.normal, point ) - faces[f].plane.offset;
+		float d = lpDot( faces[f].plane.normal, point ) - faces[f].plane.offset;
 		m = d > m ? d : m;
 	}
 	return m;
 }
 
-float lpPoly_SignedDistance( const lpPoly* poly, b3Vec3 point )
+float lpPoly_SignedDistance( const lpPoly* poly, lpVec3 point )
 {
 	return lpPlanesDistance( poly->faces, poly->faceCount, point );
 }
@@ -492,7 +492,7 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 		{
 			return false;
 		}
-		if ( b3AbsFloat( b3Length( face->plane.normal ) - 1.0f ) > 1e-3f )
+		if ( lpAbsFloat( lpLength( face->plane.normal ) - 1.0f ) > 1e-3f )
 		{
 			return false;
 		}
@@ -508,8 +508,8 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 			used[a] = 1;
 
 			// planar
-			float d = b3Dot( face->plane.normal, poly->vertices[a] ) - face->plane.offset;
-			if ( b3AbsFloat( d ) > tolerance )
+			float d = lpDot( face->plane.normal, poly->vertices[a] ) - face->plane.offset;
+			if ( lpAbsFloat( d ) > tolerance )
 			{
 				return false;
 			}
@@ -546,7 +546,7 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 		// convex: behind every plane
 		for ( int f = 0; f < poly->faceCount; ++f )
 		{
-			float d = b3Dot( poly->faces[f].plane.normal, poly->vertices[i] ) - poly->faces[f].plane.offset;
+			float d = lpDot( poly->faces[f].plane.normal, poly->vertices[i] ) - poly->faces[f].plane.offset;
 			if ( d > tolerance )
 			{
 				return false;
@@ -562,7 +562,7 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 	}
 
 	float volume;
-	b3Vec3 centroid;
+	lpVec3 centroid;
 	lpPoly_ComputeMass( poly, &volume, &centroid );
 	return volume > 0.0f;
 }
@@ -570,7 +570,7 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 lpShape* lpShape_Create( const lpPoly* poly )
 {
 	float volume;
-	b3Vec3 centroid;
+	lpVec3 centroid;
 	lpPoly_ComputeMass( poly, &volume, &centroid );
 	if ( ( volume > 0.0f ) == false )
 	{
@@ -578,14 +578,14 @@ lpShape* lpShape_Create( const lpPoly* poly )
 	}
 
 	size_t header = ( sizeof( lpShape ) + 15 ) & ~(size_t)15;
-	size_t vertexBytes = sizeof( b3Vec3 ) * (size_t)poly->vertexCount;
+	size_t vertexBytes = sizeof( lpVec3 ) * (size_t)poly->vertexCount;
 	size_t faceBytes = sizeof( lpFace ) * (size_t)poly->faceCount;
 	size_t indexBytes = (size_t)poly->indexCount;
 	uint8_t* memory = lpAlloc( header + vertexBytes + faceBytes + indexBytes );
 
 	lpShape* shape = (lpShape*)memory;
 	shape->faces = (lpFace*)( memory + header );
-	shape->vertices = (b3Vec3*)( memory + header + faceBytes );
+	shape->vertices = (lpVec3*)( memory + header + faceBytes );
 	shape->indices = memory + header + faceBytes + vertexBytes;
 	shape->vertexCount = poly->vertexCount;
 	shape->faceCount = poly->faceCount;
@@ -611,33 +611,33 @@ void lpShape_ToPoly( const lpShape* shape, lpPoly* poly )
 	poly->vertexCount = shape->vertexCount;
 	poly->faceCount = shape->faceCount;
 	poly->indexCount = shape->indexCount;
-	memcpy( poly->vertices, shape->vertices, sizeof( b3Vec3 ) * (size_t)shape->vertexCount );
+	memcpy( poly->vertices, shape->vertices, sizeof( lpVec3 ) * (size_t)shape->vertexCount );
 	memcpy( poly->faces, shape->faces, sizeof( lpFace ) * (size_t)shape->faceCount );
 	memcpy( poly->indices, shape->indices, (size_t)shape->indexCount );
 }
 
-void lpShape_Translate( lpShape* shape, b3Vec3 translation )
+void lpShape_Translate( lpShape* shape, lpVec3 translation )
 {
 	for ( int i = 0; i < shape->vertexCount; ++i )
 	{
-		shape->vertices[i] = b3Add( shape->vertices[i], translation );
+		shape->vertices[i] = lpAdd( shape->vertices[i], translation );
 	}
 	for ( int i = 0; i < shape->faceCount; ++i )
 	{
-		b3Plane* plane = &shape->faces[i].plane;
-		plane->offset += b3Dot( plane->normal, translation );
+		lpPlane* plane = &shape->faces[i].plane;
+		plane->offset += lpDot( plane->normal, translation );
 	}
-	shape->bounds.lowerBound = b3Add( shape->bounds.lowerBound, translation );
-	shape->bounds.upperBound = b3Add( shape->bounds.upperBound, translation );
-	shape->centroid = b3Add( shape->centroid, translation );
+	shape->bounds.lowerBound = lpAdd( shape->bounds.lowerBound, translation );
+	shape->bounds.upperBound = lpAdd( shape->bounds.upperBound, translation );
+	shape->centroid = lpAdd( shape->centroid, translation );
 }
 
-bool lpShape_HasFaceOnPlane( const lpShape* shape, b3Plane plane, float tolerance )
+bool lpShape_HasFaceOnPlane( const lpShape* shape, lpPlane plane, float tolerance )
 {
 	for ( int i = 0; i < shape->faceCount; ++i )
 	{
-		b3Plane p = shape->faces[i].plane;
-		if ( b3Dot( p.normal, plane.normal ) > 0.999f && b3AbsFloat( p.offset - plane.offset ) < tolerance )
+		lpPlane p = shape->faces[i].plane;
+		if ( lpDot( p.normal, plane.normal ) > 0.999f && lpAbsFloat( p.offset - plane.offset ) < tolerance )
 		{
 			return true;
 		}
@@ -645,28 +645,28 @@ bool lpShape_HasFaceOnPlane( const lpShape* shape, b3Plane plane, float toleranc
 	return false;
 }
 
-float lpShape_SignedDistance( const lpShape* shape, b3Vec3 point )
+float lpShape_SignedDistance( const lpShape* shape, lpVec3 point )
 {
 	return lpPlanesDistance( shape->faces, shape->faceCount, point );
 }
 
-float lpShape_FaceArea( const lpShape* shape, int faceIndex, b3Vec3* centroid )
+float lpShape_FaceArea( const lpShape* shape, int faceIndex, lpVec3* centroid )
 {
 	const lpFace* face = shape->faces + faceIndex;
-	b3Vec3 a = shape->vertices[shape->indices[face->first]];
+	lpVec3 a = shape->vertices[shape->indices[face->first]];
 	float area2 = 0.0f;
-	b3Vec3 c = b3Vec3_zero;
+	lpVec3 c = lpVec3_zero;
 	for ( int k = 1; k + 1 < face->count; ++k )
 	{
-		b3Vec3 b = shape->vertices[shape->indices[face->first + k]];
-		b3Vec3 d = shape->vertices[shape->indices[face->first + k + 1]];
-		float t = b3Dot( face->plane.normal, b3Cross( b3Sub( b, a ), b3Sub( d, a ) ) );
+		lpVec3 b = shape->vertices[shape->indices[face->first + k]];
+		lpVec3 d = shape->vertices[shape->indices[face->first + k + 1]];
+		float t = lpDot( face->plane.normal, lpCross( lpSub( b, a ), lpSub( d, a ) ) );
 		area2 += t;
-		c = b3Add( c, b3MulSV( t, b3Add( b3Add( a, b ), d ) ) );
+		c = lpAdd( c, lpMulSV( t, lpAdd( lpAdd( a, b ), d ) ) );
 	}
 	if ( centroid != NULL )
 	{
-		*centroid = area2 > 0.0f ? b3MulSV( 1.0f / ( 3.0f * area2 ), c ) : a;
+		*centroid = area2 > 0.0f ? lpMulSV( 1.0f / ( 3.0f * area2 ), c ) : a;
 	}
 	return 0.5f * area2;
 }
@@ -696,7 +696,7 @@ bool lpShape_NearlyOverlap( const lpShape* a, const lpShape* b, float margin )
 	b3DistanceInput input = { 0 };
 	input.proxyA = (b3ShapeProxy){ a->vertices, a->vertexCount, 0.0f };
 	input.proxyB = (b3ShapeProxy){ b->vertices, b->vertexCount, 0.0f };
-	input.transform = b3Transform_identity;
+	input.transform = lpTransform_identity;
 	input.useRadii = false;
 	b3SimplexCache cache = { 0 };
 	b3DistanceOutput output = b3ShapeDistance( &input, &cache, NULL, 0 );
@@ -772,23 +772,23 @@ static float lpPolygonArea2( const lpVec2* p, int count, lpVec2* centroid )
 }
 
 // Half-extents of points around a centroid along the contact tangents
-static void lpContactExtents( lpContact* contact, const b3Vec3* points, int count )
+static void lpContactExtents( lpContact* contact, const lpVec3* points, int count )
 {
-	b3Vec3 t1, t2;
+	lpVec3 t1, t2;
 	lpContactBasis( contact->normal, &t1, &t2 );
 	float lo1 = FLT_MAX, hi1 = -FLT_MAX, lo2 = FLT_MAX, hi2 = -FLT_MAX;
 	for ( int k = 0; k < count; ++k )
 	{
-		b3Vec3 d = b3Sub( points[k], contact->centroid );
-		float p1 = b3Dot( d, t1 );
-		float p2 = b3Dot( d, t2 );
+		lpVec3 d = lpSub( points[k], contact->centroid );
+		float p1 = lpDot( d, t1 );
+		float p2 = lpDot( d, t2 );
 		lo1 = p1 < lo1 ? p1 : lo1;
 		hi1 = p1 > hi1 ? p1 : hi1;
 		lo2 = p2 < lo2 ? p2 : lo2;
 		hi2 = p2 > hi2 ? p2 : hi2;
 	}
-	contact->h1 = count > 0 ? b3MaxFloat( 0.5f * ( hi1 - lo1 ), 1e-3f ) : 1e-3f;
-	contact->h2 = count > 0 ? b3MaxFloat( 0.5f * ( hi2 - lo2 ), 1e-3f ) : 1e-3f;
+	contact->h1 = count > 0 ? lpMaxFloat( 0.5f * ( hi1 - lo1 ), 1e-3f ) : 1e-3f;
+	contact->h2 = count > 0 ? lpMaxFloat( 0.5f * ( hi2 - lo2 ), 1e-3f ) : 1e-3f;
 }
 
 void lpShape_FaceContact( const lpShape* shape, int faceIndex, lpContact* contact )
@@ -796,7 +796,7 @@ void lpShape_FaceContact( const lpShape* shape, int faceIndex, lpContact* contac
 	const lpFace* face = shape->faces + faceIndex;
 	contact->area = lpShape_FaceArea( shape, faceIndex, &contact->centroid );
 	contact->normal = face->plane.normal;
-	b3Vec3 points[LP_POLY_MAX_VERTICES];
+	lpVec3 points[LP_POLY_MAX_VERTICES];
 	int count = face->count < LP_POLY_MAX_VERTICES ? face->count : LP_POLY_MAX_VERTICES;
 	for ( int k = 0; k < count; ++k )
 	{
@@ -812,41 +812,41 @@ bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpCon
 		lp_maxContactPoints = 128
 	};
 	float total = 0.0f;
-	b3Vec3 weighted = b3Vec3_zero;
+	lpVec3 weighted = lpVec3_zero;
 	float largest = 0.0f;
-	b3Vec3 normal = b3Vec3_zero;
-	b3Vec3 points[lp_maxContactPoints];
+	lpVec3 normal = lpVec3_zero;
+	lpVec3 points[lp_maxContactPoints];
 	int pointCount = 0;
 
 	for ( int fa = 0; fa < a->faceCount; ++fa )
 	{
 		const lpFace* faceA = a->faces + fa;
-		b3Vec3 n = faceA->plane.normal;
+		lpVec3 n = faceA->plane.normal;
 		for ( int fb = 0; fb < b->faceCount; ++fb )
 		{
 			const lpFace* faceB = b->faces + fb;
-			if ( b3Dot( n, faceB->plane.normal ) > -0.999f )
+			if ( lpDot( n, faceB->plane.normal ) > -0.999f )
 			{
 				continue;
 			}
-			if ( b3AbsFloat( faceA->plane.offset + faceB->plane.offset ) > tolerance )
+			if ( lpAbsFloat( faceA->plane.offset + faceB->plane.offset ) > tolerance )
 			{
 				continue;
 			}
 
 			// 2D basis in the plane of A
-			b3Vec3 t = b3AbsFloat( n.x ) < 0.57f ? (b3Vec3){ 1.0f, 0.0f, 0.0f } : (b3Vec3){ 0.0f, 1.0f, 0.0f };
-			b3Vec3 u = b3Normalize( b3Cross( t, n ) );
-			b3Vec3 v = b3Cross( n, u );
-			b3Vec3 origin = b3MulSV( faceA->plane.offset, n );
+			lpVec3 t = lpAbsFloat( n.x ) < 0.57f ? (lpVec3){ 1.0f, 0.0f, 0.0f } : (lpVec3){ 0.0f, 1.0f, 0.0f };
+			lpVec3 u = lpNormalize( lpCross( t, n ) );
+			lpVec3 v = lpCross( n, u );
+			lpVec3 origin = lpMulSV( faceA->plane.offset, n );
 
 			lpVec2 bufferA[lp_maxPolygon2];
 			lpVec2 bufferB[lp_maxPolygon2];
 			int countA = faceA->count < lp_maxPolygon2 ? faceA->count : lp_maxPolygon2;
 			for ( int k = 0; k < countA; ++k )
 			{
-				b3Vec3 p = b3Sub( a->vertices[a->indices[faceA->first + k]], origin );
-				bufferA[k] = (lpVec2){ b3Dot( p, u ), b3Dot( p, v ) };
+				lpVec3 p = lpSub( a->vertices[a->indices[faceA->first + k]], origin );
+				bufferA[k] = (lpVec2){ lpDot( p, u ), lpDot( p, v ) };
 			}
 
 			// B's loop, projected into A's basis, runs clockwise; clip A by each of B's edges.
@@ -854,8 +854,8 @@ bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpCon
 			int countB = faceB->count < lp_maxPolygon2 ? faceB->count : lp_maxPolygon2;
 			for ( int k = 0; k < countB; ++k )
 			{
-				b3Vec3 p = b3Sub( b->vertices[b->indices[faceB->first + k]], origin );
-				loopB[k] = (lpVec2){ b3Dot( p, u ), b3Dot( p, v ) };
+				lpVec3 p = lpSub( b->vertices[b->indices[faceB->first + k]], origin );
+				loopB[k] = (lpVec2){ lpDot( p, u ), lpDot( p, v ) };
 			}
 			float signB = lpPolygonArea2( loopB, countB, NULL ) >= 0.0f ? 1.0f : -1.0f;
 
@@ -882,9 +882,9 @@ bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpCon
 				continue;
 			}
 
-			b3Vec3 c3 = b3Add( origin, b3Add( b3MulSV( c2.x, u ), b3MulSV( c2.y, v ) ) );
+			lpVec3 c3 = lpAdd( origin, lpAdd( lpMulSV( c2.x, u ), lpMulSV( c2.y, v ) ) );
 			total += area;
-			weighted = b3Add( weighted, b3MulSV( area, c3 ) );
+			weighted = lpAdd( weighted, lpMulSV( area, c3 ) );
 			if ( area > largest )
 			{
 				largest = area;
@@ -892,7 +892,7 @@ bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpCon
 			}
 			for ( int k = 0; k < count && pointCount < lp_maxContactPoints; ++k )
 			{
-				points[pointCount++] = b3Add( origin, b3Add( b3MulSV( src[k].x, u ), b3MulSV( src[k].y, v ) ) );
+				points[pointCount++] = lpAdd( origin, lpAdd( lpMulSV( src[k].x, u ), lpMulSV( src[k].y, v ) ) );
 			}
 		}
 	}
@@ -902,7 +902,7 @@ bool lpShape_Contact( const lpShape* a, const lpShape* b, float tolerance, lpCon
 	{
 		return false;
 	}
-	contact->centroid = b3MulSV( 1.0f / total, weighted );
+	contact->centroid = lpMulSV( 1.0f / total, weighted );
 	contact->normal = normal;
 	lpContactExtents( contact, points, pointCount );
 	return true;

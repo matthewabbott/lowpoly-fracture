@@ -8,10 +8,10 @@
 #include <math.h>
 #include <stdio.h>
 
-static b3AABB lpInflatedBox( b3Pos center, float r )
+static lpAABB lpInflatedBox( lpPos center, float r )
 {
-	b3Vec3 c = b3ToVec3( center );
-	return (b3AABB){ b3Sub( c, (b3Vec3){ r, r, r } ), b3Add( c, (b3Vec3){ r, r, r } ) };
+	lpVec3 c = lpToVec3( center );
+	return (lpAABB){ lpSub( c, (lpVec3){ r, r, r } ), lpAdd( c, (lpVec3){ r, r, r } ) };
 }
 
 // Energy density (J/m^2) delivered at distance d from an impact
@@ -23,7 +23,7 @@ static float lpImpactDensity( const lpImpactDef* impact, float d )
 	}
 	float x = d < 0.0f ? 0.0f : d / impact->radius;
 	float f = ( 1.0f - x ) * ( 1.0f - x );
-	return impact->energy * f / ( B3_PI * impact->radius * impact->radius );
+	return impact->energy * f / ( LP_PI * impact->radius * impact->radius );
 }
 
 // ---- fracture jobs ----
@@ -33,7 +33,7 @@ static float lpImpactDensity( const lpImpactDef* impact, float d )
 // 2. compute cells, Box3D hulls and sibling bonds for every piece (parallel; each job is a pure function of its input)
 // 3. swap parents for their cells (sequential, in job order)
 
-static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex, b3Vec3 localImpact, const lpImpactDef* impact,
+static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex, lpVec3 localImpact, const lpImpactDef* impact,
 								  bool snap )
 {
 	lpPiece* piece = w->pieces.data + pieceIndex;
@@ -41,9 +41,9 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	float fragment = m->fragmentSize * w->def.fragmentScale;
 
 	// Radius inside which bonds will break: (1 - x)^2 >= strength * pi R^2 / E
-	float ratio = m->bondStrength * B3_PI * impact->radius * impact->radius / impact->energy;
+	float ratio = m->bondStrength * LP_PI * impact->radius * impact->radius / impact->energy;
 	float xb = ratio < 1.0f ? 1.0f - sqrtf( ratio ) : 0.0f;
-	float breakRadius = b3MaxFloat( impact->radius * xb, 1.5f * fragment );
+	float breakRadius = lpMaxFloat( impact->radius * xb, 1.5f * fragment );
 
 	job->piece = pieceIndex;
 	job->localImpact = localImpact;
@@ -57,7 +57,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 			job->poly.faces[f].tag = LP_TAG_CUT; // cut faces of an earlier fracture
 		}
 	}
-	lpPoly_Translate( &job->poly, b3Neg( job->center ) );
+	lpPoly_Translate( &job->poly, lpNeg( job->center ) );
 	job->particleVolume = lpParticleVolume( w, piece->material );
 	job->ghostVolume = lpGhostVolume( w, piece->material );
 	job->lightVolume = lpLightVolume( w, piece->material );
@@ -68,15 +68,15 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	lpFractureInput* input = &job->input;
 	memset( input, 0, sizeof( *input ) );
 	input->parent = &job->poly;
-	input->impact = b3Sub( localImpact, job->center );
+	input->impact = lpSub( localImpact, job->center );
 	input->radius = breakRadius;
 	input->fragmentSize = fragment;
 	input->maxCells = m->maxCells;
 	input->plateSize = m->plateSize * w->def.fragmentScale;
 	input->courseHeight = m->courseHeight * w->def.fragmentScale;
 	input->brickLength = m->brickLength * w->def.fragmentScale;
-	input->gridOrigin = b3Neg( job->center ); // the object frame's origin, in the job frame
-	input->absorbVolume = b3MaxFloat( job->particleVolume, 0.1f * job->ghostVolume ); // slivers merge into neighbours
+	input->gridOrigin = lpNeg( job->center ); // the object frame's origin, in the job frame
+	input->absorbVolume = lpMaxFloat( job->particleVolume, 0.1f * job->ghostVolume ); // slivers merge into neighbours
 	input->pattern = (lpPatternId)m->pattern;
 	input->axis = piece->axis;
 	input->stretch = m->grainStretch;
@@ -110,7 +110,7 @@ static void lpRunFractureJob( int index, void* context )
 		lpShape* cell = job->cells[i];
 		lpShape_Translate( cell, job->center );
 		float volume = cell->volume;
-		bool ejecta = b3DistanceSquared( cell->centroid, job->localImpact ) < r2;
+		bool ejecta = lpDistanceSquared( cell->centroid, job->localImpact ) < r2;
 		uint8_t cls;
 		// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
 		float dustBelow = ejecta ? job->particleVolume : job->input.absorbVolume;
@@ -180,7 +180,7 @@ static void lpRunFractureJob( int index, void* context )
 		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
 		lpShape* chips[4];
 		int room = LP_MAX_SITES - job->cellCount + 1;
-		int count = lpChipCell( job->cells[i], m->chipSplits, oriented ? job->input.axis : b3Vec3_zero,
+		int count = lpChipCell( job->cells[i], m->chipSplits, oriented ? job->input.axis : lpVec3_zero,
 								job->input.interiorMaterial, job->particleVolume, &rng, chips, room < 4 ? room : 4 );
 		if ( count == 0 )
 		{
@@ -233,11 +233,11 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 
 	int bodyIndex = piece->body;
 	lpBody* body = w->bodies.data + bodyIndex;
-	b3WorldTransform xf = b3Body_GetTransform( body->id );
+	lpWorldTransform xf = b3Body_GetTransform( body->id );
 	bool isDynamic = body->kind == lp_kindDebris;
-	b3Vec3 v = isDynamic ? b3Body_GetLinearVelocity( body->id ) : b3Vec3_zero;
-	b3Vec3 omega = isDynamic ? b3Body_GetAngularVelocity( body->id ) : b3Vec3_zero;
-	b3Vec3 localCenter = isDynamic ? b3Body_GetLocalCenter( body->id ) : b3Vec3_zero;
+	lpVec3 v = isDynamic ? b3Body_GetLinearVelocity( body->id ) : lpVec3_zero;
+	lpVec3 omega = isDynamic ? b3Body_GetAngularVelocity( body->id ) : lpVec3_zero;
+	lpVec3 localCenter = isDynamic ? b3Body_GetLocalCenter( body->id ) : lpVec3_zero;
 
 	// Former neighbors, then retire the parent
 	int neighbors[256];
@@ -257,12 +257,12 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	uint8_t material = piece->material;
 	uint8_t joint = piece->joint;
 	uint32_t color = piece->color;
-	b3Vec3 axis = piece->axis;
+	lpVec3 axis = piece->axis;
 	int depth = piece->depth + 1;
 	bool anchored = piece->anchored;
-	b3Plane anchorPlane = piece->anchorPlane;
+	lpPlane anchorPlane = piece->anchorPlane;
 	lpVec6 parentX = piece->stressX; // kept cells start their stress solve where the parent was, moved rigidly
-	b3Vec3 parentCenter = piece->shape->centroid;
+	lpVec3 parentCenter = piece->shape->centroid;
 	lpPiece identity = *piece; // who it was: its object, part and channels go to its cells
 	float parentVolume = piece->shape->volume;
 
@@ -303,10 +303,10 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		}
 
 		// Velocity of the parent at the cell
-		b3Vec3 cellV = v;
+		lpVec3 cellV = v;
 		if ( isDynamic )
 		{
-			cellV = b3Add( v, b3Cross( omega, b3RotateVector( xf.q, b3Sub( cell->centroid, localCenter ) ) ) );
+			cellV = lpAdd( v, lpCross( omega, lpRotateVector( xf.q, lpSub( cell->centroid, localCenter ) ) ) );
 		}
 
 		if ( cls != lp_cellKeep )
@@ -315,8 +315,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		}
 		if ( cls == lp_cellPuff )
 		{
-			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
-			b3Vec3 pv = b3Add( cellV, b3RotateVector( xf.q, b3MulSV( 2.0f, away ) ) );
+			lpVec3 away = lpNormalize( lpSub( cell->centroid, job->localImpact ) );
+			lpVec3 pv = lpAdd( cellV, lpRotateVector( xf.q, lpMulSV( 2.0f, away ) ) );
 			lpEmitParticle( w, xf, cell->centroid, pv, lpCbrt( cell->volume ), material );
 			lpShape_Destroy( cell );
 			if ( hull != NULL )
@@ -350,7 +350,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		if ( cls == lp_cellKeep )
 		{
 			child->anchored = anchored && lpShape_HasFaceOnPlane( cell, anchorPlane, 1e-3f );
-			child->stressX.f = b3Add( parentX.f, b3Cross( parentX.t, b3Sub( cell->centroid, parentCenter ) ) );
+			child->stressX.f = lpAdd( parentX.f, lpCross( parentX.t, lpSub( cell->centroid, parentCenter ) ) );
 			child->stressX.t = parentX.t;
 			if ( lpAttachPiece( w, childIndex, bodyIndex ) == false )
 			{
@@ -368,14 +368,14 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			// A little tumble, seeded from the piece so it is deterministic
 			lpRandom rng;
 			lpRandom_Seed( &rng, child->seed, 17 );
-			b3Vec3 spin; // one draw per statement: C leaves the order inside an initializer open
+			lpVec3 spin; // one draw per statement: C leaves the order inside an initializer open
 			spin.x = lpRandom_Range( &rng, -6.0f, 6.0f );
 			spin.y = lpRandom_Range( &rng, -6.0f, 6.0f );
 			spin.z = lpRandom_Range( &rng, -6.0f, 6.0f );
 			// and a small kick away from the impact, so chips of one cell spread instead of flying as a clump
-			b3Vec3 away = b3Normalize( b3Sub( cell->centroid, job->localImpact ) );
-			b3Vec3 kick = b3RotateVector( xf.q, b3MulSV( lpRandom_Range( &rng, 0.5f, 2.0f ), away ) );
-			int ghost = lpBeginGhost( w, xf, b3Add( cellV, kick ), b3Add( omega, spin ), gravityScale );
+			lpVec3 away = lpNormalize( lpSub( cell->centroid, job->localImpact ) );
+			lpVec3 kick = lpRotateVector( xf.q, lpMulSV( lpRandom_Range( &rng, 0.5f, 2.0f ), away ) );
+			int ghost = lpBeginGhost( w, xf, lpAdd( cellV, kick ), lpAdd( omega, spin ), gravityScale );
 			lpAddLoosePiece( w, ghost, childIndex );
 			lpFinishLoose( w, ghost, xf );
 		}
@@ -402,7 +402,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	// never touches simulation state.
 	if ( ejectedVolume > 0.0f )
 	{
-		int motes = 3 + (int)( 9.0f * b3MinFloat( 1.0f, ejectedVolume / 0.02f ) );
+		int motes = 3 + (int)( 9.0f * lpMinFloat( 1.0f, ejectedVolume / 0.02f ) );
 		uint64_t h = lpMix64( ( w->tick << 20 ) ^ (uint64_t)pieceIndex );
 		for ( int k = 0; k < motes; ++k )
 		{
@@ -411,7 +411,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			float ry = (float)( ( h >> 16 ) & 0xFFFF ) / 65535.0f;
 			float rz = (float)( ( h >> 32 ) & 0xFFFF ) / 65535.0f - 0.5f;
 			float rs = (float)( ( h >> 48 ) & 0xFFFF ) / 65535.0f;
-			b3Vec3 dustV = b3Add( v, (b3Vec3){ 4.0f * rx, 0.5f + 2.5f * ry, 4.0f * rz } );
+			lpVec3 dustV = lpAdd( v, (lpVec3){ 4.0f * rx, 0.5f + 2.5f * ry, 4.0f * rz } );
 			lpEmitParticle( w, xf, job->localImpact, dustV, 0.02f + 0.03f * rs, material );
 		}
 	}
@@ -426,7 +426,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		{
 			// Cells of one piece: its own material holds them, cracked by the blow that broke it. Far from the
 			// impact the stone is whole; near it the cracks barely hold, and past the break radius not at all.
-			float damage = lpImpactDensity( &job->impact, b3Distance( cb.contact.centroid, job->localImpact ) );
+			float damage = lpImpactDensity( &job->impact, lpDistance( cb.contact.centroid, job->localImpact ) );
 			uint8_t cellJoint = job->input.pattern == lp_breakMasonry ? lp_jointMortar : lp_jointSolid;
 			int bi = lpAddBond( w, a, b, &cb.contact, cellJoint );
 			lpBond* bond = w->bonds.data + bi;
@@ -470,8 +470,8 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 	const lpBody* b = w->bodies.data + piece->body;
 
 	// At the centre of the pieces that go: the body's centre of mass when they are all of it
-	b3WorldTransform xf = lpGetTransform( b );
-	b3Vec3 center = b3Vec3_zero;
+	lpWorldTransform xf = lpGetTransform( b );
+	lpVec3 center = lpVec3_zero;
 	float volume = 0.0f;
 	bool whole = true;
 	for ( int k = 0; k < b->pieces.count; ++k )
@@ -479,7 +479,7 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 		const lpPiece* p = w->pieces.data + b->pieces.data[k];
 		if ( p->detonator == piece->detonator )
 		{
-			center = b3MulAdd( center, p->shape->volume, p->shape->centroid );
+			center = lpMulAdd( center, p->shape->volume, p->shape->centroid );
 			volume += p->shape->volume;
 		}
 		whole = whole && p->detonator == piece->detonator;
@@ -491,7 +491,7 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 	}
 	else
 	{
-		blast.point = b3TransformWorldPoint( xf, b3MulSV( 1.0f / volume, center ) );
+		blast.point = lpTransformWorldPoint( xf, lpMulSV( 1.0f / volume, center ) );
 	}
 	blast.radius = d->def.radius;
 	blast.energy = d->def.energy;
@@ -506,7 +506,7 @@ typedef struct lpFractureCandidate
 {
 	uint32_t distanceBits; // non-negative floats order like their bits
 	int piece;
-	b3Vec3 local;
+	lpVec3 local;
 } lpFractureCandidate;
 
 static int lpCompareFractureCandidates( const void* a, const void* b )
@@ -561,8 +561,8 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 		{
 			continue;
 		}
-		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
-		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
+		lpWorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		lpVec3 local = lpInvTransformWorldPoint( xf, impact->point );
 		float d = lpShape_SignedDistance( p->shape, local );
 		if ( lpImpactDensity( impact, d ) >= m->fractureEnergy )
 		{
@@ -619,16 +619,16 @@ static void lpDamageLinks( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 			continue;
 		}
 		l->lastImpact = serial;
-		b3Vec3 a = b3SubPos( l->points[0], impact->point );
-		float d = b3Length( a );
+		lpVec3 a = lpSubPos( l->points[0], impact->point );
+		float d = lpLength( a );
 		if ( l->def.type == lp_linkRope )
 		{
-			d = lpSegmentDistance( a, b3SubPos( l->points[1], impact->point ) );
+			d = lpSegmentDistance( a, lpSubPos( l->points[1], impact->point ) );
 		}
 		else if ( l->wheel >= 0 )
 		{
-			d = lpSegmentDistance( a, b3SubPos( l->points[1], impact->point ) ) - w->wheels.data[l->wheel].def.radius;
-			d = b3MaxFloat( d, 0.0f );
+			d = lpSegmentDistance( a, lpSubPos( l->points[1], impact->point ) ) - w->wheels.data[l->wheel].def.radius;
+			d = lpMaxFloat( d, 0.0f );
 		}
 		float density = lpImpactDensity( impact, d );
 		if ( density > 0.0f )
@@ -654,8 +654,8 @@ static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 		{
 			continue;
 		}
-		b3WorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
-		b3Vec3 local = b3InvTransformWorldPoint( xf, impact->point );
+		lpWorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		lpVec3 local = lpInvTransformWorldPoint( xf, impact->point );
 
 		for ( int k = 0; k < p->bonds.count; )
 		{
@@ -667,7 +667,7 @@ static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 				continue;
 			}
 			bond->lastImpact = serial;
-			float density = lpImpactDensity( impact, b3Distance( bond->centroid, local ) );
+			float density = lpImpactDensity( impact, lpDistance( bond->centroid, local ) );
 			bond->health -= density;
 			if ( bond->health <= 0.0f )
 			{
@@ -718,8 +718,8 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 		lpBody* b = w->bodies.data + p->body;
 		if ( p->detonator != 0 && w->detonators.data[p->detonator - 1].armed )
 		{
-			b3WorldTransform xf = b3Body_GetTransform( b->id );
-			float d = lpShape_SignedDistance( p->shape, b3InvTransformWorldPoint( xf, impact->point ) );
+			lpWorldTransform xf = b3Body_GetTransform( b->id );
+			float d = lpShape_SignedDistance( p->shape, lpInvTransformWorldPoint( xf, impact->point ) );
 			if ( lpImpactDensity( impact, d ) > 150.0f )
 			{
 				lpDetonate( w, candidates[i] );
@@ -816,8 +816,8 @@ void lpApplyForces( lpWorld* w )
 				continue;
 			}
 			b->stamp = w->stamp;
-			b3Pos center = b3Body_GetWorldCenter( b->id );
-			float d = b3Length( b3SubPos( center, force.point ) );
+			lpPos center = b3Body_GetWorldCenter( b->id );
+			float d = lpLength( lpSubPos( center, force.point ) );
 			if ( d > force.radius )
 			{
 				continue;
@@ -826,19 +826,19 @@ void lpApplyForces( lpWorld* w )
 			float mass = b3Body_GetMass( b->id );
 			if ( force.explosion )
 			{
-				b3Vec3 away = d > 1e-4f ? b3MulSV( 1.0f / d, b3SubPos( center, force.point ) ) : (b3Vec3){ 0.0f, 1.0f, 0.0f };
+				lpVec3 away = d > 1e-4f ? lpMulSV( 1.0f / d, lpSubPos( center, force.point ) ) : (lpVec3){ 0.0f, 1.0f, 0.0f };
 				// A blast on a surface breaches it: bias the push along the incoming direction, plus a little lift
-				away = b3Add( away, force.direction );
-				away = b3Normalize( b3Add( away, (b3Vec3){ 0.0f, 0.35f, 0.0f } ) );
+				away = lpAdd( away, force.direction );
+				away = lpNormalize( lpAdd( away, (lpVec3){ 0.0f, 0.35f, 0.0f } ) );
 				float speed = force.impulse * f;
-				b3Vec3 extent = b3Body_GetMaxExtent( b->id );
-				b3Pos at = b3OffsetPos( center, b3MulSV( -0.3f * b3Length( extent ), away ) );
-				b3Body_ApplyLinearImpulse( b->id, b3MulSV( mass * speed, away ), at, true );
+				lpVec3 extent = b3Body_GetMaxExtent( b->id );
+				lpPos at = lpOffsetPos( center, lpMulSV( -0.3f * lpLength( extent ), away ) );
+				b3Body_ApplyLinearImpulse( b->id, lpMulSV( mass * speed, away ), at, true );
 			}
 			else
 			{
-				float impulse = b3MinFloat( force.impulse * f, 12.0f * mass );
-				b3Body_ApplyLinearImpulse( b->id, b3MulSV( impulse, force.direction ), center, true );
+				float impulse = lpMinFloat( force.impulse * f, 12.0f * mass );
+				b3Body_ApplyLinearImpulse( b->id, lpMulSV( impulse, force.direction ), center, true );
 			}
 		}
 		lpApplyLooseForce( w, &force );
@@ -969,7 +969,7 @@ void lpCollectHits( lpWorld* w )
 						  w->tick >= hit->hitCheckTick + 10 )
 				{
 					hit->hitCheckTick = w->tick;
-					hit->hitPoint = b3InvTransformWorldPoint( b3Body_GetTransform( hit->id ), e->point );
+					hit->hitPoint = lpInvTransformWorldPoint( b3Body_GetTransform( hit->id ), e->point );
 					hit->hitMaterial = w->pieces.data[data - 1].material;
 					hit->hitTick = w->tick + 1; // + 1: never 0 once set
 					hit->joltTick = w->tick + 1;
@@ -1012,32 +1012,32 @@ void lpCollectHits( lpWorld* w )
 
 		float ma = lpShapeMass( e->shapeIdA );
 		float mb = lpShapeMass( e->shapeIdB );
-		float mass = ( ma > 0.0f && mb > 0.0f ) ? ma * mb / ( ma + mb ) : b3MaxFloat( ma, mb );
+		float mass = ( ma > 0.0f && mb > 0.0f ) ? ma * mb / ( ma + mb ) : lpMaxFloat( ma, mb );
 		float energy = 0.5f * mass * e->approachSpeed * e->approachSpeed;
 		// Crumpling soaks up most of a crash first: the more crushable of the two decides
 		float crush = 0.0f;
 		for ( int k = 0; k < 2; ++k )
 		{
-			crush = pieceData[k] > 0 ? b3MaxFloat( crush, lpGetMaterial( w->pieces.data[pieceData[k] - 1].material )->crush ) : crush;
+			crush = pieceData[k] > 0 ? lpMaxFloat( crush, lpGetMaterial( w->pieces.data[pieceData[k] - 1].material )->crush ) : crush;
 		}
 		energy *= 1.0f - crush;
 		// and spreads the blow over the face that hit, not the first corner that touched
-		b3Pos point = e->point;
+		lpPos point = e->point;
 		if ( crush > 0.0f && b3Contact_IsValid( e->contactId ) )
 		{
 			b3ContactData contact = b3Contact_GetData( e->contactId );
-			b3Pos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact.shapeIdA ) );
-			b3Vec3 sum = b3Vec3_zero;
+			lpPos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact.shapeIdA ) );
+			lpVec3 sum = lpVec3_zero;
 			int count = 0;
 			for ( int mi = 0; mi < contact.manifoldCount; ++mi )
 			{
 				for ( int pi = 0; pi < contact.manifolds[mi].pointCount; ++pi )
 				{
-					sum = b3Add( sum, contact.manifolds[mi].points[pi].anchorA );
+					sum = lpAdd( sum, contact.manifolds[mi].points[pi].anchorA );
 					count += 1;
 				}
 			}
-			point = count > 0 ? b3OffsetPos( centerA, b3MulSV( 1.0f / (float)count, sum ) ) : point;
+			point = count > 0 ? lpOffsetPos( centerA, lpMulSV( 1.0f / (float)count, sum ) ) : point;
 		}
 		if ( energy < 100.0f )
 		{
@@ -1059,7 +1059,7 @@ void lpCollectHits( lpWorld* w )
 		lpHitCandidate hit = w->scratchHits.data[i];
 		lpImpactDef impact = { 0 };
 		impact.point = hit.point;
-		impact.radius = b3ClampFloat( 0.06f * lpCbrt( hit.energy ), 0.15f, 1.2f );
+		impact.radius = lpClampFloat( 0.06f * lpCbrt( hit.energy ), 0.15f, 1.2f );
 		impact.energy = hit.energy;
 		lpArray_Push( w->nextImpacts, impact );
 	}

@@ -451,7 +451,7 @@ void Renderer_Reset()
 	s.particleCount = 0;
 }
 
-void SetBodyXf( scene_body_xf_t& dst, const b3WorldTransform& xf )
+void SetBodyXf( scene_body_xf_t& dst, const lpWorldTransform& xf )
 {
 	dst.pos[0] = (float)xf.p.x;
 	dst.pos[1] = (float)xf.p.y;
@@ -627,7 +627,7 @@ void Renderer_Sync( const lpWorld* world )
 	s.bodyXf[0] = scene_body_xf_t{};
 	for ( int b = 0; b < bodyCapacity; ++b )
 	{
-		b3WorldTransform xf;
+		lpWorldTransform xf;
 		if ( lpWorld_GetBodyTransform( world, b, &xf ) )
 		{
 			SetBodyXf( s.bodyXf[b + 1 + kWheelSlots], xf );

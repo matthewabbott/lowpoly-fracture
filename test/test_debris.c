@@ -6,7 +6,7 @@
 #include "test_sim.h"
 
 // A dynamic box object; returns its body index
-static int AddBox( Sim* s, b3Vec3 position, b3Vec3 half, int material, b3Vec3 velocity )
+static int AddBox( Sim* s, lpVec3 position, lpVec3 half, int material, lpVec3 velocity )
 {
 	lpPartDef part = lpDefaultPartDef();
 	part.halfExtents = half;
@@ -22,7 +22,7 @@ static int AddBox( Sim* s, b3Vec3 position, b3Vec3 half, int material, b3Vec3 ve
 
 static float BodyY( const Sim* s, int body )
 {
-	b3WorldTransform xf;
+	lpWorldTransform xf;
 	lpWorld_GetBodyTransform( s->world, body, &xf );
 	return (float)xf.p.y;
 }
@@ -31,19 +31,19 @@ static float BodyY( const Sim* s, int body )
 static int TestLooseBodyFrame( void )
 {
 	Sim s = CreateSim( -1 );
-	int body = AddBox( &s, (b3Vec3){ 1.0f, 3.0f, -2.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, b3Vec3_zero );
+	int body = AddBox( &s, (lpVec3){ 1.0f, 3.0f, -2.0f }, (lpVec3){ 0.1f, 0.1f, 0.1f }, lp_stone, lpVec3_zero );
 	Run( &s, 1 );
 	lpConvertToGhost( s.world, body );
 	ENSURE( s.world->bodies.data[body].kind == lp_kindGhost );
 	int piece = s.world->bodies.data[body].pieces.data[0];
-	b3Vec3 local = { 0.05f, -0.02f, 0.07f };
-	b3WorldTransform xf;
+	lpVec3 local = { 0.05f, -0.02f, 0.07f };
+	lpWorldTransform xf;
 	ENSURE( lpWorld_GetBodyTransform( s.world, body, &xf ) );
-	b3Pos expected = b3TransformWorldPoint( xf, local );
-	b3Pos world = lpWorld_ToWorldFrame( s.world, piece, local );
-	ENSURE( b3Length( b3SubPos( world, expected ) ) < 1e-5f );
-	b3Vec3 back = lpWorld_ToBodyFrame( s.world, piece, world );
-	ENSURE( b3Length( b3Sub( back, local ) ) < 1e-5f );
+	lpPos expected = lpTransformWorldPoint( xf, local );
+	lpPos world = lpWorld_ToWorldFrame( s.world, piece, local );
+	ENSURE( lpLength( lpSubPos( world, expected ) ) < 1e-5f );
+	lpVec3 back = lpWorld_ToBodyFrame( s.world, piece, world );
+	ENSURE( lpLength( lpSub( back, local ) ) < 1e-5f );
 	DestroySim( &s );
 	return 0;
 }
@@ -53,10 +53,10 @@ static int TestLooseBodyFrame( void )
 static int TestGravityScale( void )
 {
 	Sim s = CreateSim( -1 );
-	int normal = AddBox( &s, (b3Vec3){ -2.0f, 10.0f, 0.0f }, (b3Vec3){ 0.2f, 0.2f, 0.2f }, lp_metal, b3Vec3_zero );
-	int dusted = AddBox( &s, (b3Vec3){ 2.0f, 10.0f, 0.0f }, (b3Vec3){ 0.2f, 0.2f, 0.2f }, lp_metal, b3Vec3_zero );
+	int normal = AddBox( &s, (lpVec3){ -2.0f, 10.0f, 0.0f }, (lpVec3){ 0.2f, 0.2f, 0.2f }, lp_metal, lpVec3_zero );
+	int dusted = AddBox( &s, (lpVec3){ 2.0f, 10.0f, 0.0f }, (lpVec3){ 0.2f, 0.2f, 0.2f }, lp_metal, lpVec3_zero );
 	lpWorld_SetGravityScale( s.world, dusted, 0.25f );
-	int floating = AddBox( &s, (b3Vec3){ 6.0f, 5.0f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, b3Vec3_zero );
+	int floating = AddBox( &s, (lpVec3){ 6.0f, 5.0f, 0.0f }, (lpVec3){ 0.1f, 0.1f, 0.1f }, lp_stone, lpVec3_zero );
 	lpWorld_SetGravityScale( s.world, floating, 0.0f );
 	lpConvertToGhost( s.world, floating );
 
@@ -65,13 +65,13 @@ static int TestGravityScale( void )
 	for ( int i = 0; i < 2; ++i )
 	{
 		parts[i] = lpDefaultPartDef();
-		parts[i].halfExtents = (b3Vec3){ 0.3f, 0.05f, 0.1f };
-		parts[i].transform.p = (b3Vec3){ i == 0 ? -0.3f : 0.3f, 0.0f, 0.0f };
+		parts[i].halfExtents = (lpVec3){ 0.3f, 0.05f, 0.1f };
+		parts[i].transform.p = (lpVec3){ i == 0 ? -0.3f : 0.3f, 0.0f, 0.0f };
 		parts[i].material = lp_wood;
 	}
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Pos){ -6.0f, 8.0f, 0.0f };
+	def.transform.p = (lpPos){ -6.0f, 8.0f, 0.0f };
 	def.parts = parts;
 	def.partCount = 2;
 	def.gravityScale = 0.5f;
@@ -120,23 +120,23 @@ static int TestGravityScale( void )
 static int TestSliverAbsorption( void )
 {
 	lpPoly slab;
-	lpPoly_MakeBox( &slab, (b3Vec3){ 1.5f, 1.0f, 0.15f }, b3Transform_identity, 0 );
+	lpPoly_MakeBox( &slab, (lpVec3){ 1.5f, 1.0f, 0.15f }, lpTransform_identity, 0 );
 	float slabVolume;
-	b3Vec3 c;
+	lpVec3 c;
 	lpPoly_ComputeMass( &slab, &slabVolume, &c );
 
 	for ( int seed = 0; seed < 20; ++seed )
 	{
 		lpFractureInput input = { 0 };
 		input.parent = &slab;
-		input.impact = (b3Vec3){ -0.4f + 0.04f * (float)seed, 0.1f, 0.15f };
+		input.impact = (lpVec3){ -0.4f + 0.04f * (float)seed, 0.1f, 0.15f };
 		input.radius = 0.6f;
 		input.fragmentSize = 0.16f;
 		input.plateSize = 1.2f;
 		input.maxCells = 28;
 		input.absorbVolume = 0.002f;
 		input.pattern = lp_breakImpact;
-		input.axis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+		input.axis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 		input.seed = (uint64_t)seed;
 		input.tolerance = 2e-5f;
 
@@ -148,7 +148,7 @@ static int TestSliverAbsorption( void )
 		for ( int i = 0; i < count; ++i )
 		{
 			sum += cells[i]->volume;
-			bool outside = b3Distance( cells[i]->centroid, input.impact ) > input.radius;
+			bool outside = lpDistance( cells[i]->centroid, input.impact ) > input.radius;
 			ENSURE( outside == false || cells[i]->volume >= input.absorbVolume );
 			lpShape_Destroy( cells[i] );
 		}
@@ -162,29 +162,29 @@ static int TestSliverAbsorption( void )
 static int TestLogEnds( void )
 {
 	Sim s = CreateSim( -1 );
-	b3Vec3 points[16];
+	lpVec3 points[16];
 	for ( int i = 0; i < 8; ++i )
 	{
-		b3CosSin cs = b3ComputeCosSin( 0.7853982f * (float)i );
-		points[i] = (b3Vec3){ -1.5f, 0.2f * cs.cosine, 0.2f * cs.sine };
-		points[8 + i] = (b3Vec3){ 1.5f, 0.2f * cs.cosine, 0.2f * cs.sine };
+		lpCosSin cs = lpComputeCosSin( 0.7853982f * (float)i );
+		points[i] = (lpVec3){ -1.5f, 0.2f * cs.cosine, 0.2f * cs.sine };
+		points[8 + i] = (lpVec3){ 1.5f, 0.2f * cs.cosine, 0.2f * cs.sine };
 	}
 	lpPartDef part = lpDefaultPartDef();
 	part.points = points;
 	part.pointCount = 16;
 	part.material = lp_wood;
-	part.grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+	part.grainAxis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	lpObjectDef def = lpDefaultObjectDef();
 	def.isStatic = false;
-	def.transform.p = (b3Vec3){ 0.0f, 0.21f, 0.0f };
+	def.transform.p = (lpVec3){ 0.0f, 0.21f, 0.0f };
 	def.parts = &part;
 	def.partCount = 1;
 	lpCreateObject( s.world, &def );
 	Run( &s, 30 );
 
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 0.41f, 0.0f };
-	im.direction = (b3Vec3){ 0.0f, -1.0f, 0.0f };
+	im.point = (lpPos){ 0.0f, 0.41f, 0.0f };
+	im.direction = (lpVec3){ 0.0f, -1.0f, 0.0f };
 	im.radius = 0.7f;
 	im.energy = 25000.0f;
 	lpWorld_AddImpact( s.world, &im );
@@ -233,8 +233,8 @@ static int TestGhostLanding( void )
 {
 	Sim s = CreateSim( lp_sceneWall );
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ -3.0f, 1.6f, 1.02f }; // the glass pane: shards are ghost sized
-	im.direction = (b3Vec3){ 0.0f, 0.0f, -1.0f };
+	im.point = (lpPos){ -3.0f, 1.6f, 1.02f }; // the glass pane: shards are ghost sized
+	im.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
 	im.radius = 1.4f;
 	im.energy = 80000.0f;
 	im.impulse = 12.0f;
@@ -269,8 +269,8 @@ static int TestGhostLanding( void )
 static int TestLightIgnoresDebris( void )
 {
 	Sim s = CreateSim( -1 );
-	int crate = AddBox( &s, (b3Vec3){ 0.0f, 0.5f, 0.0f }, (b3Vec3){ 0.5f, 0.5f, 0.5f }, lp_wood, b3Vec3_zero );
-	int chunk = AddBox( &s, (b3Vec3){ 0.0f, 3.0f, 0.0f }, (b3Vec3){ 0.08f, 0.08f, 0.08f }, lp_stone, b3Vec3_zero );
+	int crate = AddBox( &s, (lpVec3){ 0.0f, 0.5f, 0.0f }, (lpVec3){ 0.5f, 0.5f, 0.5f }, lp_wood, lpVec3_zero );
+	int chunk = AddBox( &s, (lpVec3){ 0.0f, 3.0f, 0.0f }, (lpVec3){ 0.08f, 0.08f, 0.08f }, lp_stone, lpVec3_zero );
 	lpConvertToLight( s.world, chunk );
 	Run( &s, 120 );
 	ENSURE( lpWorld_Validate( s.world ) );
@@ -288,26 +288,26 @@ static float CrateX( bool withRubble )
 	int rubble = -1;
 	if ( withRubble )
 	{
-		rubble = AddBox( &s, (b3Vec3){ 4.0f, 0.1f, 0.0f }, (b3Vec3){ 0.1f, 0.1f, 0.1f }, lp_stone, b3Vec3_zero );
+		rubble = AddBox( &s, (lpVec3){ 4.0f, 0.1f, 0.0f }, (lpVec3){ 0.1f, 0.1f, 0.1f }, lp_stone, lpVec3_zero );
 		lpConvertToLight( s.world, rubble );
 		Run( &s, 60 ); // settles and freezes
 	}
-	int crate = AddBox( &s, (b3Vec3){ 0.0f, 0.6f, 0.0f }, (b3Vec3){ 0.6f, 0.6f, 0.6f }, lp_stone, (b3Vec3){ 8.0f, 0.0f, 0.0f } );
+	int crate = AddBox( &s, (lpVec3){ 0.0f, 0.6f, 0.0f }, (lpVec3){ 0.6f, 0.6f, 0.6f }, lp_stone, (lpVec3){ 8.0f, 0.0f, 0.0f } );
 	float x = 0.0f;
 	for ( int i = 0; i < 45; ++i )
 	{
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 	}
-	b3WorldTransform xf;
+	lpWorldTransform xf;
 	lpWorld_GetBodyTransform( s.world, crate, &xf );
 	x = (float)xf.p.x;
 	if ( withRubble )
 	{
 		lpBody* r = s.world->bodies.data + rubble;
-		b3WorldTransform rx;
+		lpWorldTransform rx;
 		lpWorld_GetBodyTransform( s.world, rubble, &rx );
 		printf( "  rubble kind %d at x = %.2f (was 4.0)\n", r->kind, (double)rx.p.x );
-		if ( b3AbsFloat( (float)rx.p.x - 4.0f ) < 0.05f && b3AbsFloat( (float)rx.p.z ) < 0.05f )
+		if ( lpAbsFloat( (float)rx.p.x - 4.0f ) < 0.05f && lpAbsFloat( (float)rx.p.z ) < 0.05f )
 		{
 			x = -1000.0f; // not shoved
 		}
@@ -331,11 +331,11 @@ static int TestShove( void )
 static int TestFragileRubble( void )
 {
 	Sim s = CreateSim( -1 );
-	int rock = AddBox( &s, (b3Vec3){ 0.0f, 0.3f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, lp_stone, b3Vec3_zero );
+	int rock = AddBox( &s, (lpVec3){ 0.0f, 0.3f, 0.0f }, (lpVec3){ 0.3f, 0.3f, 0.3f }, lp_stone, lpVec3_zero );
 	Run( &s, 90 );
 	ENSURE( s.world->bodies.data[rock].kind == lp_kindRubble );
 	// Slides in at about 2.7 m/s after friction: above the wake speed, below the damage speed
-	AddBox( &s, (b3Vec3){ -1.2f, 0.3f, 0.0f }, (b3Vec3){ 0.3f, 0.3f, 0.3f }, lp_stone, (b3Vec3){ 4.0f, 0.0f, 0.0f } );
+	AddBox( &s, (lpVec3){ -1.2f, 0.3f, 0.0f }, (lpVec3){ 0.3f, 0.3f, 0.3f }, lp_stone, (lpVec3){ 4.0f, 0.0f, 0.0f } );
 	int woke = -1;
 	for ( int i = 0; i < 60 && woke < 0; ++i )
 	{
@@ -402,7 +402,7 @@ static int DeferredRun( int budget, int* maxJobs, int* totalFractures, int* left
 	ld.maxFractureJobsPerStep = budget;
 	Sim s = CreateSimDef( ld, lp_sceneWall );
 	lpImpactDef im = { 0 };
-	im.point = (b3Pos){ 0.0f, 2.0f, -8.7f }; // the stone wall
+	im.point = (lpPos){ 0.0f, 2.0f, -8.7f }; // the stone wall
 	im.radius = 2.5f;
 	im.energy = 600000.0f;
 	im.impulse = 10.0f;

@@ -323,11 +323,13 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
    [research/m7-state-audit.md](research/m7-state-audit.md) and the brief's surface list: bodies, hull shapes, weld,
    revolute, spherical and distance joints, motors, force getters, hit and move events, contact data, AABB overlap,
    ray and shape casts, GJK distance, quickhull) into the operations the interface will offer, about 40.
-1. **Own the maths.** `src/lpmath.h` (MIT, from Box3D's `math_functions.h`, same operations in the same order) with
-   `lp` names for the types and helpers we use (`lpVec3`, `lpPos`, `lpQuat`, `lpTransform`, `lpAABB`, `lpCosSin`,
-   `lpAtan2`, ...). First as aliases of the Box3D ones, renamed mechanically across `src/`, `scenes/`, `test/`, `bench/`
-   and the sandbox (about 2,000 uses; the 41 Box3D types in `lpf.h` included); then made standalone, with Box3D's maths
-   kept for Box3D alone. Hash-neutral by construction.
+1. **Own the maths.** `include/lpf/lpmath.h` and `src/lpmath.c` (public, since the API's types are vectors; MIT, from
+   Box3D's `math_functions.h`, same operations in the same order) with `lp` names for the types and helpers we use
+   (`lpVec3`, `lpPos`, `lpQuat`, `lpTransform`, `lpAABB`, `lpCosSin`, `lpAtan2`, ...), renamed mechanically across
+   `src/`, `scenes/`, `test/`, `bench/` and the sandbox (about 2,200 uses). The functions are our own copies at once;
+   the types stay aliases of Box3D's until step 3 has routed every call, then become standalone, with Box3D's maths
+   kept for Box3D alone. Hash-neutral by construction. **Done:** hashes and solver hashes identical, the self-test
+   hash too; an interleaved A/B (town, tower, 1 worker) shows no cost.
 2. **The interface.** `src/phys.h` declares the operations on opaque handles (`lpPhysBody`, `lpPhysShape`,
    `lpPhysJoint`); `src/phys_box3d.c` implements them on Box3D and is the only file that includes Box3D. Reports
    (hit and move events, contact lists, query and cast results) come back already in our total order (rule 12), so the

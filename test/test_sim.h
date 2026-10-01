@@ -23,7 +23,7 @@ typedef struct Sim
 static inline Sim CreateSimDef( lpWorldDef ld, int scene )
 {
 	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (b3Vec3){ 0.0f, -10.0f, 0.0f };
+	wd.gravity = (lpVec3){ 0.0f, -10.0f, 0.0f };
 	wd.workerCount = (uint32_t)( ld.workerCount > 1 ? ld.workerCount : 1 );
 	Sim s;
 	s.physics = b3CreateWorld( &wd );

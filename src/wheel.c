@@ -35,7 +35,6 @@
 #define LP_WHEEL_HANDBRAKE_GRIP 0.5f  // sideways grip of a wheel locked by the handbrake
 #define LP_WHEEL_RIM 8				  // points of the tyre's cast shape
 #define LP_WHEEL_RECHECK_TICKS 30	  // a structure under a wheel is re-checked at most this often for a changed load
-#define LP_PI 3.14159265f
 
 lpWheelDef lpDefaultWheelDef( void )
 {
@@ -57,8 +56,8 @@ lpVehicleDef lpDefaultVehicleDef( void )
 {
 	lpVehicleDef def = { 0 };
 	def.body = -1;
-	def.forward = (b3Vec3){ 0.0f, 0.0f, 1.0f };
-	def.up = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	def.forward = (lpVec3){ 0.0f, 0.0f, 1.0f };
+	def.up = (lpVec3){ 0.0f, 1.0f, 0.0f };
 	def.maxDriveForce = 8000.0f;
 	def.maxSpeed = 40.0f;
 	def.maxBrakeForce = 12000.0f;
@@ -112,28 +111,28 @@ static float lpWheelSupply( const lpWorld* w, const lpWheel* wh, uint8_t needs )
 }
 
 // The tyre's frame in the chassis body frame: x the axle (up x forward), y up, z forward, turned by steering and spin
-static b3Quat lpWheelRotation( const lpVehicle* v, const lpWheel* wh )
+static lpQuat lpWheelRotation( const lpVehicle* v, const lpWheel* wh )
 {
-	b3Matrix3 m = { b3Cross( v->up, v->forward ), v->up, v->forward };
-	b3Quat base = b3MakeQuatFromMatrix( &m );
-	b3Quat steer = b3MakeQuatFromAxisAngle( v->up, -wh->steer );
-	b3Quat spin = b3MakeQuatFromAxisAngle( (b3Vec3){ 1.0f, 0.0f, 0.0f }, wh->spin );
-	return b3MulQuat( steer, b3MulQuat( base, spin ) );
+	lpMatrix3 m = { lpCross( v->up, v->forward ), v->up, v->forward };
+	lpQuat base = lpMakeQuatFromMatrix( &m );
+	lpQuat steer = lpMakeQuatFromAxisAngle( v->up, -wh->steer );
+	lpQuat spin = lpMakeQuatFromAxisAngle( (lpVec3){ 1.0f, 0.0f, 0.0f }, wh->spin );
+	return lpMulQuat( steer, lpMulQuat( base, spin ) );
 }
 
 // Hub pose and the link's cached points (the ends of the axle, so rays and blasts find the tyre)
-static void lpPoseWheel( lpWorld* w, lpWheel* wh, b3WorldTransform xf, b3BodyId body )
+static void lpPoseWheel( lpWorld* w, lpWheel* wh, lpWorldTransform xf, b3BodyId body )
 {
 	const lpVehicle* v = w->vehicles.data + wh->vehicle;
 	lpLink* l = w->links.data + wh->link;
-	b3Vec3 hubLocal = b3MulAdd( l->ends[0].frame.p, -wh->length, v->up );
-	wh->hub.p = b3TransformWorldPoint( xf, hubLocal );
-	wh->hub.q = b3MulQuat( xf.q, lpWheelRotation( v, wh ) );
+	lpVec3 hubLocal = lpMulAdd( l->ends[0].frame.p, -wh->length, v->up );
+	wh->hub.p = lpTransformWorldPoint( xf, hubLocal );
+	wh->hub.q = lpMulQuat( xf.q, lpWheelRotation( v, wh ) );
 	wh->hubVelocity = b3Body_GetWorldPointVelocity( body, wh->hub.p );
 	wh->bodyOmega = b3Body_GetAngularVelocity( body );
-	b3Vec3 axle = b3RotateVector( wh->hub.q, (b3Vec3){ 0.5f * wh->def.width, 0.0f, 0.0f } );
-	l->points[0] = b3OffsetPos( wh->hub.p, b3Neg( axle ) );
-	l->points[1] = b3OffsetPos( wh->hub.p, axle );
+	lpVec3 axle = lpRotateVector( wh->hub.q, (lpVec3){ 0.5f * wh->def.width, 0.0f, 0.0f } );
+	l->points[0] = lpOffsetPos( wh->hub.p, lpNeg( axle ) );
+	l->points[1] = lpOffsetPos( wh->hub.p, axle );
 }
 
 int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
@@ -149,9 +148,9 @@ int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 	{
 		return -1;
 	}
-	b3WorldTransform xf = b3Body_GetTransform( b->id );
-	b3Vec3 forward = b3Normalize( def->forward );
-	b3Vec3 up = b3Normalize( b3Sub( def->up, b3MulSV( b3Dot( def->up, forward ), forward ) ) );
+	lpWorldTransform xf = b3Body_GetTransform( b->id );
+	lpVec3 forward = lpNormalize( def->forward );
+	lpVec3 up = lpNormalize( lpSub( def->up, lpMulSV( lpDot( def->up, forward ), forward ) ) );
 	float sprungMass = b3Body_GetMass( b->id ) / (float)def->wheelCount;
 
 	int index = w->vehicles.count;
@@ -160,8 +159,8 @@ int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 	lpVehicle* v = w->vehicles.data + index;
 	v->def = *def;
 	v->def.wheels = NULL;
-	v->forward = b3InvRotateVector( xf.q, forward );
-	v->up = b3InvRotateVector( xf.q, up );
+	v->forward = lpInvRotateVector( xf.q, forward );
+	v->up = lpInvRotateVector( xf.q, up );
 	v->alive = true;
 	v->wheelCount = def->wheelCount;
 	for ( int i = 0; i < LP_MAX_VEHICLE_WHEELS; ++i )
@@ -174,9 +173,9 @@ int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 		int wi = lpAllocWheel( w );
 		lpWheel* wh = w->wheels.data + wi;
 		wh->def = def->wheels[i];
-		wh->def.radius = b3MaxFloat( wh->def.radius, 0.05f );
-		wh->def.width = b3ClampFloat( wh->def.width, 0.02f, 1.8f * wh->def.radius );
-		wh->def.maxLength = b3MaxFloat( wh->def.maxLength, 0.01f );
+		wh->def.radius = lpMaxFloat( wh->def.radius, 0.05f );
+		wh->def.width = lpClampFloat( wh->def.width, 0.02f, 1.8f * wh->def.radius );
+		wh->def.maxLength = lpMaxFloat( wh->def.maxLength, 0.01f );
 		if ( wh->def.stiffness <= 0.0f )
 		{
 			float omega = 2.0f * LP_PI * LP_WHEEL_HERTZ;
@@ -214,8 +213,8 @@ void lpReleaseWheel( lpWorld* w, int wheel, bool comesOff )
 	w->vehicles.data[wh->vehicle].links[wh->slot] = -1;
 	if ( comesOff )
 	{
-		b3Vec3 axle = b3RotateVector( wh->hub.q, (b3Vec3){ 1.0f, 0.0f, 0.0f } );
-		lpLostWheel lost = { wh->hub, wh->hubVelocity, b3MulAdd( wh->bodyOmega, wh->spinSpeed, axle ),
+		lpVec3 axle = lpRotateVector( wh->hub.q, (lpVec3){ 1.0f, 0.0f, 0.0f } );
+		lpLostWheel lost = { wh->hub, wh->hubVelocity, lpMulAdd( wh->bodyOmega, wh->spinSpeed, axle ),
 							 wh->def.radius, wh->def.width, wh->def.material, wh->def.color };
 		lpArray_Push( w->lostWheels, lost );
 	}
@@ -228,19 +227,19 @@ void lpSpawnLostWheels( lpWorld* w )
 	for ( int i = 0; i < w->lostWheels.count; ++i )
 	{
 		lpLostWheel lost = w->lostWheels.data[i];
-		b3Vec3 points[24];
+		lpVec3 points[24];
 		for ( int k = 0; k < 12; ++k )
 		{
-			b3CosSin cs = b3ComputeCosSin( 2.0f * LP_PI * (float)k / 12.0f );
-			points[2 * k] = (b3Vec3){ -0.5f * lost.width, lost.radius * cs.cosine, lost.radius * cs.sine };
-			points[2 * k + 1] = (b3Vec3){ 0.5f * lost.width, lost.radius * cs.cosine, lost.radius * cs.sine };
+			lpCosSin cs = lpComputeCosSin( 2.0f * LP_PI * (float)k / 12.0f );
+			points[2 * k] = (lpVec3){ -0.5f * lost.width, lost.radius * cs.cosine, lost.radius * cs.sine };
+			points[2 * k + 1] = (lpVec3){ 0.5f * lost.width, lost.radius * cs.cosine, lost.radius * cs.sine };
 		}
 		lpPartDef part = lpDefaultPartDef();
 		part.points = points;
 		part.pointCount = 24;
 		part.material = lost.material;
 		part.color = lost.color;
-		part.grainAxis = (b3Vec3){ 1.0f, 0.0f, 0.0f };
+		part.grainAxis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 		lpObjectDef def = lpDefaultObjectDef();
 		def.transform = lost.hub;
 		def.isStatic = false;
@@ -258,14 +257,14 @@ typedef struct lpWheelCast
 	const lpWorld* world;
 	int chassis; // its own body: the cast passes through it
 	float fraction;
-	b3Pos point;
-	b3Vec3 normal;
+	lpPos point;
+	lpVec3 normal;
 	int piece;
 	float friction;
 	bool hit;
 } lpWheelCast;
 
-static float lpWheelCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
+static float lpWheelCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
 							 int triangleIndex, int childIndex, void* context )
 {
 	(void)triangleIndex;
@@ -290,33 +289,33 @@ static float lpWheelCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, floa
 }
 
 // Casts the tyre from the mount (the hub at full compression) down to full droop
-static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, b3WorldTransform xf )
+static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform xf )
 {
 	const lpVehicle* v = w->vehicles.data + wh->vehicle;
 	const lpLink* l = w->links.data + wh->link;
-	b3CosSin steer = b3ComputeCosSin( wh->steer );
-	b3Vec3 left = b3Cross( v->up, v->forward );
-	b3Vec3 heading = b3RotateVector( xf.q, b3Sub( b3MulSV( steer.cosine, v->forward ), b3MulSV( steer.sine, left ) ) );
-	b3Vec3 down = b3RotateVector( xf.q, b3Neg( v->up ) );
+	lpCosSin steer = lpComputeCosSin( wh->steer );
+	lpVec3 left = lpCross( v->up, v->forward );
+	lpVec3 heading = lpRotateVector( xf.q, lpSub( lpMulSV( steer.cosine, v->forward ), lpMulSV( steer.sine, left ) ) );
+	lpVec3 down = lpRotateVector( xf.q, lpNeg( v->up ) );
 
 	// A disc in the tyre's plane: rim points (one straight down) wrapped in half the width
 	static const float c[LP_WHEEL_RIM] = { 1.0f, 0.70710678f, 0.0f, -0.70710678f, -1.0f, -0.70710678f, 0.0f, 0.70710678f };
 	static const float s[LP_WHEEL_RIM] = { 0.0f, 0.70710678f, 1.0f, 0.70710678f, 0.0f, -0.70710678f, -1.0f, -0.70710678f };
 	float halfWidth = 0.5f * wh->def.width;
 	float rim = wh->def.radius - halfWidth;
-	b3Vec3 points[LP_WHEEL_RIM];
+	lpVec3 points[LP_WHEEL_RIM];
 	for ( int k = 0; k < LP_WHEEL_RIM; ++k )
 	{
-		points[k] = b3Add( b3MulSV( rim * c[k], heading ), b3MulSV( rim * s[k], down ) );
+		points[k] = lpAdd( lpMulSV( rim * c[k], heading ), lpMulSV( rim * s[k], down ) );
 	}
 	b3ShapeProxy proxy = { points, LP_WHEEL_RIM, halfWidth };
 	b3QueryFilter filter = b3DefaultQueryFilter();
 	filter.categoryBits = LP_CAT_VEHICLE;
 	filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
 
-	lpWheelCast cast = { w, chassis, FLT_MAX, { 0 }, b3Vec3_zero, -1, 0.6f, false };
-	b3Pos mount = b3TransformWorldPoint( xf, l->ends[0].frame.p );
-	b3World_CastShape( w->def.physics, mount, &proxy, b3MulSV( wh->def.maxLength, down ), filter, lpWheelCastFcn, &cast );
+	lpWheelCast cast = { w, chassis, FLT_MAX, { 0 }, lpVec3_zero, -1, 0.6f, false };
+	lpPos mount = lpTransformWorldPoint( xf, l->ends[0].frame.p );
+	b3World_CastShape( w->def.physics, mount, &proxy, lpMulSV( wh->def.maxLength, down ), filter, lpWheelCastFcn, &cast );
 	w->stats.wheelCasts += 1;
 
 	wh->grounded = cast.hit;
@@ -331,7 +330,7 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, b3WorldTransform 
 	wh->atStop = cast.fraction <= 0.0f;
 	wh->contactPoint = cast.point;
 	// A cast that starts inside the ground reports no normal: push straight up the suspension
-	wh->contactNormal = b3LengthSquared( cast.normal ) > 0.5f ? cast.normal : b3Neg( down );
+	wh->contactNormal = lpLengthSquared( cast.normal ) > 0.5f ? cast.normal : lpNeg( down );
 	wh->friction = cast.friction;
 	wh->groundPiece = cast.piece;
 	wh->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
@@ -358,22 +357,22 @@ static b3BodyId lpGroundBody( const lpWorld* w, const lpWheel* wh )
 	return b3Body_GetType( g->id ) == b3_dynamicBody ? g->id : b3_nullBodyId;
 }
 
-static float lpEffectiveMass( float invMass, b3Matrix3 invI, b3Vec3 r, b3Vec3 d )
+static float lpEffectiveMass( float invMass, lpMatrix3 invI, lpVec3 r, lpVec3 d )
 {
-	b3Vec3 rd = b3Cross( r, d );
-	float k = invMass + b3Dot( rd, b3MulMV( invI, rd ) );
+	lpVec3 rd = lpCross( r, d );
+	float k = invMass + lpDot( rd, lpMulMV( invI, rd ) );
 	return k > 0.0f ? 1.0f / k : 0.0f;
 }
 
-static void lpApplyImpulse( b3Vec3* v, b3Vec3* omega, float invMass, b3Matrix3 invI, b3Vec3 r, b3Vec3 impulse )
+static void lpApplyImpulse( lpVec3* v, lpVec3* omega, float invMass, lpMatrix3 invI, lpVec3 r, lpVec3 impulse )
 {
-	*v = b3MulAdd( *v, invMass, impulse );
-	*omega = b3Add( *omega, b3MulMV( invI, b3Cross( r, impulse ) ) );
+	*v = lpMulAdd( *v, invMass, impulse );
+	*omega = lpAdd( *omega, lpMulMV( invI, lpCross( r, impulse ) ) );
 }
 
 // A structure under a wheel carries its load: check it again when the load has changed by a quarter since, or moved
 // to another structure (like a link's pull, at most every 30 steps)
-static void lpRecheckGround( lpWorld* w, lpWheel* wh, b3Vec3 force )
+static void lpRecheckGround( lpWorld* w, lpWheel* wh, lpVec3 force )
 {
 	int ground = -1;
 	if ( wh->grounded && wh->groundPiece >= 0 )
@@ -381,9 +380,9 @@ static void lpRecheckGround( lpWorld* w, lpWheel* wh, b3Vec3 force )
 		int body = w->pieces.data[wh->groundPiece].body;
 		ground = w->bodies.data[body].kind == lp_kindStructure ? body : -1;
 	}
-	float change = b3Length( b3Sub( force, wh->stressForce ) );
+	float change = lpLength( lpSub( force, wh->stressForce ) );
 	bool changed = ground != wh->stressBody ||
-				   change > 0.25f * b3MaxFloat( b3Length( force ), b3Length( wh->stressForce ) ) + 10.0f;
+				   change > 0.25f * lpMaxFloat( lpLength( force ), lpLength( wh->stressForce ) ) + 10.0f;
 	if ( changed == false || ( wh->recheckTick != 0 && w->tick + 1 < wh->recheckTick + LP_WHEEL_RECHECK_TICKS ) )
 	{
 		return;
@@ -398,7 +397,7 @@ static void lpRecheckGround( lpWorld* w, lpWheel* wh, b3Vec3 force )
 			wh->recheckTick = w->tick + 1;
 		}
 	}
-	wh->stressForce = ground >= 0 ? force : b3Vec3_zero;
+	wh->stressForce = ground >= 0 ? force : lpVec3_zero;
 	wh->stressBody = ground;
 }
 
@@ -413,55 +412,55 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		return;
 	}
 	float invMass = 1.0f / mass;
-	b3Matrix3 invI = b3Body_GetWorldInverseRotationalInertia( id );
-	b3Pos com = b3Body_GetWorldCenter( id );
-	b3WorldTransform xf = b3Body_GetTransform( id );
-	b3Vec3 v0 = b3Body_GetLinearVelocity( id );
-	b3Vec3 omega0 = b3Body_GetAngularVelocity( id );
-	b3Vec3 up = b3Vec3_zero;
+	lpMatrix3 invI = b3Body_GetWorldInverseRotationalInertia( id );
+	lpPos com = b3Body_GetWorldCenter( id );
+	lpWorldTransform xf = b3Body_GetTransform( id );
+	lpVec3 v0 = b3Body_GetLinearVelocity( id );
+	lpVec3 omega0 = b3Body_GetAngularVelocity( id );
+	lpVec3 up = lpVec3_zero;
 
 	// Velocity at the end of the step without the tyres: gravity and the springs
-	b3Vec3 v = b3MulAdd( v0, timeStep * b->gravityScale, b3World_GetGravity( w->def.physics ) );
-	b3Vec3 omega = omega0;
+	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, b3World_GetGravity( w->def.physics ) );
+	lpVec3 omega = omega0;
 	for ( int k = 0; k < count; ++k )
 	{
 		lpWheel* wh = w->wheels.data + list[k].wheel;
 		const lpVehicle* vehicle = w->vehicles.data + wh->vehicle;
-		up = b3RotateVector( xf.q, vehicle->up );
+		up = lpRotateVector( xf.q, vehicle->up );
 		wh->lambdaN = 0.0f;
 		wh->lambdaF = 0.0f;
 		wh->lambdaS = 0.0f;
-		wh->suspension = b3Vec3_zero;
+		wh->suspension = lpVec3_zero;
 		if ( wh->grounded == false )
 		{
 			continue;
 		}
-		b3Vec3 n = wh->contactNormal;
-		wh->r = b3SubPos( wh->contactPoint, com );
+		lpVec3 n = wh->contactNormal;
+		wh->r = lpSubPos( wh->contactPoint, com );
 		b3BodyId ground = lpGroundBody( w, wh );
-		wh->groundVelocity = B3_IS_NON_NULL( ground ) ? b3Body_GetWorldPointVelocity( ground, wh->contactPoint ) : b3Vec3_zero;
-		b3Vec3 vc = b3Sub( b3Add( v0, b3Cross( omega0, wh->r ) ), wh->groundVelocity );
+		wh->groundVelocity = B3_IS_NON_NULL( ground ) ? b3Body_GetWorldPointVelocity( ground, wh->contactPoint ) : lpVec3_zero;
+		lpVec3 vc = lpSub( lpAdd( v0, lpCross( omega0, wh->r ) ), wh->groundVelocity );
 
 		// The spring from the cast, damped by how fast the chassis closes on the ground (a kerb does not jolt it)
-		float closing = -b3Dot( vc, up );
+		float closing = -lpDot( vc, up );
 		float force = wh->def.stiffness * ( wh->def.restLength - wh->length ) + wh->def.damping * closing;
-		wh->suspension = b3MulSV( b3MaxFloat( force, 0.0f ), n );
-		lpApplyImpulse( &v, &omega, invMass, invI, wh->r, b3MulSV( timeStep, wh->suspension ) );
+		wh->suspension = lpMulSV( lpMaxFloat( force, 0.0f ), n );
+		lpApplyImpulse( &v, &omega, invMass, invI, wh->r, lpMulSV( timeStep, wh->suspension ) );
 
 		// Along and across the tyre, in the ground's plane
-		b3CosSin steer = b3ComputeCosSin( wh->steer );
-		b3Vec3 left = b3Cross( vehicle->up, vehicle->forward );
-		b3Vec3 heading = b3RotateVector( xf.q, b3Sub( b3MulSV( steer.cosine, vehicle->forward ), b3MulSV( steer.sine, left ) ) );
-		b3Vec3 along = b3Sub( heading, b3MulSV( b3Dot( heading, n ), n ) );
-		float length = b3Length( along );
-		wh->dirF = length > 1e-4f ? b3MulSV( 1.0f / length, along ) : b3Vec3_zero;
-		wh->dirS = b3Cross( n, wh->dirF );
+		lpCosSin steer = lpComputeCosSin( wh->steer );
+		lpVec3 left = lpCross( vehicle->up, vehicle->forward );
+		lpVec3 heading = lpRotateVector( xf.q, lpSub( lpMulSV( steer.cosine, vehicle->forward ), lpMulSV( steer.sine, left ) ) );
+		lpVec3 along = lpSub( heading, lpMulSV( lpDot( heading, n ), n ) );
+		float length = lpLength( along );
+		wh->dirF = length > 1e-4f ? lpMulSV( 1.0f / length, along ) : lpVec3_zero;
+		wh->dirS = lpCross( n, wh->dirF );
 		wh->massN = lpEffectiveMass( invMass, invI, wh->r, n );
 		wh->massF = lpEffectiveMass( invMass, invI, wh->r, wh->dirF );
 		wh->massS = lpEffectiveMass( invMass, invI, wh->r, wh->dirS );
-		wh->slip = b3AbsFloat( b3Dot( vc, wh->dirS ) );
+		wh->slip = lpAbsFloat( lpDot( vc, wh->dirS ) );
 		bool locked = vehicle->control.handbrake && wh->def.handbrake;
-		wh->spinSpeed = locked ? 0.0f : b3Dot( vc, wh->dirF ) / wh->def.radius;
+		wh->spinSpeed = locked ? 0.0f : lpDot( vc, wh->dirF ) / wh->def.radius;
 	}
 
 	for ( int iteration = 0; iteration < LP_WHEEL_ITERATIONS; ++iteration )
@@ -475,32 +474,32 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 			}
 			const lpVehicle* vehicle = w->vehicles.data + wh->vehicle;
 			const lpVehicleControl* control = &vehicle->control;
-			b3Vec3 n = wh->contactNormal;
-			b3Vec3 vc = b3Sub( b3Add( v, b3Cross( omega, wh->r ) ), wh->groundVelocity );
+			lpVec3 n = wh->contactNormal;
+			lpVec3 vc = lpSub( lpAdd( v, lpCross( omega, wh->r ) ), wh->groundVelocity );
 
 			// Bottomed out: the ground may push, never pull
 			if ( wh->atStop )
 			{
-				float lambda = b3MaxFloat( wh->lambdaN - wh->massN * b3Dot( vc, n ), 0.0f );
-				lpApplyImpulse( &v, &omega, invMass, invI, wh->r, b3MulSV( lambda - wh->lambdaN, n ) );
+				float lambda = lpMaxFloat( wh->lambdaN - wh->massN * lpDot( vc, n ), 0.0f );
+				lpApplyImpulse( &v, &omega, invMass, invI, wh->r, lpMulSV( lambda - wh->lambdaN, n ) );
 				wh->lambdaN = lambda;
-				vc = b3Sub( b3Add( v, b3Cross( omega, wh->r ) ), wh->groundVelocity );
+				vc = lpSub( lpAdd( v, lpCross( omega, wh->r ) ), wh->groundVelocity );
 			}
-			float normal = b3Length( wh->suspension ) * timeStep + wh->lambdaN;
+			float normal = lpLength( wh->suspension ) * timeStep + wh->lambdaN;
 			float grip = wh->def.grip * wh->friction * ( wh->sliding ? LP_WHEEL_SLIDING_GRIP : 1.0f );
 			float limit = grip * normal;
 			bool locked = control->handbrake && wh->def.handbrake;
 
 			// Across the tyre: no sliding sideways
-			float lambdaS = wh->lambdaS - wh->massS * b3Dot( vc, wh->dirS );
+			float lambdaS = wh->lambdaS - wh->massS * lpDot( vc, wh->dirS );
 			float limitS = locked ? LP_WHEEL_HANDBRAKE_GRIP * limit : limit;
-			lambdaS = b3ClampFloat( lambdaS, -limitS, limitS );
+			lambdaS = lpClampFloat( lambdaS, -limitS, limitS );
 
 			// Along it: locked, braked, driven toward top speed, or rolling
 			float target = 0.0f;
 			float cap;
-			float brake = b3ClampFloat( control->brake, 0.0f, 1.0f ) * vehicle->def.maxBrakeForce * wh->def.brakeShare;
-			float drive = b3AbsFloat( control->throttle ) * vehicle->def.maxDriveForce * wh->def.driveShare *
+			float brake = lpClampFloat( control->brake, 0.0f, 1.0f ) * vehicle->def.maxBrakeForce * wh->def.brakeShare;
+			float drive = lpAbsFloat( control->throttle ) * vehicle->def.maxDriveForce * wh->def.driveShare *
 						  lpWheelSupply( w, wh, wh->def.driveNeeds );
 			if ( locked )
 			{
@@ -519,8 +518,8 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 			{
 				cap = vehicle->def.rollingResistance * normal;
 			}
-			float lambdaF = wh->lambdaF + wh->massF * ( target - b3Dot( vc, wh->dirF ) );
-			lambdaF = b3ClampFloat( lambdaF, -cap, cap );
+			float lambdaF = wh->lambdaF + wh->massF * ( target - lpDot( vc, wh->dirF ) );
+			lambdaF = lpClampFloat( lambdaF, -cap, cap );
 
 			// Within the friction circle
 			float total = sqrtf( lambdaF * lambdaF + lambdaS * lambdaS );
@@ -530,7 +529,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 				lambdaF *= scale;
 				lambdaS *= scale;
 			}
-			b3Vec3 impulse = b3Add( b3MulSV( lambdaF - wh->lambdaF, wh->dirF ), b3MulSV( lambdaS - wh->lambdaS, wh->dirS ) );
+			lpVec3 impulse = lpAdd( lpMulSV( lambdaF - wh->lambdaF, wh->dirF ), lpMulSV( lambdaS - wh->lambdaS, wh->dirS ) );
 			lpApplyImpulse( &v, &omega, invMass, invI, wh->r, impulse );
 			wh->lambdaF = lambdaF;
 			wh->lambdaS = lambdaS;
@@ -546,36 +545,36 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		{
 			wh->load = 0.0f;
 			wh->sliding = false;
-			l->force = b3Vec3_zero;
-			lpRecheckGround( w, wh, b3Vec3_zero );
+			l->force = lpVec3_zero;
+			lpRecheckGround( w, wh, lpVec3_zero );
 			continue;
 		}
 		const lpVehicle* vehicle = w->vehicles.data + wh->vehicle;
 		float grip = wh->def.grip * wh->friction * ( wh->sliding ? LP_WHEEL_SLIDING_GRIP : 1.0f );
-		float normal = b3Length( wh->suspension ) * timeStep + wh->lambdaN;
+		float normal = lpLength( wh->suspension ) * timeStep + wh->lambdaN;
 		float total = sqrtf( wh->lambdaF * wh->lambdaF + wh->lambdaS * wh->lambdaS );
 		wh->sliding = total >= 0.999f * grip * normal && normal > 0.0f;
 
 		float invStep = 1.0f / timeStep;
-		b3Vec3 push = b3MulAdd( wh->suspension, wh->lambdaN * invStep, wh->contactNormal );
-		b3Vec3 along = b3MulSV( wh->lambdaF * invStep, wh->dirF );
-		b3Vec3 across = b3MulSV( wh->lambdaS * invStep, wh->dirS );
+		lpVec3 push = lpMulAdd( wh->suspension, wh->lambdaN * invStep, wh->contactNormal );
+		lpVec3 along = lpMulSV( wh->lambdaF * invStep, wh->dirF );
+		lpVec3 across = lpMulSV( wh->lambdaS * invStep, wh->dirS );
 		// The side force acts nearer the centre of mass, so it rolls the body less
-		b3Vec3 raised = b3Sub( wh->r, b3MulSV( ( 1.0f - vehicle->def.rollFactor ) * b3Dot( wh->r, up ), up ) );
-		b3Body_ApplyForce( id, b3Add( push, along ), wh->contactPoint, false );
-		b3Body_ApplyForce( id, across, b3OffsetPos( com, raised ), false );
-		b3Vec3 onChassis = b3Add( b3Add( push, along ), across );
+		lpVec3 raised = lpSub( wh->r, lpMulSV( ( 1.0f - vehicle->def.rollFactor ) * lpDot( wh->r, up ), up ) );
+		b3Body_ApplyForce( id, lpAdd( push, along ), wh->contactPoint, false );
+		b3Body_ApplyForce( id, across, lpOffsetPos( com, raised ), false );
+		lpVec3 onChassis = lpAdd( lpAdd( push, along ), across );
 		b3BodyId ground = lpGroundBody( w, wh );
 		if ( B3_IS_NON_NULL( ground ) )
 		{
-			b3Body_ApplyForce( ground, b3Neg( onChassis ), wh->contactPoint, true );
+			b3Body_ApplyForce( ground, lpNeg( onChassis ), wh->contactPoint, true );
 		}
-		wh->load = b3Dot( push, wh->contactNormal );
-		l->force = b3Neg( onChassis ); // links keep the force on end B: the ground
+		wh->load = lpDot( push, wh->contactNormal );
+		l->force = lpNeg( onChassis ); // links keep the force on end B: the ground
 		lpRecheckGround( w, wh, l->force );
 		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
 		lpBody* chassis = w->bodies.data + bodyIndex;
-		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * b3Length( b3World_GetGravity( w->def.physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
+		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( b3World_GetGravity( w->def.physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
 		{
 			chassis->hitCheckTick = w->tick;
 			lpRequestStressCheck( w, bodyIndex, false );
@@ -614,9 +613,9 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 				continue;
 			}
 			lpWheel* wh = w->wheels.data + w->links.data[v->links[k]].wheel;
-			float target = b3ClampFloat( v->control.steer, -1.0f, 1.0f ) * v->def.maxSteer * wh->def.steerFactor;
+			float target = lpClampFloat( v->control.steer, -1.0f, 1.0f ) * v->def.maxSteer * wh->def.steerFactor;
 			float turn = v->def.steerSpeed * timeStep * lpWheelSupply( w, wh, wh->def.steerNeeds ); // unfed, it holds
-			wh->steer += b3ClampFloat( target - wh->steer, -turn, turn );
+			wh->steer += lpClampFloat( target - wh->steer, -turn, turn );
 			if ( wake )
 			{
 				b3Body_SetAwake( w->bodies.data[lpWheelMountBody( w, wh )].id, true );
@@ -657,7 +656,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 				continue;
 			}
 		}
-		b3WorldTransform xf = b3Body_GetTransform( id );
+		lpWorldTransform xf = b3Body_GetTransform( id );
 		if ( casts < w->def.maxWheelCastsPerStep || lpGroundLive( w, wh ) == false )
 		{
 			lpCastWheel( w, wh, body, xf );
@@ -681,7 +680,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 		}
 		lpSolveTyres( w, body, w->scratchWheels.data + first, last - first, timeStep );
 		b3BodyId id = w->bodies.data[body].id;
-		b3WorldTransform xf = b3Body_GetTransform( id );
+		lpWorldTransform xf = b3Body_GetTransform( id );
 		for ( int k = first; k < last; ++k )
 		{
 			lpWheel* wh = w->wheels.data + w->scratchWheels.data[k].wheel;
@@ -704,7 +703,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 	}
 }
 
-void lpAddWheelLoads( lpWorld* w, int bodyIndex, b3WorldTransform xf )
+void lpAddWheelLoads( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 {
 	for ( int i = 0; i < w->wheels.count; ++i )
 	{
@@ -718,10 +717,10 @@ void lpAddWheelLoads( lpWorld* w, int bodyIndex, b3WorldTransform xf )
 		{
 			continue;
 		}
-		b3Vec3 force = b3InvRotateVector( xf.q, w->links.data[wh->link].force );
-		b3Vec3 point = b3InvTransformWorldPoint( xf, wh->contactPoint );
-		piece->stressLoad.f = b3Add( piece->stressLoad.f, force );
-		piece->stressLoad.t = b3Add( piece->stressLoad.t, b3Cross( b3Sub( point, piece->shape->centroid ), force ) );
+		lpVec3 force = lpInvRotateVector( xf.q, w->links.data[wh->link].force );
+		lpVec3 point = lpInvTransformWorldPoint( xf, wh->contactPoint );
+		piece->stressLoad.f = lpAdd( piece->stressLoad.f, force );
+		piece->stressLoad.t = lpAdd( piece->stressLoad.t, lpCross( lpSub( point, piece->shape->centroid ), force ) );
 	}
 }
 
@@ -734,8 +733,8 @@ void lpWorld_SetVehicleControl( lpWorld* w, int vehicle, const lpVehicleControl*
 		return;
 	}
 	lpVehicle* v = w->vehicles.data + vehicle;
-	lpVehicleControl c = { b3ClampFloat( control->throttle, -1.0f, 1.0f ), b3ClampFloat( control->brake, 0.0f, 1.0f ),
-						   b3ClampFloat( control->steer, -1.0f, 1.0f ), control->handbrake };
+	lpVehicleControl c = { lpClampFloat( control->throttle, -1.0f, 1.0f ), lpClampFloat( control->brake, 0.0f, 1.0f ),
+						   lpClampFloat( control->steer, -1.0f, 1.0f ), control->handbrake };
 	if ( c.throttle != v->control.throttle || c.brake != v->control.brake || c.steer != v->control.steer ||
 		 c.handbrake != v->control.handbrake )
 	{
@@ -791,11 +790,11 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 	if ( s.body >= 0 )
 	{
 		b3BodyId id = w->bodies.data[s.body].id;
-		b3Quat q = b3Body_GetRotation( id );
-		s.forward = b3RotateVector( q, v->forward );
-		s.up = b3RotateVector( q, v->up );
+		lpQuat q = b3Body_GetRotation( id );
+		s.forward = lpRotateVector( q, v->forward );
+		s.up = lpRotateVector( q, v->up );
 		s.position = b3Body_GetWorldCenter( id );
-		s.speed = b3Dot( b3Body_GetLinearVelocity( id ), s.forward );
+		s.speed = lpDot( b3Body_GetLinearVelocity( id ), s.forward );
 	}
 	return s;
 }

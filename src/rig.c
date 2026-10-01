@@ -35,8 +35,8 @@ lpRigDef lpDefaultRigDef( void )
 {
 	lpRigDef def = { 0 };
 	def.body = -1;
-	def.forward = (b3Vec3){ 0.0f, 0.0f, 1.0f };
-	def.up = (b3Vec3){ 0.0f, 1.0f, 0.0f };
+	def.forward = (lpVec3){ 0.0f, 0.0f, 1.0f };
+	def.up = (lpVec3){ 0.0f, 1.0f, 0.0f };
 	def.crouchDepth = 0.35f;
 	def.stepHeight = 0.35f;
 	def.stride = 0.5f;
@@ -58,73 +58,73 @@ static bool lpIsServo( const lpLink* l )
 	return l->def.type == lp_linkHinge && ( l->def.motor.maxTorque > 0.0f || l->def.motor.holdTorque > 0.0f );
 }
 
-b3Vec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, b3Quat torso )
+lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso )
 {
-	b3Vec3 g = b3World_GetGravity( w->def.physics );
-	float length = b3Length( g );
-	return length > 1e-6f ? b3MulSV( -1.0f / length, g ) : b3RotateVector( torso, r->up );
+	lpVec3 g = b3World_GetGravity( w->def.physics );
+	float length = lpLength( g );
+	return length > 1e-6f ? lpMulSV( -1.0f / length, g ) : lpRotateVector( torso, r->up );
 }
 
 // ---- kinematics ----
 
 // The foot of the limb's first `joints` links in the torso frame, with the joint angles q; each joint's axis (times its
 // sign) and point go to axes and origins
-b3Vec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, b3Vec3 foot, b3Vec3* axes, b3Vec3* origins )
+lpVec3 lpLimbForward( const lpWorld* w, const lpLimb* limb, int joints, const float* q, lpVec3 foot, lpVec3* axes, lpVec3* origins )
 {
-	b3Transform x = b3Transform_identity;
+	lpTransform x = lpTransform_identity;
 	for ( int k = 0; k < joints; ++k )
 	{
 		const lpLink* l = w->links.data + limb->def.links[k];
 		int prox = limb->prox[k];
-		b3Transform inner = b3MulTransforms( x, l->ends[prox].frame );
-		b3Transform outer = l->ends[1 - prox].frame;
+		lpTransform inner = lpMulTransforms( x, l->ends[prox].frame );
+		lpTransform outer = l->ends[1 - prox].frame;
 		float sign = prox == 0 ? 1.0f : -1.0f;
 		origins[k] = inner.p;
-		axes[k] = b3MulSV( sign, b3RotateVector( inner.q, (b3Vec3){ 0.0f, 0.0f, 1.0f } ) );
-		b3CosSin cs = b3ComputeCosSin( 0.5f * sign * q[k] );
-		b3Quat turned = b3MulQuat( inner.q, (b3Quat){ { 0.0f, 0.0f, cs.sine }, cs.cosine } );
+		axes[k] = lpMulSV( sign, lpRotateVector( inner.q, (lpVec3){ 0.0f, 0.0f, 1.0f } ) );
+		lpCosSin cs = lpComputeCosSin( 0.5f * sign * q[k] );
+		lpQuat turned = lpMulQuat( inner.q, (lpQuat){ { 0.0f, 0.0f, cs.sine }, cs.cosine } );
 		// The outer body's frame: its end frame sits on the turned inner frame
-		x.q = b3MulQuat( turned, b3Conjugate( outer.q ) );
-		x.p = b3Sub( inner.p, b3RotateVector( x.q, outer.p ) );
+		x.q = lpMulQuat( turned, lpConjugate( outer.q ) );
+		x.p = lpSub( inner.p, lpRotateVector( x.q, outer.p ) );
 	}
-	return b3TransformPoint( x, foot );
+	return lpTransformPoint( x, foot );
 }
 
-void lpLimbSpeeds( int joints, const b3Vec3* axes, const b3Vec3* origins, b3Vec3 foot, b3Vec3 velocity, float* out )
+void lpLimbSpeeds( int joints, const lpVec3* axes, const lpVec3* origins, lpVec3 foot, lpVec3 velocity, float* out )
 {
-	b3Vec3 columns[LP_MAX_LIMB_JOINTS];
+	lpVec3 columns[LP_MAX_LIMB_JOINTS];
 	float d = LP_RIG_IK_DAMPING * LP_RIG_IK_DAMPING;
-	b3Matrix3 a = { { d, 0.0f, 0.0f }, { 0.0f, d, 0.0f }, { 0.0f, 0.0f, d } };
+	lpMatrix3 a = { { d, 0.0f, 0.0f }, { 0.0f, d, 0.0f }, { 0.0f, 0.0f, d } };
 	for ( int k = 0; k < joints; ++k )
 	{
-		b3Vec3 c = b3Cross( axes[k], b3Sub( foot, origins[k] ) );
+		lpVec3 c = lpCross( axes[k], lpSub( foot, origins[k] ) );
 		columns[k] = c;
-		a.cx = b3MulAdd( a.cx, c.x, c );
-		a.cy = b3MulAdd( a.cy, c.y, c );
-		a.cz = b3MulAdd( a.cz, c.z, c );
+		a.cx = lpMulAdd( a.cx, c.x, c );
+		a.cy = lpMulAdd( a.cy, c.y, c );
+		a.cz = lpMulAdd( a.cz, c.z, c );
 	}
-	b3Vec3 y = b3Solve3( a, velocity );
+	lpVec3 y = lpSolve3( a, velocity );
 	for ( int k = 0; k < joints; ++k )
 	{
-		out[k] = b3Dot( columns[k], y );
+		out[k] = lpDot( columns[k], y );
 	}
 }
 
 // IK: the angles (q, warm on entry) that put the foot at target (torso frame) within the limits; returns how far short
-float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, b3Vec3 foot, b3Vec3 target, float* q )
+float lpLimbIK( const lpWorld* w, const lpLimb* limb, int joints, lpVec3 foot, lpVec3 target, float* q )
 {
-	b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+	lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
 	for ( int iteration = 0; iteration < LP_RIG_IK_ITERATIONS; ++iteration )
 	{
-		b3Vec3 at = lpLimbForward( w, limb, joints, q, foot, axes, origins );
+		lpVec3 at = lpLimbForward( w, limb, joints, q, foot, axes, origins );
 		float dq[LP_MAX_LIMB_JOINTS];
-		lpLimbSpeeds( joints, axes, origins, at, b3Sub( target, at ), dq );
+		lpLimbSpeeds( joints, axes, origins, at, lpSub( target, at ), dq );
 		for ( int k = 0; k < joints; ++k )
 		{
-			q[k] = b3ClampFloat( q[k] + dq[k], limb->lower[k], limb->upper[k] );
+			q[k] = lpClampFloat( q[k] + dq[k], limb->lower[k], limb->upper[k] );
 		}
 	}
-	return b3Length( b3Sub( target, lpLimbForward( w, limb, joints, q, foot, axes, origins ) ) );
+	return lpLength( lpSub( target, lpLimbForward( w, limb, joints, q, foot, axes, origins ) ) );
 }
 
 // ---- capability ----
@@ -146,52 +146,52 @@ static void lpFindFoot( const lpWorld* w, lpLimb* limb )
 		}
 	}
 	const lpLink* last = w->links.data + limb->def.links[limb->joints - 1];
-	b3Vec3 joint = last->ends[1 - limb->prox[limb->joints - 1]].frame.p;
-	b3Vec3 centroid = b3Vec3_zero;
+	lpVec3 joint = last->ends[1 - limb->prox[limb->joints - 1]].frame.p;
+	lpVec3 centroid = lpVec3_zero;
 	float volume = 0.0f;
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
 		const lpShape* shape = w->pieces.data[b->pieces.data[k]].shape;
-		centroid = b3MulAdd( centroid, shape->volume, shape->centroid );
+		centroid = lpMulAdd( centroid, shape->volume, shape->centroid );
 		volume += shape->volume;
 	}
-	b3Vec3 axis = volume > 0.0f ? b3Sub( b3MulSV( 1.0f / volume, centroid ), joint ) : b3Vec3_zero;
-	float length = b3Length( axis );
+	lpVec3 axis = volume > 0.0f ? lpSub( lpMulSV( 1.0f / volume, centroid ), joint ) : lpVec3_zero;
+	float length = lpLength( axis );
 	if ( length < 1e-4f )
 	{
 		limb->foot = joint;
 		return;
 	}
-	axis = b3MulSV( 1.0f / length, axis );
+	axis = lpMulSV( 1.0f / length, axis );
 	float extent = 0.0f;
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
 		const lpShape* shape = w->pieces.data[b->pieces.data[k]].shape;
 		for ( int v = 0; v < shape->vertexCount; ++v )
 		{
-			extent = b3MaxFloat( extent, b3Dot( b3Sub( shape->vertices[v], joint ), axis ) );
+			extent = lpMaxFloat( extent, lpDot( lpSub( shape->vertices[v], joint ), axis ) );
 		}
 	}
-	limb->foot = b3MulAdd( joint, extent, axis );
+	limb->foot = lpMulAdd( joint, extent, axis );
 }
 
 // How far below the torso's frame (along its up) the limb's foot reaches at its neutral point: IK toward a point far
 // below it, from where the joints are
-static float lpLimbDepth( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
+static float lpLimbDepth( const lpWorld* w, const lpLimb* limb, lpVec3 up )
 {
 	float q[LP_MAX_LIMB_JOINTS];
 	for ( int k = 0; k < limb->joints; ++k )
 	{
 		q[k] = w->links.data[limb->def.links[k]].angle;
 	}
-	b3Vec3 target = b3MulAdd( b3Sub( limb->neutral, b3MulSV( b3Dot( limb->neutral, up ), up ) ), -4.0f, up );
+	lpVec3 target = lpMulAdd( lpSub( limb->neutral, lpMulSV( lpDot( limb->neutral, up ), up ) ), -4.0f, up );
 	lpLimbIK( w, limb, limb->joints, limb->foot, target, q );
-	b3Vec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-	return -b3Dot( lpLimbForward( w, limb, limb->joints, q, limb->foot, axes, origins ), up );
+	lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+	return -lpDot( lpLimbForward( w, limb, limb->joints, q, limb->foot, axes, origins ), up );
 }
 
 // Which links are on in a chain from the torso, the weakest servo, the foot (and how deep it reaches)
-static void lpLimbCapability( const lpWorld* w, lpLimb* limb, b3Vec3 up )
+static void lpLimbCapability( const lpWorld* w, lpLimb* limb, lpVec3 up )
 {
 	int inner = -1;
 	limb->joints = 0;
@@ -215,7 +215,7 @@ static void lpLimbCapability( const lpWorld* w, lpLimb* limb, b3Vec3 up )
 			limb->rootBody = in;
 		}
 		float cap = l->def.motor.maxTorque > 0.0f ? lpMotorDrive( w, l ) / l->def.motor.maxTorque : 0.0f; // not what brakes hold
-		limb->strength = b3MinFloat( limb->strength, cap );
+		limb->strength = lpMinFloat( limb->strength, cap );
 		inner = out;
 		limb->joints = k + 1;
 	}
@@ -239,7 +239,7 @@ static void lpLimbCapability( const lpWorld* w, lpLimb* limb, b3Vec3 up )
 }
 
 // A limb can stand if some joint on it swings its foot up and down (not all about the vertical) and it is strong enough
-static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
+static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, lpVec3 up )
 {
 	if ( limb->strength < LP_RIG_WEAK )
 	{
@@ -249,8 +249,8 @@ static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
 	{
 		const lpLink* l = w->links.data + limb->def.links[k];
 		int body = lpEndBodyIndex( w, l, limb->prox[k] );
-		b3Quat q = b3MulQuat( lpGetTransform( w->bodies.data + body ).q, l->ends[limb->prox[k]].frame.q );
-		if ( b3AbsFloat( b3Dot( b3RotateVector( q, (b3Vec3){ 0.0f, 0.0f, 1.0f } ), up ) ) < 0.7f )
+		lpQuat q = lpMulQuat( lpGetTransform( w->bodies.data + body ).q, l->ends[limb->prox[k]].frame.q );
+		if ( lpAbsFloat( lpDot( lpRotateVector( q, (lpVec3){ 0.0f, 0.0f, 1.0f } ), up ) ) < 0.7f )
 		{
 			return true;
 		}
@@ -258,9 +258,9 @@ static bool lpLimbCanLift( const lpWorld* w, const lpLimb* limb, b3Vec3 up )
 	return false;
 }
 
-b3Pos lpFootWorld( const lpWorld* w, const lpLimb* limb )
+lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb )
 {
-	return b3TransformWorldPoint( lpGetTransform( w->bodies.data + limb->tipBody ), limb->foot );
+	return lpTransformWorldPoint( lpGetTransform( w->bodies.data + limb->tipBody ), limb->foot );
 }
 
 // ---- creation ----
@@ -313,22 +313,22 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 			limb->gen[k] = l->generation;
 			bool limited = l->def.lowerAngle < l->def.upperAngle;
 			float mid = 0.5f * ( l->def.lowerAngle + l->def.upperAngle );
-			limb->lower[k] = limited ? b3MinFloat( l->def.lowerAngle + LP_RIG_LIMIT_MARGIN, mid ) : -1e6f;
-			limb->upper[k] = limited ? b3MaxFloat( l->def.upperAngle - LP_RIG_LIMIT_MARGIN, mid ) : 1e6f;
+			limb->lower[k] = limited ? lpMinFloat( l->def.lowerAngle + LP_RIG_LIMIT_MARGIN, mid ) : -1e6f;
+			limb->upper[k] = limited ? lpMaxFloat( l->def.upperAngle - LP_RIG_LIMIT_MARGIN, mid ) : 1e6f;
 			limb->q[k] = l->target;
 		}
-		limb->defFoot = b3InvTransformWorldPoint( lpGetTransform( w->bodies.data + inner ), limb->def.foot );
+		limb->defFoot = lpInvTransformWorldPoint( lpGetTransform( w->bodies.data + inner ), limb->def.foot );
 		limb->tipBody = -1;
-		lpLimbCapability( w, limb, b3InvRotateVector( b3Body_GetRotation( torso->id ), b3Normalize( def->up ) ) );
+		lpLimbCapability( w, limb, lpInvRotateVector( b3Body_GetRotation( torso->id ), lpNormalize( def->up ) ) );
 	}
 
-	b3WorldTransform xf = b3Body_GetTransform( torso->id );
-	b3Vec3 forward = b3Normalize( def->forward );
-	b3Vec3 up = b3Normalize( b3Sub( def->up, b3MulSV( b3Dot( def->up, forward ), forward ) ) );
+	lpWorldTransform xf = b3Body_GetTransform( torso->id );
+	lpVec3 forward = lpNormalize( def->forward );
+	lpVec3 up = lpNormalize( lpSub( def->up, lpMulSV( lpDot( def->up, forward ), forward ) ) );
 	r.def = *def;
 	r.def.limbs = NULL;
-	r.forward = b3InvRotateVector( xf.q, forward );
-	r.up = b3InvRotateVector( xf.q, up );
+	r.forward = lpInvRotateVector( xf.q, forward );
+	r.up = lpInvRotateVector( xf.q, up );
 	r.alive = true;
 	r.body = def->body;
 	r.limbCount = def->limbCount;
@@ -336,7 +336,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 	for ( int i = 0; i < r.limbCount; ++i )
 	{
 		lpLimb* limb = r.limbs + i;
-		limb->neutral = limb->joints > 0 ? b3InvTransformWorldPoint( xf, lpFootWorld( w, limb ) ) : b3Vec3_zero;
+		limb->neutral = limb->joints > 0 ? lpInvTransformWorldPoint( xf, lpFootWorld( w, limb ) ) : lpVec3_zero;
 		limb->depth = limb->joints > 0 ? lpLimbDepth( w, limb, r.up ) : 0.0f; // now that it has its neutral point
 		limb->planted = limb->joints > 0; // standing as built
 		limb->hold = limb->joints > 0 ? lpFootWorld( w, limb ) : xf.p;
@@ -348,11 +348,11 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 	if ( r.def.standHeight <= 0.0f )
 	{
 		// As created: the torso's frame above its feet
-		b3Vec3 worldUp = lpRigWorldUp( w, &r, xf.q );
+		lpVec3 worldUp = lpRigWorldUp( w, &r, xf.q );
 		float sum = 0.0f;
 		for ( int i = 0; i < r.limbCount; ++i )
 		{
-			sum += b3Dot( b3SubPos( xf.p, lpFootWorld( w, r.limbs + i ) ), worldUp );
+			sum += lpDot( lpSubPos( xf.p, lpFootWorld( w, r.limbs + i ) ), worldUp );
 		}
 		r.def.standHeight = sum / (float)r.limbCount;
 	}
@@ -403,8 +403,8 @@ void lpStepRigs( lpWorld* w, float timeStep )
 			r->body = -1;
 			continue;
 		}
-		b3WorldTransform xf = lpGetTransform( w->bodies.data + r->body );
-		b3Vec3 worldUp = lpRigWorldUp( w, r, xf.q );
+		lpWorldTransform xf = lpGetTransform( w->bodies.data + r->body );
+		lpVec3 worldUp = lpRigWorldUp( w, r, xf.q );
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
 			lpLimb* limb = r->limbs + i;
@@ -415,8 +415,8 @@ void lpStepRigs( lpWorld* w, float timeStep )
 			if ( limb->joints > 0 )
 			{
 				const lpLink* root = w->links.data + limb->def.links[0];
-				b3Pos joint = b3TransformWorldPoint( lpGetTransform( w->bodies.data + limb->rootBody ), root->ends[limb->prox[0]].frame.p );
-				limb->reach = b3Length( b3SubPos( lpFootWorld( w, limb ), joint ) );
+				lpPos joint = lpTransformWorldPoint( lpGetTransform( w->bodies.data + limb->rootBody ), root->ends[limb->prox[0]].frame.p );
+				limb->reach = lpLength( lpSubPos( lpFootWorld( w, limb ), joint ) );
 			}
 		}
 		lpWalkRig( w, r, timeStep );
@@ -441,7 +441,7 @@ static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
 	}
 	lpArray_Reserve( w->scratchContacts, capacity );
 	int count = b3Body_GetContactData( tip, w->scratchContacts.data, capacity );
-	b3Pos foot = lpFootWorld( w, limb );
+	lpPos foot = lpFootWorld( w, limb );
 	int best = -1;
 	bool bestFixed = true;
 	float nearest = LP_RIG_TOUCH * LP_RIG_TOUCH;
@@ -462,14 +462,14 @@ static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
 			ours = ours || w->pieces.data[piece].body == r->limbs[i].tipBody || w->pieces.data[piece].body == r->limbs[i].rootBody;
 		}
 		bool fixed = b3Body_GetType( b3Shape_GetBody( other ) ) == b3_staticBody;
-		b3Pos a = b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) );
+		lpPos a = b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) );
 		for ( int m = 0; m < c->manifoldCount && ours == false; ++m )
 		{
 			for ( int n = 0; n < c->manifolds[m].pointCount; ++n )
 			{
-				b3Pos point = b3OffsetPos( a, c->manifolds[m].points[n].anchorA );
-				b3Vec3 d = b3SubPos( point, foot );
-				float d2 = b3Dot( d, d );
+				lpPos point = lpOffsetPos( a, c->manifolds[m].points[n].anchorA );
+				lpVec3 d = lpSubPos( point, foot );
+				float d2 = lpDot( d, d );
 				bool closer = d2 < nearest || ( d2 == nearest && piece < best );
 				bool better = best < 0 ? d2 < nearest : ( fixed != bestFixed ? bestFixed : closer );
 				if ( c->manifolds[m].points[n].separation < 0.05f && d2 < LP_RIG_TOUCH * LP_RIG_TOUCH && better )
@@ -486,7 +486,7 @@ static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
 
 // ---- API ----
 
-void lpWorld_SetLimbTarget( lpWorld* w, int rig, int limb, bool active, b3Pos point )
+void lpWorld_SetLimbTarget( lpWorld* w, int rig, int limb, bool active, lpPos point )
 {
 	if ( rig < 0 || rig >= w->rigs.count || limb < 0 || limb >= w->rigs.data[rig].limbCount )
 	{
@@ -509,8 +509,8 @@ void lpWorld_SetRigControl( lpWorld* w, int rig, const lpRigControl* control )
 		return;
 	}
 	lpRig* r = w->rigs.data + rig;
-	lpRigControl c = { b3ClampFloat( control->forward, -1.0f, 1.0f ), b3ClampFloat( control->strafe, -1.0f, 1.0f ),
-					   b3ClampFloat( control->turn, -1.0f, 1.0f ), b3ClampFloat( control->crouch, 0.0f, 1.0f ) };
+	lpRigControl c = { lpClampFloat( control->forward, -1.0f, 1.0f ), lpClampFloat( control->strafe, -1.0f, 1.0f ),
+					   lpClampFloat( control->turn, -1.0f, 1.0f ), lpClampFloat( control->crouch, 0.0f, 1.0f ) };
 	if ( c.forward != r->control.forward || c.strafe != r->control.strafe || c.turn != r->control.turn || c.crouch != r->control.crouch )
 	{
 		r->control = c;
@@ -543,11 +543,11 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	if ( s.body >= 0 )
 	{
 		b3BodyId id = w->bodies.data[s.body].id;
-		b3WorldTransform xf = b3Body_GetTransform( id );
+		lpWorldTransform xf = b3Body_GetTransform( id );
 		s.position = xf.p;
-		s.forward = b3RotateVector( xf.q, r->forward );
-		s.up = b3RotateVector( xf.q, r->up );
-		s.speed = b3Dot( b3Body_GetLinearVelocity( id ), s.forward );
+		s.forward = lpRotateVector( xf.q, r->forward );
+		s.up = lpRotateVector( xf.q, r->up );
+		s.speed = lpDot( b3Body_GetLinearVelocity( id ), s.forward );
 	}
 	return s;
 }

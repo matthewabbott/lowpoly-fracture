@@ -207,7 +207,7 @@ static lpRayHit Walk_Cast( const lpWorld* world, int rig, V3 origin, V3 dir, flo
 	lpRayHit hit = {};
 	for ( int k = 0; k < 8 && range > 0.0f; ++k )
 	{
-		hit = lpWorld_CastRay( world, b3Pos{ origin.x, origin.y, origin.z }, b3Vec3{ range * dir.x, range * dir.y, range * dir.z } );
+		hit = lpWorld_CastRay( world, lpPos{ origin.x, origin.y, origin.z }, lpVec3{ range * dir.x, range * dir.y, range * dir.z } );
 		if ( hit.hit == false || hit.body < 0 || Walk_Own( world, rig, hit.body ) == false )
 		{
 			return hit;

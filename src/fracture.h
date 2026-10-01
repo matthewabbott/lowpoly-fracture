@@ -13,7 +13,7 @@ typedef struct lpFractureInput
 	// Piece to split, in a frame near the piece (for precision)
 	const lpPoly* parent;
 
-	b3Vec3 impact;		// impact point in the parent frame
+	lpVec3 impact;		// impact point in the parent frame
 	float radius;		// damage radius
 	float fragmentSize; // edge length of the smallest fragments, near the impact
 	float plateSize;	// spacing of the few large cells away from the impact
@@ -21,7 +21,7 @@ typedef struct lpFractureInput
 	float absorbVolume; // cells smaller than this outside the damage radius are slivers and get absorbed (0: keep)
 
 	lpPatternId pattern;
-	b3Vec3 axis;	 // grain axis (grain pattern) or pane normal (radial pattern), unit length
+	lpVec3 axis;	 // grain axis (grain pattern) or pane normal (radial pattern), unit length
 	float stretch;	 // grain pattern: how much longer cells are along the grain (e.g. 4)
 
 	uint8_t interiorMaterial;
@@ -34,7 +34,7 @@ typedef struct lpFractureInput
 	// (the object frame's origin in the parent's frame) so every piece of a wall shares it
 	float courseHeight;
 	float brickLength;
-	b3Vec3 gridOrigin;
+	lpVec3 gridOrigin;
 } lpFractureInput;
 
 typedef struct lpFractureStats
@@ -71,11 +71,11 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 // a source face in their plane; the rest become cut faces. Compacts cells, cellSites and classes in place and
 // returns the new count. Deterministic: pairs are tried in cell and face order.
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
-				  uint8_t interiorMaterial, b3Vec3 impact );
+				  uint8_t interiorMaterial, lpVec3 impact );
 
 // Splits a small ejecta cell into up to 1 + splits chips with random planes near its centroid: a blast throws a
 // dirtier spray of real fragments than the Voronoi budget alone gives, at the price of a few plane clips. With a
 // grain axis the planes contain it, so wood chips stay long splinters. Chips tile the cell and their new faces are
 // cut faces. Writes new shapes (caller owns them) and returns their count; 0 means the cell was left whole.
-int lpChipCell( const lpShape* cell, int splits, b3Vec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
+int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
 				lpShape** chips, int capacity );

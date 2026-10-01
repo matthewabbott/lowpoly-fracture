@@ -26,14 +26,14 @@
 
 static uint8_t lpQuantize( float strength )
 {
-	float s = b3ClampFloat( strength, 0.0f, 1.0f );
+	float s = lpClampFloat( strength, 0.0f, 1.0f );
 	return (uint8_t)( 255.0f * s + 0.5f );
 }
 
 // How hard a pool still pushes, 0 to 1
 static float lpPoolPressure( const lpPool* pool )
 {
-	return b3ClampFloat( pool->level / ( LP_POOL_PRESSURE * pool->capacity ), 0.0f, 1.0f );
+	return lpClampFloat( pool->level / ( LP_POOL_PRESSURE * pool->capacity ), 0.0f, 1.0f );
 }
 
 // A source's feed: its share, times the worst supply among what it needs, times its pool's pressure
@@ -48,7 +48,7 @@ static float lpSourceFeed( const lpWorld* w, const lpPiece* p )
 	{
 		if ( p->needs & ( 1u << n ) )
 		{
-			feed = b3MinFloat( feed, p->sourceShare * (float)p->supply[n] / 255.0f );
+			feed = lpMinFloat( feed, p->sourceShare * (float)p->supply[n] / 255.0f );
 		}
 	}
 	return feed;
@@ -149,7 +149,7 @@ void lpUpdateSupply( lpWorld* w )
 				if ( pooled && p->pool != 0 && lowest == bit )
 				{
 					lpPool* pool = w->pools.data + p->pool - 1;
-					pool->found = b3MaxFloat( pool->found, volume );
+					pool->found = lpMaxFloat( pool->found, volume );
 				}
 			}
 		}
@@ -177,10 +177,10 @@ void lpDrainPools( lpWorld* w, float timeStep )
 			continue;
 		}
 		w->stats.leakingPools += 1;
-		pool->level = b3MaxFloat( pool->level - pool->leak * timeStep, 0.0f );
+		pool->level = lpMaxFloat( pool->level - pool->leak * timeStep, 0.0f );
 		if ( pool->seal > 0.0f )
 		{
-			pool->leak -= pool->leak * b3MinFloat( timeStep / pool->seal, 1.0f );
+			pool->leak -= pool->leak * lpMinFloat( timeStep / pool->seal, 1.0f );
 			pool->leak = pool->leak < 1e-6f * pool->capacity ? 0.0f : pool->leak;
 		}
 		if ( pool->level <= 0.0f )
@@ -253,7 +253,7 @@ float lpSupplyOf( const lpPiece* p, uint8_t channels )
 	{
 		if ( channels & ( 1u << c ) )
 		{
-			strength = b3MinFloat( strength, (float)p->supply[c] / 255.0f );
+			strength = lpMinFloat( strength, (float)p->supply[c] / 255.0f );
 		}
 	}
 	return strength;
