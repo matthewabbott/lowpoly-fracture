@@ -82,15 +82,15 @@ void lpTrackMovingBodies( lpWorld* w )
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive == false || b->solveStress == false || b->kind != lp_kindDebris || B3_IS_NULL( b->id ) )
+		if ( b->alive == false || b->solveStress == false || b->kind != lp_kindDebris || LP_PHYS_NULL( b->id ) )
 		{
 			continue;
 		}
 		b->stepPair = b->stepTick != 0 && b->stepTick == w->tick; // the record being kept is from the step before
 		b->stepV[0] = b->stepV[1];
 		b->stepOmega[0] = b->stepOmega[1];
-		b->stepV[1] = b3Body_GetLinearVelocity( b->id );
-		b->stepOmega[1] = b3Body_GetAngularVelocity( b->id );
+		b->stepV[1] = lpPhys_GetLinearVelocity( w->phys, b->id );
+		b->stepOmega[1] = lpPhys_GetAngularVelocity( w->phys, b->id );
 		b->stepTick = w->tick + 1;
 	}
 }
@@ -103,7 +103,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 {
 	// Measured when it can be: the velocity change over the last step is the acceleration everything gave it, sampled
 	// or not (whatever was not sampled then enters at the pin)
-	lpQuat q = b3Body_GetRotation( body->id );
+	lpQuat q = lpPhys_GetTransform( w->phys, body->id ).q;
 	if ( body->stepPair && body->stepTick == w->tick && w->lastTimeStep > 0.0f )
 	{
 		float inv = 1.0f / w->lastTimeStep;
@@ -137,7 +137,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 		inertia.cy = lpAdd( inertia.cy, (lpVec3){ -m * r.x * r.y, m * ( rr - r.y * r.y ) + own, -m * r.z * r.y } );
 		inertia.cz = lpAdd( inertia.cz, (lpVec3){ -m * r.x * r.z, -m * r.y * r.z, m * ( rr - r.z * r.z ) + own } );
 	}
-	lpVec3 omega = lpInvRotateVector( b3Body_GetRotation( body->id ), b3Body_GetAngularVelocity( body->id ) );
+	lpVec3 omega = lpInvRotateVector( lpPhys_GetTransform( w->phys, body->id ).q, lpPhys_GetAngularVelocity( w->phys, body->id ) );
 	body->reliefOmega = omega;
 	body->reliefAccel = mass > 0.0f ? lpMulSV( 1.0f / mass, force ) : lpVec3_zero;
 	body->reliefAlpha = lpMulMV( lpInvertMatrix( inertia ), lpSub( torque, lpCross( omega, lpMulMV( inertia, omega ) ) ) );
@@ -167,11 +167,11 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 static float lpSampleLoads( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
-	lpWorldTransform xf = b3Body_GetTransform( body->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, body->id );
 	int n = body->pieces.count;
 	lpArray_Reserve( w->scratchLoads, n );
 	float weight = 0.0f;
-	float g = body->gravityScale * lpLength( b3World_GetGravity( w->physics ) );
+	float g = body->gravityScale * lpLength( lpPhys_GetGravity( w->phys ) );
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
@@ -180,66 +180,26 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 		weight += p->shape->volume * lpGetMaterial( p->material )->density * g;
 	}
 
-	int capacity = b3Body_GetContactCapacity( body->id );
-	if ( capacity > 0 && w->lastTimeStep > 0.0f )
+	if ( w->lastTimeStep > 0.0f )
 	{
-		lpArray_Reserve( w->scratchContacts, capacity );
-		int count = b3Body_GetContactData( body->id, w->scratchContacts.data, capacity );
-
 		// Summed per piece in a total order (piece, then what it touches), not the physics engine's report order
-		w->scratchOrder.count = 0;
+		const lpPhysContact* contacts;
+		int count = lpPhys_GetBodyContacts( w->phys, body->id, &contacts );
 		for ( int k = 0; k < count; ++k )
 		{
-			const b3ContactData* contact = w->scratchContacts.data + k;
-			intptr_t da = (intptr_t)b3Shape_GetUserData( contact->shapeIdA );
-			intptr_t db = (intptr_t)b3Shape_GetUserData( contact->shapeIdB );
-			bool mineA = da > 0 && w->pieces.data[da - 1].body == bodyIndex;
-			bool mineB = db > 0 && w->pieces.data[db - 1].body == bodyIndex;
-			if ( mineA == mineB )
+			const lpPhysContact* c = contacts + k;
+			lpPiece* piece = w->pieces.data + c->piece;
+			if ( piece->anchored || c->impulse <= 0.0f )
 			{
-				continue;
+				continue; // an anchored piece's load goes to the ground
 			}
-			b3ShapeId other = mineA ? contact->shapeIdB : contact->shapeIdA;
-			intptr_t otherData = mineA ? db : da;
-			lpOrder order = { ( (uint64_t)( mineA ? da : db ) << 32 ) | (uint64_t)( otherData > 0 ? otherData : 0 ),
-							  (uint32_t)other.index1, k };
-			lpArray_Push( w->scratchOrder, order );
-		}
-		if ( w->scratchOrder.count > 1 )
-		{
-			qsort( w->scratchOrder.data, (size_t)w->scratchOrder.count, sizeof( lpOrder ), lpCompareOrder );
-		}
-
-		for ( int o = 0; o < w->scratchOrder.count; ++o )
-		{
-			const b3ContactData* contact = w->scratchContacts.data + w->scratchOrder.data[o].index;
-			intptr_t da = (intptr_t)b3Shape_GetUserData( contact->shapeIdA );
-			bool mineA = da > 0 && w->pieces.data[da - 1].body == bodyIndex;
-			lpPiece* piece = w->pieces.data + ( w->scratchOrder.data[o].key >> 32 ) - 1;
-			if ( piece->anchored )
-			{
-				continue; // the ground takes it
-			}
-			lpPos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact->shapeIdA ) );
-			for ( int mi = 0; mi < contact->manifoldCount; ++mi )
-			{
-				const b3Manifold* manifold = contact->manifolds + mi;
-				for ( int pi = 0; pi < manifold->pointCount; ++pi )
-				{
-					const b3ManifoldPoint* mp = manifold->points + pi;
-					if ( mp->totalNormalImpulse <= 0.0f )
-					{
-						continue;
-					}
-					// The normal points from A to B: the impulse pushes B along it and A against it
-					float sign = mineA ? -1.0f : 1.0f;
-					lpVec3 force = lpMulSV( sign * mp->totalNormalImpulse / w->lastTimeStep, manifold->normal );
-					lpVec3 local = lpInvRotateVector( xf.q, force );
-					lpVec3 point = lpInvTransformWorldPoint( xf, lpOffsetPos( centerA, mp->anchorA ) );
-					piece->stressLoad.f = lpAdd( piece->stressLoad.f, local );
-					piece->stressLoad.t = lpAdd( piece->stressLoad.t, lpCross( lpSub( point, piece->shape->centroid ), local ) );
-				}
-			}
+			// The normal points from A to B: the impulse pushes B along it and A against it
+			float sign = c->pieceIsA ? -1.0f : 1.0f;
+			lpVec3 force = lpMulSV( sign * c->impulse / w->lastTimeStep, c->normal );
+			lpVec3 local = lpInvRotateVector( xf.q, force );
+			lpVec3 point = lpInvTransformWorldPoint( xf, c->point );
+			piece->stressLoad.f = lpAdd( piece->stressLoad.f, local );
+			piece->stressLoad.t = lpAdd( piece->stressLoad.t, lpCross( lpSub( point, piece->shape->centroid ), local ) );
 		}
 	}
 
@@ -764,7 +724,7 @@ static int lpStrainSlender( lpWorld* w, lpWorldTransform xf, int pi, int* strain
 static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* strained, int* snapped )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
-	lpWorldTransform xf = b3Body_GetTransform( body->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, body->id );
 	w->scratchOverloads.count = 0;
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
@@ -1522,7 +1482,7 @@ static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
 static void lpRunStressChecks( lpWorld* w, bool settle )
 {
 	uint64_t ticks = lpGetTicks();
-	lpVec3 gravity = b3World_GetGravity( w->physics );
+	lpVec3 gravity = lpPhys_GetGravity( w->phys );
 	int reserved = 0;
 	w->stressJobCount = 0;
 
@@ -1637,7 +1597,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 			body->reloadLoads = false;
 			if ( body->solveStress )
 			{
-				lpWorldTransform bodyXf = b3Body_GetTransform( body->id );
+				lpWorldTransform bodyXf = lpPhys_GetTransform( w->phys, body->id );
 				lpComputeRelief( w, body, lpMulSV( body->gravityScale, lpInvRotateVector( bodyXf.q, gravity ) ) );
 			}
 			if ( loadOnly && change < 0.02f )
@@ -1665,7 +1625,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		lpStressJob* job = lpAddStressJob( w );
 		job->body = bodyIndex;
 		job->system = body->system;
-		job->xf = b3Body_GetTransform( body->id );
+		job->xf = lpPhys_GetTransform( w->phys, body->id );
 		job->gravity = lpMulSV( body->gravityScale, lpInvRotateVector( job->xf.q, gravity ) );
 		job->nodeCount = nodes;
 		job->edgeCount = edges;

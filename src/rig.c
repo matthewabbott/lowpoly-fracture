@@ -60,7 +60,7 @@ static bool lpIsServo( const lpLink* l )
 
 lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso )
 {
-	lpVec3 g = b3World_GetGravity( w->physics );
+	lpVec3 g = lpPhys_GetGravity( w->phys );
 	float length = lpLength( g );
 	return length > 1e-6f ? lpMulSV( -1.0f / length, g ) : lpRotateVector( torso, r->up );
 }
@@ -274,7 +274,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		return -1;
 	}
 	const lpBody* torso = w->bodies.data + def->body;
-	if ( torso->alive == false || B3_IS_NULL( torso->id ) || b3Body_GetType( torso->id ) != b3_dynamicBody )
+	if ( torso->alive == false || LP_PHYS_NULL( torso->id ) || lpPhys_IsDynamic( w->phys, torso->id ) == false )
 	{
 		return -1;
 	}
@@ -319,10 +319,10 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		}
 		limb->defFoot = lpInvTransformWorldPoint( lpGetTransform( w->bodies.data + inner ), limb->def.foot );
 		limb->tipBody = -1;
-		lpLimbCapability( w, limb, lpInvRotateVector( b3Body_GetRotation( torso->id ), lpNormalize( def->up ) ) );
+		lpLimbCapability( w, limb, lpInvRotateVector( lpPhys_GetTransform( w->phys, torso->id ).q, lpNormalize( def->up ) ) );
 	}
 
-	lpWorldTransform xf = b3Body_GetTransform( torso->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, torso->id );
 	lpVec3 forward = lpNormalize( def->forward );
 	lpVec3 up = lpNormalize( lpSub( def->up, lpMulSV( lpDot( def->up, forward ), forward ) ) );
 	r.def = *def;
@@ -398,7 +398,7 @@ void lpStepRigs( lpWorld* w, float timeStep )
 				r->body = body;
 			}
 		}
-		if ( r->body < 0 || B3_IS_NULL( w->bodies.data[r->body].id ) )
+		if ( r->body < 0 || LP_PHYS_NULL( w->bodies.data[r->body].id ) )
 		{
 			r->body = -1;
 			continue;
@@ -433,25 +433,16 @@ void lpStepRigs( lpWorld* w, float timeStep )
 // Something loose comes before something fixed (a crate before the ground it rests on), then the nearest.
 static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
 {
-	b3BodyId tip = w->bodies.data[limb->tipBody].id;
-	int capacity = b3Body_GetContactCapacity( tip );
-	if ( capacity == 0 )
-	{
-		return -1;
-	}
-	lpArray_Reserve( w->scratchContacts, capacity );
-	int count = b3Body_GetContactData( tip, w->scratchContacts.data, capacity );
+	const lpPhysContact* contacts;
+	int count = lpPhys_GetBodyContacts( w->phys, w->bodies.data[limb->tipBody].id, &contacts );
 	lpPos foot = lpFootWorld( w, limb );
 	int best = -1;
 	bool bestFixed = true;
 	float nearest = LP_RIG_TOUCH * LP_RIG_TOUCH;
 	for ( int k = 0; k < count; ++k )
 	{
-		const b3ContactData* c = w->scratchContacts.data + k;
-		b3ShapeId mine = B3_ID_EQUALS( b3Shape_GetBody( c->shapeIdA ), tip ) ? c->shapeIdA : c->shapeIdB;
-		b3ShapeId other = B3_ID_EQUALS( mine, c->shapeIdA ) ? c->shapeIdB : c->shapeIdA;
-		intptr_t data = (intptr_t)b3Shape_GetUserData( other );
-		int piece = data > 0 ? (int)( data - 1 ) : -1;
+		const lpPhysContact* c = contacts + k;
+		int piece = c->other;
 		if ( piece < 0 || w->pieces.data[piece].body == r->body )
 		{
 			continue;
@@ -461,24 +452,20 @@ static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb )
 		{
 			ours = ours || w->pieces.data[piece].body == r->limbs[i].tipBody || w->pieces.data[piece].body == r->limbs[i].rootBody;
 		}
-		bool fixed = b3Body_GetType( b3Shape_GetBody( other ) ) == b3_staticBody;
-		lpPos a = b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) );
-		for ( int m = 0; m < c->manifoldCount && ours == false; ++m )
+		if ( ours )
 		{
-			for ( int n = 0; n < c->manifolds[m].pointCount; ++n )
-			{
-				lpPos point = lpOffsetPos( a, c->manifolds[m].points[n].anchorA );
-				lpVec3 d = lpSubPos( point, foot );
-				float d2 = lpDot( d, d );
-				bool closer = d2 < nearest || ( d2 == nearest && piece < best );
-				bool better = best < 0 ? d2 < nearest : ( fixed != bestFixed ? bestFixed : closer );
-				if ( c->manifolds[m].points[n].separation < 0.05f && d2 < LP_RIG_TOUCH * LP_RIG_TOUCH && better )
-				{
-					nearest = d2;
-					best = piece;
-					bestFixed = fixed;
-				}
-			}
+			continue;
+		}
+		bool fixed = lpPhys_IsDynamic( w->phys, w->bodies.data[w->pieces.data[piece].body].id ) == false;
+		lpVec3 d = lpSubPos( c->point, foot );
+		float d2 = lpDot( d, d );
+		bool closer = d2 < nearest || ( d2 == nearest && piece < best );
+		bool better = best < 0 ? d2 < nearest : ( fixed != bestFixed ? bestFixed : closer );
+		if ( c->separation < 0.05f && d2 < LP_RIG_TOUCH * LP_RIG_TOUCH && better )
+		{
+			nearest = d2;
+			best = piece;
+			bestFixed = fixed;
 		}
 	}
 	return best;
@@ -542,12 +529,12 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	}
 	if ( s.body >= 0 )
 	{
-		b3BodyId id = w->bodies.data[s.body].id;
-		lpWorldTransform xf = b3Body_GetTransform( id );
+		lpPhysBody id = w->bodies.data[s.body].id;
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, id );
 		s.position = xf.p;
 		s.forward = lpRotateVector( xf.q, r->forward );
 		s.up = lpRotateVector( xf.q, r->up );
-		s.speed = lpDot( b3Body_GetLinearVelocity( id ), s.forward );
+		s.speed = lpDot( lpPhys_GetLinearVelocity( w->phys, id ), s.forward );
 	}
 	return s;
 }
