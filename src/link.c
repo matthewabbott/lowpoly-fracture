@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Links: Box3D joints between objects (weld, hinge, ball, rope) that break under load and outlive the pieces they
+// Links: physics joints between objects (weld, hinge, ball, rope) that break under load and outlive the pieces they
 // were made on.
 //
 // A link end is a piece and a frame in its body's frame. A piece's body frame never changes (new bodies are made at
-// their parent's transform), so an end stays valid through splits and tier changes; only the Box3D joint has to be
+// their parent's transform), so an end stays valid through splits and tier changes; only the physics joint has to be
 // rebuilt when a piece's body changes, and lpSyncLinks does that just before the physics step, when every body of
 // the step exists. When a piece fractures, each link end on it moves to the kept cell holding its anchor, and the link
-// breaks if that cell was blown out. An end whose piece leaves Box3D (freed, or made a ghost or scrap) breaks its link
-// at once, so a live link always has both ends on live Box3D bodies. A rebuilt link between two moving bodies tears
-// when one of them is a chip next to the other.
+// breaks if that cell was blown out. An end whose piece leaves the physics (freed, or made a ghost or scrap) breaks its
+// link at once, so a live link always has both ends on live physics bodies. A rebuilt link between two moving bodies
+// tears when one of them is a chip next to the other.
 //
 // Loads are polled after the physics step (Box3D's joint events miss joints in the overflow constraint colour and
 // sleeping ones). A link over its limit strains and creaks; it breaks at strain 1, or at once when its smoothed load
@@ -371,7 +371,7 @@ void lpDestroyLink( lpWorld* w, int link )
 	}
 }
 
-// The piece is leaving Box3D (freed, or made a ghost or scrap): its links go with it
+// The piece is leaving the physics (freed, or made a ghost or scrap): its links go with it
 void lpBreakPieceLinks( lpWorld* w, int piece )
 {
 	lpPiece* p = w->pieces.data + piece;
@@ -645,7 +645,8 @@ void lpSyncLinks( lpWorld* w )
 			}
 			bodies[k] = lpEndBody( w, l, k );
 		}
-		if ( lpPhys_IsValidJoint( w->phys, l->joint ) && LP_PHYS_EQUAL( bodies[0], l->builtOn[0] ) && LP_PHYS_EQUAL( bodies[1], l->builtOn[1] ) )
+		if ( lpPhys_IsValidJoint( w->phys, l->joint ) && LP_PHYS_EQUAL( bodies[0], l->builtOn[0] ) &&
+			 LP_PHYS_EQUAL( bodies[1], l->builtOn[1] ) )
 		{
 			continue;
 		}
@@ -981,7 +982,7 @@ bool lpValidateLinks( const lpWorld* w )
 			const lpBody* b = w->bodies.data + p->body;
 			if ( b->alive == false || LP_PHYS_NULL( b->id ) )
 			{
-				return lpLinkFail( "link %d end %d is on a body with no Box3D body", i, k );
+				return lpLinkFail( "link %d end %d is on a body with no physics body", i, k );
 			}
 			bodies[k] = p->body;
 			bool listed = false;

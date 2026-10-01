@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Impacts: which pieces a blast, shot or hard collision reaches, fracturing them in three phases (see "fracture
-// jobs"), damaging bonds, detonators, blast forces on debris, and turning Box3D hit events into impacts.
+// jobs"), damaging bonds, detonators, blast forces on debris, and turning physics hit events into impacts.
 
 #include "tasks.h"
 #include "world.h"
@@ -30,7 +30,7 @@ static float lpImpactDensity( const lpImpactDef* impact, float d )
 //
 // An impact fractures its pieces in three phases, which keeps the result independent of the thread count:
 // 1. choose the pieces and snapshot their inputs (sequential, in piece order)
-// 2. compute cells, Box3D hulls and sibling bonds for every piece (parallel; each job is a pure function of its input)
+// 2. compute cells, physics hulls and sibling bonds for every piece (parallel; each job a pure function of its input)
 // 3. swap parents for their cells (sequential, in job order)
 
 static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex, lpVec3 localImpact, const lpImpactDef* impact,
@@ -87,7 +87,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 }
 
 // Phase 2. Must not touch the world. Cells inside the break radius are ejecta: their bonds would break anyway, so
-// they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no Box3D hull at all.
+// they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no physics hull at all.
 static void lpRunFractureJob( int index, void* context )
 {
 	lpFractureJob* job = (lpFractureJob*)context + index;

@@ -6,7 +6,7 @@
 // extents (the parallel-bond model of rock and masonry simulation). Solving K x = gravity gives every bond's force
 // and moment, hence the tension, compression and shear at its most loaded fibre. Mortar and dry joints carry almost
 // no tension, so an overhang's moment opens the tension side first: the part above hinges off, loses its anchor and
-// Box3D topples it.
+// the physics topples it.
 //
 // Stiffness is normalized (only ratios decide how load is shared), so forces come out in newtons and displacements
 // are unitless. The solve is block-Jacobi-preconditioned conjugate gradient, warm-started from each piece's last
@@ -137,7 +137,8 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 		inertia.cy = lpAdd( inertia.cy, (lpVec3){ -m * r.x * r.y, m * ( rr - r.y * r.y ) + own, -m * r.z * r.y } );
 		inertia.cz = lpAdd( inertia.cz, (lpVec3){ -m * r.x * r.z, -m * r.y * r.z, m * ( rr - r.z * r.z ) + own } );
 	}
-	lpVec3 omega = lpInvRotateVector( lpPhys_GetTransform( w->phys, body->id ).q, lpPhys_GetAngularVelocity( w->phys, body->id ) );
+	lpQuat rotation = lpPhys_GetTransform( w->phys, body->id ).q;
+	lpVec3 omega = lpInvRotateVector( rotation, lpPhys_GetAngularVelocity( w->phys, body->id ) );
 	body->reliefOmega = omega;
 	body->reliefAccel = mass > 0.0f ? lpMulSV( 1.0f / mass, force ) : lpVec3_zero;
 	body->reliefAlpha = lpMulMV( lpInvertMatrix( inertia ), lpSub( torque, lpCross( omega, lpMulMV( inertia, omega ) ) ) );

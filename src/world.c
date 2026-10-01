@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// The destruction world: pieces, bonds and bodies on top of a Box3D world.
+// The destruction world: pieces, bonds and bodies on top of a physics world.
 //
 // Invariants (checked by lpWorld_Validate in tests):
-// - every live piece belongs to exactly one live body and, unless that body is a ghost or scrap (no Box3D body),
-//   owns one Box3D hull shape on it
+// - every live piece belongs to exactly one live body and, unless that body is a ghost or scrap (no physics body),
+//   owns one physics hull shape on it
 // - bonds only join pieces of the same body; a piece's bond list holds exactly its live bonds
 // - body frames never change when pieces move between bodies: a split-off body is created at the parent's
 //   transform, so piece geometry stays in the original object frame for its whole life (no drift, and solid
@@ -658,8 +658,8 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	w->freeBody = bodyIndex;
 }
 
-int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
-						  float gravityScale )
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v,
+						  lpVec3 omega, float gravityScale )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
@@ -803,8 +803,8 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
-	int bodyIndex = lpCreateBodyInternal( w, def->transform, def->isStatic == false, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
-										  def->gravityScale );
+	int bodyIndex = lpCreateBodyInternal( w, def->transform, def->isStatic == false, kind, lp_tierFull, def->linearVelocity,
+										  def->angularVelocity, def->gravityScale );
 	int objectDetonator = lpAddDetonator( w, &def->detonator ); // shared by the parts without one of their own
 	w->bodies.data[bodyIndex].solveStress = def->solveStress && def->isStatic == false;
 
@@ -1331,12 +1331,12 @@ bool lpWorld_Validate( const lpWorld* w )
 		{
 			if ( LP_PHYS_NULL( b->id ) == false || b->pieces.count == 0 )
 			{
-				return lpFail( "loose body %d has a Box3D body or no pieces (%d)", i, b->pieces.count, 0 );
+				return lpFail( "loose body %d has a physics body or no pieces (%d)", i, b->pieces.count, 0 );
 			}
 		}
 		else if ( lpPhys_IsValidBody( w->phys, b->id ) == false )
 		{
-			return lpFail( "body %d has an invalid Box3D id", i, 0, 0 );
+			return lpFail( "body %d has an invalid physics handle", i, 0, 0 );
 		}
 		else if ( lpPhys_GetShapeCount( w->phys, b->id ) != b->pieces.count )
 		{
@@ -1390,14 +1390,15 @@ bool lpWorld_Validate( const lpWorld* w )
 		{
 			if ( LP_PHYS_NULL( p->shapeId ) == false )
 			{
-				return lpFail( "loose piece %d still has a Box3D shape", i, 0, 0 );
+				return lpFail( "loose piece %d still has a physics shape", i, 0, 0 );
 			}
 		}
 		else if ( lpPhys_IsValidShape( w->phys, p->shapeId ) == false )
 		{
 			return lpFail( "piece %d has no shape", i, 0, 0 );
 		}
-		if ( kind != lp_kindGhost && kind != lp_kindScrap && LP_PHYS_EQUAL( lpPhys_GetShapeBody( w->phys, p->shapeId ), w->bodies.data[p->body].id ) == false )
+		if ( kind != lp_kindGhost && kind != lp_kindScrap &&
+			 LP_PHYS_EQUAL( lpPhys_GetShapeBody( w->phys, p->shapeId ), w->bodies.data[p->body].id ) == false )
 		{
 			return lpFail( "piece %d shape on the wrong body", i, 0, 0 );
 		}

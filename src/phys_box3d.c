@@ -199,7 +199,8 @@ static void lpSetLive( uint64_t** data, int* count, int* capacity, int index, ui
 	( *data )[index] = handle;
 }
 
-#define LP_SET_LIVE( array, index, handle ) lpSetLive( &( array ).data, &( array ).count, &( array ).capacity, index, handle )
+#define LP_SET_LIVE( array, index, handle )                                                                            \
+	lpSetLive( &( array ).data, &( array ).count, &( array ).capacity, index, handle )
 
 // ---- the world ----
 
@@ -936,7 +937,8 @@ static int lpReadHits( lpPhys* p )
 		int b = lpShapeIndex( e->shapeIdB );
 		uint64_t lo = (uint64_t)( a + 1 );
 		uint64_t hi = (uint64_t)( b + 1 );
-		lpPhysHit hit = { lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo, a, b, e->approachSpeed, lpVec( e->point ), (uint64_t)i };
+		uint64_t pair = lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo;
+		lpPhysHit hit = { pair, a, b, e->approachSpeed, lpVec( e->point ), (uint64_t)i };
 		lpArray_Push( p->hits, hit );
 	}
 	if ( p->hits.count > 1 )

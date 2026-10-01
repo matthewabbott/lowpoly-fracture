@@ -270,7 +270,8 @@ typedef struct lpPhysCastHit
 // Whether a cast hit counts (false: the cast passes through that shape)
 typedef bool lpPhysCastAcceptFcn( int piece, float fraction, void* context );
 
-// The closest accepted hit; at equal fractions the lower piece wins, not the engine's traversal order. NULL accepts all.
+// The closest accepted hit; at equal fractions the lower piece wins, not the engine's traversal order. A NULL accept
+// takes every hit.
 lpPhysCastHit lpPhys_CastRay( const lpPhys* p, lpPos origin, lpVec3 translation, lpPhysFilter filter,
 							  lpPhysCastAcceptFcn* accept, void* context );
 // A convex shape (points around origin, rounded by radius) swept along translation; as lpPhys_CastRay

@@ -51,7 +51,7 @@ typedef enum lpClipResult
 
 void lpPoly_MakeBox( lpPoly* poly, lpVec3 halfExtents, lpTransform transform, uint8_t material );
 
-// Convex hull of a point cloud (via Box3D's quickhull). Returns false if degenerate or too large.
+// Convex hull of a point cloud (the physics backend's quickhull). Returns false if degenerate or too large.
 bool lpPoly_MakeFromPoints( lpPoly* poly, const lpVec3* points, int count, uint8_t material );
 bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material );
 

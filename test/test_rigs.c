@@ -584,7 +584,8 @@ static int TestRigStops( void )
 	for ( int t = 0; t < 300 && asleep < 0; ++t )
 	{
 		Run( &s, 1 );
-		asleep = lpPhys_IsAwake( s.world->phys, s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) ? -1 : t + 60;
+		lpPhysBody torso = s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id;
+		asleep = lpPhys_IsAwake( s.world->phys, torso ) ? -1 : t + 60;
 	}
 	lpRigState st = lpWorld_GetRigState( s.world, rig );
 	float ran = (float)st.position.z - r.start.z;

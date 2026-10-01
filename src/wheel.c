@@ -15,8 +15,8 @@
 // - the tyres' grip is a small impulse solve per chassis body, on a copy of its velocity after gravity and the springs:
 //   sideways and along the tyre within a friction circle, the drive a motor toward top speed with a capped force,
 //   brakes and rolling resistance capped too, and a one-way stop when the suspension bottoms out. The result goes to
-//   Box3D as forces (the side force raised toward the centre of mass by rollFactor), and the opposite onto a moving
-//   ground body.
+//   the physics as forces (the side force raised toward the centre of mass by rollFactor), and the opposite onto a
+//   moving ground body.
 // Wheels are stepped in index order and solved in (body, wheel) order with a fixed iteration count, so the result does
 // not depend on anything but the simulation state. A parked chassis falls asleep; it wakes when its controls change or
 // the ground under a wheel goes.
@@ -288,8 +288,8 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 	lpPhysFilter filter = { LP_CAT_VEHICLE, LP_CAT_STATIC | LP_CAT_FULL };
 	lpWheelSkip skip = { w, chassis };
 	lpPos mount = lpTransformWorldPoint( xf, l->ends[0].frame.p );
-	lpPhysCastHit cast = lpPhys_CastShape( w->phys, mount, points, LP_WHEEL_RIM, halfWidth, lpMulSV( wh->def.maxLength, down ),
-										   filter, lpWheelAccept, &skip );
+	lpVec3 sweep = lpMulSV( wh->def.maxLength, down );
+	lpPhysCastHit cast = lpPhys_CastShape( w->phys, mount, points, LP_WHEEL_RIM, halfWidth, sweep, filter, lpWheelAccept, &skip );
 	w->stats.wheelCasts += 1;
 
 	wh->grounded = cast.hit;
@@ -310,7 +310,7 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 	wh->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
 }
 
-// The ground piece is still there, on a Box3D body
+// The ground piece is still there, on a physics body
 static bool lpGroundLive( const lpWorld* w, const lpWheel* wh )
 {
 	if ( wh->groundPiece < 0 )
@@ -412,7 +412,8 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		lpVec3 n = wh->contactNormal;
 		wh->r = lpSubPos( wh->contactPoint, com );
 		lpPhysBody ground = lpGroundBody( w, wh );
-		wh->groundVelocity = LP_PHYS_NULL( ground ) == false ? lpPhys_GetPointVelocity( w->phys, ground, wh->contactPoint ) : lpVec3_zero;
+		bool moving = LP_PHYS_NULL( ground ) == false;
+		wh->groundVelocity = moving ? lpPhys_GetPointVelocity( w->phys, ground, wh->contactPoint ) : lpVec3_zero;
 		lpVec3 vc = lpSub( lpAdd( v0, lpCross( omega0, wh->r ) ), wh->groundVelocity );
 
 		// The spring from the cast, damped by how fast the chassis closes on the ground (a kerb does not jolt it)
@@ -510,7 +511,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		}
 	}
 
-	// The forces, for Box3D to integrate over the step
+	// The forces, for the physics to integrate over the step
 	for ( int k = 0; k < count; ++k )
 	{
 		lpWheel* wh = w->wheels.data + list[k].wheel;
@@ -548,7 +549,8 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		lpRecheckGround( w, wh, l->force );
 		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
 		lpBody* chassis = w->bodies.data + bodyIndex;
-		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( lpPhys_GetGravity( w->phys ) ) && w->tick >= chassis->hitCheckTick + 10 )
+		float weight = wh->sprungMass * lpLength( lpPhys_GetGravity( w->phys ) );
+		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * weight && w->tick >= chassis->hitCheckTick + 10 )
 		{
 			chassis->hitCheckTick = w->tick;
 			lpRequestStressCheck( w, bodyIndex, false );
@@ -619,7 +621,7 @@ void lpStepVehicles( lpWorld* w, float timeStep )
 		}
 		if ( lpPhys_IsAwake( w->phys, id ) == false )
 		{
-			// Parked: nothing moves, but the ground under it may go (it holds no Box3D contact to wake it)
+			// Parked: nothing moves, but the ground under it may go (it holds no physics contact to wake it)
 			lpPhysBody ground = lpGroundLive( w, wh ) ? lpGroundBody( w, wh ) : lp_nullPhysBody;
 			if ( lpGroundLive( w, wh ) == false || ( LP_PHYS_NULL( ground ) == false && lpPhys_IsAwake( w->phys, ground ) ) )
 			{

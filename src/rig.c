@@ -415,7 +415,8 @@ void lpStepRigs( lpWorld* w, float timeStep )
 			if ( limb->joints > 0 )
 			{
 				const lpLink* root = w->links.data + limb->def.links[0];
-				lpPos joint = lpTransformWorldPoint( lpGetTransform( w, w->bodies.data + limb->rootBody ), root->ends[limb->prox[0]].frame.p );
+				lpWorldTransform rootXf = lpGetTransform( w, w->bodies.data + limb->rootBody );
+				lpPos joint = lpTransformWorldPoint( rootXf, root->ends[limb->prox[0]].frame.p );
 				limb->reach = lpLength( lpSubPos( lpFootWorld( w, limb ), joint ) );
 			}
 		}

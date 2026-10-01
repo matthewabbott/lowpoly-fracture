@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Debris tiers: how fragments get cheaper as they get smaller or more numerous.
 //
-// full   Box3D body, collides with everything; rests as fragile rubble (static, wakes when approached or hit)
-// light  Box3D body, collides with static geometry only; rests as light rubble that movers shove aside one-way
-// ghost  no Box3D body: flies ballistically through everything, lands by ray cast and becomes scrap
-// scrap  no Box3D body: render-only; over budget it sinks into the ground and goes
+// full   physics body, collides with everything; rests as fragile rubble (static, wakes when approached or hit)
+// light  physics body, collides with static geometry only; rests as light rubble that movers shove aside one-way
+// ghost  no physics body: flies ballistically through everything, lands by ray cast and becomes scrap
+// scrap  no physics body: render-only; over budget it sinks into the ground and goes
 //
 // Tier changes keep the body index, so references and rendering stay valid, and piece geometry stays in object
 // space (a ghost's frame is com - q * localCenter).
@@ -178,7 +178,7 @@ int lpBeginGhost( lpWorld* w, lpWorldTransform xf, lpVec3 v, lpVec3 omega, float
 
 void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 {
-	lpBreakPieceLinks( w, pieceIndex ); // a loose piece has no Box3D body to hold a joint
+	lpBreakPieceLinks( w, pieceIndex ); // a loose piece has no physics body to hold a joint
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
@@ -197,7 +197,7 @@ void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 	lpGridInsert( w, bodyIndex );
 }
 
-// Capture a Box3D body's motion, destroy the Box3D body, and keep the pieces as a loose body.
+// Capture a physics body's motion, destroy the physics body, and keep the pieces as a loose body.
 static void lpMakeLoose( lpWorld* w, int bodyIndex, uint8_t kind )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
@@ -876,9 +876,9 @@ void lpEnforceBudgets( lpWorld* w )
 
 // ---- collision filter ----
 
-// Runs on Box3D worker threads when a pair is created; reads only our own arrays, which do not change during a step.
-// A light piece touches only static things (structures, rubble); a full piece touches light pieces only while the
-// full piece is frozen rubble. Everything else follows the category masks.
+// Runs on the physics engine's worker threads when a pair is created; reads only our own arrays, which do not change
+// during a step. A light piece touches only static things (structures, rubble); a full piece touches light pieces only
+// while the full piece is frozen rubble. Everything else follows the category masks.
 bool lpPairFilter( int pieceA, int pieceB, void* context )
 {
 	const lpWorld* w = context;

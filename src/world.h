@@ -14,13 +14,13 @@ typedef struct lpTaskPool lpTaskPool;
 typedef enum lpBodyKind
 {
 	lp_kindStructure, // static until pieces break loose; anchored components stay
-	lp_kindDebris,	  // dynamic Box3D body
+	lp_kindDebris,	  // dynamic physics body
 	lp_kindRubble,	  // debris that settled and was frozen static; wakes when something happens nearby
-	lp_kindGhost,	  // no Box3D body: flies ballistically and passes through everything
-	lp_kindScrap,	  // no Box3D body: a landed ghost, render-only
+	lp_kindGhost,	  // no physics body: flies ballistically and passes through everything
+	lp_kindScrap,	  // no physics body: a landed ghost, render-only
 } lpBodyKind;
 
-// How much a Box3D debris body interacts (kept when it freezes into rubble)
+// How much a physics debris body interacts (kept when it freezes into rubble)
 typedef enum lpTier
 {
 	lp_tierFull,  // collides with everything
@@ -32,12 +32,12 @@ typedef enum lpCellClass
 {
 	lp_cellKeep,  // stays on the parent body, bonded to its neighbours
 	lp_cellPuff,  // particles only
-	lp_cellGhost, // ejected as a ghost (no Box3D body)
+	lp_cellGhost, // ejected as a ghost (no physics body)
 	lp_cellLight, // ejected as a light debris body
 	lp_cellFull,  // ejected as a full debris body
 } lpCellClass;
 
-// Box3D collision categories. Light shapes also run the custom filter (debris.c, lpCustomFilter): a light piece
+// Collision categories (lpPhysFilter). Light shapes also run the pair filter (debris.c, lpPairFilter): a light piece
 // touches a full piece only if the full piece is frozen static rubble.
 #define LP_CAT_STATIC 0x01ull
 #define LP_CAT_FULL 0x02ull
@@ -126,7 +126,7 @@ typedef struct lpLink
 	lpLinkDef def;
 	lpLinkEnd ends[2];
 	lpPhysJoint joint;
-	lpPhysBody builtOn[2]; // the Box3D bodies the joint was made on; when an end's body changes, it is rebuilt
+	lpPhysBody builtOn[2]; // the physics bodies the joint was made on; when an end's body changes, it is rebuilt
 	lpPhysBody anchor[2];	 // the static body of a world end
 	lpPos points[2];	 // world points of the ends, cached at the last step either end was awake
 	lpVec3 force;		 // on end B, world, N
@@ -141,8 +141,8 @@ typedef struct lpLink
 	uint32_t generation;
 	int settle; // steps before loads are judged: a rebuilt joint starts cold
 	int wheel;	// its wheel (w->wheels) when it is one, else -1
-	// Motor (hinges and ball joints with def.motor): its target, what was last given to Box3D (set again only when it
-	// changes; a rebuilt joint gets it all again), and what it did
+	// Motor (hinges and ball joints with def.motor): its target, what was last given to the physics (set again only
+	// when it changes; a rebuilt joint gets it all again), and what it did
 	float target;
 	lpQuat targetRotation;
 	bool targetChanged;
@@ -311,7 +311,7 @@ typedef struct lpLinkMove
 typedef struct lpPiece
 {
 	lpShape* shape;	  // body frame; NULL for a free slot
-	lpPhysHull* hull; // cached Box3D hull of the shape, reused when the piece changes body; NULL for ghost ejecta
+	lpPhysHull* hull; // cached physics hull of the shape, reused when the piece changes body; NULL for ghost ejecta
 	lpPhysShape shapeId; // null while the piece is on a ghost or scrap body
 	LP_ARRAY( int ) bonds;
 	LP_ARRAY( int ) links; // links with an end on this piece
@@ -674,8 +674,8 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex );
 bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex );
 void lpDetachPieceShape( lpWorld* w, int pieceIndex );
 void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust );
-int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
-						  float gravityScale );
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v,
+						  lpVec3 omega, float gravityScale );
 void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material );
 void lpQueryPieces( lpWorld* w, lpAABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
@@ -704,7 +704,7 @@ void lpCollectHits( lpWorld* w );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
 void lpUpdateDirtyBodies( lpWorld* w ); // lpUpdateBody on every dirty body, in the order they were marked
 
-// links (link.c): an end's piece leaving Box3D breaks the link at once (lpBreakPieceLinks); lpSyncLinks rebuilds
+// links (link.c): an end's piece leaving the physics breaks the link at once (lpBreakPieceLinks); lpSyncLinks rebuilds
 // joints whose ends changed body, just before the physics step; lpPollLinks judges their loads just after it
 void lpBreakLink( lpWorld* w, int index, bool dust );
 void lpBreakPieceLinks( lpWorld* w, int piece );
