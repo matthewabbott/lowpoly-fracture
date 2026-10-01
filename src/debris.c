@@ -161,7 +161,7 @@ int lpBeginGhost( lpWorld* w, lpWorldTransform xf, lpVec3 v, lpVec3 omega, float
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
-	b->id = b3_nullBodyId;
+	b->id = lp_nullPhysBody;
 	b->gravityScale = gravityScale;
 	b->kind = lp_kindGhost;
 	b->tier = lp_tierLight;
@@ -182,7 +182,7 @@ void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
-	p->shapeId = b3_nullShapeId;
+	p->shapeId = lp_nullPhysShape;
 	p->anchored = false;
 	lpArray_Push( b->pieces, pieceIndex );
 	b->volume += p->shape->volume;
@@ -201,23 +201,23 @@ void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 static void lpMakeLoose( lpWorld* w, int bodyIndex, uint8_t kind )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
-	lpWorldTransform xf = b3Body_GetTransform( b->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
 	lpVec3 lc = lpVolumeCenter( w, b );
 	lpPos com = lpTransformWorldPoint( xf, lc );
 	lpVec3 v = lpVec3_zero;
 	lpVec3 omega = lpVec3_zero;
-	if ( kind == lp_kindGhost && b3Body_GetType( b->id ) == b3_dynamicBody )
+	if ( kind == lp_kindGhost && lpPhys_IsDynamic( w->phys, b->id ) )
 	{
-		v = b3Body_GetWorldPointVelocity( b->id, com );
-		omega = b3Body_GetAngularVelocity( b->id );
+		v = lpPhys_GetPointVelocity( w->phys, b->id, com );
+		omega = lpPhys_GetAngularVelocity( w->phys, b->id );
 	}
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
 		lpBreakPieceLinks( w, b->pieces.data[i] );
-		w->pieces.data[b->pieces.data[i]].shapeId = b3_nullShapeId; // destroyed with the body
+		w->pieces.data[b->pieces.data[i]].shapeId = lp_nullPhysShape; // destroyed with the body
 	}
-	b3DestroyBody( b->id );
-	b->id = b3_nullBodyId;
+	lpPhys_DestroyBody( w->phys, b->id );
+	b->id = lp_nullPhysBody;
 	b->kind = kind;
 	b->tier = lp_tierLight;
 	b->freezePending = false;
@@ -288,7 +288,7 @@ void lpConvertToLight( lpWorld* w, int bodyIndex )
 	}
 	b->tier = lp_tierLight;
 	lpRecreateShapes( w, bodyIndex );
-	b3Body_SetSleepThreshold( b->id, 0.3f );
+	lpPhys_SetSleepThreshold( w->phys, b->id, 0.3f );
 	if ( b->kind == lp_kindDebris )
 	{
 		lpApplyMass( w, b );
@@ -305,17 +305,15 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 
 	if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
 	{
-		lpWorldTransform xf = lpGetTransform( w, b );
-		b3BodyDef def = b3DefaultBodyDef();
-		def.type = b3_dynamicBody;
-		def.position = xf.p;
-		def.rotation = xf.q;
+		lpPhysBodyDef def = lpPhys_DefaultBodyDef();
+		def.dynamic = true;
+		def.transform = lpGetTransform( w, b );
 		def.linearVelocity = b->v;
 		def.angularVelocity = b->omega;
 		def.gravityScale = b->gravityScale;
-		def.userData = (void*)(intptr_t)( bodyIndex + 1 );
+		def.userData = bodyIndex;
 		lpGridRemove( w, bodyIndex );
-		b->id = b3CreateBody( w->physics, &def );
+		b->id = lpPhys_CreateBody( w->phys, &def );
 		b->kind = lp_kindDebris;
 		b->tier = lp_tierFull;
 		b->createdTick = w->tick;
@@ -331,7 +329,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 	{
 		b->tier = lp_tierFull;
 		lpRecreateShapes( w, bodyIndex );
-		b3Body_SetSleepThreshold( b->id, 0.05f );
+		lpPhys_SetSleepThreshold( w->phys, b->id, 0.05f );
 	}
 	lpWakeRubble( w, bodyIndex );
 	if ( b->kind == lp_kindDebris )
@@ -351,45 +349,17 @@ static lpQuat lpIntegrateRotation( lpQuat q1, lpVec3 deltaRotation )
 	return lpNormalizeQuat( q2 );
 }
 
-typedef struct lpStaticRay
-{
-	const lpWorld* world;
-	float fraction;
-	lpPos point;
-	lpVec3 normal;
-	bool hit;
-	int piece;
-} lpStaticRay;
-
 // Ghosts land on static things only (structures, rubble, the ground); they fly through moving bodies
-static float lpStaticRayFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
-							 int triangleIndex, int childIndex, void* context )
+static bool lpStaticAccept( int piece, float fraction, void* context )
 {
-	(void)userMaterialId;
-	(void)triangleIndex;
-	(void)childIndex;
-	lpStaticRay* ray = context;
-	intptr_t data = (intptr_t)b3Shape_GetUserData( shapeId );
-	if ( data <= 0 )
+	(void)fraction;
+	const lpWorld* w = context;
+	if ( piece < 0 )
 	{
-		return -1.0f;
+		return false;
 	}
-	const lpBody* b = ray->world->bodies.data + ray->world->pieces.data[data - 1].body;
-	if ( b->kind != lp_kindStructure && b->kind != lp_kindRubble )
-	{
-		return -1.0f;
-	}
-	int piece = (int)( data - 1 );
-	if ( fraction < ray->fraction || ( ray->hit && fraction == ray->fraction && piece < ray->piece ) )
-	{
-		ray->fraction = fraction;
-		ray->point = point;
-		// A ray that starts inside a shape reports it with no normal: the ghost is already in, so it lands upward
-		ray->normal = lpLengthSquared( normal ) > 0.5f ? normal : (lpVec3){ 0.0f, 1.0f, 0.0f };
-		ray->hit = true;
-		ray->piece = piece;
-	}
-	return lpNextUp( ray->fraction );
+	const lpBody* b = w->bodies.data + w->pieces.data[piece].body;
+	return b->kind == lp_kindStructure || b->kind == lp_kindRubble;
 }
 
 // Settle on the landing surface: the lowest vertex along the normal touches it. Steep surfaces (walls) deflect the
@@ -431,7 +401,7 @@ static void lpLand( lpWorld* w, int bodyIndex )
 
 void lpStepGhosts( lpWorld* w, float timeStep )
 {
-	lpVec3 g = b3World_GetGravity( w->physics );
+	lpVec3 g = lpPhys_GetGravity( w->phys );
 	int casts = 0;
 	float plan = (float)LP_GHOST_PLAN_TICKS * timeStep;
 
@@ -471,8 +441,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			casts += 1;
 			float n = (float)LP_GHOST_PLAN_TICKS;
 			lpVec3 chord = lpAdd( lpMulSV( plan, b->v ), lpMulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
-			lpStaticRay ray = { w, 2.0f, { 0 }, lpVec3_zero, false, -1 };
-			b3World_CastRay( w->physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
+			lpPhysCastHit ray = lpPhys_CastRay( w->phys, b->com, chord, lp_physQueryAll, lpStaticAccept, w );
 			b->planTicks = LP_GHOST_PLAN_TICKS;
 			b->landIn = -1;
 			if ( ray.hit )
@@ -480,7 +449,8 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 				int ticks = (int)ceilf( ray.fraction * (float)LP_GHOST_PLAN_TICKS );
 				b->landIn = ticks < 1 ? 1 : ticks;
 				b->landPoint = ray.point;
-				b->landNormal = ray.normal;
+				// A ray that starts inside a shape reports it with no normal: the ghost is already in, so it lands upward
+				b->landNormal = lpLengthSquared( ray.normal ) > 0.5f ? ray.normal : (lpVec3){ 0.0f, 1.0f, 0.0f };
 			}
 		}
 
@@ -574,19 +544,19 @@ void lpShove( lpWorld* w, float timeStep )
 		{
 			continue;
 		}
-		lpVec3 v = b3Body_GetLinearVelocity( mover->id );
+		lpVec3 v = lpPhys_GetLinearVelocity( w->phys, mover->id );
 		float speed = lpLength( v );
-		if ( speed < 2.0f || b3Body_GetMass( mover->id ) < 60.0f )
+		if ( speed < 2.0f || lpPhys_GetMass( w->phys, mover->id ) < 60.0f )
 		{
 			continue;
 		}
 		movers += 1;
 
-		lpAABB box = b3Body_ComputeAABB( mover->id );
+		lpAABB box = lpPhys_GetBounds( w->phys, mover->id );
 		lpVec3 ahead = lpMulSV( 2.0f * timeStep, v );
 		box.lowerBound = lpMin( box.lowerBound, lpAdd( box.lowerBound, ahead ) );
 		box.upperBound = lpMax( box.upperBound, lpAdd( box.upperBound, ahead ) );
-		lpVec3 moverCenter = lpToVec3( b3Body_GetWorldCenter( mover->id ) );
+		lpVec3 moverCenter = lpToVec3( lpPhys_GetWorldCenter( w->phys, mover->id ) );
 
 		lpQueryPieces( w, box );
 		w->stamp += 1;
@@ -603,13 +573,13 @@ void lpShove( lpWorld* w, float timeStep )
 			lpWakeRubble( w, bi );
 			if ( b->tier == lp_tierLight )
 			{
-				lpPos c = b3Body_GetWorldCenter( b->id );
+				lpPos c = lpPhys_GetWorldCenter( w->phys, b->id );
 				lpVec3 out = lpSub( lpToVec3( c ), moverCenter );
 				out.y = 0.0f;
 				out = lpNormalize( out );
-				lpVec3 push = lpAdd( lpMulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, c ) ), lpMulSV( 1.5f, out ) );
+				lpVec3 push = lpAdd( lpMulSV( 1.1f, lpPhys_GetPointVelocity( w->phys, mover->id, c ) ), lpMulSV( 1.5f, out ) );
 				push.y += 1.0f;
-				b3Body_SetLinearVelocity( b->id, push );
+				lpPhys_SetLinearVelocity( w->phys, b->id, push );
 			}
 		}
 
@@ -621,7 +591,7 @@ void lpShove( lpWorld* w, float timeStep )
 			out.y = 0.0f;
 			out = lpNormalize( out );
 			lpLoosen( b );
-			b->v = lpAdd( lpMulSV( 1.1f, b3Body_GetWorldPointVelocity( mover->id, b->com ) ), lpMulSV( 1.5f, out ) );
+			b->v = lpAdd( lpMulSV( 1.1f, lpPhys_GetPointVelocity( w->phys, mover->id, b->com ) ), lpMulSV( 1.5f, out ) );
 			b->v.y += 1.0f;
 		}
 	}
@@ -656,7 +626,7 @@ void lpApplyBlows( lpWorld* w )
 				continue;
 			}
 			b->stamp = stamp;
-			lpPos c = b3Body_GetWorldCenter( b->id );
+			lpPos c = lpPhys_GetWorldCenter( w->phys, b->id );
 			lpVec3 rel = lpSubPos( c, blow.origin );
 			float d = lpLength( rel );
 			if ( d > blow.range || d < 1e-3f || lpDot( rel, blow.direction ) < blow.cosAngle * d )
@@ -665,10 +635,10 @@ void lpApplyBlows( lpWorld* w )
 			}
 			float f = 1.0f - d / blow.range;
 			lpWakeRubble( w, bi );
-			float mass = b3Body_GetMass( b->id );
+			float mass = lpPhys_GetMass( w->phys, b->id );
 			float dv = blow.speed * f * lpClampFloat( 25.0f / lpMaxFloat( mass, 0.01f ), 0.05f, 1.0f );
 			lpVec3 push = lpMulAdd( lpMulSV( dv, blow.direction ), 0.3f * dv, (lpVec3){ 0.0f, 1.0f, 0.0f } );
-			b3Body_ApplyLinearImpulse( b->id, lpMulSV( mass, push ), c, true );
+			lpPhys_ApplyImpulse( w->phys, b->id, lpMulSV( mass, push ), c, true );
 		}
 
 		lpQueryLoose( w, box );
@@ -705,12 +675,12 @@ void lpWorld_SetGravityScale( lpWorld* w, int body, float scale )
 	}
 	lpBody* b = w->bodies.data + body;
 	b->gravityScale = scale;
-	if ( B3_IS_NON_NULL( b->id ) )
+	if ( LP_PHYS_NULL( b->id ) == false )
 	{
-		b3Body_SetGravityScale( b->id, scale );
-		if ( b3Body_GetType( b->id ) == b3_dynamicBody )
+		lpPhys_SetGravityScale( w->phys, b->id, scale );
+		if ( lpPhys_IsDynamic( w->phys, b->id ) )
 		{
-			b3Body_SetAwake( b->id, true );
+			lpPhys_SetAwake( w->phys, b->id, true );
 		}
 	}
 	if ( b->kind == lp_kindStructure )
@@ -816,12 +786,12 @@ void lpEnforceBudgets( lpWorld* w )
 			}
 			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow
 			if ( w->def.freezeRubble && w->tick - b->createdTick >= 240 && w->freezesThisStep < w->def.maxFreezesPerStep &&
-				 lpLength( b3Body_GetLinearVelocity( b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
+				 lpLength( lpPhys_GetLinearVelocity( w->phys, b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
 				 lpTouchesLinked( w, b ) == false )
 			{
 				b->kind = lp_kindRubble;
 				b->freezePending = false;
-				b3Body_SetType( b->id, b3_staticBody );
+				lpPhys_SetDynamic( w->phys, b->id, false );
 				w->freezesThisStep += 1;
 				rubblePieces += b->pieces.count;
 				continue;
