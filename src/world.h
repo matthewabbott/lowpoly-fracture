@@ -550,16 +550,6 @@ typedef struct lpOrder
 	int index; // into the reported array
 } lpOrder;
 
-// A physics hit event with its sort key: a step's hits are acted on in this total order (piece pair, speed, point),
-// never in the physics engine's report order
-typedef struct lpHitEvent
-{
-	uint64_t pair; // the two pieces' index + 1, smaller first (0: a shape that is not a piece)
-	float speed;
-	lpPos point;
-	int index; // into the step's hit events
-} lpHitEvent;
-
 #define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
 
 // One piece to fracture during an impact (see impact.c, "fracture jobs")
@@ -663,7 +653,6 @@ struct lpWorld
 	LP_ARRAY( int ) scratchQueue;
 	LP_ARRAY( lpComponent ) scratchComponents;
 	LP_ARRAY( lpHitCandidate ) scratchHits;
-	LP_ARRAY( lpHitEvent ) scratchHitEvents;
 	LP_ARRAY( lpOrder ) scratchOrder;
 
 	// Loose-debris grid: hashed 2D cells in x/z, each slot heads a list of ghost/scrap bodies

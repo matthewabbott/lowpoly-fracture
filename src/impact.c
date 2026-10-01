@@ -209,7 +209,7 @@ static void lpFreeJobOutput( lpFractureJob* job )
 		}
 		if ( job->hulls[i] != NULL )
 		{
-			b3DestroyHull( job->hulls[i] );
+			lpPhys_DestroyHull( job->hulls[i] );
 		}
 	}
 	job->cellCount = 0;
@@ -233,11 +233,11 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 
 	int bodyIndex = piece->body;
 	lpBody* body = w->bodies.data + bodyIndex;
-	lpWorldTransform xf = b3Body_GetTransform( body->id );
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, body->id );
 	bool isDynamic = body->kind == lp_kindDebris;
-	lpVec3 v = isDynamic ? b3Body_GetLinearVelocity( body->id ) : lpVec3_zero;
-	lpVec3 omega = isDynamic ? b3Body_GetAngularVelocity( body->id ) : lpVec3_zero;
-	lpVec3 localCenter = isDynamic ? b3Body_GetLocalCenter( body->id ) : lpVec3_zero;
+	lpVec3 v = isDynamic ? lpPhys_GetLinearVelocity( w->phys, body->id ) : lpVec3_zero;
+	lpVec3 omega = isDynamic ? lpPhys_GetAngularVelocity( w->phys, body->id ) : lpVec3_zero;
+	lpVec3 localCenter = isDynamic ? lpPhys_GetLocalCenter( w->phys, body->id ) : lpVec3_zero;
 
 	// Former neighbors, then retire the parent
 	int neighbors[256];
@@ -292,7 +292,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
 		lpShape* cell = job->cells[i];
-		b3HullData* hull = job->hulls[i];
+		lpPhysHull* hull = job->hulls[i];
 		uint8_t cls = job->cellClass[i];
 		job->cells[i] = NULL;
 		job->hulls[i] = NULL;
@@ -321,7 +321,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			lpShape_Destroy( cell );
 			if ( hull != NULL )
 			{
-				b3DestroyHull( hull );
+				lpPhys_DestroyHull( hull );
 			}
 			continue;
 		}
@@ -487,7 +487,7 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 	lpImpactDef blast = { 0 };
 	if ( whole )
 	{
-		blast.point = B3_IS_NON_NULL( b->id ) ? b3Body_GetWorldCenter( b->id ) : b->com;
+		blast.point = LP_PHYS_NULL( b->id ) == false ? lpPhys_GetWorldCenter( w->phys, b->id ) : b->com;
 	}
 	else
 	{
@@ -547,7 +547,7 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 	{
 		int pieceIndex = candidates[i];
 		lpPiece* p = w->pieces.data + pieceIndex;
-		if ( p->body < 0 || p->shape == NULL || B3_IS_NULL( p->shapeId ) )
+		if ( p->body < 0 || p->shape == NULL || LP_PHYS_NULL( p->shapeId ) )
 		{
 			continue;
 		}
@@ -561,7 +561,7 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 		{
 			continue;
 		}
-		lpWorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, w->bodies.data[p->body].id );
 		lpVec3 local = lpInvTransformWorldPoint( xf, impact->point );
 		float d = lpShape_SignedDistance( p->shape, local );
 		if ( lpImpactDensity( impact, d ) >= m->fractureEnergy )
@@ -654,7 +654,7 @@ static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 		{
 			continue;
 		}
-		lpWorldTransform xf = b3Body_GetTransform( w->bodies.data[p->body].id );
+		lpWorldTransform xf = lpPhys_GetTransform( w->phys, w->bodies.data[p->body].id );
 		lpVec3 local = lpInvTransformWorldPoint( xf, impact->point );
 
 		for ( int k = 0; k < p->bonds.count; )
@@ -718,7 +718,7 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact )
 		lpBody* b = w->bodies.data + p->body;
 		if ( p->detonator != 0 && w->detonators.data[p->detonator - 1].armed )
 		{
-			lpWorldTransform xf = b3Body_GetTransform( b->id );
+			lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
 			float d = lpShape_SignedDistance( p->shape, lpInvTransformWorldPoint( xf, impact->point ) );
 			if ( lpImpactDensity( impact, d ) > 150.0f )
 			{
@@ -816,14 +816,14 @@ void lpApplyForces( lpWorld* w )
 				continue;
 			}
 			b->stamp = w->stamp;
-			lpPos center = b3Body_GetWorldCenter( b->id );
+			lpPos center = lpPhys_GetWorldCenter( w->phys, b->id );
 			float d = lpLength( lpSubPos( center, force.point ) );
 			if ( d > force.radius )
 			{
 				continue;
 			}
 			float f = 1.0f - d / force.radius;
-			float mass = b3Body_GetMass( b->id );
+			float mass = lpPhys_GetMass( w->phys, b->id );
 			if ( force.explosion )
 			{
 				lpVec3 away = d > 1e-4f ? lpMulSV( 1.0f / d, lpSubPos( center, force.point ) ) : (lpVec3){ 0.0f, 1.0f, 0.0f };
@@ -831,14 +831,14 @@ void lpApplyForces( lpWorld* w )
 				away = lpAdd( away, force.direction );
 				away = lpNormalize( lpAdd( away, (lpVec3){ 0.0f, 0.35f, 0.0f } ) );
 				float speed = force.impulse * f;
-				lpVec3 extent = b3Body_GetMaxExtent( b->id );
+				lpVec3 extent = lpPhys_GetMaxExtent( w->phys, b->id );
 				lpPos at = lpOffsetPos( center, lpMulSV( -0.3f * lpLength( extent ), away ) );
-				b3Body_ApplyLinearImpulse( b->id, lpMulSV( mass * speed, away ), at, true );
+				lpPhys_ApplyImpulse( w->phys, b->id, lpMulSV( mass * speed, away ), at, true );
 			}
 			else
 			{
 				float impulse = lpMinFloat( force.impulse * f, 12.0f * mass );
-				b3Body_ApplyLinearImpulse( b->id, lpMulSV( impulse, force.direction ), center, true );
+				lpPhys_ApplyImpulse( w->phys, b->id, lpMulSV( impulse, force.direction ), center, true );
 			}
 		}
 		lpApplyLooseForce( w, &force );
@@ -857,37 +857,14 @@ static int lpCompareHits( const void* a, const void* b )
 	return ( x->key > y->key ) - ( x->key < y->key );
 }
 
-static int lpCompareHitEvents( const void* a, const void* b )
+static float lpPieceMass( const lpWorld* w, int piece )
 {
-	const lpHitEvent* x = a;
-	const lpHitEvent* y = b;
-	if ( x->pair != y->pair )
+	if ( piece < 0 )
 	{
-		return ( x->pair > y->pair ) - ( x->pair < y->pair );
+		return 0.0f;
 	}
-	if ( x->speed != y->speed )
-	{
-		return x->speed > y->speed ? -1 : 1;
-	}
-	if ( x->point.x != y->point.x )
-	{
-		return x->point.x < y->point.x ? -1 : 1;
-	}
-	if ( x->point.y != y->point.y )
-	{
-		return x->point.y < y->point.y ? -1 : 1;
-	}
-	if ( x->point.z != y->point.z )
-	{
-		return x->point.z < y->point.z ? -1 : 1;
-	}
-	return ( x->index > y->index ) - ( x->index < y->index ); // identical events: either order acts the same
-}
-
-static float lpShapeMass( b3ShapeId shapeId )
-{
-	b3BodyId body = b3Shape_GetBody( shapeId );
-	return b3Body_GetType( body ) == b3_dynamicBody ? b3Body_GetMass( body ) : 0.0f;
+	lpPhysBody body = w->bodies.data[w->pieces.data[piece].body].id;
+	return lpPhys_IsDynamic( w->phys, body ) ? lpPhys_GetMass( w->phys, body ) : 0.0f;
 }
 
 // A hard hit on a moving body that solves its stress jolts the moving bodies its links join to it, which solve theirs
@@ -920,43 +897,26 @@ static void lpJoltLinked( lpWorld* w, int bodyIndex )
 // Collisions hard enough to hurt become impacts for the next step
 void lpCollectHits( lpWorld* w )
 {
-	b3ContactEvents events = b3World_GetContactEvents( w->physics );
 	w->scratchHits.count = 0;
 
 	// The stress checks, wakes and detonations below act in a total order of the hits, not the report order
-	w->scratchHitEvents.count = 0;
-	for ( int i = 0; i < events.hitCount; ++i )
+	const lpPhysHit* hits;
+	int hitCount = lpPhys_GetHits( w->phys, &hits );
+	for ( int n = 0; n < hitCount; ++n )
 	{
-		const b3ContactHitEvent* e = events.hitEvents + i;
-		intptr_t da = (intptr_t)b3Shape_GetUserData( e->shapeIdA );
-		intptr_t db = (intptr_t)b3Shape_GetUserData( e->shapeIdB );
-		if ( e->approachSpeed < w->def.wakeSpeed || ( da <= 0 && db <= 0 ) )
+		const lpPhysHit* e = hits + n;
+		if ( e->speed < w->def.wakeSpeed || ( e->pieceA < 0 && e->pieceB < 0 ) )
 		{
 			continue;
 		}
-		uint64_t lo = (uint64_t)( da > 0 ? da : 0 );
-		uint64_t hi = (uint64_t)( db > 0 ? db : 0 );
-		lpHitEvent ordered = { lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo, e->approachSpeed, e->point, i };
-		lpArray_Push( w->scratchHitEvents, ordered );
-	}
-	if ( w->scratchHitEvents.count > 1 )
-	{
-		qsort( w->scratchHitEvents.data, (size_t)w->scratchHitEvents.count, sizeof( lpHitEvent ), lpCompareHitEvents );
-	}
-
-	for ( int n = 0; n < w->scratchHitEvents.count; ++n )
-	{
-		const b3ContactHitEvent* e = events.hitEvents + w->scratchHitEvents.data[n].index;
-		intptr_t da = (intptr_t)b3Shape_GetUserData( e->shapeIdA );
-		intptr_t db = (intptr_t)b3Shape_GetUserData( e->shapeIdB );
+		int pieces[2] = { e->pieceA, e->pieceB };
 
 		// Something landed on or knocked a structure: its loads changed, so its stresses are checked again
 		for ( int k = 0; k < 2; ++k )
 		{
-			intptr_t data = k == 0 ? da : db;
-			if ( data > 0 )
+			if ( pieces[k] >= 0 )
 			{
-				int bi = w->pieces.data[data - 1].body;
+				int bi = w->pieces.data[pieces[k]].body;
 				lpBody* hit = bi >= 0 ? w->bodies.data + bi : NULL;
 				if ( hit != NULL && hit->kind == lp_kindStructure && w->tick >= hit->hitCheckTick + 30 )
 				{
@@ -965,12 +925,12 @@ void lpCollectHits( lpWorld* w )
 				}
 				// A moving body that solves its stress feels a hard hit through its own acceleration: check it then
 				// (at most every 10 steps), while the hit is in its contacts
-				else if ( hit != NULL && hit->solveStress && hit->kind == lp_kindDebris && e->approachSpeed >= w->def.hitSpeed &&
+				else if ( hit != NULL && hit->solveStress && hit->kind == lp_kindDebris && e->speed >= w->def.hitSpeed &&
 						  w->tick >= hit->hitCheckTick + 10 )
 				{
 					hit->hitCheckTick = w->tick;
-					hit->hitPoint = lpInvTransformWorldPoint( b3Body_GetTransform( hit->id ), e->point );
-					hit->hitMaterial = w->pieces.data[data - 1].material;
+					hit->hitPoint = lpInvTransformWorldPoint( lpPhys_GetTransform( w->phys, hit->id ), e->point );
+					hit->hitMaterial = w->pieces.data[pieces[k]].material;
 					hit->hitTick = w->tick + 1; // + 1: never 0 once set
 					hit->joltTick = w->tick + 1;
 					lpRequestStressCheck( w, bi, false );
@@ -980,10 +940,10 @@ void lpCollectHits( lpWorld* w )
 		}
 
 		// Fragile rubble: a moving body bumping into it knocks it loose (strong static friction, not cement)
-		if ( da > 0 && db > 0 )
+		if ( pieces[0] >= 0 && pieces[1] >= 0 )
 		{
-			int bodyA = w->pieces.data[da - 1].body;
-			int bodyB = w->pieces.data[db - 1].body;
+			int bodyA = w->pieces.data[pieces[0]].body;
+			int bodyB = w->pieces.data[pieces[1]].body;
 			if ( w->bodies.data[bodyA].kind == lp_kindRubble && w->bodies.data[bodyB].kind == lp_kindDebris )
 			{
 				lpWakeRubble( w, bodyA );
@@ -993,58 +953,45 @@ void lpCollectHits( lpWorld* w )
 				lpWakeRubble( w, bodyB );
 			}
 		}
-		if ( e->approachSpeed < w->def.hitSpeed )
+		if ( e->speed < w->def.hitSpeed )
 		{
 			continue;
 		}
 
 		// Volatile objects go off on a hard enough knock
-		intptr_t pieceData[2] = { da, db };
 		for ( int k = 0; k < 2; ++k )
 		{
-			int detonator = pieceData[k] > 0 ? w->pieces.data[pieceData[k] - 1].detonator : 0;
+			int detonator = pieces[k] >= 0 ? w->pieces.data[pieces[k]].detonator : 0;
 			if ( detonator != 0 && w->detonators.data[detonator - 1].armed &&
-				 e->approachSpeed >= w->detonators.data[detonator - 1].def.triggerSpeed )
+				 e->speed >= w->detonators.data[detonator - 1].def.triggerSpeed )
 			{
-				lpDetonate( w, (int)( pieceData[k] - 1 ) );
+				lpDetonate( w, pieces[k] );
 			}
 		}
 
-		float ma = lpShapeMass( e->shapeIdA );
-		float mb = lpShapeMass( e->shapeIdB );
+		float ma = lpPieceMass( w, pieces[0] );
+		float mb = lpPieceMass( w, pieces[1] );
 		float mass = ( ma > 0.0f && mb > 0.0f ) ? ma * mb / ( ma + mb ) : lpMaxFloat( ma, mb );
-		float energy = 0.5f * mass * e->approachSpeed * e->approachSpeed;
+		float energy = 0.5f * mass * e->speed * e->speed;
 		// Crumpling soaks up most of a crash first: the more crushable of the two decides
 		float crush = 0.0f;
 		for ( int k = 0; k < 2; ++k )
 		{
-			crush = pieceData[k] > 0 ? lpMaxFloat( crush, lpGetMaterial( w->pieces.data[pieceData[k] - 1].material )->crush ) : crush;
+			crush = pieces[k] >= 0 ? lpMaxFloat( crush, lpGetMaterial( w->pieces.data[pieces[k]].material )->crush ) : crush;
 		}
 		energy *= 1.0f - crush;
 		// and spreads the blow over the face that hit, not the first corner that touched
 		lpPos point = e->point;
-		if ( crush > 0.0f && b3Contact_IsValid( e->contactId ) )
+		if ( crush > 0.0f )
 		{
-			b3ContactData contact = b3Contact_GetData( e->contactId );
-			lpPos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( contact.shapeIdA ) );
-			lpVec3 sum = lpVec3_zero;
-			int count = 0;
-			for ( int mi = 0; mi < contact.manifoldCount; ++mi )
-			{
-				for ( int pi = 0; pi < contact.manifolds[mi].pointCount; ++pi )
-				{
-					sum = lpAdd( sum, contact.manifolds[mi].points[pi].anchorA );
-					count += 1;
-				}
-			}
-			point = count > 0 ? lpOffsetPos( centerA, lpMulSV( 1.0f / (float)count, sum ) ) : point;
+			lpPhys_GetContactCentroid( w->phys, e->contact, &point );
 		}
 		if ( energy < 100.0f )
 		{
 			continue;
 		}
 
-		lpHitCandidate hit = { energy, point, w->scratchHitEvents.data[n].pair };
+		lpHitCandidate hit = { energy, point, e->pair };
 		lpArray_Push( w->scratchHits, hit );
 	}
 

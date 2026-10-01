@@ -394,7 +394,6 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->deferred );
 	lpArray_Free( w->scratchLoose );
 	lpArray_Free( w->scratchHits );
-	lpArray_Free( w->scratchHitEvents );
 	lpArray_Free( w->scratchOrder );
 	lpArray_Free( w->scratchComponents );
 	lpGridFree( w );
