@@ -696,3 +696,26 @@ random draws out of initializers, clamped float-to-int conversions.
   tower +20%, pile +3% and 10 to 15% slower), not with cost per piece. The guard and the sorts cost nothing measurable.
 - New bench outputs: `--tick-log path` (per-tick step, fracture, physics and stress times) and `over16ms` /
   `over33ms` per run in the JSON: the spikes a lockstep peer must absorb.
+
+## 2026-10-01 milestone 8: the physics seam
+
+What changed: every Box3D call goes through `src/phys.h` (backend `src/phys_box3d.c`), the maths and its types are
+ours (`lpmath.h`), reports come back from the backend in our order, wakes test each piece's own bounds, and the lag
+experiment sits behind a flag (off by default).
+- Steps 1 to 3 (maths, interface, routing) kept every simulation and solver hash, at 1 and 8 workers.
+- The seam's cost, interleaved A/B against the milestone's start (same hashes, 4 rounds, median, 1 worker): pile
+  +3.3%, walls +2.6%, tower +1.3%, town +1.2%, all of it in the update after the physics step (pile 0.078 -> 0.147 ms
+  a step). The backend sorted every moved body each step with `qsort`; a radix sort on the body index
+  (`lpRadixSort64`) brings it to pile +1.0%, walls +1.0%, tower +0.8%, town +0.4%: the wrapper calls, near the noise.
+- Exact wakes (step 4) change what comes down, so the rungs' hashes too (the mech's stays). Over 16 bombardment
+  periods (8 to 23) per scene against the milestone's start: pieces 74.5k -> 73.5k (tower), 118.5k -> 117.1k (town),
+  31.3k -> 31.0k (pile), the same on average; summed step times +6.7% (tower), +7.7% (town), +3.8% (pile), of which
+  the seam is 1 to 3%; awake contacts +4% (tower, town). The test itself costs about 7 ns per candidate.
+- Found while measuring: `lpQueryPieces` costs about 160 ns per candidate (Box3D's tree query, the callback, the sort),
+  24,000 queries and a million candidates over the tower rung: about 0.3 ms of its 3.6 ms step. A target for the
+  profiling milestone.
+- The new baseline (best of 3, commit e3c3849), step avg ms at 1 / 8 workers: walls 0.65 / 0.42, town 3.28 / 1.87,
+  pile 2.29 / 0.90, lumber 0.18 / 0.16, tower 5.00 / 2.47, ruins 0.13 / 0.11, yard 0.14 / 0.13, keep 6.78 / 4.79,
+  barrage 10.79 / 5.29, siege 19.08 / 10.46, track 0.14 / 0.15, mech 0.09 / 0.11.
+- The lag experiment's capture (every body, contact and joint, each step) costs the town's physics 48%: an
+  experiment's cost, not a pipeline's. Off, nothing changes.

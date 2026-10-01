@@ -19,7 +19,8 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 3. **Randomness is PCG32 seeded from simulation state**: world seed, tick, piece index and generation
    (`lpMix64`). Never time, addresses or `rand()`.
 4. **Iteration order is always an index order.** Pools are arrays with LIFO free lists; nothing iterates a hash map
-   or pointer-keyed container. Box3D query results are copied and sorted (`lpQueryPieces`) before use.
+   or pointer-keyed container. Physics query results come back sorted from the backend (`src/phys.h`), and
+   `lpQueryPieces` keeps a piece by its own bounds, never by the engine's fattened ones.
 5. **Sorts use a total order.** Every comparator breaks ties by an index (`lpCompareHits`, `lpCompareBudget`,
    Voronoi neighbour keys embed the site index), so `qsort` instability cannot leak.
 6. **Parallel work is pure.** A fracture job reads only its own snapshot and writes only its own output; results are
@@ -46,10 +47,11 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
    ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).
 12. **What the physics engine reports is acted on in our own total order.** Hit events (by piece pair, speed, point),
-   body move events (freeze candidates by body index), a body's contact list (stress loads by piece, then what it
-   touches) and casts (ties by piece index: callbacks clip one float past their best hit so an equal hit is still
-   seen) never act in the engine's report or traversal order, so a different engine, or a restored one, gives the
-   same decisions.
+   body move events (by body index), a body's contact list (by piece, then what it touches) and casts (ties by piece
+   index: the cast clips one float past its best hit so an equal hit is still seen) never act in the engine's report
+   or traversal order, so a different engine, or a restored one, gives the same decisions. The order is made in one
+   place, the physics backend (`src/phys_box3d.c`): everything behind `src/phys.h` comes back in it, in piece and
+   body indices, so the core never sees the engine's ids or order.
 13. **No side effects inside one call's arguments or one braced initializer.** C leaves their order open: two random
    draws as arguments of one call came out in opposite orders on MSVC and gcc x64 against clang and gcc ARM64. One draw
    per statement.

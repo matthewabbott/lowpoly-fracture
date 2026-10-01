@@ -1,6 +1,7 @@
 # lowpoly-fracture: agent map
 
-A destruction-first engine: low-poly convex pieces instead of voxels, on vendored Box3D. Priorities: agent-friendliness,
+A destruction-first engine: low-poly convex pieces instead of voxels, on vendored Box3D (behind one interface,
+`src/phys.h`). Priorities: agent-friendliness,
 then performance, then everything else. Determinism is mandatory (docs/determinism-rules.md).
 
 ## Read this, skip that
@@ -18,8 +19,9 @@ a track only when a decision needs its detail.
 |---|---|
 | `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, blows, stats, queries |
 | `include/lpf/lpmath.h`, `src/lpmath.c` | vector maths (`lpVec3`, `lpQuat`, `lpTransform`, `lpPos`, ...), Box3D's own taken over with each operation kept; the trig is hand coded for determinism |
-| `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, the floating-point guard (`lpFpGuard`) and the determinism self-test |
+| `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
+| `src/phys.h`, `src/phys_box3d.c` | the physics interface: every rigid-body operation the core uses (bodies, hull shapes, joints and motors, contacts, hits, moves, overlap and casts; quickhull and GJK) on opaque handles, reports in piece and body indices and in our order; the Box3D backend is the only file that sees Box3D's headers (the build enforces it); the lag experiment (`lpWorldDef.physicsLag`) |
 | `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
 | `src/tasks.h/.c` | thread pool with a blocking parallel-for (fracture jobs) |
@@ -29,7 +31,7 @@ a track only when a decision needs its detail.
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
-| `src/link.c` | links: Box3D joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
+| `src/link.c` | links: physics joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
 | `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, reaching and touching, state, hash |
 | `src/gait.c` | the gait (`lpWalkRig`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
