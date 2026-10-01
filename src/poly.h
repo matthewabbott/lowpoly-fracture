@@ -6,8 +6,8 @@
 
 #include "core.h"
 
-#include "box3d/collision.h"
 #include "lpf/lpmath.h"
+#include "phys.h"
 
 #define LP_POLY_MAX_VERTICES 128
 #define LP_POLY_MAX_FACES 64
@@ -53,7 +53,7 @@ void lpPoly_MakeBox( lpPoly* poly, lpVec3 halfExtents, lpTransform transform, ui
 
 // Convex hull of a point cloud (via Box3D's quickhull). Returns false if degenerate or too large.
 bool lpPoly_MakeFromPoints( lpPoly* poly, const lpVec3* points, int count, uint8_t material );
-bool lpPoly_MakeFromHull( lpPoly* poly, const b3HullData* hull, uint8_t material );
+bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material );
 
 // Keep the part with dot(normal, x) <= offset. The new cap face gets material and tag.
 // Degenerate cases (vertices within tolerance of the plane) are removed by pushing the plane outward by a
@@ -116,8 +116,8 @@ static inline bool lpBoxesTouch( lpAABB a, lpAABB b, float margin )
 			  a.lowerBound.z > b.upperBound.z + margin || b.lowerBound.z > a.upperBound.z + margin );
 }
 
-// Box3D hull with the same vertices. Caller owns the result (b3DestroyHull). NULL on failure.
-b3HullData* lpShape_CreateHull( const lpShape* shape );
+// The physics hull with the same vertices. Caller owns the result (lpPhys_DestroyHull). NULL on failure.
+lpPhysHull* lpShape_CreateHull( const lpShape* shape );
 
 // Where two pieces touch: the patch a bond sits on
 typedef struct lpContact

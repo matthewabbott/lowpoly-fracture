@@ -48,63 +48,55 @@ void lpPoly_MakeBox( lpPoly* poly, lpVec3 h, lpTransform transform, uint8_t mate
 	poly->indexCount = 24;
 }
 
-bool lpPoly_MakeFromHull( lpPoly* poly, const b3HullData* hull, uint8_t material )
+bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material )
 {
-	if ( hull == NULL || hull->vertexCount > LP_POLY_MAX_VERTICES || hull->faceCount > LP_POLY_MAX_FACES )
+	if ( hull == NULL )
+	{
+		return false;
+	}
+	lpPhysHullView view = lpPhys_GetHullView( hull );
+	if ( view.vertexCount > LP_POLY_MAX_VERTICES || view.faceCount > LP_POLY_MAX_FACES )
 	{
 		return false;
 	}
 
-	const lpVec3* points = b3GetHullPoints( hull );
-	const lpPlane* planes = b3GetHullPlanes( hull );
-	const b3HullFace* faces = b3GetHullFaces( hull );
-	const b3HullHalfEdge* edges = b3GetHullEdges( hull );
-
-	for ( int i = 0; i < hull->vertexCount; ++i )
+	for ( int i = 0; i < view.vertexCount; ++i )
 	{
-		poly->vertices[i] = points[i];
+		poly->vertices[i] = view.points[i];
 	}
-	poly->vertexCount = hull->vertexCount;
+	poly->vertexCount = view.vertexCount;
 
 	int indexCount = 0;
-	for ( int f = 0; f < hull->faceCount; ++f )
+	for ( int f = 0; f < view.faceCount; ++f )
 	{
 		lpFace* face = poly->faces + f;
 		face->first = (uint16_t)indexCount;
 		face->material = material;
 		face->tag = LP_TAG_EXTERIOR;
-		face->plane = planes[f];
-
-		int first = faces[f].edge;
-		int edge = first;
-		int count = 0;
-		do
+		face->plane = view.planes[f];
+		int room = LP_POLY_MAX_INDICES - indexCount;
+		int count = lpPhys_GetHullFace( hull, f, poly->indices + indexCount, room < 255 ? room : 255 );
+		if ( count < 0 )
 		{
-			if ( indexCount >= LP_POLY_MAX_INDICES || count >= 255 )
-			{
-				return false;
-			}
-			poly->indices[indexCount++] = (uint8_t)edges[edge].origin;
-			count += 1;
-			edge = edges[edge].next;
+			return false;
 		}
-		while ( edge != first );
+		indexCount += count;
 		face->count = (uint8_t)count;
 	}
-	poly->faceCount = hull->faceCount;
+	poly->faceCount = view.faceCount;
 	poly->indexCount = indexCount;
 	return true;
 }
 
 bool lpPoly_MakeFromPoints( lpPoly* poly, const lpVec3* points, int count, uint8_t material )
 {
-	b3HullData* hull = b3CreateHull( points, count, LP_POLY_MAX_VERTICES );
+	lpPhysHull* hull = lpPhys_CreateHull( points, count, LP_POLY_MAX_VERTICES );
 	if ( hull == NULL )
 	{
 		return false;
 	}
 	bool ok = lpPoly_MakeFromHull( poly, hull, material );
-	b3DestroyHull( hull );
+	lpPhys_DestroyHull( hull );
 	return ok;
 }
 
@@ -689,23 +681,16 @@ bool lpShape_NearlyOverlap( const lpShape* a, const lpShape* b, float margin )
 	}
 
 	// Two convex solids can cross edge to edge with no vertex inside the other (overlapping low-poly blobs): GJK
-	if ( a->vertexCount > B3_MAX_SHAPE_CAST_POINTS || b->vertexCount > B3_MAX_SHAPE_CAST_POINTS )
+	if ( a->vertexCount > LP_PHYS_MAX_POINTS || b->vertexCount > LP_PHYS_MAX_POINTS )
 	{
 		return false;
 	}
-	b3DistanceInput input = { 0 };
-	input.proxyA = (b3ShapeProxy){ a->vertices, a->vertexCount, 0.0f };
-	input.proxyB = (b3ShapeProxy){ b->vertices, b->vertexCount, 0.0f };
-	input.transform = lpTransform_identity;
-	input.useRadii = false;
-	b3SimplexCache cache = { 0 };
-	b3DistanceOutput output = b3ShapeDistance( &input, &cache, NULL, 0 );
-	return output.distance < margin;
+	return lpPhys_HullDistance( a->vertices, a->vertexCount, b->vertices, b->vertexCount ) < margin;
 }
 
-b3HullData* lpShape_CreateHull( const lpShape* shape )
+lpPhysHull* lpShape_CreateHull( const lpShape* shape )
 {
-	return b3CreateHull( shape->vertices, shape->vertexCount, B3_MAX_HULL_VERTICES );
+	return lpPhys_CreateHull( shape->vertices, shape->vertexCount, LP_PHYS_MAX_POINTS );
 }
 
 // ---- contact area between coplanar opposing faces ----
