@@ -542,14 +542,6 @@ typedef struct lpHitCandidate
 	uint64_t key;
 } lpHitCandidate;
 
-// A sort key for putting what the physics engine reports into a total order of our own (lpCompareOrder)
-typedef struct lpOrder
-{
-	uint64_t key;
-	uint32_t tie;
-	int index; // into the reported array
-} lpOrder;
-
 #define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
 
 // One piece to fracture during an impact (see impact.c, "fracture jobs")
@@ -589,7 +581,6 @@ struct lpWorld
 {
 	lpWorldDef def;
 	lpPhys* phys;
-	b3WorldId physics; // Box3D's world, for the modules milestone 8 has not routed through phys.h yet
 
 	LP_ARRAY( lpPiece ) pieces;
 	LP_ARRAY( lpBond ) bonds;
@@ -622,7 +613,6 @@ struct lpWorld
 	int stressJobCount;
 	int stressJobCapacity;
 	LP_ARRAY( lpOverload ) scratchOverloads;
-	LP_ARRAY( b3ContactData ) scratchContacts;
 	LP_ARRAY( lpVec6 ) scratchLoads;
 	LP_ARRAY( int ) scratchClusters;
 	LP_ARRAY( lpClusterSet ) scratchSets;
@@ -653,7 +643,6 @@ struct lpWorld
 	LP_ARRAY( int ) scratchQueue;
 	LP_ARRAY( lpComponent ) scratchComponents;
 	LP_ARRAY( lpHitCandidate ) scratchHits;
-	LP_ARRAY( lpOrder ) scratchOrder;
 
 	// Loose-debris grid: hashed 2D cells in x/z, each slot heads a list of ghost/scrap bodies
 	int* gridHeads;
@@ -692,7 +681,6 @@ void lpQueryPieces( lpWorld* w, lpAABB box );
 void lpWakeRubble( lpWorld* w, int bodyIndex );
 lpWorldTransform lpGetTransform( const lpWorld* w, const lpBody* b );
 int lpCompareInt( const void* a, const void* b );
-int lpCompareOrder( const void* a, const void* b );
 
 // Puts back a changed floating-point control word on the calling thread (determinism rule 15) and counts it
 static inline void lpGuardFp( lpWorld* w )
@@ -835,9 +823,6 @@ void lpShove( lpWorld* w, float timeStep );
 void lpApplyBlows( lpWorld* w );
 void lpEnforceBudgets( lpWorld* w );
 bool lpPairFilter( int pieceA, int pieceB, void* context );
-
-// Box3D's world under the physics interface, for the modules milestone 8 has not routed yet (phys_box3d.c)
-b3WorldId lpPhys_Box3DWorld( const lpPhys* p );
 
 // ---- validation (tests) ----
 

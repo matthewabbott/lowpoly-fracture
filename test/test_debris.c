@@ -95,7 +95,7 @@ static int TestGravityScale( void )
 
 	// Promoted back to full physics, it still floats
 	lpWorld_PromoteBody( s.world, floating );
-	ENSURE( b3Body_GetGravityScale( s.world->bodies.data[floating].id ) == 0.0f );
+	ENSURE( lpPhys_GetGravityScale( s.world->phys, s.world->bodies.data[floating].id ) == 0.0f );
 	Run( &s, 30 );
 	ENSURE_NEAR( BodyY( &s, floating ), 5.0f, 1e-2f );
 
@@ -108,7 +108,7 @@ static int TestGravityScale( void )
 		{
 			halves += 1;
 			ENSURE( b->gravityScale == 0.5f );
-			ENSURE( B3_IS_NULL( b->id ) || b3Body_GetGravityScale( b->id ) == 0.5f );
+			ENSURE( LP_PHYS_NULL( b->id ) || lpPhys_GetGravityScale( s.world->phys, b->id ) == 0.5f );
 		}
 	}
 	ENSURE( halves == 2 );

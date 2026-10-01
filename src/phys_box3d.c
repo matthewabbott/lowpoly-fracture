@@ -119,12 +119,6 @@ void lpPhys_Step( lpPhys* p, float timeStep, int subStepCount )
 	b3World_Step( p->world, timeStep, subStepCount );
 }
 
-b3WorldId lpPhys_Box3DWorld( const lpPhys* p );
-b3WorldId lpPhys_Box3DWorld( const lpPhys* p )
-{
-	return p->world;
-}
-
 lpVec3 lpPhys_GetGravity( const lpPhys* p )
 {
 	return b3World_GetGravity( p->world );

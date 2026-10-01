@@ -33,8 +33,8 @@ static StandReport Stand( int subSteps, int ticks, float drop )
 {
 	Sim s = CreateSim( -1 );
 	int rig = lpAddHexapod( s.world, (lpVec3){ 0.0f, drop, 0.0f }, 0.0f, 0 );
-	b3BodyId id = s.world->bodies.data[TorsoOf( &s, rig )].id;
-	float built = (float)b3Body_GetWorldCenter( id ).y;
+	lpPhysBody id = s.world->bodies.data[TorsoOf( &s, rig )].id;
+	float built = (float)lpPhys_GetWorldCenter( s.world->phys, id ).y;
 	StandReport r = { 0 };
 	r.asleepTick = -1;
 	r.worstJoint = -1;
@@ -42,13 +42,13 @@ static StandReport Stand( int subSteps, int ticks, float drop )
 	for ( int t = 0; t < ticks; ++t )
 	{
 		lpWorld_Step( s.world, 1.0f / 60.0f, subSteps );
-		bool sleeping = b3Body_IsAwake( id ) == false;
+		bool sleeping = lpPhys_IsAwake( s.world->phys, id ) == false;
 		float ms = lpWorld_GetStats( s.world ).rigMs;
 		r.awakeMs += sleeping ? 0.0f : ms;
 		r.asleepMs += sleeping ? ms : 0.0f;
 		awake += sleeping ? 0 : 1;
 		asleep += sleeping ? 1 : 0;
-		lpVec3 up = lpRotateVector( b3Body_GetRotation( id ), (lpVec3){ 0.0f, 1.0f, 0.0f } );
+		lpVec3 up = lpRotateVector( lpPhys_GetTransform( s.world->phys, id ).q, (lpVec3){ 0.0f, 1.0f, 0.0f } );
 		if ( t >= ticks / 2 )
 		{
 			r.tilt = fmaxf( r.tilt, lpAtan2( sqrtf( up.x * up.x + up.z * up.z ), up.y ) );
@@ -62,7 +62,7 @@ static StandReport Stand( int subSteps, int ticks, float drop )
 			}
 			if ( t >= 60 )
 			{
-				r.separation = fmaxf( r.separation, b3Joint_GetLinearSeparation( s.world->links.data[i].joint ) );
+				r.separation = fmaxf( r.separation, lpPhys_GetJointSeparation( s.world->phys, s.world->links.data[i].joint ) );
 			}
 			float share = st.motorCap > 0.0f ? st.motorTorque / st.motorCap : 0.0f;
 			if ( t >= 60 && share > r.torqueShare )
@@ -83,8 +83,8 @@ static StandReport Stand( int subSteps, int ticks, float drop )
 	}
 	r.awakeMs /= (float)( awake > 0 ? awake : 1 );
 	r.asleepMs /= (float)( asleep > 0 ? asleep : 1 );
-	r.speed = lpLength( b3Body_GetLinearVelocity( id ) );
-	r.sink = built - (float)b3Body_GetWorldCenter( id ).y;
+	r.speed = lpLength( lpPhys_GetLinearVelocity( s.world->phys, id ) );
+	r.sink = built - (float)lpPhys_GetWorldCenter( s.world->phys, id ).y;
 	r.valid = lpWorld_Validate( s.world );
 	DestroySim( &s );
 	return r;
@@ -254,7 +254,7 @@ static int TestRigCrouch( void )
 	ENSURE( fabsf( drop - want ) < 0.03f && moved < 0.02f );
 	Run( &s, 240 );
 	ENSURE( lpWorld_GetRigState( s.world, rig ).idle );
-	ENSURE( b3Body_IsAwake( s.world->bodies.data[after.body].id ) == false );
+	ENSURE( lpPhys_IsAwake( s.world->phys, s.world->bodies.data[after.body].id ) == false );
 	DestroySim( &s );
 	return 0;
 }
@@ -306,7 +306,7 @@ static int TestRigCost( void )
 				steps += 1;
 			}
 		}
-		ENSURE( b3Body_IsAwake( s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) );
+		ENSURE( lpPhys_IsAwake( s.world->phys, s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) );
 		DestroySim( &s );
 	}
 	{
@@ -584,7 +584,7 @@ static int TestRigStops( void )
 	for ( int t = 0; t < 300 && asleep < 0; ++t )
 	{
 		Run( &s, 1 );
-		asleep = b3Body_IsAwake( s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) ? -1 : t + 60;
+		asleep = lpPhys_IsAwake( s.world->phys, s.world->bodies.data[lpWorld_GetRigState( s.world, rig ).body].id ) ? -1 : t + 60;
 	}
 	lpRigState st = lpWorld_GetRigState( s.world, rig );
 	float ran = (float)st.position.z - r.start.z;
@@ -659,8 +659,8 @@ static int TestRigModelBent( void )
 	int rig = lpAddHexapod( s.world, (lpVec3){ 0.0f, 5.0f, 0.0f }, 0.4f, 0 );
 	for ( int b = 0; b < s.world->bodies.count; ++b )
 	{
-		if ( s.world->bodies.data[b].alive && B3_IS_NON_NULL( s.world->bodies.data[b].id ) &&
-			 b3Body_GetType( s.world->bodies.data[b].id ) == b3_dynamicBody )
+		if ( s.world->bodies.data[b].alive && LP_PHYS_NULL( s.world->bodies.data[b].id ) == false &&
+			 lpPhys_IsDynamic( s.world->phys, s.world->bodies.data[b].id ) )
 		{
 			lpWorld_SetGravityScale( s.world, b, 0.0f );
 		}
@@ -1144,7 +1144,7 @@ static BoneReport RunBones( Sim* s, int rig, int steps )
 			r.peak = fmaxf( r.peak, s->world->stressJobs[j].peak );
 		}
 		// Landed: the torso stops falling
-		float vy = rs.body >= 0 ? b3Body_GetLinearVelocity( s->world->bodies.data[rs.body].id ).y : 0.0f;
+		float vy = rs.body >= 0 ? lpPhys_GetLinearVelocity( s->world->phys, s->world->bodies.data[rs.body].id ).y : 0.0f;
 		falling = fminf( falling, vy );
 		r.landed = r.landed < 0 && falling < -3.0f && vy > -1.0f ? t : r.landed;
 		r.impact = -falling;
@@ -1168,7 +1168,7 @@ static int TestRigLandsWhole( void )
 			r.landed, r.impact, r.rebound, r.solves, r.torsoSolves, r.peak, r.breaks, before.pieceCount, after.pieceCount, before.bondCount,
 			after.bondCount, before.linkCount, after.linkCount, rs.able, rs.height );
 	// Its servos follow it down rather than fling it back up (at 4.4 m/s, before): what rebound is left is Box3D pushing
-	// the soles back out of the ground, at up to b3WorldDef.contactSpeed (3 m/s)
+	// the soles back out of the ground, at up to the physics engine's contact speed (3 m/s)
 	ENSURE( r.landed > 0 && r.solves > 0 && r.peak < 1.0f && r.breaks == 0 && r.rebound < 3.5f );
 	ENSURE( after.pieceCount == before.pieceCount && after.bondCount == before.bondCount && after.linkCount == before.linkCount );
 	ENSURE( rs.able == 6 );

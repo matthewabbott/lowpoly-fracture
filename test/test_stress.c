@@ -1138,7 +1138,7 @@ static int TestReliefBalances( void )
 	Run( &s, 5 );
 	CheckNow( &s, body );
 	const lpBody* b = s.world->bodies.data + body;
-	lpVec3 g = lpInvRotateVector( b3Body_GetRotation( b->id ), (lpVec3){ 0.0f, -10.0f, 0.0f } );
+	lpVec3 g = lpInvRotateVector( lpPhys_GetTransform( s.world->phys, b->id ).q, (lpVec3){ 0.0f, -10.0f, 0.0f } );
 	lpVec3 force = lpVec3_zero, torque = lpVec3_zero;
 	float weight = 0.0f;
 	for ( int k = 0; k < b->pieces.count; ++k )
@@ -1166,7 +1166,7 @@ static int TestReliefFreeFall( void )
 {
 	Sim s = CreateSim( -1 );
 	int body = AddBeam( &s, (lpVec3){ 0.0f, 20.0f, 0.0f }, 3.0f, 3, false, false );
-	b3Body_SetAngularVelocity( s.world->bodies.data[body].id, (lpVec3){ 0.0f, 0.0f, 0.5f } );
+	lpPhys_SetAngularVelocity( s.world->phys, s.world->bodies.data[body].id, (lpVec3){ 0.0f, 0.0f, 0.5f } );
 	Run( &s, 5 );
 	CheckNow( &s, body );
 	float peak = PeakRho( &s, body );
@@ -1264,7 +1264,7 @@ static int CrashEngine( float speed, int workers, uint64_t* hash )
 	lpWorld_SettleStructures( s.world );
 	int vehicle = lpAddCar( s.world, (lpVec3){ 0.0f, 0.0f, -8.0f }, 0.0f, 0 );
 	int car = lpWorld_GetVehicleState( s.world, vehicle ).body;
-	b3Body_SetLinearVelocity( s.world->bodies.data[car].id, (lpVec3){ 0.0f, 0.0f, speed } );
+	lpPhys_SetLinearVelocity( s.world->phys, s.world->bodies.data[car].id, (lpVec3){ 0.0f, 0.0f, speed } );
 	Run( &s, 60 );
 	car = lpWorld_GetVehicleState( s.world, vehicle ).body;
 	int off = 0;

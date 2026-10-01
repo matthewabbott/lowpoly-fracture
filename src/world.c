@@ -318,7 +318,6 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	pd.pairFilter = lpPairFilter;
 	pd.context = w;
 	w->phys = lpPhys_Create( &pd );
-	w->physics = lpPhys_Box3DWorld( w->phys );
 	w->tasks = lpTaskPool_Create( def->workerCount );
 	lpGridInit( w );
 	return w;
@@ -377,7 +376,6 @@ void lpDestroyWorld( lpWorld* w )
 	lpFree( w->stressJobs );
 	lpArray_Free( w->stressQueue );
 	lpArray_Free( w->scratchOverloads );
-	lpArray_Free( w->scratchContacts );
 	lpArray_Free( w->scratchLoads );
 	lpArray_Free( w->scratchClusters );
 	lpArray_Free( w->scratchSets );
@@ -394,7 +392,6 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->deferred );
 	lpArray_Free( w->scratchLoose );
 	lpArray_Free( w->scratchHits );
-	lpArray_Free( w->scratchOrder );
 	lpArray_Free( w->scratchComponents );
 	lpGridFree( w );
 	lpFree( w );
@@ -954,21 +951,6 @@ int lpCompareInt( const void* a, const void* b )
 	int x = *(const int*)a;
 	int y = *(const int*)b;
 	return ( x > y ) - ( x < y );
-}
-
-int lpCompareOrder( const void* a, const void* b )
-{
-	const lpOrder* x = a;
-	const lpOrder* y = b;
-	if ( x->key != y->key )
-	{
-		return ( x->key > y->key ) - ( x->key < y->key );
-	}
-	if ( x->tie != y->tie )
-	{
-		return ( x->tie > y->tie ) - ( x->tie < y->tie );
-	}
-	return ( x->index > y->index ) - ( x->index < y->index );
 }
 
 int lpCompareBodyRef( const void* a, const void* b )

@@ -163,7 +163,7 @@ static int TestObjectDetonatorUnchanged( void )
 	def.partCount = 2;
 	def.detonator = (lpDetonatorDef){ 4.5f, 1.8f, 120000.0f, 12.0f };
 	int body = lpCreateObject( s.world, &def );
-	lpPos center = b3Body_GetWorldCenter( s.world->bodies.data[body].id );
+	lpPos center = lpPhys_GetWorldCenter( s.world->phys, s.world->bodies.data[body].id );
 	lpImpactDef im = Blast( (lpVec3){ 0.9f, 0.2f, 0.0f }, 1.4f, 80000.0f );
 	lpWorld_AddImpact( s.world, &im );
 	Run( &s, 1 );

@@ -123,7 +123,7 @@ static int TestWheelRestHeight( void )
 	for ( int t = 0; t < 180; ++t )
 	{
 		Step( &s );
-		if ( asleepAt < 0 && b3Body_IsAwake( s.world->bodies.data[car.body].id ) == false )
+		if ( asleepAt < 0 && lpPhys_IsAwake( s.world->phys, s.world->bodies.data[car.body].id ) == false )
 		{
 			asleepAt = t;
 		}
@@ -134,7 +134,7 @@ static int TestWheelRestHeight( void )
 		lpWheelState ws = lpWorld_GetWheelState( s.world, lpWorld_GetVehicleWheel( s.world, car.vehicle, i ) );
 		ENSURE( ws.alive && ws.grounded );
 		ENSURE_NEAR( 0.5f - ws.length, sag, 0.05f * sag );
-		ENSURE_NEAR( ws.load, 0.25f * b3Body_GetMass( s.world->bodies.data[car.body].id ) * 10.0f, 30.0f );
+		ENSURE_NEAR( ws.load, 0.25f * lpPhys_GetMass( s.world->phys, s.world->bodies.data[car.body].id ) * 10.0f, 30.0f );
 	}
 	lpVehicleState vs = lpWorld_GetVehicleState( s.world, car.vehicle );
 	printf( "  sag %.3f m, asleep at tick %d, %d of %d wheels grounded\n", 0.5f - lpWorld_GetWheelState( s.world, lpWorld_GetVehicleWheel( s.world, car.vehicle, 0 ) ).length,
@@ -388,7 +388,7 @@ static int TestWheelLoadsBridge( void )
 
 		// The light car's chassis is a thin slab; the truck's is a thick one
 		Car car = AddCar( &s, (lpVec3){ 0.0f, 0.06f, -12.0f }, lpQuat_identity, 0.8f, pass == 0 ? 0.2f : 0.7f, 1, lpVec3_zero );
-		masses[pass] = b3Body_GetMass( s.world->bodies.data[car.body].id );
+		masses[pass] = lpPhys_GetMass( s.world->phys, s.world->bodies.data[car.body].id );
 		Drive( &s, car.vehicle, 0.4f, 0.0f, 0.0f, false );
 		for ( int t = 0; t < 420; ++t )
 		{
@@ -523,7 +523,7 @@ static Crash CarIntoWall( float speed )
 	lpVehicleState vs = lpWorld_GetVehicleState( s.world, vehicle );
 	const lpBody* car = s.world->bodies.data + vs.body;
 	float volume = car->volume;
-	b3Body_SetLinearVelocity( car->id, (lpVec3){ 0.0f, 0.0f, speed } );
+	lpPhys_SetLinearVelocity( s.world->phys, car->id, (lpVec3){ 0.0f, 0.0f, speed } );
 	Run( &s, 120 );
 	vs = lpWorld_GetVehicleState( s.world, vehicle );
 	Crash c = { 0 };

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
-// lpf: low-poly polygonal destruction on Box3D.
+// lpf: low-poly polygonal destruction.
 //
 // Objects are compounds of convex pieces. Impacts refracture the struck pieces into convex cells, damage the
-// bonds between pieces, and pieces cut off from their anchors become Box3D debris bodies. Settled debris
+// bonds between pieces, and pieces cut off from their anchors become rigid debris bodies. Settled debris
 // freezes into static rubble. Everything is deterministic: the same calls in the same order give
 // bit-identical results (see docs/determinism-rules.md).
 
 #pragma once
 
-#include "box3d/box3d.h"
 #include "lpf/lpmath.h"
 
 #include <stdbool.h>

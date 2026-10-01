@@ -119,7 +119,7 @@ static int TestSignHangs( void )
 	int left = Rope( &s, beam, (lpVec3){ -0.5f, 3.9f, 0.0f }, sign, (lpVec3){ -0.5f, 2.8f, 0.0f }, 1000.0f );
 	int right = Rope( &s, beam, (lpVec3){ 0.5f, 3.9f, 0.0f }, sign, (lpVec3){ 0.5f, 2.8f, 0.0f }, 1000.0f );
 	ENSURE( left >= 0 && right >= 0 );
-	float weight = 10.0f * b3Body_GetMass( s.world->bodies.data[sign].id );
+	float weight = 10.0f * lpPhys_GetMass( s.world->phys, s.world->bodies.data[sign].id );
 	bool valid;
 	int breaks = StepValidated( &s, 300, &valid );
 	lpLinkState st = lpWorld_GetLinkState( s.world, left );
@@ -140,7 +140,7 @@ static int WeldBreakStep( float overload, int ticks )
 {
 	Sim s = CreateSim( -1 );
 	int block = AddPart( &s, (lpVec3){ 0.0f, 3.0f, 0.0f }, (lpVec3){ 0.2f, 0.2f, 0.2f }, lp_stone, false );
-	float weight = 10.0f * b3Body_GetMass( s.world->bodies.data[block].id );
+	float weight = 10.0f * lpPhys_GetMass( s.world->phys, s.world->bodies.data[block].id );
 	lpLinkDef def = lpDefaultLinkDef( lp_linkWeld );
 	def.bodyA = -1;
 	def.bodyB = block;
@@ -194,9 +194,9 @@ static int TestHingeDoorSwings( void )
 	def.upperAngle = 1.2f;
 	int hinge = lpCreateLink( s.world, &def );
 	ENSURE( hinge >= 0 );
-	b3BodyId id = s.world->bodies.data[door].id;
-	b3Body_SetAngularVelocity( id, (lpVec3){ 0.0f, 3.0f, 0.0f } ); // swinging about the hinge line
-	b3Body_SetLinearVelocity( id, (lpVec3){ 0.0f, 0.0f, -1.575f } );
+	lpPhysBody id = s.world->bodies.data[door].id;
+	lpPhys_SetAngularVelocity( s.world->phys, id, (lpVec3){ 0.0f, 3.0f, 0.0f } ); // swinging about the hinge line
+	lpPhys_SetLinearVelocity( s.world->phys, id, (lpVec3){ 0.0f, 0.0f, -1.575f } );
 
 	float widest = 0.0f, drift = 0.0f;
 	bool valid = true;
@@ -204,7 +204,7 @@ static int TestHingeDoorSwings( void )
 	{
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 		valid = valid && lpWorld_Validate( s.world );
-		lpWorldTransform xf = b3Body_GetTransform( id );
+		lpWorldTransform xf = lpPhys_GetTransform( s.world->phys, id );
 		lpVec3 across = lpRotateVector( xf.q, (lpVec3){ 1.0f, 0.0f, 0.0f } );
 		widest = fmaxf( widest, fabsf( atan2f( -across.z, across.x ) ) );
 		lpPos edge = lpTransformWorldPoint( xf, (lpVec3){ -0.525f, 0.0f, 0.0f } );
@@ -918,7 +918,7 @@ static int TestHingeTorqueAtLimit( void )
 	ENSURE( a.link >= 0 );
 	Run( &s, 60 );
 	lpLinkState st = lpWorld_GetLinkState( s.world, a.link );
-	float mass = b3Body_GetMass( s.world->bodies.data[a.arm].id );
+	float mass = lpPhys_GetMass( s.world->phys, s.world->bodies.data[a.arm].id );
 	printf( "  limit torque %.0f N*m about the axis, the arm's weight %.0f N*m\n", fabsf( st.torque.z ), mass * 10.0f * 1.0f );
 	ENSURE_NEAR( fabsf( st.torque.z ), mass * 10.0f * 1.0f, 0.1f * mass * 10.0f );
 	DestroySim( &s );
