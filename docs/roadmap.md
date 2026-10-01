@@ -449,6 +449,14 @@ rollback re-simulates the whole world for every wrong guess, which a destruction
   wrong.
 - Destructive inputs (blasts, tools) probably keep their input delay: a wrong guess there would mean re-simulating a
   collapse.
+- The guess is "the same as last tick" (players hold keys), so remote players only jump when they change what they
+  press; the renderer eases the drawn position toward each correction (cosmetic, so free to differ per machine).
+- **Adaptive delay** (the owner's idea): each player stamps their own inputs a few ticks ahead, so the delay can differ
+  per player and per kind of input, and change during play without global agreement. It is driven by the measured cost
+  of recent wrong guesses (cone sizes times re-simulated ticks) on the slowest machine: near zero for someone running
+  through the woods, more for someone in a collapse, held for destructive inputs. Raised at once, lowered a tick at a
+  time. Fighting games fix their delay at the match start from ping; Photon Quantum scales it with ping. Driving it by
+  re-simulation cost seems new, because nobody else runs rollback where that cost varies this much.
 - Without determinism the truth would have to be shipped from the host, and divergence could start anywhere, so cones
   could not be bounded: the lockstep base is what makes it work.
 
