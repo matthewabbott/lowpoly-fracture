@@ -64,6 +64,10 @@ typedef struct lpPhysDef
 	float hitSpeed; // contacts that start at this approach speed or faster are reported as hits
 	lpPhysPairFcn* pairFilter; // for shapes created with customFilter
 	void* context;
+	// Milestone 8's experiment: every read (body state, contacts, joint loads and angles, hits, moves) returns the world
+	// as it was before the last step began, one step behind, as a core reading back a GPU step that is still running
+	// would. Casts and overlap queries see the present.
+	bool lag;
 } lpPhysDef;
 
 typedef struct lpPhysCounters

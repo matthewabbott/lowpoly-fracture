@@ -17,6 +17,7 @@ int RigTest( void );
 
 const char* lp_testFilter = NULL;
 int lp_testLargeNodes = 0;
+int lp_testPhysicsLag = 0;
 float lp_testOracleWorst = 0.0f;
 int lp_testOracleSolves = 0;
 int lp_testOracleFlips = 0;
@@ -24,7 +25,14 @@ int lp_testOracleJoints = 0;
 
 int main( int argc, char** argv )
 {
-	// Optional filters: lpf_test [poly|fracture|world|debris|stress|links|vehicles|systems|rigs [TestName]]
+	// Optional filters: lpf_test [--lag] [poly|fracture|world|debris|stress|links|vehicles|systems|rigs [TestName]]
+	// (--lag: every world reads physics one step late, milestone 8's experiment)
+	if ( argc > 1 && strcmp( argv[1], "--lag" ) == 0 )
+	{
+		lp_testPhysicsLag = 1;
+		argc -= 1;
+		argv += 1;
+	}
 	const char* only = argc > 1 ? argv[1] : NULL;
 	lp_testFilter = argc > 2 ? argv[2] : NULL;
 	printf( "lowpoly-fracture tests\n" );

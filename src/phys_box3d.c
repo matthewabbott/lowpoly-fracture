@@ -20,6 +20,31 @@ typedef struct lpPhysOrder
 	int index;
 } lpPhysOrder;
 
+// The lag experiment (lpPhysDef.lag): what a read returns, captured as each step begins
+typedef struct lpLagBody
+{
+	uint64_t handle; // 0: nothing captured in this slot
+	bool awake;
+	lpWorldTransform transform;
+	lpPos center;
+	lpVec3 v;
+	lpVec3 omega;
+	lpMatrix3 invInertia;
+	lpAABB bounds;
+	int contactFirst;
+	int contactCount;
+} lpLagBody;
+
+typedef struct lpLagJoint
+{
+	uint64_t handle;
+	lpVec3 force;
+	lpVec3 torque;
+	float angle;
+	float hingeTorque;
+	lpVec3 ballTorque;
+} lpLagJoint;
+
 struct lpPhys
 {
 	b3WorldId world;
@@ -34,6 +59,22 @@ struct lpPhys
 	LP_ARRAY( uint64_t ) keys;
 	LP_ARRAY( uint64_t ) keyScratch;
 	LP_ARRAY( int ) pieces;
+
+	// lag mode: the live bodies and joints by Box3D index (their handles, 0 for none), and the capture
+	bool lag;
+	bool lagReady;
+	LP_ARRAY( uint64_t ) liveBodies;
+	LP_ARRAY( uint64_t ) liveJoints;
+	LP_ARRAY( lpLagBody ) lagBodies;
+	LP_ARRAY( lpLagJoint ) lagJoints;
+	LP_ARRAY( lpPhysContact ) lagContacts;
+	LP_ARRAY( uint64_t ) lagContactShapes; // two per contact: its own shape, the other
+	LP_ARRAY( lpPhysHit ) lagHits;
+	LP_ARRAY( uint64_t ) lagHitShapes; // two per hit
+	LP_ARRAY( lpPos ) lagCentroids;	   // per hit
+	LP_ARRAY( uint8_t ) lagHasCentroid;
+	LP_ARRAY( lpPhysMove ) lagMoves;
+	LP_ARRAY( uint64_t ) lagMoveBodies;
 };
 
 // ---- crossing the boundary ----
@@ -136,6 +177,30 @@ static inline int lpShapeIndex( b3ShapeId shape )
 	return data > 0 ? (int)( data - 1 ) : -1;
 }
 
+// Lag mode: slot index of a live body or joint (Box3D's index1) holds its handle
+static void lpSetLive( uint64_t** data, int* count, int* capacity, int index, uint64_t handle )
+{
+	if ( index >= *count )
+	{
+		int n = index + 1;
+		if ( n > *capacity )
+		{
+			int cap = *capacity < 64 ? 64 : *capacity;
+			while ( cap < n )
+			{
+				cap *= 2;
+			}
+			*data = lpRealloc( *data, (size_t)cap * sizeof( uint64_t ) );
+			*capacity = cap;
+		}
+		memset( *data + *count, 0, (size_t)( n - *count ) * sizeof( uint64_t ) );
+		*count = n;
+	}
+	( *data )[index] = handle;
+}
+
+#define LP_SET_LIVE( array, index, handle ) lpSetLive( &( array ).data, &( array ).count, &( array ).capacity, index, handle )
+
 // ---- the world ----
 
 static bool lpPairFilterB3( b3ShapeId shapeA, b3ShapeId shapeB, void* context )
@@ -155,6 +220,7 @@ lpPhys* lpPhys_Create( const lpPhysDef* def )
 	b3World_SetHitEventThreshold( p->world, def->hitSpeed );
 	p->pairFilter = def->pairFilter;
 	p->context = def->context;
+	p->lag = def->lag;
 	if ( def->pairFilter != NULL )
 	{
 		b3World_SetCustomFilterCallback( p->world, lpPairFilterB3, p );
@@ -172,12 +238,30 @@ void lpPhys_Destroy( lpPhys* p )
 	lpArray_Free( p->moves );
 	lpArray_Free( p->keys );
 	lpArray_Free( p->keyScratch );
+	lpArray_Free( p->liveBodies );
+	lpArray_Free( p->liveJoints );
+	lpArray_Free( p->lagBodies );
+	lpArray_Free( p->lagJoints );
+	lpArray_Free( p->lagContacts );
+	lpArray_Free( p->lagContactShapes );
+	lpArray_Free( p->lagHits );
+	lpArray_Free( p->lagHitShapes );
+	lpArray_Free( p->lagCentroids );
+	lpArray_Free( p->lagHasCentroid );
+	lpArray_Free( p->lagMoves );
+	lpArray_Free( p->lagMoveBodies );
 	lpArray_Free( p->pieces );
 	lpFree( p );
 }
 
+static void lpCaptureLag( lpPhys* p );
+
 void lpPhys_Step( lpPhys* p, float timeStep, int subStepCount )
 {
+	if ( p->lag )
+	{
+		lpCaptureLag( p );
+	}
 	p->events = ( b3ContactEvents ){ 0 };
 	b3World_Step( p->world, timeStep, subStepCount );
 }
@@ -219,13 +303,45 @@ lpPhysBody lpPhys_CreateBody( lpPhys* p, const lpPhysBodyDef* def )
 		bd.sleepThreshold = def->sleepThreshold;
 	}
 	bd.userData = lpUserData( def->userData );
-	return lpPhysBodyOf( b3CreateBody( p->world, &bd ) );
+	b3BodyId id = b3CreateBody( p->world, &bd );
+	if ( p->lag )
+	{
+		LP_SET_LIVE( p->liveBodies, id.index1, b3StoreBodyId( id ) );
+	}
+	return lpPhysBodyOf( id );
 }
 
 void lpPhys_DestroyBody( lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	b3DestroyBody( lpB3Body( body ) );
+	b3BodyId id = lpB3Body( body );
+	if ( p->lag && id.index1 < p->liveBodies.count )
+	{
+		p->liveBodies.data[id.index1] = 0;
+	}
+	b3DestroyBody( id );
+}
+
+// Lag mode: the body as captured before the last step began, or NULL (made since, or no lag)
+static const lpLagBody* lpLaggedBody( const lpPhys* p, lpPhysBody body )
+{
+	if ( p->lagReady == false )
+	{
+		return NULL;
+	}
+	int index = lpB3Body( body ).index1;
+	const lpLagBody* b = index >= 0 && index < p->lagBodies.count ? p->lagBodies.data + index : NULL;
+	return b != NULL && b->handle == body.handle ? b : NULL;
+}
+
+static const lpLagJoint* lpLaggedJoint( const lpPhys* p, lpPhysJoint joint )
+{
+	if ( p->lagReady == false )
+	{
+		return NULL;
+	}
+	int index = lpB3Joint( joint ).index1;
+	const lpLagJoint* j = index >= 0 && index < p->lagJoints.count ? p->lagJoints.data + index : NULL;
+	return j != NULL && j->handle == joint.handle ? j : NULL;
 }
 
 bool lpPhys_IsValidBody( const lpPhys* p, lpPhysBody body )
@@ -254,14 +370,14 @@ void lpPhys_SetDynamic( lpPhys* p, lpPhysBody body, bool dynamic )
 
 lpWorldTransform lpPhys_GetTransform( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpTransformOf( b3Body_GetTransform( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->transform : lpTransformOf( b3Body_GetTransform( lpB3Body( body ) ) );
 }
 
 lpPos lpPhys_GetWorldCenter( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpVec( b3Body_GetWorldCenter( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->center : lpVec( b3Body_GetWorldCenter( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetLocalCenter( const lpPhys* p, lpPhysBody body )
@@ -272,19 +388,23 @@ lpVec3 lpPhys_GetLocalCenter( const lpPhys* p, lpPhysBody body )
 
 lpVec3 lpPhys_GetLinearVelocity( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpVec( b3Body_GetLinearVelocity( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->v : lpVec( b3Body_GetLinearVelocity( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetAngularVelocity( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpVec( b3Body_GetAngularVelocity( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->omega : lpVec( b3Body_GetAngularVelocity( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetPointVelocity( const lpPhys* p, lpPhysBody body, lpPos point )
 {
-	(void)p;
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	if ( lag != NULL )
+	{
+		return lpAdd( lag->v, lpCross( lag->omega, lpSubPos( point, lag->center ) ) );
+	}
 	return lpVec( b3Body_GetWorldPointVelocity( lpB3Body( body ), lpB3Vec( point ) ) );
 }
 
@@ -308,8 +428,8 @@ float lpPhys_GetMass( const lpPhys* p, lpPhysBody body )
 
 lpMatrix3 lpPhys_GetInvInertia( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpMatrixOf( b3Body_GetWorldInverseRotationalInertia( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->invInertia : lpMatrixOf( b3Body_GetWorldInverseRotationalInertia( lpB3Body( body ) ) );
 }
 
 void lpPhys_UpdateMass( lpPhys* p, lpPhysBody body, float inertiaRadius )
@@ -342,8 +462,8 @@ void lpPhys_ApplyImpulse( lpPhys* p, lpPhysBody body, lpVec3 impulse, lpPos poin
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return b3Body_IsAwake( lpB3Body( body ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->awake : b3Body_IsAwake( lpB3Body( body ) );
 }
 
 void lpPhys_SetAwake( lpPhys* p, lpPhysBody body, bool awake )
@@ -372,8 +492,8 @@ void lpPhys_SetGravityScale( lpPhys* p, lpPhysBody body, float scale )
 
 lpAABB lpPhys_GetBounds( const lpPhys* p, lpPhysBody body )
 {
-	(void)p;
-	return lpAABBOf( b3Body_ComputeAABB( lpB3Body( body ) ) );
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	return lag != NULL ? lag->bounds : lpAABBOf( b3Body_ComputeAABB( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetMaxExtent( const lpPhys* p, lpPhysBody body )
@@ -565,13 +685,21 @@ lpPhysJoint lpPhys_CreateJoint( lpPhys* p, const lpPhysJointDef* def )
 			break;
 		}
 	}
+	if ( p->lag )
+	{
+		LP_SET_LIVE( p->liveJoints, id.index1, b3StoreJointId( id ) );
+	}
 	return lpPhysJointOf( id );
 }
 
 void lpPhys_DestroyJoint( lpPhys* p, lpPhysJoint joint, bool wakeBodies )
 {
-	(void)p;
-	b3DestroyJoint( lpB3Joint( joint ), wakeBodies );
+	b3JointId id = lpB3Joint( joint );
+	if ( p->lag && id.index1 < p->liveJoints.count )
+	{
+		p->liveJoints.data[id.index1] = 0;
+	}
+	b3DestroyJoint( id, wakeBodies );
 }
 
 bool lpPhys_IsValidJoint( const lpPhys* p, lpPhysJoint joint )
@@ -595,7 +723,13 @@ void lpPhys_WakeJoint( lpPhys* p, lpPhysJoint joint )
 
 void lpPhys_GetJointLoad( const lpPhys* p, lpPhysJoint joint, lpVec3* force, lpVec3* torque )
 {
-	(void)p;
+	const lpLagJoint* lag = lpLaggedJoint( p, joint );
+	if ( lag != NULL )
+	{
+		*force = lag->force;
+		*torque = lag->torque;
+		return;
+	}
 	*force = lpVec( b3Joint_GetConstraintForce( lpB3Joint( joint ) ) );
 	*torque = lpVec( b3Joint_GetConstraintTorque( lpB3Joint( joint ) ) );
 }
@@ -608,8 +742,8 @@ float lpPhys_GetJointSeparation( const lpPhys* p, lpPhysJoint joint )
 
 float lpPhys_GetHingeAngle( const lpPhys* p, lpPhysJoint joint )
 {
-	(void)p;
-	return b3RevoluteJoint_GetAngle( lpB3Joint( joint ) );
+	const lpLagJoint* lag = lpLaggedJoint( p, joint );
+	return lag != NULL ? lag->angle : b3RevoluteJoint_GetAngle( lpB3Joint( joint ) );
 }
 
 void lpPhys_SetHingeMotor( lpPhys* p, lpPhysJoint joint, float speed )
@@ -640,14 +774,14 @@ void lpPhys_SetMotorMaxTorque( lpPhys* p, lpPhysJoint joint, float torque )
 
 float lpPhys_GetHingeMotorTorque( const lpPhys* p, lpPhysJoint joint )
 {
-	(void)p;
-	return b3RevoluteJoint_GetMotorTorque( lpB3Joint( joint ) );
+	const lpLagJoint* lag = lpLaggedJoint( p, joint );
+	return lag != NULL ? lag->hingeTorque : b3RevoluteJoint_GetMotorTorque( lpB3Joint( joint ) );
 }
 
 lpVec3 lpPhys_GetBallMotorTorque( const lpPhys* p, lpPhysJoint joint )
 {
-	(void)p;
-	return lpVec( b3SphericalJoint_GetMotorTorque( lpB3Joint( joint ) ) );
+	const lpLagJoint* lag = lpLaggedJoint( p, joint );
+	return lag != NULL ? lag->ballTorque : lpVec( b3SphericalJoint_GetMotorTorque( lpB3Joint( joint ) ) );
 }
 
 void lpPhys_SetRopeLength( lpPhys* p, lpPhysJoint joint, float length )
@@ -673,11 +807,11 @@ static int lpComparePhysOrder( const void* a, const void* b )
 	return ( x->index > y->index ) - ( x->index < y->index );
 }
 
-int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** contacts )
+// The body's contacts now, into p->contacts (and their shapes, own then other, into p->keys, if shapes is set)
+static int lpReadBodyContacts( lpPhys* p, b3BodyId id, bool shapes )
 {
-	b3BodyId id = lpB3Body( body );
 	p->contacts.count = 0;
-	*contacts = p->contacts.data;
+	p->keys.count = 0;
 	int capacity = b3Body_GetContactCapacity( id );
 	if ( capacity == 0 )
 	{
@@ -728,6 +862,34 @@ int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** co
 										  mp->separation,
 										  mp->totalNormalImpulse };
 				lpArray_Push( p->contacts, contact );
+				if ( shapes )
+				{
+					lpArray_Push( p->keys, b3StoreShapeId( mineA ? c->shapeIdA : c->shapeIdB ) );
+					lpArray_Push( p->keys, b3StoreShapeId( mineA ? c->shapeIdB : c->shapeIdA ) );
+				}
+			}
+		}
+	}
+	return p->contacts.count;
+}
+
+int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** contacts )
+{
+	const lpLagBody* lag = lpLaggedBody( p, body );
+	if ( lag == NULL )
+	{
+		lpReadBodyContacts( p, lpB3Body( body ), false );
+	}
+	else
+	{
+		// Contacts with a shape gone since the capture are left out
+		p->contacts.count = 0;
+		for ( int k = lag->contactFirst; k < lag->contactFirst + lag->contactCount; ++k )
+		{
+			if ( b3Shape_IsValid( b3LoadShapeId( p->lagContactShapes.data[2 * k] ) ) &&
+				 b3Shape_IsValid( b3LoadShapeId( p->lagContactShapes.data[2 * k + 1] ) ) )
+			{
+				lpArray_Push( p->contacts, p->lagContacts.data[k] );
 			}
 		}
 	}
@@ -762,7 +924,8 @@ static int lpCompareHits( const void* a, const void* b )
 	return ( x->contact > y->contact ) - ( x->contact < y->contact ); // identical hits: either order acts the same
 }
 
-int lpPhys_GetHits( lpPhys* p, const lpPhysHit** hits )
+// The last step's hits, into p->hits
+static int lpReadHits( lpPhys* p )
 {
 	p->events = b3World_GetContactEvents( p->world );
 	p->hits.count = 0;
@@ -780,11 +943,35 @@ int lpPhys_GetHits( lpPhys* p, const lpPhysHit** hits )
 	{
 		qsort( p->hits.data, (size_t)p->hits.count, sizeof( lpPhysHit ), lpCompareHits );
 	}
+	return p->hits.count;
+}
+
+int lpPhys_GetHits( lpPhys* p, const lpPhysHit** hits )
+{
+	if ( p->lagReady == false )
+	{
+		lpReadHits( p );
+	}
+	else
+	{
+		// The step before's, as captured; hits on a shape gone since are left out
+		p->hits.count = 0;
+		for ( int i = 0; i < p->lagHits.count; ++i )
+		{
+			uint64_t a = p->lagHitShapes.data[2 * i];
+			uint64_t b = p->lagHitShapes.data[2 * i + 1];
+			if ( b3Shape_IsValid( b3LoadShapeId( a ) ) && b3Shape_IsValid( b3LoadShapeId( b ) ) )
+			{
+				lpArray_Push( p->hits, p->lagHits.data[i] );
+			}
+		}
+	}
 	*hits = p->hits.data;
 	return p->hits.count;
 }
 
-bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point )
+// The mean of a reported hit's contact points now
+static bool lpReadCentroid( const lpPhys* p, uint64_t contact, lpPos* point )
 {
 	if ( contact >= (uint64_t)p->events.hitCount )
 	{
@@ -815,7 +1002,22 @@ bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point 
 	return true;
 }
 
-int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves )
+bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point )
+{
+	if ( p->lagReady == false )
+	{
+		return lpReadCentroid( p, contact, point );
+	}
+	if ( contact >= (uint64_t)p->lagHits.count || p->lagHasCentroid.data[contact] == 0 )
+	{
+		return false;
+	}
+	*point = p->lagCentroids.data[contact];
+	return true;
+}
+
+// The last step's moves, into p->moves (and their bodies into p->keys, if bodies is set)
+static int lpReadMoves( lpPhys* p, bool bodies )
 {
 	b3BodyEvents events = b3World_GetBodyEvents( p->world );
 	lpArray_Reserve( p->keys, events.moveCount );
@@ -836,10 +1038,35 @@ int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves )
 		const b3BodyMoveEvent* e = events.moveEvents + ( p->keys.data[k] & 0xFFFFFFFFu );
 		lpPhysMove move = { (int)( p->keys.data[k] >> 32 ) - 1, lpTransformOf( e->transform ), e->fellAsleep };
 		p->moves.data[k] = move;
+		if ( bodies )
+		{
+			p->keys.data[k] = b3StoreBodyId( e->bodyId );
+		}
 	}
 	p->moves.count = count;
-	*moves = p->moves.data;
 	return count;
+}
+
+int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves )
+{
+	if ( p->lagReady == false )
+	{
+		lpReadMoves( p, false );
+	}
+	else
+	{
+		// The step before's, as captured; bodies gone since are left out
+		p->moves.count = 0;
+		for ( int i = 0; i < p->lagMoves.count; ++i )
+		{
+			if ( b3Body_IsValid( b3LoadBodyId( p->lagMoveBodies.data[i] ) ) )
+			{
+				lpArray_Push( p->moves, p->lagMoves.data[i] );
+			}
+		}
+	}
+	*moves = p->moves.data;
+	return p->moves.count;
 }
 
 // ---- queries ----
@@ -942,4 +1169,100 @@ lpPhysCastHit lpPhys_CastShape( const lpPhys* p, lpPos origin, const lpVec3* poi
 	b3ShapeProxy proxy = { copy, count, radius };
 	b3World_CastShape( p->world, lpB3Vec( origin ), &proxy, lpB3Vec( translation ), lpQueryFilter( filter ), lpCastFcn, &s );
 	return s.hit;
+}
+
+// ---- the lag experiment ----
+
+// Everything a read can return, as it is before this step: until the next capture, reads see the world one step
+// behind, as a core reading back a GPU step that is still running would (milestone 8, step 5). Casts and overlap
+// queries are not lagged.
+static void lpCaptureLag( lpPhys* p )
+{
+	// The step before's events, while Box3D still holds them
+	lpReadMoves( p, true );
+	p->lagMoves.count = 0;
+	p->lagMoveBodies.count = 0;
+	for ( int i = 0; i < p->moves.count; ++i )
+	{
+		lpArray_Push( p->lagMoves, p->moves.data[i] );
+		lpArray_Push( p->lagMoveBodies, p->keys.data[i] );
+	}
+	lpReadHits( p );
+	p->lagHits.count = 0;
+	p->lagHitShapes.count = 0;
+	p->lagCentroids.count = 0;
+	p->lagHasCentroid.count = 0;
+	for ( int i = 0; i < p->hits.count; ++i )
+	{
+		lpPhysHit hit = p->hits.data[i];
+		const b3ContactHitEvent* e = p->events.hitEvents + hit.contact;
+		lpPos centroid = hit.point;
+		bool has = lpReadCentroid( p, hit.contact, &centroid );
+		hit.contact = (uint64_t)i;
+		lpArray_Push( p->lagHits, hit );
+		lpArray_Push( p->lagHitShapes, b3StoreShapeId( e->shapeIdA ) );
+		lpArray_Push( p->lagHitShapes, b3StoreShapeId( e->shapeIdB ) );
+		lpArray_Push( p->lagCentroids, centroid );
+		lpArray_Push( p->lagHasCentroid, (uint8_t)( has ? 1 : 0 ) );
+	}
+
+	// Every live body's state and contacts
+	lpArray_Reserve( p->lagBodies, p->liveBodies.count );
+	p->lagBodies.count = p->liveBodies.count;
+	p->lagContacts.count = 0;
+	p->lagContactShapes.count = 0;
+	for ( int i = 0; i < p->liveBodies.count; ++i )
+	{
+		lpLagBody* lag = p->lagBodies.data + i;
+		memset( lag, 0, sizeof( lpLagBody ) );
+		b3BodyId id = b3LoadBodyId( p->liveBodies.data[i] );
+		if ( p->liveBodies.data[i] == 0 || b3Body_IsValid( id ) == false )
+		{
+			continue;
+		}
+		lag->handle = p->liveBodies.data[i];
+		lag->awake = b3Body_IsAwake( id );
+		lag->transform = lpTransformOf( b3Body_GetTransform( id ) );
+		lag->center = lpVec( b3Body_GetWorldCenter( id ) );
+		lag->v = lpVec( b3Body_GetLinearVelocity( id ) );
+		lag->omega = lpVec( b3Body_GetAngularVelocity( id ) );
+		lag->invInertia = lpMatrixOf( b3Body_GetWorldInverseRotationalInertia( id ) );
+		lag->bounds = lpAABBOf( b3Body_ComputeAABB( id ) );
+		lag->contactFirst = p->lagContacts.count;
+		lag->contactCount = lpReadBodyContacts( p, id, true );
+		for ( int k = 0; k < lag->contactCount; ++k )
+		{
+			lpArray_Push( p->lagContacts, p->contacts.data[k] );
+			lpArray_Push( p->lagContactShapes, p->keys.data[2 * k] );
+			lpArray_Push( p->lagContactShapes, p->keys.data[2 * k + 1] );
+		}
+	}
+
+	// Every live joint's load, angle and drive
+	lpArray_Reserve( p->lagJoints, p->liveJoints.count );
+	p->lagJoints.count = p->liveJoints.count;
+	for ( int i = 0; i < p->liveJoints.count; ++i )
+	{
+		lpLagJoint* lag = p->lagJoints.data + i;
+		memset( lag, 0, sizeof( lpLagJoint ) );
+		b3JointId id = b3LoadJointId( p->liveJoints.data[i] );
+		if ( p->liveJoints.data[i] == 0 || b3Joint_IsValid( id ) == false )
+		{
+			continue;
+		}
+		lag->handle = p->liveJoints.data[i];
+		lag->force = lpVec( b3Joint_GetConstraintForce( id ) );
+		lag->torque = lpVec( b3Joint_GetConstraintTorque( id ) );
+		b3JointType type = b3Joint_GetType( id );
+		if ( type == b3_revoluteJoint )
+		{
+			lag->angle = b3RevoluteJoint_GetAngle( id );
+			lag->hingeTorque = b3RevoluteJoint_GetMotorTorque( id );
+		}
+		else if ( type == b3_sphericalJoint )
+		{
+			lag->ballTorque = lpVec( b3SphericalJoint_GetMotorTorque( id ) );
+		}
+	}
+	p->lagReady = true;
 }

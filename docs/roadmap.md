@@ -333,16 +333,47 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
 2. **The interface.** `src/phys.h` declares the operations on opaque handles (`lpPhysBody`, `lpPhysShape`,
    `lpPhysJoint`); `src/phys_box3d.c` implements them on Box3D and is the only file that includes Box3D. Reports
    (hit and move events, contact lists, query and cast results) come back already in our total order (rule 12), so the
-   sorts move out of the callers. The custom filter and user data are set behind it.
+   sorts move out of the callers. The custom filter and user data are set behind it. **Done:** about 50 operations;
+   reports in piece and body indices; casts return the closest accepted hit (an accept callback, ties to the lower
+   piece); quickhull and GJK are geometry services of the backend; the lpf world owns its physics world
+   (`lpWorldDef.gravity` replaces a caller-made Box3D world; the physics counters moved into `lpStats`).
 3. **Route the calls,** one module per commit, smallest first: `split.c`, `poly.c` (hulls, GJK), `gait.c`, `step.c`,
    `rig.c`, `stress.c`, `impact.c`, `world.c`, `debris.c`, `wheel.c`, `link.c`; then the scenes, tests and bench. A
    lint (`tools/`, run by `build.ps1 -Test` and CI) fails if any file but the backend includes a Box3D header.
+   **Done,** each commit hash-neutral (1 and 8 workers, the solver's hashes too): the handles were aliases of Box3D's
+   ids while routing, then opaque, and `lpmath.h`'s types our own. The lint is the build: the core compiles as an
+   object library that never links Box3D, so a Box3D include outside the backend fails to compile on every CI leg.
+   The seam costs about 1% a step at 1 worker once the move events are radix-sorted (qsort made it 3%).
 4. **Exact wakes** (T0 #4): impact, split and shove wakes test each piece's transformed bounds, not the tree's fat
-   AABBs. Changes hashes: one re-baseline, a perf-log entry.
+   AABBs. Changes hashes: one re-baseline, a perf-log entry. **Done** in `lpQueryPieces` (so bond damage and blast
+   forces too): every hash but the mech's changed; over 16 bombardment periods per scene the outcomes are the same
+   on average (pieces within 1%), the steps 2.5% (town) to 6.5% (tower) dearer through more awake contacts.
 5. **The lag experiment:** `lpWorldDef.physicsLag` (0 or 1, default 0): with 1, every physics read the core makes
    (transforms, velocities, contacts, joint forces, events, casts) returns the previous tick's result, captured by the
    backend at the end of each step. Run the nine suites and the track and mech rungs both ways; record which outcomes
    hold, what breaks (tyre grip, servo stability, the gait, stress loads, link tearing) and what a fix would cost.
+
+   **Verdict (2026-10-01).** Built as a capture as each step begins (bodies, contacts, joints, the last step's hits
+   and moves); casts and overlap queries stay live. Run with `lpf_test --lag`, `lpf_bench --physics-lag 1`,
+   `sandbox --physics-lag 1`. Fracture, wakes, ghosts, debris and most stress checks hold: the poly, fracture,
+   world and debris suites pass, and 99 of the 109 stress, link, vehicle, system and rig tests. What breaks, each found
+   by reading one kind of result live again:
+   - **The servos** (the kit standing still, walking straight, losing legs, landing whole): a motor driven toward its
+     target from a joint angle a step old overshoots. With joint angles and motor torques live, all pass; the gait
+     itself tolerates a torso pose and events a step old.
+   - **The tyres** (the track lap, a car coasting): the grip solve's impulses come from the chassis's velocity and
+     inertia a step old. With body state live, both pass.
+   - **Freezing** (a link surviving a split): a body the last step woke still reads asleep and is frozen in motion.
+   - **Stress loads after a snap** (a stone on a beam): contact loads a step old misload the solve; with contacts live,
+     both beam tests pass (the mechanism is not pinned down).
+   - **Consistency:** lagging only the hits and moves breaks a test the full lag passes (a landing body's stress check
+     sees a hit a step old beside contacts of now). One snapshot per tick, for every read.
+
+   What it costs milestone 12: the loops that close through the solver every step run inside the step, as the core's
+   own constraints (a motor with a position target, a wheel constraint), not as logic reading results back; decisions
+   on the physics state (freeze if still asleep) become commands the step checks when it applies them; and every read
+   in a tick comes from one snapshot. The rest of the core takes a step of lag as it is. The capture itself is the
+   experiment's cost, not a pipeline's (the town's physics +48%); off, the flag changes nothing (hashes identical).
 6. **The simplicity pass** (standing practice): an independent reviewer (the Codex or Kimi reviewer, or Fable) reads
    the milestone's diff and the seam; proposals adjudicated as in milestone 9.
 

@@ -64,10 +64,12 @@ static const char* s_hashLog;
 
 // --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
 static const char* s_tickLog;
+static int s_physicsLag; // --physics-lag 1: milestone 8's experiment
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
 	lpWorldDef ld = lpDefaultWorldDef();
+	ld.physicsLag = s_physicsLag;
 	ld.fragmentScale = fragmentScale;
 	ld.maxFullDebris = maxDebris;
 	ld.workerCount = workers;
@@ -275,11 +277,16 @@ int main( int argc, char** argv )
 			s_tickLog = v;
 			++i;
 		}
+		else if ( strcmp( a, "--physics-lag" ) == 0 )
+		{
+			s_physicsLag = atoi( v );
+			++i;
+		}
 		else
 		{
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
-					"                 [--hash-log path] [--tick-log path]\n" );
+					"                 [--hash-log path] [--tick-log path] [--physics-lag 0|1]\n" );
 			return 1;
 		}
 	}

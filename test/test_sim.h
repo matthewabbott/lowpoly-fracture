@@ -8,6 +8,7 @@
 // Drift tests: every world clusters structures past this many pieces (0: the default), with each reduced solve checked
 // against an exact one; the worst joint utilization error over all of them is kept
 extern int lp_testLargeNodes;
+extern int lp_testPhysicsLag;
 extern float lp_testOracleWorst;
 extern int lp_testOracleSolves;
 extern int lp_testOracleFlips;
@@ -22,6 +23,7 @@ typedef struct Sim
 static inline Sim CreateSimDef( lpWorldDef ld, int scene )
 {
 	Sim s;
+	ld.physicsLag = lp_testPhysicsLag;
 	ld.stressLargeNodes = lp_testLargeNodes > 0 ? lp_testLargeNodes : ld.stressLargeNodes;
 	s.world = lpCreateWorld( &ld );
 	s.world->stressOracle = lp_testLargeNodes > 0;

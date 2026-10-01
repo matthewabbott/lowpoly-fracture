@@ -317,6 +317,7 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	pd.hitSpeed = lpMinFloat( def->hitSpeed, def->wakeSpeed ); // hits start at the wake speed (waking fragile rubble)
 	pd.pairFilter = lpPairFilter;
 	pd.context = w;
+	pd.lag = def->physicsLag != 0;
 	w->phys = lpPhys_Create( &pd );
 	w->tasks = lpTaskPool_Create( def->workerCount );
 	lpGridInit( w );
