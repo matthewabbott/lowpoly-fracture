@@ -31,6 +31,8 @@ struct lpPhys
 	LP_ARRAY( lpPhysContact ) contacts;
 	LP_ARRAY( lpPhysHit ) hits;
 	LP_ARRAY( lpPhysMove ) moves;
+	LP_ARRAY( uint64_t ) keys;
+	LP_ARRAY( uint64_t ) keyScratch;
 	LP_ARRAY( int ) pieces;
 };
 
@@ -168,6 +170,8 @@ void lpPhys_Destroy( lpPhys* p )
 	lpArray_Free( p->contacts );
 	lpArray_Free( p->hits );
 	lpArray_Free( p->moves );
+	lpArray_Free( p->keys );
+	lpArray_Free( p->keyScratch );
 	lpArray_Free( p->pieces );
 	lpFree( p );
 }
@@ -811,33 +815,31 @@ bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point 
 	return true;
 }
 
-static int lpCompareMoves( const void* a, const void* b )
-{
-	const lpPhysMove* x = a;
-	const lpPhysMove* y = b;
-	return ( x->userData > y->userData ) - ( x->userData < y->userData );
-}
-
 int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves )
 {
 	b3BodyEvents events = b3World_GetBodyEvents( p->world );
-	p->moves.count = 0;
+	lpArray_Reserve( p->keys, events.moveCount );
+	lpArray_Reserve( p->keyScratch, events.moveCount );
+	int count = 0;
 	for ( int i = 0; i < events.moveCount; ++i )
 	{
-		const b3BodyMoveEvent* e = events.moveEvents + i;
-		intptr_t data = (intptr_t)e->userData;
+		intptr_t data = (intptr_t)events.moveEvents[i].userData;
 		if ( data > 0 )
 		{
-			lpPhysMove move = { (int)( data - 1 ), lpTransformOf( e->transform ), e->fellAsleep };
-			lpArray_Push( p->moves, move );
+			p->keys.data[count++] = ( (uint64_t)data << 32 ) | (uint64_t)i; // user data + 1, then report order
 		}
 	}
-	if ( p->moves.count > 1 )
+	lpRadixSort64( p->keys.data, p->keyScratch.data, count, 32 ); // user data is unique
+	lpArray_Reserve( p->moves, count );
+	for ( int k = 0; k < count; ++k )
 	{
-		qsort( p->moves.data, (size_t)p->moves.count, sizeof( lpPhysMove ), lpCompareMoves );
+		const b3BodyMoveEvent* e = events.moveEvents + ( p->keys.data[k] & 0xFFFFFFFFu );
+		lpPhysMove move = { (int)( p->keys.data[k] >> 32 ) - 1, lpTransformOf( e->transform ), e->fellAsleep };
+		p->moves.data[k] = move;
 	}
+	p->moves.count = count;
 	*moves = p->moves.data;
-	return p->moves.count;
+	return count;
 }
 
 // ---- queries ----

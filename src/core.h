@@ -52,6 +52,11 @@ static inline int lpFloatToInt( float x )
 	return (int)x;
 }
 
+// Sorts 64-bit keys in place by their bits from fromBit up (scratch: as many again), keeping the input order of keys
+// equal there: least-significant-digit radix, a byte a pass, passes where every key has the same byte skipped. Linear,
+// for the per-step report sorts that qsort made costly.
+void lpRadixSort64( uint64_t* keys, uint64_t* scratch, int count, int fromBit );
+
 // The next float above x (x >= 0). Cast callbacks clip the cast here rather than at their best fraction, so a hit
 // at exactly the same fraction is still reported and the tie is broken by piece index, not by the physics engine's
 // traversal order.

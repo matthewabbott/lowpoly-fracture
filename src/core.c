@@ -197,6 +197,42 @@ static uint32_t lpBits( float x )
 	return u;
 }
 
+void lpRadixSort64( uint64_t* keys, uint64_t* scratch, int count, int fromBit )
+{
+	uint64_t* from = keys;
+	uint64_t* to = scratch;
+	for ( int shift = fromBit; shift < 64 && count > 1; shift += 8 )
+	{
+		int offsets[256] = { 0 };
+		for ( int i = 0; i < count; ++i )
+		{
+			offsets[( from[i] >> shift ) & 0xFF] += 1;
+		}
+		if ( offsets[( from[0] >> shift ) & 0xFF] == count )
+		{
+			continue; // every key has this byte
+		}
+		int sum = 0;
+		for ( int d = 0; d < 256; ++d )
+		{
+			int n = offsets[d];
+			offsets[d] = sum;
+			sum += n;
+		}
+		for ( int i = 0; i < count; ++i )
+		{
+			to[offsets[( from[i] >> shift ) & 0xFF]++] = from[i];
+		}
+		uint64_t* t = from;
+		from = to;
+		to = t;
+	}
+	if ( from != keys )
+	{
+		memcpy( keys, from, (size_t)count * sizeof( uint64_t ) );
+	}
+}
+
 uint64_t lpDeterminismSelfTest( int* failures )
 {
 	lpFpGuard();
