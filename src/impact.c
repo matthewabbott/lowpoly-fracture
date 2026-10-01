@@ -92,9 +92,9 @@ static void lpRunFractureJob( int index, void* context )
 {
 	lpFractureJob* job = (lpFractureJob*)context + index;
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
-	uint64_t ticks = b3GetTicks();
+	uint64_t ticks = lpGetTicks();
 	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
-	job->stats.voronoiMs = b3GetMillisecondsAndReset( &ticks );
+	job->stats.voronoiMs = lpGetMillisecondsAndReset( &ticks );
 	job->bondCount = 0;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
@@ -141,7 +141,7 @@ static void lpRunFractureJob( int index, void* context )
 	float slack = lpGetMaterial( job->input.interiorMaterial )->mergeSlack;
 	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
 								   job->input.interiorMaterial, job->localImpact );
-	job->stats.mergeMs = b3GetMillisecondsAndReset( &ticks );
+	job->stats.mergeMs = lpGetMillisecondsAndReset( &ticks );
 
 	// What is still too small to carry load does not stay on the piece: it falls as debris. Structures keep chunks,
 	// not crumbs, which is cheaper for physics and keeps the stress solve well conditioned (no tiny bonds). A crumb is
@@ -162,7 +162,7 @@ static void lpRunFractureJob( int index, void* context )
 		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
 		job->hulls[i] = needsHull ? lpShape_CreateHull( job->cells[i] ) : NULL;
 	}
-	job->stats.hullMs = b3GetMillisecondsAndReset( &ticks );
+	job->stats.hullMs = lpGetMillisecondsAndReset( &ticks );
 	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
 
 	// Ghost ejecta break into a few real chips: a dirtier spray for a few plane clips. After the bonds, which only
@@ -266,9 +266,9 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	lpPiece identity = *piece; // who it was: its object, part and channels go to its cells
 	float parentVolume = piece->shape->volume;
 
-	uint64_t shapeTicks = b3GetTicks();
+	uint64_t shapeTicks = lpGetTicks();
 	lpDetachPieceShape( w, pieceIndex );
-	w->stats.shapeMs += b3GetMilliseconds( shapeTicks );
+	w->stats.shapeMs += lpGetMilliseconds( shapeTicks );
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
 		if ( body->pieces.data[i] == pieceIndex )
@@ -416,7 +416,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		}
 	}
 
-	uint64_t bondTicks = b3GetTicks();
+	uint64_t bondTicks = lpGetTicks();
 	for ( int i = 0; i < job->bondCount; ++i )
 	{
 		lpCellBond cb = job->bonds[i];
@@ -444,7 +444,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			lpTryBond( w, children[i], neighbors[n] );
 		}
 	}
-	w->stats.bondMs += b3GetMilliseconds( bondTicks );
+	w->stats.bondMs += lpGetMilliseconds( bondTicks );
 
 	if ( body->kind != lp_kindStructure && body->pieces.count > 0 )
 	{
@@ -595,9 +595,9 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 	lpFree( list );
 	w->jobsThisStep += w->jobCount;
 
-	uint64_t cellTicks = b3GetTicks();
+	uint64_t cellTicks = lpGetTicks();
 	lpTaskPool_ParallelFor( w->tasks, w->jobCount, lpRunFractureJob, w->jobs );
-	w->stats.cellMs += b3GetMilliseconds( cellTicks );
+	w->stats.cellMs += lpGetMilliseconds( cellTicks );
 
 	for ( int i = 0; i < w->jobCount; ++i )
 	{
@@ -920,7 +920,7 @@ static void lpJoltLinked( lpWorld* w, int bodyIndex )
 // Collisions hard enough to hurt become impacts for the next step
 void lpCollectHits( lpWorld* w )
 {
-	b3ContactEvents events = b3World_GetContactEvents( w->def.physics );
+	b3ContactEvents events = b3World_GetContactEvents( w->physics );
 	w->scratchHits.count = 0;
 
 	// The stress checks, wakes and detonations below act in a total order of the hits, not the report order

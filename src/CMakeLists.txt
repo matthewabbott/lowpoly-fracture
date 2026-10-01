@@ -11,6 +11,8 @@ add_library(lpf STATIC
 	link.c
 	lpmath.c
 	poly.c
+	phys.h
+	phys_box3d.c
 	poly.h
 	rig.c
 	solve.c

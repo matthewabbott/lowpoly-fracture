@@ -67,13 +67,7 @@ static const char* s_tickLog;
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (lpVec3){ 0.0f, -10.0f, 0.0f };
-	wd.workerCount = (uint32_t)workers;
-	b3WorldId physics = b3CreateWorld( &wd );
-
 	lpWorldDef ld = lpDefaultWorldDef();
-	ld.physics = physics;
 	ld.fragmentScale = fragmentScale;
 	ld.maxFullDebris = maxDebris;
 	ld.workerCount = workers;
@@ -82,9 +76,9 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	lpWorld* world = lpCreateWorld( &ld );
 	Result r = { 0 };
 	r.workers = workers;
-	uint64_t loadTicks = b3GetTicks();
+	uint64_t loadTicks = lpGetTicks();
 	lpBuildScene( world, scene );
-	r.loadMs = b3GetMilliseconds( loadTicks );
+	r.loadMs = lpGetMilliseconds( loadTicks );
 	lpStats loaded = lpWorld_GetStats( world );
 	r.settleMs = loaded.settleMs;
 	r.settleIterations = loaded.settleIterations;
@@ -129,9 +123,9 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	{
 		lpSceneBombard( world, scene, tick, period );
 		lpSceneDrive( world, scene, tick, -1, -1 ); // the track's cars drive laps, the mech patrols
-		uint64_t t0 = b3GetTicks();
+		uint64_t t0 = lpGetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
-		total[tick] = b3GetMilliseconds( t0 );
+		total[tick] = lpGetMilliseconds( t0 );
 		lpStats st = lpWorld_GetStats( world );
 		fracture[tick] = st.fractureMs;
 		if ( st.fractureMs > r.worst.fractureMs )
@@ -165,11 +159,10 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.impacts += st.impactsThisStep;
 		r.fractures += st.fracturesThisStep;
 		r.cells += st.cellsThisStep;
-		b3Counters counters = b3World_GetCounters( physics );
-		r.maxContacts = counters.contactCount > r.maxContacts ? counters.contactCount : r.maxContacts;
-		r.maxAwakeContacts = counters.awakeContactCount > r.maxAwakeContacts ? counters.awakeContactCount : r.maxAwakeContacts;
-		r.maxShapes = counters.shapeCount > r.maxShapes ? counters.shapeCount : r.maxShapes;
-		r.sumAwakeContacts += counters.awakeContactCount;
+		r.maxContacts = st.contacts > r.maxContacts ? st.contacts : r.maxContacts;
+		r.maxAwakeContacts = st.awakeContacts > r.maxAwakeContacts ? st.awakeContacts : r.maxAwakeContacts;
+		r.maxShapes = st.shapes > r.maxShapes ? st.shapes : r.maxShapes;
+		r.sumAwakeContacts += st.awakeContacts;
 		r.over16 += total[tick] > 1000.0f / 60.0f ? 1 : 0;
 		r.over33 += total[tick] > 1000.0f / 30.0f ? 1 : 0;
 		if ( hashLog != NULL )
@@ -204,7 +197,6 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	free( phys );
 	free( update );
 	lpDestroyWorld( world );
-	b3DestroyWorld( physics );
 	return r;
 }
 

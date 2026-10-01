@@ -5,6 +5,50 @@
 #include <math.h>
 #include <stdio.h>
 
+#if defined( _WIN32 )
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+uint64_t lpGetTicks( void )
+{
+#if defined( _WIN32 )
+	LARGE_INTEGER counter;
+	QueryPerformanceCounter( &counter );
+	return (uint64_t)counter.QuadPart;
+#else
+	struct timespec ts;
+	clock_gettime( CLOCK_MONOTONIC, &ts );
+	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+#endif
+}
+
+static float lpTicksToMilliseconds( uint64_t ticks )
+{
+#if defined( _WIN32 )
+	LARGE_INTEGER frequency;
+	QueryPerformanceFrequency( &frequency );
+	return (float)( 1000.0 * (double)ticks / (double)frequency.QuadPart );
+#else
+	return (float)( (double)ticks / 1000000.0 );
+#endif
+}
+
+float lpGetMilliseconds( uint64_t startTicks )
+{
+	return lpTicksToMilliseconds( lpGetTicks() - startTicks );
+}
+
+float lpGetMillisecondsAndReset( uint64_t* ticks )
+{
+	uint64_t now = lpGetTicks();
+	float ms = lpTicksToMilliseconds( now - *ticks );
+	*ticks = now;
+	return ms;
+}
+
 void lpAssertFailed( const char* condition, const char* file, int line )
 {
 	fprintf( stderr, "LP_ASSERT(%s) failed at %s:%d\n", condition, file, line );

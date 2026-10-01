@@ -118,7 +118,7 @@ static void lpBuildJoint( lpWorld* w, int index )
 	base.collideConnected = d->collideConnected;
 	base.userData = (void*)(intptr_t)( index + 1 );
 
-	b3WorldId physics = w->def.physics;
+	b3WorldId physics = w->physics;
 	switch ( d->type )
 	{
 		case lp_linkWeld:
@@ -265,7 +265,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 			b3BodyDef bd = b3DefaultBodyDef();
 			bd.type = b3_staticBody;
 			bd.position = points[k];
-			l->anchor[k] = b3CreateBody( w->def.physics, &bd );
+			l->anchor[k] = b3CreateBody( w->physics, &bd );
 		}
 	}
 	lpBuildJoint( w, index );
@@ -1055,20 +1055,4 @@ bool lpValidateLinks( const lpWorld* w )
 		return lpLinkFail( "pieces list %d link ends, links have %d", refs, ends );
 	}
 	return true;
-}
-
-void lpFreeLinks( lpWorld* w, bool physicsAlive )
-{
-	for ( int i = 0; i < w->links.count && physicsAlive; ++i )
-	{
-		const lpLink* l = w->links.data + i;
-		for ( int k = 0; k < 2 && l->alive; ++k )
-		{
-			if ( l->ends[k].piece < 0 && B3_IS_NON_NULL( l->anchor[k] ) )
-			{
-				b3DestroyBody( l->anchor[k] ); // takes the joint with it
-			}
-		}
-	}
-	lpArray_Free( w->links );
 }

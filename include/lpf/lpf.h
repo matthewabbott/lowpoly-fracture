@@ -128,7 +128,7 @@ const lpJointDef* lpGetJoint( int jointId );
 
 typedef struct lpWorldDef
 {
-	b3WorldId physics;
+	lpVec3 gravity; // m/s^2 (the physics world is the lpf world's own)
 	uint64_t seed;
 	// Budgets. Over budget, the smallest-oldest bodies move down a tier (full -> light -> ghost -> particles,
 	// rubble -> scrap, scrap sinks away) instead of popping out of existence.
@@ -678,6 +678,10 @@ typedef struct lpStats
 	// Floating-point control words found changed (flush-to-zero, rounding) and put back since the world was created:
 	// a library or driver on one of our threads changed it. Nonzero is worth a warning (determinism rule 15).
 	int fpRepairs;
+	// the physics engine's, after the step
+	int shapes;
+	int contacts;
+	int awakeContacts;
 } lpStats;
 
 lpStats lpWorld_GetStats( const lpWorld* world );
@@ -742,6 +746,12 @@ typedef struct lpParticle
 } lpParticle;
 
 const lpParticle* lpWorld_GetParticles( const lpWorld* world, int* count );
+
+// ---- timing, for stats and tools (the simulation never reads the clock) ----
+
+uint64_t lpGetTicks( void );
+float lpGetMilliseconds( uint64_t startTicks ); // since startTicks
+float lpGetMillisecondsAndReset( uint64_t* ticks ); // since *ticks, which becomes now
 
 #ifdef __cplusplus
 }

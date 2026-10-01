@@ -315,7 +315,7 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 		def.gravityScale = b->gravityScale;
 		def.userData = (void*)(intptr_t)( bodyIndex + 1 );
 		lpGridRemove( w, bodyIndex );
-		b->id = b3CreateBody( w->def.physics, &def );
+		b->id = b3CreateBody( w->physics, &def );
 		b->kind = lp_kindDebris;
 		b->tier = lp_tierFull;
 		b->createdTick = w->tick;
@@ -431,7 +431,7 @@ static void lpLand( lpWorld* w, int bodyIndex )
 
 void lpStepGhosts( lpWorld* w, float timeStep )
 {
-	lpVec3 g = b3World_GetGravity( w->def.physics );
+	lpVec3 g = b3World_GetGravity( w->physics );
 	int casts = 0;
 	float plan = (float)LP_GHOST_PLAN_TICKS * timeStep;
 
@@ -472,7 +472,7 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 			float n = (float)LP_GHOST_PLAN_TICKS;
 			lpVec3 chord = lpAdd( lpMulSV( plan, b->v ), lpMulSV( 0.5f * timeStep * timeStep * n * ( n + 1.0f ), gb ) );
 			lpStaticRay ray = { w, 2.0f, { 0 }, lpVec3_zero, false, -1 };
-			b3World_CastRay( w->def.physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
+			b3World_CastRay( w->physics, b->com, chord, b3DefaultQueryFilter(), lpStaticRayFcn, &ray );
 			b->planTicks = LP_GHOST_PLAN_TICKS;
 			b->landIn = -1;
 			if ( ray.hit )
@@ -909,17 +909,15 @@ void lpEnforceBudgets( lpWorld* w )
 // Runs on Box3D worker threads when a pair is created; reads only our own arrays, which do not change during a step.
 // A light piece touches only static things (structures, rubble); a full piece touches light pieces only while the
 // full piece is frozen rubble. Everything else follows the category masks.
-bool lpCustomFilter( b3ShapeId shapeA, b3ShapeId shapeB, void* context )
+bool lpPairFilter( int pieceA, int pieceB, void* context )
 {
 	const lpWorld* w = context;
-	intptr_t da = (intptr_t)b3Shape_GetUserData( shapeA );
-	intptr_t db = (intptr_t)b3Shape_GetUserData( shapeB );
-	if ( da <= 0 || db <= 0 )
+	if ( pieceA < 0 || pieceB < 0 )
 	{
 		return true;
 	}
-	const lpBody* ba = w->bodies.data + w->pieces.data[da - 1].body;
-	const lpBody* bb = w->bodies.data + w->pieces.data[db - 1].body;
+	const lpBody* ba = w->bodies.data + w->pieces.data[pieceA].body;
+	const lpBody* bb = w->bodies.data + w->pieces.data[pieceB].body;
 	bool lightA = ba->kind != lp_kindStructure && ba->tier == lp_tierLight;
 	bool lightB = bb->kind != lp_kindStructure && bb->tier == lp_tierLight;
 	if ( lightA == lightB )

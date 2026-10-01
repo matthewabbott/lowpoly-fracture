@@ -28,7 +28,7 @@ static void lpApplyWakes( lpWorld* w )
 
 static void lpFreezeOrKill( lpWorld* w )
 {
-	b3BodyEvents events = b3World_GetBodyEvents( w->def.physics );
+	b3BodyEvents events = b3World_GetBodyEvents( w->physics );
 	w->scratchBodies.count = 0;
 	int firstNew = w->freezeCandidates.count;
 	for ( int i = 0; i < events.moveCount; ++i )
@@ -227,7 +227,7 @@ static void lpApplyPulls( lpWorld* w )
 		}
 		float mass = b3Body_GetMass( b->id );
 		float m = lpMinFloat( mass, pull.maxMass );
-		lpVec3 g = lpMulSV( b->gravityScale, b3World_GetGravity( w->def.physics ) );
+		lpVec3 g = lpMulSV( b->gravityScale, b3World_GetGravity( w->physics ) );
 		lpVec3 force = lpSub( lpMulSV( m, accel ), lpMulSV( m, g ) );
 		b3Body_ApplyForce( b->id, force, point, true );
 		// A little angular damping so held things do not spin forever
@@ -275,7 +275,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->jobsThisStep = 0;
 	w->freezesThisStep = 0;
 
-	uint64_t ticks = b3GetTicks();
+	uint64_t ticks = lpGetTicks();
 
 	// Pieces that detonated last step are consumed by their own blast: the whole body when they were all of it, else
 	// only they. A body that is already gone may have had its slot reused since, so the generation must match too.
@@ -319,10 +319,10 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->impacts.count = 0;
 
 	// Split what came apart, then the stress check of the structures updated, solved in parallel
-	uint64_t splitTicks = b3GetTicks();
+	uint64_t splitTicks = lpGetTicks();
 	lpUpdateDirtyBodies( w );
 	lpCheckStructures( w, false );
-	w->stats.splitMs = b3GetMilliseconds( splitTicks );
+	w->stats.splitMs = lpGetMilliseconds( splitTicks );
 
 	lpApplyWakes( w );
 	lpApplyForces( w );
@@ -331,17 +331,17 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpSyncLinks( w ); // every body of this step exists now
 	lpDrainPools( w, timeStep );
 	lpUpdateSupply( w );
-	w->stats.fractureMs = b3GetMillisecondsAndReset( &ticks );
+	w->stats.fractureMs = lpGetMillisecondsAndReset( &ticks );
 	lpStepRigs( w, timeStep );
-	w->stats.rigMs = b3GetMillisecondsAndReset( &ticks );
+	w->stats.rigMs = lpGetMillisecondsAndReset( &ticks );
 	lpDriveMotors( w );
-	w->stats.fractureMs += b3GetMillisecondsAndReset( &ticks );
+	w->stats.fractureMs += lpGetMillisecondsAndReset( &ticks );
 	lpStepVehicles( w, timeStep );
-	w->stats.vehicleMs = b3GetMillisecondsAndReset( &ticks );
+	w->stats.vehicleMs = lpGetMillisecondsAndReset( &ticks );
 
-	b3World_Step( w->def.physics, timeStep, subStepCount );
+	b3World_Step( w->physics, timeStep, subStepCount );
 	w->lastTimeStep = timeStep;
-	w->stats.physicsMs = b3GetMillisecondsAndReset( &ticks );
+	w->stats.physicsMs = lpGetMillisecondsAndReset( &ticks );
 	lpPollLinks( w, timeStep ); // before anything below can destroy a body under a joint
 	lpTrackMovingBodies( w );
 
@@ -408,7 +408,11 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.linkCount = w->linkCount;
 	w->stats.deferredJobs = w->deferred.count;
 	w->stats.fpRepairs = w->fpRepairs + lpTaskPool_FpRepairs( w->tasks );
-	w->stats.updateMs = b3GetMillisecondsAndReset( &ticks );
+	lpPhysCounters counters = lpPhys_GetCounters( w->phys );
+	w->stats.shapes = counters.shapes;
+	w->stats.contacts = counters.contacts;
+	w->stats.awakeContacts = counters.awakeContacts;
+	w->stats.updateMs = lpGetMillisecondsAndReset( &ticks );
 
 	w->tick += 1;
 }

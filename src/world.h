@@ -5,6 +5,7 @@
 
 #include "core.h"
 #include "fracture.h"
+#include "phys.h"
 #include "poly.h"
 #include "solve.h"
 
@@ -597,6 +598,8 @@ typedef struct lpDeferredJob
 struct lpWorld
 {
 	lpWorldDef def;
+	lpPhys* phys;
+	b3WorldId physics; // Box3D's world, for the modules milestone 8 has not routed through phys.h yet
 
 	LP_ARRAY( lpPiece ) pieces;
 	LP_ARRAY( lpBond ) bonds;
@@ -740,7 +743,6 @@ bool lpBodyLinked( const lpWorld* w, const lpBody* b );
 bool lpTouchesLinked( lpWorld* w, const lpBody* b );
 uint64_t lpHashLinks( const lpWorld* w, uint64_t h );
 bool lpValidateLinks( const lpWorld* w );
-void lpFreeLinks( lpWorld* w, bool physicsAlive );
 // A wheel's link: end 0 on the piece nearest the mount (within reach), end 1 on nothing, no joint. Returns -1 when no
 // piece of the body is near enough.
 int lpCreateWheelLink( lpWorld* w, int body, lpPos mount, float maxForce, float strength, int wheel );
@@ -852,7 +854,10 @@ void lpApplyLooseForce( lpWorld* w, const lpForce* force );
 void lpShove( lpWorld* w, float timeStep );
 void lpApplyBlows( lpWorld* w );
 void lpEnforceBudgets( lpWorld* w );
-bool lpCustomFilter( b3ShapeId shapeA, b3ShapeId shapeB, void* context );
+bool lpPairFilter( int pieceA, int pieceB, void* context );
+
+// Box3D's world under the physics interface, for the modules milestone 8 has not routed yet (phys_box3d.c)
+b3WorldId lpPhys_Box3DWorld( const lpPhys* p );
 
 // ---- validation (tests) ----
 

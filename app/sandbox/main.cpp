@@ -94,7 +94,6 @@ struct Options
 struct App
 {
 	Options opt;
-	b3WorldId physics = b3_nullWorldId;
 	lpWorld* world = nullptr;
 	int64_t tick = 0;
 	double accumulator = 0.0;
@@ -233,7 +232,6 @@ void DestroyWorld()
 	if ( app.world != nullptr )
 	{
 		lpDestroyWorld( app.world );
-		b3DestroyWorld( app.physics );
 		app.world = nullptr;
 	}
 }
@@ -241,13 +239,7 @@ void DestroyWorld()
 void LoadScene( int scene )
 {
 	DestroyWorld();
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = { 0.0f, -10.0f, 0.0f };
-	wd.workerCount = (uint32_t)app.opt.workers;
-	app.physics = b3CreateWorld( &wd );
-
 	lpWorldDef ld = lpDefaultWorldDef();
-	ld.physics = app.physics;
 	ld.fragmentScale = app.opt.fragmentScale;
 	ld.maxFullDebris = app.opt.maxDebris;
 	ld.workerCount = app.opt.workers;
@@ -779,9 +771,9 @@ void StepSimulation()
 	}
 	lpSceneDrive( app.world, app.opt.scene, (int)app.tick, app.playerVehicle, app.playerRig );
 
-	uint64_t t0 = b3GetTicks();
+	uint64_t t0 = lpGetTicks();
 	lpWorld_Step( app.world, 1.0f / 60.0f, 4 );
-	app.stepMs = b3GetMilliseconds( t0 );
+	app.stepMs = lpGetMilliseconds( t0 );
 	app.last = lpWorld_GetStats( app.world );
 
 	int count = 0;
@@ -1103,7 +1095,7 @@ void Frame()
 	{
 		return;
 	}
-	uint64_t frameStart = b3GetTicks();
+	uint64_t frameStart = lpGetTicks();
 	float dt = (float)sapp_frame_duration();
 	dt = dt > 0.1f ? 0.1f : dt;
 	bool automated = app.opt.frames > 0;
@@ -1170,7 +1162,7 @@ void Frame()
 	}
 	UpdateParticles( automated ? 1.0f / 60.0f : dt );
 
-	uint64_t renderStart = b3GetTicks();
+	uint64_t renderStart = lpGetTicks();
 	Renderer_Sync( app.world );
 	app.drawn = app.particles;
 	AppendRopes( app.drawn );
@@ -1197,7 +1189,7 @@ void Frame()
 	Renderer_BeginFrame( view, proj, app.camPos, f, width, height, app.rs );
 	simgui_render();
 	Renderer_EndFrame();
-	app.renderMs = b3GetMilliseconds( renderStart );
+	app.renderMs = lpGetMilliseconds( renderStart );
 
 	app.frame += 1;
 	bool last = automated && app.frame >= app.opt.frames;
@@ -1214,7 +1206,7 @@ void Frame()
 		printf( "screenshot %s: %s\n", path.c_str(), ok ? "ok" : "FAILED" );
 		app.wantScreenshot = false;
 	}
-	app.frameMs = b3GetMilliseconds( frameStart );
+	app.frameMs = lpGetMilliseconds( frameStart );
 	app.sumFrameMs += app.frameMs;
 	app.sumStepMs += app.stepMs;
 	app.sumRenderMs += app.renderMs;

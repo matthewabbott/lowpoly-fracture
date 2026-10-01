@@ -60,7 +60,7 @@ static bool lpIsServo( const lpLink* l )
 
 lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso )
 {
-	lpVec3 g = b3World_GetGravity( w->def.physics );
+	lpVec3 g = b3World_GetGravity( w->physics );
 	float length = lpLength( g );
 	return length > 1e-6f ? lpMulSV( -1.0f / length, g ) : lpRotateVector( torso, r->up );
 }

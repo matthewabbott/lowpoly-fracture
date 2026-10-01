@@ -265,7 +265,7 @@ static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, lpVec3 up 
 	filter.maskBits = LP_CAT_STATIC | LP_CAT_FULL;
 	lpPos from = lpOffsetPos( limb->landing, lpMulSV( LP_GAIT_CLEARANCE + LP_GAIT_SOLE, up ) );
 	lpFootCast cast = { w, skip, count, FLT_MAX, { 0 }, -1, false };
-	b3World_CastShape( w->def.physics, from, &proxy, lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter,
+	b3World_CastShape( w->physics, from, &proxy, lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter,
 					   lpFootCastFcn, &cast );
 	w->stats.footCasts += 1;
 	limb->grounded = cast.hit;

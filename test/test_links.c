@@ -1153,9 +1153,9 @@ static int TestMotorCost( void )
 			lpWorld_SetLinkTarget( s.world, links[k], ( t / 30 ) % 2 == 0 ? 1.0f : -1.0f );
 		}
 		Run( &s, 1 );
-		uint64_t ticks = b3GetTicks();
+		uint64_t ticks = lpGetTicks();
 		lpDriveMotors( s.world ); // once more, timed (it changes nothing Box3D has not integrated yet)
-		ms += b3GetMilliseconds( ticks );
+		ms += lpGetMilliseconds( ticks );
 		sets += lpWorld_GetStats( s.world ).motorSets;
 	}
 	printf( "  200 servos: %.2f us each per step, %.0f setter calls per step\n", 1000.0f * ms / ( 120.0f * 200.0f ),

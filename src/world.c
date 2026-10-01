@@ -119,6 +119,7 @@ const lpMaterialDef* lpGetMaterial( int materialId )
 lpWorldDef lpDefaultWorldDef( void )
 {
 	lpWorldDef def = { 0 };
+	def.gravity = (lpVec3){ 0.0f, -10.0f, 0.0f };
 	def.seed = 1;
 	def.maxFullDebris = 400;
 	def.maxLightDebris = 1200;
@@ -310,9 +311,14 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	{
 		fprintf( stderr, "lpCreateWorld: %d determinism self-test answers are wrong on this machine\n", failures );
 	}
-	// Hit events start at the wake speed (waking fragile rubble); damage starts at hitSpeed
-	b3World_SetHitEventThreshold( def->physics, lpMinFloat( def->hitSpeed, def->wakeSpeed ) );
-	b3World_SetCustomFilterCallback( def->physics, lpCustomFilter, w );
+	lpPhysDef pd = { 0 };
+	pd.gravity = def->gravity;
+	pd.workerCount = def->workerCount;
+	pd.hitSpeed = lpMinFloat( def->hitSpeed, def->wakeSpeed ); // hits start at the wake speed (waking fragile rubble)
+	pd.pairFilter = lpPairFilter;
+	pd.context = w;
+	w->phys = lpPhys_Create( &pd );
+	w->physics = lpPhys_Box3DWorld( w->phys );
 	w->tasks = lpTaskPool_Create( def->workerCount );
 	lpGridInit( w );
 	return w;
@@ -320,14 +326,10 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 
 void lpDestroyWorld( lpWorld* w )
 {
-	bool physicsAlive = b3World_IsValid( w->def.physics );
+	lpPhys_Destroy( w->phys ); // every body, shape and joint with it
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive && physicsAlive && B3_IS_NON_NULL( b->id ) )
-		{
-			b3DestroyBody( b->id );
-		}
 		lpArray_Free( b->pieces );
 		lpFreeStressSystem( b );
 	}
@@ -339,13 +341,13 @@ void lpDestroyWorld( lpWorld* w )
 			lpShape_Destroy( p->shape );
 			if ( p->hull != NULL )
 			{
-				b3DestroyHull( p->hull );
+				lpPhys_DestroyHull( p->hull );
 			}
 		}
 		lpArray_Free( p->bonds );
 		lpArray_Free( p->links );
 	}
-	lpFreeLinks( w, physicsAlive );
+	lpArray_Free( w->links );
 	lpFreeVehicles( w );
 	lpFreeRigs( w );
 	lpArray_Free( w->scratchLinkMoves );
@@ -440,7 +442,7 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
-	uint64_t t0 = b3GetTicks();
+	uint64_t t0 = lpGetTicks();
 	if ( p->hull == NULL )
 	{
 		p->hull = lpShape_CreateHull( p->shape );
@@ -449,11 +451,11 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 			return false;
 		}
 	}
-	w->stats.hullMs += b3GetMilliseconds( t0 );
-	uint64_t t1 = b3GetTicks();
+	w->stats.hullMs += lpGetMilliseconds( t0 );
+	uint64_t t1 = lpGetTicks();
 	b3ShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
 	p->shapeId = b3CreateHullShape( b->id, &def, p->hull );
-	w->stats.shapeMs += b3GetMilliseconds( t1 );
+	w->stats.shapeMs += lpGetMilliseconds( t1 );
 	return true;
 }
 
@@ -679,7 +681,7 @@ int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, b3BodyType type, uint
 		def.sleepThreshold = 0.3f; // light debris settles fast and freezes early
 	}
 	def.gravityScale = gravityScale;
-	b->id = b3CreateBody( w->def.physics, &def );
+	b->id = b3CreateBody( w->physics, &def );
 	b->kind = kind;
 	b->tier = tier;
 	b->gravityScale = gravityScale;
@@ -1001,7 +1003,7 @@ int lpCompareBodyRef( const void* a, const void* b )
 void lpQueryPieces( lpWorld* w, lpAABB box )
 {
 	w->scratchPieces.count = 0;
-	b3World_OverlapAABB( w->def.physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, w );
+	b3World_OverlapAABB( w->physics, box, b3DefaultQueryFilter(), lpCollectPieceFcn, w );
 	if ( w->scratchPieces.count > 1 )
 	{
 		qsort( w->scratchPieces.data, (size_t)w->scratchPieces.count, sizeof( int ), lpCompareInt );
@@ -1252,7 +1254,7 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 	hit.body = -1;
 	hit.link = -1;
 	lpClosestRay result = { 2.0f, { 0 }, lpVec3_zero, -1, false }; // above any hit, so a hit at the very end counts
-	b3World_CastRay( w->def.physics, origin, translation, b3DefaultQueryFilter(), lpClosestRayFcn, &result );
+	b3World_CastRay( w->physics, origin, translation, b3DefaultQueryFilter(), lpClosestRayFcn, &result );
 	float nearest = result.hit ? result.fraction : 2.0f; // a rope at the very end of the ray still counts
 	if ( result.hit )
 	{

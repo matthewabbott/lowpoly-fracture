@@ -171,7 +171,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 	int n = body->pieces.count;
 	lpArray_Reserve( w->scratchLoads, n );
 	float weight = 0.0f;
-	float g = body->gravityScale * lpLength( b3World_GetGravity( w->def.physics ) );
+	float g = body->gravityScale * lpLength( b3World_GetGravity( w->physics ) );
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
@@ -1521,8 +1521,8 @@ static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
 
 static void lpRunStressChecks( lpWorld* w, bool settle )
 {
-	uint64_t ticks = b3GetTicks();
-	lpVec3 gravity = b3World_GetGravity( w->def.physics );
+	uint64_t ticks = lpGetTicks();
+	lpVec3 gravity = b3World_GetGravity( w->physics );
 	int reserved = 0;
 	w->stressJobCount = 0;
 
@@ -1689,7 +1689,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 	{
 		lpStressJudge( w, w->stressJobs + i );
 	}
-	w->stats.stressMs += b3GetMilliseconds( ticks );
+	w->stats.stressMs += lpGetMilliseconds( ticks );
 }
 
 // Once the step's stress budget has been at most half used, with nothing waiting, for LP_CALM_STEPS steps, or once the
@@ -1764,7 +1764,7 @@ int lpWorld_SettleStructures( lpWorld* w )
 {
 	// A structure that loses joints to its own weight splits and is solved again, a few rounds, so what a scene does at
 	// load is over before its first step. One that only strains creaks on in the steps.
-	uint64_t ticks = b3GetTicks();
+	uint64_t ticks = lpGetTicks();
 	int iterations = 0;
 	for ( int round = 0; round < 8; ++round )
 	{
@@ -1776,7 +1776,7 @@ int lpWorld_SettleStructures( lpWorld* w )
 			break;
 		}
 	}
-	w->stats.settleMs = b3GetMilliseconds( ticks );
+	w->stats.settleMs = lpGetMilliseconds( ticks );
 	w->stats.settleIterations = iterations;
 	w->stats.bondCount = w->bondCount;
 	return iterations;

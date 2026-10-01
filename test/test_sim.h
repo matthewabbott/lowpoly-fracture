@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// A Box3D world plus an lpf world, shared by the world and debris tests.
+// An lpf world with a scene, shared by the tests.
 #pragma once
 
 #include "scenes.h"
@@ -15,19 +15,13 @@ extern int lp_testOracleJoints;
 
 typedef struct Sim
 {
-	b3WorldId physics;
 	lpWorld* world;
 } Sim;
 
-// scene < 0 builds only the ground. Box3D gets the same worker count as the lpf world.
+// scene < 0 builds only the ground
 static inline Sim CreateSimDef( lpWorldDef ld, int scene )
 {
-	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = (lpVec3){ 0.0f, -10.0f, 0.0f };
-	wd.workerCount = (uint32_t)( ld.workerCount > 1 ? ld.workerCount : 1 );
 	Sim s;
-	s.physics = b3CreateWorld( &wd );
-	ld.physics = s.physics;
 	ld.stressLargeNodes = lp_testLargeNodes > 0 ? lp_testLargeNodes : ld.stressLargeNodes;
 	s.world = lpCreateWorld( &ld );
 	s.world->stressOracle = lp_testLargeNodes > 0;
@@ -61,7 +55,6 @@ static inline void DestroySim( Sim* s )
 	lp_testOracleFlips += s->world->oracleFlips;
 	lp_testOracleJoints += s->world->oracleJoints;
 	lpDestroyWorld( s->world );
-	b3DestroyWorld( s->physics );
 }
 
 // A body with a piece whose detonator is still armed; its trigger speed then goes to *triggerSpeed (if not NULL)

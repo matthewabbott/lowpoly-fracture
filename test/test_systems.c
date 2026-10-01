@@ -484,13 +484,13 @@ static int TestSupplyCost( void )
 	def.partCount = 1000;
 	lpCreateObject( s.world, &def );
 	Run( &s, 1 );
-	uint64_t ticks = b3GetTicks();
+	uint64_t ticks = lpGetTicks();
 	for ( int r = 0; r < 20; ++r )
 	{
 		s.world->supplyDirty = true;
 		lpUpdateSupply( s.world );
 	}
-	float us = 1000.0f * b3GetMilliseconds( ticks ) / 20.0f;
+	float us = 1000.0f * lpGetMilliseconds( ticks ) / 20.0f;
 	printf( "  1000 carriers, 8 channels: %.1f us per recompute (%d bonds)\n", us, s.world->bondCount );
 	ENSURE( lpWorld_GetPieceSupply( s.world, s.world->bodies.data[1].pieces.data[999], 7 ) == 1.0f );
 	DestroySim( &s );

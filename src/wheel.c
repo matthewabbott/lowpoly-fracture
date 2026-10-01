@@ -315,7 +315,7 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 
 	lpWheelCast cast = { w, chassis, FLT_MAX, { 0 }, lpVec3_zero, -1, 0.6f, false };
 	lpPos mount = lpTransformWorldPoint( xf, l->ends[0].frame.p );
-	b3World_CastShape( w->def.physics, mount, &proxy, lpMulSV( wh->def.maxLength, down ), filter, lpWheelCastFcn, &cast );
+	b3World_CastShape( w->physics, mount, &proxy, lpMulSV( wh->def.maxLength, down ), filter, lpWheelCastFcn, &cast );
 	w->stats.wheelCasts += 1;
 
 	wh->grounded = cast.hit;
@@ -420,7 +420,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 	lpVec3 up = lpVec3_zero;
 
 	// Velocity at the end of the step without the tyres: gravity and the springs
-	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, b3World_GetGravity( w->def.physics ) );
+	lpVec3 v = lpMulAdd( v0, timeStep * b->gravityScale, b3World_GetGravity( w->physics ) );
 	lpVec3 omega = omega0;
 	for ( int k = 0; k < count; ++k )
 	{
@@ -574,7 +574,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 		lpRecheckGround( w, wh, l->force );
 		// Bottoming out hard (a landing) jolts a chassis that solves its stress: check it with this load
 		lpBody* chassis = w->bodies.data + bodyIndex;
-		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( b3World_GetGravity( w->def.physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
+		if ( chassis->solveStress && wh->lambdaN * invStep > 3.0f * wh->sprungMass * lpLength( b3World_GetGravity( w->physics ) ) && w->tick >= chassis->hitCheckTick + 10 )
 		{
 			chassis->hitCheckTick = w->tick;
 			lpRequestStressCheck( w, bodyIndex, false );
