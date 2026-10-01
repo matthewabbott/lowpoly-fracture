@@ -54,26 +54,27 @@ bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material
 	{
 		return false;
 	}
-	lpPhysHullView view = lpPhys_GetHullView( hull );
-	if ( view.vertexCount > LP_POLY_MAX_VERTICES || view.faceCount > LP_POLY_MAX_FACES )
+	int vertexCount = lpPhys_GetHullVertexCount( hull );
+	int faceCount = lpPhys_GetHullFaceCount( hull );
+	if ( vertexCount > LP_POLY_MAX_VERTICES || faceCount > LP_POLY_MAX_FACES )
 	{
 		return false;
 	}
 
-	for ( int i = 0; i < view.vertexCount; ++i )
+	for ( int i = 0; i < vertexCount; ++i )
 	{
-		poly->vertices[i] = view.points[i];
+		poly->vertices[i] = lpPhys_GetHullPoint( hull, i );
 	}
-	poly->vertexCount = view.vertexCount;
+	poly->vertexCount = vertexCount;
 
 	int indexCount = 0;
-	for ( int f = 0; f < view.faceCount; ++f )
+	for ( int f = 0; f < faceCount; ++f )
 	{
 		lpFace* face = poly->faces + f;
 		face->first = (uint16_t)indexCount;
 		face->material = material;
 		face->tag = LP_TAG_EXTERIOR;
-		face->plane = view.planes[f];
+		face->plane = lpPhys_GetHullPlane( hull, f );
 		int room = LP_POLY_MAX_INDICES - indexCount;
 		int count = lpPhys_GetHullFace( hull, f, poly->indices + indexCount, room < 255 ? room : 255 );
 		if ( count < 0 )
@@ -83,7 +84,7 @@ bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material
 		indexCount += count;
 		face->count = (uint8_t)count;
 	}
-	poly->faceCount = view.faceCount;
+	poly->faceCount = faceCount;
 	poly->indexCount = indexCount;
 	return true;
 }

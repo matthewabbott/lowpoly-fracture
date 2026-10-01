@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// The physics interface (phys.h) on Box3D: the only file that includes Box3D. Box3D's ids pack into the handles
-// (b3Store*Id), user data is index + 1 (0 for none), and reports are re-ordered here into our own total order.
+// The physics interface (phys.h) on Box3D: the only file that sees Box3D's headers (the build gives no other file
+// their path). Box3D's ids pack into the handles (b3Store*Id), values cross by copy (same layouts, so exact), user
+// data is index + 1 (0 for none), and reports are re-ordered here into our own total order.
 
 #include "phys.h"
 
@@ -33,35 +34,93 @@ struct lpPhys
 	LP_ARRAY( int ) pieces;
 };
 
-// Identities until the handles become opaque (step 3's end)
+// ---- crossing the boundary ----
+
+static inline b3Vec3 lpB3Vec( lpVec3 v )
+{
+	b3Vec3 out = { v.x, v.y, v.z };
+	return out;
+}
+
+static inline lpVec3 lpVec( b3Vec3 v )
+{
+	lpVec3 out = { v.x, v.y, v.z };
+	return out;
+}
+
+static inline b3Quat lpB3Quat( lpQuat q )
+{
+	b3Quat out = { lpB3Vec( q.v ), q.s };
+	return out;
+}
+
+static inline lpQuat lpQuatOf( b3Quat q )
+{
+	lpQuat out = { lpVec( q.v ), q.s };
+	return out;
+}
+
+static inline b3Transform lpB3Transform( lpTransform t )
+{
+	b3Transform out = { lpB3Vec( t.p ), lpB3Quat( t.q ) };
+	return out;
+}
+
+static inline lpTransform lpTransformOf( b3Transform t )
+{
+	lpTransform out = { lpVec( t.p ), lpQuatOf( t.q ) };
+	return out;
+}
+
+static inline lpMatrix3 lpMatrixOf( b3Matrix3 m )
+{
+	lpMatrix3 out = { lpVec( m.cx ), lpVec( m.cy ), lpVec( m.cz ) };
+	return out;
+}
+
+static inline lpAABB lpAABBOf( b3AABB a )
+{
+	lpAABB out = { lpVec( a.lowerBound ), lpVec( a.upperBound ) };
+	return out;
+}
+
+static inline b3AABB lpB3AABB( lpAABB a )
+{
+	b3AABB out = { lpB3Vec( a.lowerBound ), lpB3Vec( a.upperBound ) };
+	return out;
+}
+
 static inline b3BodyId lpB3Body( lpPhysBody b )
 {
-	return b;
+	return b3LoadBodyId( b.handle );
 }
 
 static inline lpPhysBody lpPhysBodyOf( b3BodyId id )
 {
-	return id;
+	lpPhysBody b = { b3StoreBodyId( id ) };
+	return b;
 }
 
 static inline b3ShapeId lpB3Shape( lpPhysShape s )
 {
-	return s;
+	return b3LoadShapeId( s.handle );
 }
 
 static inline lpPhysShape lpPhysShapeOf( b3ShapeId id )
 {
-	return id;
+	lpPhysShape s = { b3StoreShapeId( id ) };
+	return s;
 }
 
 static inline b3JointId lpB3Joint( lpPhysJoint j )
 {
-	return j;
+	return b3LoadJointId( j.handle );
 }
 
 static inline lpPhysJoint lpPhysJointOf( b3JointId id )
 {
-	return id;
+	lpPhysJoint j = { b3StoreJointId( id ) };
+	return j;
 }
 
 static inline void* lpUserData( int index )
@@ -88,7 +147,7 @@ lpPhys* lpPhys_Create( const lpPhysDef* def )
 	lpPhys* p = lpAlloc( sizeof( lpPhys ) );
 	memset( p, 0, sizeof( lpPhys ) );
 	b3WorldDef wd = b3DefaultWorldDef();
-	wd.gravity = def->gravity;
+	wd.gravity = lpB3Vec( def->gravity );
 	wd.workerCount = (uint32_t)( def->workerCount > 1 ? def->workerCount : 1 );
 	p->world = b3CreateWorld( &wd );
 	b3World_SetHitEventThreshold( p->world, def->hitSpeed );
@@ -121,7 +180,7 @@ void lpPhys_Step( lpPhys* p, float timeStep, int subStepCount )
 
 lpVec3 lpPhys_GetGravity( const lpPhys* p )
 {
-	return b3World_GetGravity( p->world );
+	return lpVec( b3World_GetGravity( p->world ) );
 }
 
 lpPhysCounters lpPhys_GetCounters( const lpPhys* p )
@@ -146,10 +205,10 @@ lpPhysBody lpPhys_CreateBody( lpPhys* p, const lpPhysBodyDef* def )
 {
 	b3BodyDef bd = b3DefaultBodyDef();
 	bd.type = def->dynamic ? b3_dynamicBody : b3_staticBody;
-	bd.position = def->transform.p;
-	bd.rotation = def->transform.q;
-	bd.linearVelocity = def->linearVelocity;
-	bd.angularVelocity = def->angularVelocity;
+	bd.position = lpB3Vec( def->transform.p );
+	bd.rotation = lpB3Quat( def->transform.q );
+	bd.linearVelocity = lpB3Vec( def->linearVelocity );
+	bd.angularVelocity = lpB3Vec( def->angularVelocity );
 	bd.gravityScale = def->gravityScale;
 	if ( def->sleepThreshold > 0.0f )
 	{
@@ -192,49 +251,49 @@ void lpPhys_SetDynamic( lpPhys* p, lpPhysBody body, bool dynamic )
 lpWorldTransform lpPhys_GetTransform( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetTransform( lpB3Body( body ) );
+	return lpTransformOf( b3Body_GetTransform( lpB3Body( body ) ) );
 }
 
 lpPos lpPhys_GetWorldCenter( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetWorldCenter( lpB3Body( body ) );
+	return lpVec( b3Body_GetWorldCenter( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetLocalCenter( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetLocalCenter( lpB3Body( body ) );
+	return lpVec( b3Body_GetLocalCenter( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetLinearVelocity( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetLinearVelocity( lpB3Body( body ) );
+	return lpVec( b3Body_GetLinearVelocity( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetAngularVelocity( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetAngularVelocity( lpB3Body( body ) );
+	return lpVec( b3Body_GetAngularVelocity( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetPointVelocity( const lpPhys* p, lpPhysBody body, lpPos point )
 {
 	(void)p;
-	return b3Body_GetWorldPointVelocity( lpB3Body( body ), point );
+	return lpVec( b3Body_GetWorldPointVelocity( lpB3Body( body ), lpB3Vec( point ) ) );
 }
 
 void lpPhys_SetLinearVelocity( lpPhys* p, lpPhysBody body, lpVec3 v )
 {
 	(void)p;
-	b3Body_SetLinearVelocity( lpB3Body( body ), v );
+	b3Body_SetLinearVelocity( lpB3Body( body ), lpB3Vec( v ) );
 }
 
 void lpPhys_SetAngularVelocity( lpPhys* p, lpPhysBody body, lpVec3 omega )
 {
 	(void)p;
-	b3Body_SetAngularVelocity( lpB3Body( body ), omega );
+	b3Body_SetAngularVelocity( lpB3Body( body ), lpB3Vec( omega ) );
 }
 
 float lpPhys_GetMass( const lpPhys* p, lpPhysBody body )
@@ -246,7 +305,7 @@ float lpPhys_GetMass( const lpPhys* p, lpPhysBody body )
 lpMatrix3 lpPhys_GetInvInertia( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetWorldInverseRotationalInertia( lpB3Body( body ) );
+	return lpMatrixOf( b3Body_GetWorldInverseRotationalInertia( lpB3Body( body ) ) );
 }
 
 void lpPhys_UpdateMass( lpPhys* p, lpPhysBody body, float inertiaRadius )
@@ -268,13 +327,13 @@ void lpPhys_UpdateMass( lpPhys* p, lpPhysBody body, float inertiaRadius )
 void lpPhys_ApplyForce( lpPhys* p, lpPhysBody body, lpVec3 force, lpPos point, bool wake )
 {
 	(void)p;
-	b3Body_ApplyForce( lpB3Body( body ), force, point, wake );
+	b3Body_ApplyForce( lpB3Body( body ), lpB3Vec( force ), lpB3Vec( point ), wake );
 }
 
 void lpPhys_ApplyImpulse( lpPhys* p, lpPhysBody body, lpVec3 impulse, lpPos point, bool wake )
 {
 	(void)p;
-	b3Body_ApplyLinearImpulse( lpB3Body( body ), impulse, point, wake );
+	b3Body_ApplyLinearImpulse( lpB3Body( body ), lpB3Vec( impulse ), lpB3Vec( point ), wake );
 }
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
@@ -310,37 +369,63 @@ void lpPhys_SetGravityScale( lpPhys* p, lpPhysBody body, float scale )
 lpAABB lpPhys_GetBounds( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_ComputeAABB( lpB3Body( body ) );
+	return lpAABBOf( b3Body_ComputeAABB( lpB3Body( body ) ) );
 }
 
 lpVec3 lpPhys_GetMaxExtent( const lpPhys* p, lpPhysBody body )
 {
 	(void)p;
-	return b3Body_GetMaxExtent( lpB3Body( body ) );
+	return lpVec( b3Body_GetMaxExtent( lpB3Body( body ) ) );
 }
 
 // ---- hulls and shapes ----
 
 lpPhysHull* lpPhys_CreateHull( const lpVec3* points, int count, int maxVertices )
 {
-	return b3CreateHull( points, count, maxVertices );
+	b3Vec3 local[LP_PHYS_MAX_POINTS];
+	b3Vec3* copy = count <= LP_PHYS_MAX_POINTS ? local : lpAlloc( (size_t)count * sizeof( b3Vec3 ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		copy[i] = lpB3Vec( points[i] );
+	}
+	b3HullData* hull = b3CreateHull( copy, count, maxVertices );
+	if ( copy != local )
+	{
+		lpFree( copy );
+	}
+	return (lpPhysHull*)hull;
 }
 
 void lpPhys_DestroyHull( lpPhysHull* hull )
 {
-	b3DestroyHull( hull );
+	b3DestroyHull( (b3HullData*)hull );
 }
 
-lpPhysHullView lpPhys_GetHullView( const lpPhysHull* hull )
+int lpPhys_GetHullVertexCount( const lpPhysHull* hull )
 {
-	const b3HullData* h = hull;
-	lpPhysHullView view = { h->vertexCount, h->faceCount, b3GetHullPoints( h ), b3GetHullPlanes( h ) };
-	return view;
+	return ( (const b3HullData*)hull )->vertexCount;
+}
+
+int lpPhys_GetHullFaceCount( const lpPhysHull* hull )
+{
+	return ( (const b3HullData*)hull )->faceCount;
+}
+
+lpVec3 lpPhys_GetHullPoint( const lpPhysHull* hull, int vertex )
+{
+	return lpVec( b3GetHullPoints( (const b3HullData*)hull )[vertex] );
+}
+
+lpPlane lpPhys_GetHullPlane( const lpPhysHull* hull, int face )
+{
+	b3Plane plane = b3GetHullPlanes( (const b3HullData*)hull )[face];
+	lpPlane out = { lpVec( plane.normal ), plane.offset };
+	return out;
 }
 
 int lpPhys_GetHullFace( const lpPhysHull* hull, int face, uint8_t* indices, int capacity )
 {
-	const b3HullData* h = hull;
+	const b3HullData* h = (const b3HullData*)hull;
 	const b3HullFace* faces = b3GetHullFaces( h );
 	const b3HullHalfEdge* edges = b3GetHullEdges( h );
 	int first = faces[face].edge;
@@ -361,10 +446,20 @@ int lpPhys_GetHullFace( const lpPhysHull* hull, int face, uint8_t* indices, int 
 
 float lpPhys_HullDistance( const lpVec3* a, int countA, const lpVec3* b, int countB )
 {
+	b3Vec3 pointsA[LP_PHYS_MAX_POINTS];
+	b3Vec3 pointsB[LP_PHYS_MAX_POINTS];
+	for ( int i = 0; i < countA; ++i )
+	{
+		pointsA[i] = lpB3Vec( a[i] );
+	}
+	for ( int i = 0; i < countB; ++i )
+	{
+		pointsB[i] = lpB3Vec( b[i] );
+	}
 	b3DistanceInput input = { 0 };
-	input.proxyA = ( b3ShapeProxy ){ a, countA, 0.0f };
-	input.proxyB = ( b3ShapeProxy ){ b, countB, 0.0f };
-	input.transform = lpTransform_identity;
+	input.proxyA = ( b3ShapeProxy ){ pointsA, countA, 0.0f };
+	input.proxyB = ( b3ShapeProxy ){ pointsB, countB, 0.0f };
+	input.transform = b3Transform_identity;
 	input.useRadii = false;
 	b3SimplexCache cache = { 0 };
 	return b3ShapeDistance( &input, &cache, NULL, 0 ).distance;
@@ -384,7 +479,7 @@ lpPhysShape lpPhys_CreateHullShape( lpPhys* p, lpPhysBody body, const lpPhysShap
 	sd.filter.maskBits = def->filter.mask;
 	sd.enableHitEvents = def->hitEvents;
 	sd.enableCustomFiltering = def->customFilter;
-	return lpPhysShapeOf( b3CreateHullShape( lpB3Body( body ), &sd, hull ) );
+	return lpPhysShapeOf( b3CreateHullShape( lpB3Body( body ), &sd, (const b3HullData*)hull ) );
 }
 
 void lpPhys_DestroyShape( lpPhys* p, lpPhysShape shape )
@@ -412,8 +507,8 @@ lpPhysJoint lpPhys_CreateJoint( lpPhys* p, const lpPhysJointDef* def )
 	b3JointDef base = b3DefaultWeldJointDef().base; // the common part is the same for every type
 	base.bodyIdA = lpB3Body( def->bodyA );
 	base.bodyIdB = lpB3Body( def->bodyB );
-	base.localFrameA = def->frameA;
-	base.localFrameB = def->frameB;
+	base.localFrameA = lpB3Transform( def->frameA );
+	base.localFrameB = lpB3Transform( def->frameB );
 	base.collideConnected = def->collideConnected;
 
 	b3JointId id;
@@ -497,8 +592,8 @@ void lpPhys_WakeJoint( lpPhys* p, lpPhysJoint joint )
 void lpPhys_GetJointLoad( const lpPhys* p, lpPhysJoint joint, lpVec3* force, lpVec3* torque )
 {
 	(void)p;
-	*force = b3Joint_GetConstraintForce( lpB3Joint( joint ) );
-	*torque = b3Joint_GetConstraintTorque( lpB3Joint( joint ) );
+	*force = lpVec( b3Joint_GetConstraintForce( lpB3Joint( joint ) ) );
+	*torque = lpVec( b3Joint_GetConstraintTorque( lpB3Joint( joint ) ) );
 }
 
 float lpPhys_GetJointSeparation( const lpPhys* p, lpPhysJoint joint )
@@ -522,7 +617,7 @@ void lpPhys_SetHingeMotor( lpPhys* p, lpPhysJoint joint, float speed )
 void lpPhys_SetBallMotor( lpPhys* p, lpPhysJoint joint, lpVec3 omega )
 {
 	(void)p;
-	b3SphericalJoint_SetMotorVelocity( lpB3Joint( joint ), omega );
+	b3SphericalJoint_SetMotorVelocity( lpB3Joint( joint ), lpB3Vec( omega ) );
 }
 
 void lpPhys_SetMotorMaxTorque( lpPhys* p, lpPhysJoint joint, float torque )
@@ -548,7 +643,7 @@ float lpPhys_GetHingeMotorTorque( const lpPhys* p, lpPhysJoint joint )
 lpVec3 lpPhys_GetBallMotorTorque( const lpPhys* p, lpPhysJoint joint )
 {
 	(void)p;
-	return b3SphericalJoint_GetMotorTorque( lpB3Joint( joint ) );
+	return lpVec( b3SphericalJoint_GetMotorTorque( lpB3Joint( joint ) ) );
 }
 
 void lpPhys_SetRopeLength( lpPhys* p, lpPhysJoint joint, float length )
@@ -614,7 +709,7 @@ int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** co
 		bool mineA = B3_ID_EQUALS( b3Shape_GetBody( c->shapeIdA ), id );
 		int piece = (int)( p->order.data[o].key >> 32 ) - 1;
 		int otherPiece = (int)( p->order.data[o].key & 0xFFFFFFFFu ) - 1;
-		lpPos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) );
+		lpPos centerA = lpVec( b3Body_GetWorldCenter( b3Shape_GetBody( c->shapeIdA ) ) );
 		for ( int mi = 0; mi < c->manifoldCount; ++mi )
 		{
 			const b3Manifold* manifold = c->manifolds + mi;
@@ -623,9 +718,9 @@ int lpPhys_GetBodyContacts( lpPhys* p, lpPhysBody body, const lpPhysContact** co
 				const b3ManifoldPoint* mp = manifold->points + pi;
 				lpPhysContact contact = { piece,
 										  otherPiece,
-										  manifold->normal,
+										  lpVec( manifold->normal ),
 										  mineA,
-										  lpOffsetPos( centerA, mp->anchorA ),
+										  lpOffsetPos( centerA, lpVec( mp->anchorA ) ),
 										  mp->separation,
 										  mp->totalNormalImpulse };
 				lpArray_Push( p->contacts, contact );
@@ -674,7 +769,7 @@ int lpPhys_GetHits( lpPhys* p, const lpPhysHit** hits )
 		int b = lpShapeIndex( e->shapeIdB );
 		uint64_t lo = (uint64_t)( a + 1 );
 		uint64_t hi = (uint64_t)( b + 1 );
-		lpPhysHit hit = { lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo, a, b, e->approachSpeed, e->point, (uint64_t)i };
+		lpPhysHit hit = { lo < hi ? ( lo << 32 ) | hi : ( hi << 32 ) | lo, a, b, e->approachSpeed, lpVec( e->point ), (uint64_t)i };
 		lpArray_Push( p->hits, hit );
 	}
 	if ( p->hits.count > 1 )
@@ -697,14 +792,14 @@ bool lpPhys_GetContactCentroid( const lpPhys* p, uint64_t contact, lpPos* point 
 		return false;
 	}
 	b3ContactData c = b3Contact_GetData( id );
-	lpPos centerA = b3Body_GetWorldCenter( b3Shape_GetBody( c.shapeIdA ) );
+	lpPos centerA = lpVec( b3Body_GetWorldCenter( b3Shape_GetBody( c.shapeIdA ) ) );
 	lpVec3 sum = lpVec3_zero;
 	int count = 0;
 	for ( int mi = 0; mi < c.manifoldCount; ++mi )
 	{
 		for ( int pi = 0; pi < c.manifolds[mi].pointCount; ++pi )
 		{
-			sum = lpAdd( sum, c.manifolds[mi].points[pi].anchorA );
+			sum = lpAdd( sum, lpVec( c.manifolds[mi].points[pi].anchorA ) );
 			count += 1;
 		}
 	}
@@ -733,7 +828,7 @@ int lpPhys_GetMoves( lpPhys* p, const lpPhysMove** moves )
 		intptr_t data = (intptr_t)e->userData;
 		if ( data > 0 )
 		{
-			lpPhysMove move = { (int)( data - 1 ), e->transform, e->fellAsleep };
+			lpPhysMove move = { (int)( data - 1 ), lpTransformOf( e->transform ), e->fellAsleep };
 			lpArray_Push( p->moves, move );
 		}
 	}
@@ -776,7 +871,7 @@ static bool lpCollectPieceFcn( b3ShapeId shapeId, void* context )
 int lpPhys_OverlapBox( lpPhys* p, lpAABB box, lpPhysFilter filter, const int** pieces )
 {
 	p->pieces.count = 0;
-	b3World_OverlapAABB( p->world, box, lpQueryFilter( filter ), lpCollectPieceFcn, p );
+	b3World_OverlapAABB( p->world, lpB3AABB( box ), lpQueryFilter( filter ), lpCollectPieceFcn, p );
 	if ( p->pieces.count > 1 )
 	{
 		qsort( p->pieces.data, (size_t)p->pieces.count, sizeof( int ), lpCompareIndex );
@@ -801,7 +896,7 @@ typedef struct lpCastState
 	lpPhysCastHit hit;
 } lpCastState;
 
-static float lpCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fraction, uint64_t userMaterialId,
+static float lpCastFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
 						int triangleIndex, int childIndex, void* context )
 {
 	(void)triangleIndex;
@@ -816,8 +911,8 @@ static float lpCastFcn( b3ShapeId shapeId, lpPos point, lpVec3 normal, float fra
 	if ( fraction < h->fraction || ( h->hit && fraction == h->fraction && piece < h->piece ) )
 	{
 		h->fraction = fraction;
-		h->point = point;
-		h->normal = normal;
+		h->point = lpVec( point );
+		h->normal = lpVec( normal );
 		h->piece = piece;
 		h->material = (int)userMaterialId;
 		h->hit = true;
@@ -829,15 +924,20 @@ lpPhysCastHit lpPhys_CastRay( const lpPhys* p, lpPos origin, lpVec3 translation,
 							  lpPhysCastAcceptFcn* accept, void* context )
 {
 	lpCastState s = { accept, context, { false, FLT_MAX, { 0 }, { 0 }, -1, -1 } };
-	b3World_CastRay( p->world, origin, translation, lpQueryFilter( filter ), lpCastFcn, &s );
+	b3World_CastRay( p->world, lpB3Vec( origin ), lpB3Vec( translation ), lpQueryFilter( filter ), lpCastFcn, &s );
 	return s.hit;
 }
 
 lpPhysCastHit lpPhys_CastShape( const lpPhys* p, lpPos origin, const lpVec3* points, int count, float radius,
 								lpVec3 translation, lpPhysFilter filter, lpPhysCastAcceptFcn* accept, void* context )
 {
+	b3Vec3 copy[LP_PHYS_MAX_POINTS];
+	for ( int i = 0; i < count; ++i )
+	{
+		copy[i] = lpB3Vec( points[i] );
+	}
 	lpCastState s = { accept, context, { false, FLT_MAX, { 0 }, { 0 }, -1, -1 } };
-	b3ShapeProxy proxy = { points, count, radius };
-	b3World_CastShape( p->world, origin, &proxy, translation, lpQueryFilter( filter ), lpCastFcn, &s );
+	b3ShapeProxy proxy = { copy, count, radius };
+	b3World_CastShape( p->world, lpB3Vec( origin ), &proxy, lpB3Vec( translation ), lpQueryFilter( filter ), lpCastFcn, &s );
 	return s.hit;
 }

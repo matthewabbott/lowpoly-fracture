@@ -16,16 +16,26 @@
 
 typedef struct lpPhys lpPhys;
 
-// Handles to bodies, shapes and joints, and hulls. Until every call goes through this interface (milestone 8, step 3)
-// they are Box3D's own ids, so routed and unrouted code mix; then opaque.
-#include "box3d/id.h"
-typedef b3BodyId lpPhysBody;
-typedef b3ShapeId lpPhysShape;
-typedef b3JointId lpPhysJoint;
-typedef struct b3HullData lpPhysHull;
+typedef struct lpPhysHull lpPhysHull;
 
-#define LP_PHYS_NULL( h ) B3_IS_NULL( h )
-#define LP_PHYS_EQUAL( a, b ) B3_ID_EQUALS( a, b )
+// Handles: 0 is null
+typedef struct lpPhysBody
+{
+	uint64_t handle;
+} lpPhysBody;
+
+typedef struct lpPhysShape
+{
+	uint64_t handle;
+} lpPhysShape;
+
+typedef struct lpPhysJoint
+{
+	uint64_t handle;
+} lpPhysJoint;
+
+#define LP_PHYS_NULL( h ) ( ( h ).handle == 0 )
+#define LP_PHYS_EQUAL( a, b ) ( ( a ).handle == ( b ).handle )
 
 static const lpPhysBody lp_nullPhysBody = { 0 };
 static const lpPhysShape lp_nullPhysShape = { 0 };
@@ -124,15 +134,10 @@ lpVec3 lpPhys_GetMaxExtent( const lpPhys* p, lpPhysBody body ); // from the cent
 lpPhysHull* lpPhys_CreateHull( const lpVec3* points, int count, int maxVertices );
 void lpPhys_DestroyHull( lpPhysHull* hull );
 
-typedef struct lpPhysHullView
-{
-	int vertexCount;
-	int faceCount;
-	const lpVec3* points;
-	const lpPlane* planes; // per face
-} lpPhysHullView;
-
-lpPhysHullView lpPhys_GetHullView( const lpPhysHull* hull );
+int lpPhys_GetHullVertexCount( const lpPhysHull* hull );
+int lpPhys_GetHullFaceCount( const lpPhysHull* hull );
+lpVec3 lpPhys_GetHullPoint( const lpPhysHull* hull, int vertex );
+lpPlane lpPhys_GetHullPlane( const lpPhysHull* hull, int face );
 // A face's vertex loop (counter-clockwise from outside) into indices; -1 if it has more than capacity
 int lpPhys_GetHullFace( const lpPhysHull* hull, int face, uint8_t* indices, int capacity );
 

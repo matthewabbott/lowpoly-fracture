@@ -10,10 +10,6 @@
 #include <math.h>
 #include <stdbool.h>
 
-// Until every Box3D call goes through the physics interface (milestone 8, step 3), the types are Box3D's own, so
-// values pass to Box3D unconverted.
-#include "box3d/math_functions.h"
-
 #ifdef __cplusplus
 extern "C" {
 #define LP_LITERAL( T ) T
@@ -31,13 +27,44 @@ extern "C" {
 #define LP_FORCE_INLINE static inline
 #endif
 
-typedef b3Vec3 lpVec3;
-typedef b3CosSin lpCosSin; // cosine, sine
-typedef b3Quat lpQuat;	   // v, s
-typedef b3Transform lpTransform;
-typedef b3Matrix3 lpMatrix3; // columns cx, cy, cz
-typedef b3AABB lpAABB;		 // lowerBound, upperBound
-typedef b3Plane lpPlane;	 // separation = dot(normal, point) - offset
+typedef struct lpVec3
+{
+	float x, y, z;
+} lpVec3;
+
+typedef struct lpCosSin
+{
+	float cosine, sine;
+} lpCosSin;
+
+typedef struct lpQuat
+{
+	lpVec3 v;
+	float s;
+} lpQuat;
+
+typedef struct lpTransform
+{
+	lpVec3 p;
+	lpQuat q;
+} lpTransform;
+
+typedef struct lpMatrix3
+{
+	lpVec3 cx, cy, cz; // columns
+} lpMatrix3;
+
+typedef struct lpAABB
+{
+	lpVec3 lowerBound, upperBound;
+} lpAABB;
+
+// separation = dot(normal, point) - offset
+typedef struct lpPlane
+{
+	lpVec3 normal;
+	float offset;
+} lpPlane;
 
 // A world position, and a transform with one. The same as lpVec3 and lpTransform today; kept apart so world
 // positions can widen (the integer core's 64-bit positions) without touching every local vector.

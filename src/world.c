@@ -1366,7 +1366,7 @@ bool lpWorld_Validate( const lpWorld* w )
 		{
 			return lpFail( "piece %d has no shape", i, 0, 0 );
 		}
-		if ( kind != lp_kindGhost && kind != lp_kindScrap && lpPhys_GetShapeBody( w->phys, p->shapeId ).index1 != w->bodies.data[p->body].id.index1 )
+		if ( kind != lp_kindGhost && kind != lp_kindScrap && LP_PHYS_EQUAL( lpPhys_GetShapeBody( w->phys, p->shapeId ), w->bodies.data[p->body].id ) == false )
 		{
 			return lpFail( "piece %d shape on the wrong body", i, 0, 0 );
 		}
