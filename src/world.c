@@ -664,24 +664,23 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 	w->freeBody = bodyIndex;
 }
 
-int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
 						  float gravityScale )
 {
 	int index = lpAllocBody( w );
 	lpBody* b = w->bodies.data + index;
-	b3BodyDef def = b3DefaultBodyDef();
-	def.type = type;
-	def.position = xf.p;
-	def.rotation = xf.q;
+	lpPhysBodyDef def = lpPhys_DefaultBodyDef();
+	def.dynamic = dynamic;
+	def.transform = xf;
 	def.linearVelocity = v;
 	def.angularVelocity = omega;
-	def.userData = (void*)(intptr_t)( index + 1 );
+	def.userData = index;
 	if ( tier == lp_tierLight )
 	{
 		def.sleepThreshold = 0.3f; // light debris settles fast and freezes early
 	}
 	def.gravityScale = gravityScale;
-	b->id = b3CreateBody( w->physics, &def );
+	b->id = lpPhys_CreateBody( w->phys, &def );
 	b->kind = kind;
 	b->tier = tier;
 	b->gravityScale = gravityScale;
@@ -809,9 +808,8 @@ static int lpAddDetonator( lpWorld* w, const lpDetonatorDef* def )
 int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 {
 	lpGuardFp( w ); // computes in float between steps, on the caller's thread
-	b3BodyType type = def->isStatic ? b3_staticBody : b3_dynamicBody;
 	uint8_t kind = def->isStatic ? lp_kindStructure : lp_kindDebris;
-	int bodyIndex = lpCreateBodyInternal( w, def->transform, type, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
+	int bodyIndex = lpCreateBodyInternal( w, def->transform, def->isStatic == false, kind, lp_tierFull, def->linearVelocity, def->angularVelocity,
 										  def->gravityScale );
 	int objectDetonator = lpAddDetonator( w, &def->detonator ); // shared by the parts without one of their own
 	w->bodies.data[bodyIndex].solveStress = def->solveStress && def->isStatic == false;
@@ -936,7 +934,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 	lpBondParts( w, bodyIndex, first );
 
 	w->bodies.data[bodyIndex].inertiaRadius = lpMaxFloat( def->inertiaRadius, 0.0f );
-	if ( type == b3_dynamicBody )
+	if ( def->isStatic == false )
 	{
 		lpApplyMass( w->bodies.data + bodyIndex );
 	}

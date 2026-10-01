@@ -382,7 +382,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		else
 		{
 			uint8_t tier = cls == lp_cellLight ? lp_tierLight : lp_tierFull;
-			int debris = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, cellV, omega, gravityScale );
+			int debris = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, cellV, omega, gravityScale );
 			if ( lpAttachPiece( w, childIndex, debris ) )
 			{
 				lpApplyMass( w->bodies.data + debris );

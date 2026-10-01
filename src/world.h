@@ -696,7 +696,7 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex );
 bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex );
 void lpDetachPieceShape( lpWorld* w, int pieceIndex );
 void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust );
-int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, b3BodyType type, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
+int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t kind, uint8_t tier, lpVec3 v, lpVec3 omega,
 						  float gravityScale );
 void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material );
 void lpQueryPieces( lpWorld* w, lpAABB box );

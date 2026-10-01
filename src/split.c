@@ -98,11 +98,11 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		}
 	}
 
-	lpWorldTransform xf = b3Body_GetTransform( body->id );
-	lpVec3 v = b3Body_GetLinearVelocity( body->id );
-	lpVec3 omega = b3Body_GetAngularVelocity( body->id );
-	lpVec3 localCenter = b3Body_GetLocalCenter( body->id );
-	bool isDynamic = b3Body_GetType( body->id ) == b3_dynamicBody;
+	lpWorldTransform xf = lpPhys_GetTransform( w->phys, body->id );
+	lpVec3 v = lpPhys_GetLinearVelocity( w->phys, body->id );
+	lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, body->id );
+	lpVec3 localCenter = lpPhys_GetLocalCenter( w->phys, body->id );
+	bool isDynamic = lpPhys_IsDynamic( w->phys, body->id );
 
 	int movedAny = 0;
 	for ( int c = 0; c < componentCount; ++c )
@@ -165,7 +165,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		else
 		{
 			uint8_t tier = comp->volume < lpLightVolume( w, comp->material ) ? lp_tierLight : lp_tierFull;
-			int newIndex = lpCreateBodyInternal( w, xf, b3_dynamicBody, lp_kindDebris, tier, compV, compOmega,
+			int newIndex = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, compV, compOmega,
 												 w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex; // array may have moved
 			lpBody* nb = w->bodies.data + newIndex;
