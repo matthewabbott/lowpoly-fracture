@@ -101,7 +101,7 @@ reproduce.
 | WASM | Open, expected to hold (T3); low priority |
 | GPU, float | **Conditional, per driver** (E11): add, sub and mul only, no contraction, no GPU sqrt or division (sqrt is 1 ulp off on both GPUs in every mode), per-vendor float controls (NVIDIA's RTE mode silently enables subnormals and correct division), no reliance on the sign of zero. D3D11 is out |
 | GPU, integer | **Confirmed on two vendors** (E11) for block-scaled 32-bit fixed point with 64-bit products; Q32.32 in 64-bit integers was miscompiled by the Intel driver. A driver bug and a shift-by-64 case still split vendors, so a startup self-test and the CPU twin are part of the guarantee |
-| Unproven | Pascal (the GTX 1060 floor), AMD, Apple GPUs, Blackwell, replay stability across a driver update, FEX, WASM |
+| Unproven | Pascal (the GTX 1060 floor), AMD, Apple GPUs, Blackwell, FEX, WASM. Replays survived one NVIDIA driver update (581.95 to 610.60: every hash identical, [m7-gpu-experiments.md](research/m7-gpu-experiments.md) addendum); other vendors and future branches are open |
 
 ## 3. The GPU, in brief
 

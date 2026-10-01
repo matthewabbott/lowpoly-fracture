@@ -526,3 +526,21 @@ Sources:
 - Companion reports: `docs/research/m7-float.md` (T3: GPU flag table, section 8's probe list),
   `docs/research/m7-fixed-point.md` (T4: formats and cost estimates), `docs/research/m7-gpu.md` (T5: H4, section 9's
   agreement bar), `docs/research/m7-gpu-integer.md` (T10: V4 formats, sections 1 and 10).
+
+## Addendum (2026-09-30): the same binaries after an NVIDIA driver update
+
+Between E11's runs and this re-run, the laptop's NVIDIA driver moved from 581.95 (branch R580, Vulkan driverVersion
+`0x9157c000`) to 610.60 (`0x988f0000`), a jump of several release branches; the Intel driver did not change. The
+unchanged binaries were re-run from `build/m7/gpu` into `build/m7/gpu/logs610/`:
+
+- full solves F, F-ieee, I64, I32 and V4 at 1k, 10k and 100k contacts (`harness_*.exe --n 1000,10000,100000`);
+- the row benchmarks V1, V2 and V4 (2^20 + 1,024 rows) and V1 with the RTE float controls on NVIDIA.
+
+Every final hash, every mismatch count and every first-divergent step equals the 581.95 run, on both GPUs and both
+twins: the result tokens of all nine logs are identical. The RTE side effect that makes NVIDIA preserve subnormals and
+divide correctly still holds on 610.60 (F-ieee identical). The Intel int64 miscompile reproduces exactly (same
+divergence at step 0, same mismatch counts), so it is a deterministic compiler bug, which a startup battery will catch
+every time. Only speed changed: NVIDIA is 12 to 25% faster (V4 at 100k contacts, 7.23 to 6.33 ms per step).
+
+This retires the "replay stability across a driver update" item for one NVIDIA branch jump on Ampere; other vendors,
+other architectures and future branches stay open.
