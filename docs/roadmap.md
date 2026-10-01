@@ -470,5 +470,14 @@ gaits read as mechanical on organic bodies.
    tracked by our IK and servos, or a learned physics controller?
 5. The licences of the models and their datasets for a commercial game.
 
+**The test it must pass (the owner's worry).** Our destruction can produce far more skeletons than any catalogue
+covers, so the catalogue is judged empirically:
+1. Build one for a single monster.
+2. Subject the monster to many largely random torments: blasts, cuts, lost and shortened limbs, in combination.
+3. Measure how well "snap to the nearest catalogued skeleton" performs: how often it finds a usable gait, how far the
+   chosen gait sits from the body's true one, and how the gait looks.
+
+A scripted, seeded headless run, so the score is repeatable.
+
 **Output:** a report in the style of milestone 7's (`docs/research/`), with a recommendation and a prototype plan for
 the creatures milestone.
