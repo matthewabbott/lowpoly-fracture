@@ -28,6 +28,7 @@ Order (one at a time):
 9. The outcome catalogue, the engine surface and a seams-first review
 10. Commands, hashes and the first co-op
 11. Integer groundwork
+11b. Cutting and chopping
 12. The integer core with its CPU twin
 13. The core on the GPU
 14. The snapshot
@@ -483,6 +484,44 @@ Fail fast before the integer core is built.
 
 Exit: stacking holds; recorded blasts fracture exactly; the floor GPU's integer cost measured.
 
+## 11b. Cutting and chopping
+
+The owner's idea (2026-10-02): a third way to break things besides crushing and blasting. A blade slices an object
+cleanly in the stylised manner of Metal Gear Rising: Revengeance, until it meets something too hard for its edge (the
+bone in an arm); an axe bites a notch into a trunk, an idealised low-poly chop, until the tree goes over. With bodies
+taken down by impairment (goals.md), a cut is how a limb is lost.
+
+**What exists.** A plane clip (`lpPoly_Clip`), and a snap that cuts one piece in two along one plane through the
+fracture pipeline (`lpFractureSnap`, used by the stress solve for overloaded slender pieces). Pieces re-bond and bodies
+split by connectivity; supply is recomputed when carriers go, pools leak, links follow or lose their pieces; rigs adapt
+to a lost limb; slender pieces snap under load. Ropes are hit by rays already.
+
+**What is missing:**
+- **A blade:** `lpWorld_Slice` with the edge as a segment swept along a direction, so the cut is a bounded patch of a
+  plane, not an infinite plane; an edge (sharpness: cut energy per area it can spend) and a hardness.
+- **Resistance:** a cut resistance (J/m^2) and a hardness per material. The pieces the patch crosses are cut in the
+  order the edge reaches them, each costing its section's area times its resistance; the cut stops at the first piece
+  harder than the edge or beyond the energy left, and the blade is reported embedded there (a game can make it stick).
+  An arm cut to the bone hangs by the bone.
+- **Clean cuts:** each crossed piece clipped in two exactly along the plane (no Voronoi, no chips, no random tilt), cut
+  faces in the interior colour; bonds and links the patch crosses break (a rope parts).
+- **Chops:** an axe is a short, heavy, blunt blade. A blow takes out a wedge (two planes, a V) to a depth its energy
+  and the material allow; the wedge flies as a chip, and the remainder is three convex pieces (the core behind the
+  notch, the flanks above and below it) bonded where the wood goes on. A blow near an existing notch deepens it. The
+  stress solve and the slender-piece snap fell the tree once the core cannot hold, away from the notch.
+- **Determinism:** pure geometry on pieces in their bodies' frames, in piece order, as fracture jobs are; a swing is
+  one tick-stamped command (milestone 10). The exact integer geometry of milestone 11 makes cuts exact too.
+- **A sandbox tool** (a sword stroke and an axe blow on the mouse), and outcomes for the catalogue: a log sliced into
+  two halves whose cut faces match; a sword stopped by a bone with the arm hanging; a rope cut; a tree felled in a
+  set number of blows, falling away from the notch; a moving body sliced in flight; a structure cut through whose top
+  then falls (the stress check).
+
+**Size and slot:** about a milestone (600 to 900 lines with its tests). Placed by the owner (2026-10-02) right after
+the integer groundwork: cuts are the simplest fracture (one plane), so they are built once, on milestone 11's exact
+geometry, and the integer core (milestone 12) is designed knowing what they ask of the physics (bodies split mid-swing,
+a swept blade, perhaps a blade stuck in a body as a joint). The catalogue gains its outcomes, and a swing is a command
+(milestone 10). It comes before the character controller and the creatures that will swing and lose limbs.
+
 ## 12. The integer core with its CPU twin
 
 The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
@@ -639,47 +678,6 @@ Effects and mess, noted while tuning debris:
 - **Dust:** soft, fading dust clouds instead of solid motes once a transparent particle pass exists.
 - **Toaster profile:** one switch that lowers caps (debris, ghosts, scrap), raises the fragment scale and render
   scale, and turns off shadows, so low-end machines still get the destruction.
-
-## Features not yet placed
-
-Ideas with a design sketch, waiting for a slot in the order above (the owner places them).
-
-### Cutting and chopping
-
-The owner's idea (2026-10-02): a third way to break things besides crushing and blasting. A blade slices an object
-cleanly in the stylised manner of Metal Gear Rising: Revengeance, until it meets something too hard for its edge (the
-bone in an arm); an axe bites a notch into a trunk, an idealised low-poly chop, until the tree goes over. With bodies
-taken down by impairment (goals.md), a cut is how a limb is lost.
-
-**What exists.** A plane clip (`lpPoly_Clip`), and a snap that cuts one piece in two along one plane through the
-fracture pipeline (`lpFractureSnap`, used by the stress solve for overloaded slender pieces). Pieces re-bond and bodies
-split by connectivity; supply is recomputed when carriers go, pools leak, links follow or lose their pieces; rigs adapt
-to a lost limb; slender pieces snap under load. Ropes are hit by rays already.
-
-**What is missing:**
-- **A blade:** `lpWorld_Slice` with the edge as a segment swept along a direction, so the cut is a bounded patch of a
-  plane, not an infinite plane; an edge (sharpness: cut energy per area it can spend) and a hardness.
-- **Resistance:** a cut resistance (J/m^2) and a hardness per material. The pieces the patch crosses are cut in the
-  order the edge reaches them, each costing its section's area times its resistance; the cut stops at the first piece
-  harder than the edge or beyond the energy left, and the blade is reported embedded there (a game can make it stick).
-  An arm cut to the bone hangs by the bone.
-- **Clean cuts:** each crossed piece clipped in two exactly along the plane (no Voronoi, no chips, no random tilt), cut
-  faces in the interior colour; bonds and links the patch crosses break (a rope parts).
-- **Chops:** an axe is a short, heavy, blunt blade. A blow takes out a wedge (two planes, a V) to a depth its energy
-  and the material allow; the wedge flies as a chip, and the remainder is three convex pieces (the core behind the
-  notch, the flanks above and below it) bonded where the wood goes on. A blow near an existing notch deepens it. The
-  stress solve and the slender-piece snap fell the tree once the core cannot hold, away from the notch.
-- **Determinism:** pure geometry on pieces in their bodies' frames, in piece order, as fracture jobs are; a swing is
-  one tick-stamped command (milestone 10). The exact integer geometry of milestone 11 makes cuts exact too.
-- **A sandbox tool** (a sword stroke and an axe blow on the mouse), and outcomes for the catalogue: a log sliced into
-  two halves whose cut faces match; a sword stopped by a bone with the arm hanging; a rope cut; a tree felled in a
-  set number of blows, falling away from the notch; a moving body sliced in flight; a structure cut through whose top
-  then falls (the stress check).
-
-**Size and slot:** about a milestone (600 to 900 lines with its tests). Recommended between milestones 9 and 10 (as
-9b, so later numbers and their references stay): after the catalogue and the engine surface, so it is built on the
-cleaned-up surface and pinned by its own outcomes, and before the command queue, so a swing is designed as a command
-from the start. It needs nothing from the integer core.
 
 ## Research queue
 

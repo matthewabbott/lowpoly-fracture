@@ -172,7 +172,7 @@ Set by the owner on 2026-09-29, for milestone 7's choice of a multiplayer model:
 | large maps: zones, far events still on time | racing, hauling | milestone 18 |
 | multiplayer | all | lockstep, chosen in milestone 7; a first co-op in milestone 10, networking in 16 |
 | fire, smoke, flammability | hauling, racing | art pass and later |
-| cutting and chopping (clean slices stopped by what is too hard, axes that notch) | impairment, all | not started; sketched in the roadmap |
+| cutting and chopping (clean slices stopped by what is too hard, axes that notch) | impairment, all | milestone 11b |
 
 ## Outcomes to pin (first draft)
 
