@@ -166,7 +166,7 @@ Set by the owner on 2026-09-29, for milestone 7's choice of a multiplayer model:
 | channels, supply and pools (fuel, power, hydraulics, blood) | all | done; liquids sloshing in containers not |
 | rigs that adapt to damage (lost legs, pegs, weak and limp legs, crawling, strikes, grabs, bones) | impairment, racing | done for the hexapod; bipeds and characters not |
 | vital points and knockout | impairment | vitals via part systems; knockout not |
-| gentle contact events (jostle, tilt, tumble) and reactions | hauling | detonators done; the rest not |
+| gentle contact events (jostle, tilt, tumble) and reactions | hauling | detonators and fuses done; the rest not |
 | dents (crumple, joints restricted by crumpled armour) | racing, impairment | milestone 20 |
 | a character controller (the player as a destructible body) | all | not started |
 | large maps: zones, far events still on time | racing, hauling | milestone 18 |

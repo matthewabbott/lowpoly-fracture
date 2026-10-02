@@ -25,7 +25,7 @@ Order (one at a time):
 6. Creatures and mechs (done)
 7. Deep research: destruction engine architecture (done), closed by determinism hardening
 8. The physics seam
-9. The outcome catalogue, the engine surface and a seams-first review
+9. The outcome catalogue, the engine surface and a seams-first review (done)
 10. Commands, hashes and the first co-op
 11. Integer groundwork
 11b. Cutting and chopping
@@ -486,6 +486,54 @@ The catalogue is the contract the integer core must meet, so it comes before the
    12 replaces is out of scope.
 3. **Adjudication:** each proposal is built on its own; it stays if the catalogue passes, the code shrinks, and the
    bench does not regress beyond noise. The size of the core (tokens) is logged before and after.
+
+   **Done (2026-10-02).** The reviewers:
+   - Fable (who also pruned, after How Complex Systems Fail);
+   - GPT-5.6 Sol through the Codex reviewer;
+   - GPT-6 Astra through the Codex CLI.
+
+   Each read the goals, the catalogue and the six subsystems read-only. Their reports agreed on the seams. The rule
+   was hash-neutrality or a measured change; seams were taken even where they do not shrink the code.
+
+   **Taken**, one commit each, every world hash `same`:
+   - **A determinism fix (Astra).** Random draws inside one initializer, whose order C leaves open: in
+     `lpRandomInBox` and twelve places in the scenes.
+   - **Prunes (Fable).**
+     - A branch whose arms were the same call.
+     - Three fields written every step and read nowhere.
+     - Two collision categories no shape had.
+   - **The stress solver builds only what is read (Astra).** No incidence lists for reduced systems, and blocks only
+     for factored ones.
+   - **The fracture job behind the fracture seam (all three).** `lpFracture_RunJob`, world-free, in fracture.c;
+     impact.c chooses pieces and integrates.
+   - **One `lpDriveFoot` for every walker (all three).**
+   - **The debris budget ranks its candidates once (Sol, Astra).**
+   - **The per-piece copies of the solver's residual and search direction go (Fable).** That is 48 bytes a piece. A
+     probe showed the only read was unreachable. Solver hashes change in composition only.
+   - **Calibration as definitions, one freeze path (all three).**
+     - The collision-damage calibration, the push cap and the freeze ages are `lpWorldDef` fields.
+     - One freeze path in debris.c, both triggers kept.
+   - **One rule for what a loose volume becomes, and for the velocity of a body made at its parent's frame (Fable,
+     Sol).** The velocity rule is where the fragment bug lived, twice.
+
+   **Not taken, and why:**
+   - **Grouping the stress state into its own records (Fable, Sol).** A rename across a dozen files. Worth it, but
+     milestones 12 and 14 (the integer core's snapshot) restructure that state anyway; do it there.
+   - **One load watch for links, wheels and feet (all three).** The three rules differ on purpose (thresholds and
+     cadence; R19 pins the feet's). Belongs with the stress state above.
+   - **One push over physics and loose bodies (Fable).** Hash-sensitive on every rung's blasts, for about 50 lines.
+     Left for milestone 18's wake work, which will rebuild the push.
+   - **Dropping the hash's compatibility gates (Fable).** Milestone 10 redesigns the hash (incremental, by causal
+     unit).
+   - **Splitting the walker's state out of `lpLimb`/`lpRig` (Fable, Astra).** Sol argues against it, and no outcome
+     needs it. The shared `lpDriveFoot` gave the useful seam.
+   - **Performance-only proposals** go to milestone 17's profiling:
+     - the tyre solve's per-iteration lookups and its scratch;
+     - fracture scratch reuse;
+     - one motor-capability evaluation;
+     - the impact, supply and wheel-load adapters.
+   - **The rig's thresholds into `lpRigDef` (Sol).** Small; with the creatures milestone.
+   - **Pruning the leaf blower** (Fable: it serves no catalogue outcome) is the owner's call, and is still pending.
 
 ## 10. Commands, hashes and the first co-op
 

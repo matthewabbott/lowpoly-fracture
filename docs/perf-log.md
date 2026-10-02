@@ -736,3 +736,24 @@ made physics bodies again), so the engine's own centre update gives each its tru
 - The new baseline (best of 3, commit ddf91f8), step avg ms at 1 / 8 workers: walls 0.69 / 0.47, town 3.42 / 2.03, pile
   2.06 / 0.87, lumber 0.21 / 0.18, tower 3.02 / 1.39, ruins 0.14 / 0.12, yard 0.12 / 0.12, keep 6.39 / 4.61, barrage
   8.41 / 4.41, siege 17.13 / 9.37, track 0.14 / 0.15, mech 0.08 / 0.10.
+
+## 2026-10-02 milestone 9, steps 1 to 3: the engine surface and the seams-first review
+
+What changed: per-world materials and joints, the walker's tuning as `lpGaitDef` with a no-walker mode, policy constants
+and the collision calibration as definitions, a fuse; then the review's adjudicated proposals (see roadmap §9).
+- Every step hash-neutral on the world (every rung `same`, at 1 and 8 workers), checked one change at a time with the
+  strict bench. One exception, in composition only: the per-piece copies of the solver's residual and search
+  direction went (48 bytes a piece), so the solver hashes of the four rungs that end mid-solve (town, keep, barrage,
+  siege) changed while every world hash stayed.
+- Performance-minded changes: the debris budget ranks once instead of up to five scans, allocations and sorts a step
+  when over budget; reduced stress systems skip building incidence lists, and only factored systems allocate
+  preconditioner blocks; 48 bytes less per piece. None was measured alone (each is small beside a step); the ladder
+  shows no regression beyond noise.
+- The core's size (`tools/size.ps1`, LF bytes / 4 over src/ and include/lpf/): 140.9k tokens at the milestone's start,
+  145.9k after steps 0 and 1 (the queries, the tables, the gait def, the no-walker mode, the fuse), 146.5k after the
+  review. The review's deletions (about 120 lines) are outweighed by the seams and the definitions it asked for, each
+  documented: the review traded no speed for size, as the priorities say.
+- The baseline keeps the timings taken at ddf91f8, with the solver hashes of commit 8e3a349: an interleaved A/B of the
+  two binaries (town, walls, tower, keep over 4 bombardment periods, 1 worker) shows town +3%, walls 0%, tower +3%,
+  keep -2%, all of it in the physics engine's own time, which none of these changes touch: noise. A best-of-3
+  re-baseline taken straight after the ASan run read 4 to 21% slower everywhere (a hot machine), so it was not kept.

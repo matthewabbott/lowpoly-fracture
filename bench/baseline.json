@@ -1,5 +1,5 @@
 {
-  "commit": "ddf91f8",
+  "commit": "8e3a349",
   "date": "2026-10-02",
   "ticks": 600,
   "period": 12,
@@ -119,7 +119,7 @@
         "over16ms": 0,
         "over33ms": 0,
         "hash": "ad319111de9756e2",
-        "solverHash": "96935ebc715667ae"
+        "solverHash": "4a475a03ed4fddd6"
       },
       {
         "workers": 8,
@@ -157,7 +157,7 @@
         "over16ms": 0,
         "over33ms": 0,
         "hash": "ad319111de9756e2",
-        "solverHash": "96935ebc715667ae"
+        "solverHash": "4a475a03ed4fddd6"
       }
     ],
     "pile": [
@@ -587,7 +587,7 @@
         "over16ms": 13,
         "over33ms": 1,
         "hash": "4326ddf8d2f3acb2",
-        "solverHash": "b0dc6a1bdd637ada"
+        "solverHash": "2ec795b6162f7e89"
       },
       {
         "workers": 8,
@@ -625,7 +625,7 @@
         "over16ms": 0,
         "over33ms": 0,
         "hash": "4326ddf8d2f3acb2",
-        "solverHash": "b0dc6a1bdd637ada"
+        "solverHash": "2ec795b6162f7e89"
       }
     ],
     "barrage": [
@@ -665,7 +665,7 @@
         "over16ms": 6,
         "over33ms": 0,
         "hash": "8e026608ed5966bf",
-        "solverHash": "7664a31f820a9fdf"
+        "solverHash": "cdc6bfefd3432ab7"
       },
       {
         "workers": 8,
@@ -703,7 +703,7 @@
         "over16ms": 0,
         "over33ms": 0,
         "hash": "8e026608ed5966bf",
-        "solverHash": "7664a31f820a9fdf"
+        "solverHash": "cdc6bfefd3432ab7"
       }
     ],
     "siege": [
@@ -743,7 +743,7 @@
         "over16ms": 355,
         "over33ms": 32,
         "hash": "76974adb25a4c9c6",
-        "solverHash": "78f1935ad82df7cf"
+        "solverHash": "e22604e98a86379e"
       },
       {
         "workers": 8,
@@ -781,7 +781,7 @@
         "over16ms": 27,
         "over33ms": 0,
         "hash": "76974adb25a4c9c6",
-        "solverHash": "78f1935ad82df7cf"
+        "solverHash": "e22604e98a86379e"
       }
     ],
     "track": [

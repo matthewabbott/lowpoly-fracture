@@ -22,12 +22,12 @@ a track only when a decision needs its detail.
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
 | `src/phys.h`, `src/phys_box3d.c` | the physics interface: every rigid-body operation the core uses (bodies, hull shapes, joints and motors, contacts, hits, moves, overlap and casts; quickhull and GJK) on opaque handles, reports in piece and body indices and in our order; the Box3D backend is the only file that sees Box3D's headers (the build enforces it) |
-| `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial), impact sites, sliver absorption, keeper merging, cell bonds |
+| `src/fracture.h/.c` | fracture patterns (Voronoi, grain, radial, masonry), impact sites, sliver absorption, keeper merging, cell bonds, and the fracture job (`lpFracture_RunJob`: a snapshot in, classified cells, hulls and bonds out, world-free) |
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
 | `src/tasks.h/.c` | thread pool with a blocking parallel-for (fracture jobs) |
 | `src/world.h` | internal layout of `lpWorld` and the core's shared internals, used by tests too |
 | `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, hash, validation |
-| `src/impact.c` | impacts: fracture jobs (3 phases), bond damage, detonators, blast forces, collision hits |
+| `src/impact.c` | impacts: choosing the pieces and integrating their fracture jobs, bond damage, detonators and fuses, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
