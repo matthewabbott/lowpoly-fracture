@@ -21,13 +21,6 @@ static int AddPart( Sim* s, lpVec3 position, lpVec3 half, int material, bool isS
 	return lpCreateObject( s->world, &def );
 }
 
-static float BodyY( const Sim* s, int body )
-{
-	lpWorldTransform xf;
-	lpWorld_GetBodyTransform( s->world, body, &xf );
-	return (float)xf.p.y;
-}
-
 // World height of a piece's centroid (a body's origin need not be anywhere near its pieces)
 static float PieceY( const Sim* s, int piece )
 {
@@ -627,21 +620,6 @@ static int TestSetRopeLength( void )
 	ENSURE_NEAR( y, 2.5f, 0.05f );
 	DestroySim( &s );
 	return 0;
-}
-
-// Volume of everything still standing as structure, not counting the ground
-static float StructureVolume( const lpWorld* w )
-{
-	float v = 0.0f;
-	for ( int i = 0; i < w->pieces.count; ++i )
-	{
-		const lpPiece* p = w->pieces.data + i;
-		if ( p->body >= 0 && p->material != lp_ground && w->bodies.data[p->body].kind == lp_kindStructure )
-		{
-			v += p->shape->volume;
-		}
-	}
-	return v;
 }
 
 // A 1.2 m stone cantilever mortared to a fixed block stands on its own; with a 420 kg block hung from its tip by a

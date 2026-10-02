@@ -20,13 +20,6 @@ static int AddBox( Sim* s, lpVec3 position, lpVec3 half, int material, lpVec3 ve
 	return lpCreateObject( s->world, &def );
 }
 
-static float BodyY( const Sim* s, int body )
-{
-	lpWorldTransform xf;
-	lpWorld_GetBodyTransform( s->world, body, &xf );
-	return (float)xf.p.y;
-}
-
 // Frame queries work on loose (ghost) pieces, which have no Box3D body
 static int TestLooseBodyFrame( void )
 {

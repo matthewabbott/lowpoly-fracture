@@ -3,6 +3,7 @@
 #pragma once
 
 #include "scenes.h"
+#include "script.h"
 #include "world.h"
 
 // Drift tests: every world clusters structures past this many pieces (0: the default), with each reduced solve checked
@@ -74,6 +75,87 @@ static inline bool BodyArmed( const lpWorld* w, int body, float* triggerSpeed )
 		}
 	}
 	return false;
+}
+
+// ---- measures shared by the tests ----
+
+// Volume of everything still standing as structure, not counting the ground
+static inline float StructureVolume( const lpWorld* w )
+{
+	float v = 0.0f;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + i;
+		if ( p->body >= 0 && p->material != lp_ground && w->bodies.data[p->body].kind == lp_kindStructure )
+		{
+			v += p->shape->volume;
+		}
+	}
+	return v;
+}
+
+// Volume of everything loose: debris, rubble, ghosts and scrap
+static inline float LooseVolume( const lpWorld* world )
+{
+	float v = 0.0f;
+	for ( int i = 0; i < world->bodies.count; ++i )
+	{
+		const lpBody* b = world->bodies.data + i;
+		if ( b->alive && b->kind != lp_kindStructure )
+		{
+			v += b->volume;
+		}
+	}
+	return v;
+}
+
+// Volume-weighted world centroid of every piece of `material`
+static inline lpVec3 MaterialCentroid( const lpWorld* w, int material )
+{
+	lpVec3 sum = lpVec3_zero;
+	float total = 0.0f;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + i;
+		lpWorldTransform xf;
+		if ( p->body < 0 || p->material != material || lpWorld_GetBodyTransform( w, p->body, &xf ) == false )
+		{
+			continue;
+		}
+		lpVec3 c = lpToVec3( lpTransformWorldPoint( xf, p->shape->centroid ) );
+		sum = lpMulAdd( sum, p->shape->volume, c );
+		total += p->shape->volume;
+	}
+	return total > 0.0f ? lpMulSV( 1.0f / total, sum ) : lpVec3_zero;
+}
+
+static inline float BodyY( const Sim* s, int body )
+{
+	lpWorldTransform xf;
+	lpWorld_GetBodyTransform( s->world, body, &xf );
+	return (float)xf.p.y;
+}
+
+// The fastest speed of any body's centre of mass (m/s): ghosts in flight count, static bodies and scrap do not. Under a
+// few cm/s, everything is at rest.
+static inline float MaxBodySpeed( const lpWorld* world )
+{
+	float fastest = 0.0f;
+	for ( int i = 0; i < lpWorld_GetBodyCapacity( world ); ++i )
+	{
+		lpBodyInfo b = lpWorld_GetBodyInfo( world, i );
+		float speed = b.alive ? lpLength( b.linearVelocity ) : 0.0f;
+		fastest = speed > fastest ? speed : fastest;
+	}
+	return fastest;
+}
+
+// A replay script from scripts/ (LPF_ROOT is the repository, set by the build)
+static inline bool LoadRepoScript( lpScript* script, const char* name )
+{
+	char path[512];
+	snprintf( path, sizeof( path ), "%s/scripts/%s", LPF_ROOT, name );
+	return lpScriptLoad( script, path );
 }
 
 static inline void Run( Sim* s, int ticks )

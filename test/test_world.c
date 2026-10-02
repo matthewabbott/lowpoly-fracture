@@ -182,7 +182,6 @@ static int TestDeterminismSelfTest( void )
 	return hash == LP_SELF_TEST_HASH ? 0 : 1;
 }
 
-static float LooseVolume( const lpWorld* world );
 
 // Blasts at the corners of a house knock a good part of it loose (ejected fragments, split-off chunks, rubble)
 static int TestHouseCollapse( void )
@@ -360,20 +359,6 @@ static int TestRefractureBonds( void )
 	ENSURE( deep > 0 );
 	DestroySim( &s );
 	return 0;
-}
-
-static float LooseVolume( const lpWorld* world )
-{
-	float v = 0.0f;
-	for ( int i = 0; i < world->bodies.count; ++i )
-	{
-		const lpBody* b = world->bodies.data + i;
-		if ( b->alive && b->kind != lp_kindStructure )
-		{
-			v += b->volume;
-		}
-	}
-	return v;
 }
 
 static bool SameEvent( const lpScriptEvent* a, const lpScriptEvent* b )

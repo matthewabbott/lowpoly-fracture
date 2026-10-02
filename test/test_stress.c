@@ -4,41 +4,6 @@
 #include "test_macros.h"
 #include "test_sim.h"
 
-// Volume of everything still standing as structure, not counting the ground
-static float StructureVolume( const lpWorld* w )
-{
-	float v = 0.0f;
-	for ( int i = 0; i < w->pieces.count; ++i )
-	{
-		const lpPiece* p = w->pieces.data + i;
-		if ( p->body >= 0 && p->material != lp_ground && w->bodies.data[p->body].kind == lp_kindStructure )
-		{
-			v += p->shape->volume;
-		}
-	}
-	return v;
-}
-
-// Volume-weighted world centroid of every piece of `material`
-static lpVec3 MaterialCentroid( const lpWorld* w, int material )
-{
-	lpVec3 sum = lpVec3_zero;
-	float total = 0.0f;
-	for ( int i = 0; i < w->pieces.count; ++i )
-	{
-		const lpPiece* p = w->pieces.data + i;
-		lpWorldTransform xf;
-		if ( p->body < 0 || p->material != material || lpWorld_GetBodyTransform( w, p->body, &xf ) == false )
-		{
-			continue;
-		}
-		lpVec3 c = lpToVec3( lpTransformWorldPoint( xf, p->shape->centroid ) );
-		sum = lpMulAdd( sum, p->shape->volume, c );
-		total += p->shape->volume;
-	}
-	return total > 0.0f ? lpMulSV( 1.0f / total, sum ) : lpVec3_zero;
-}
-
 // Every scene's structures stand on their own: nothing detaches at rest, and the stress solve settles
 static int TestStructuresStand( void )
 {
