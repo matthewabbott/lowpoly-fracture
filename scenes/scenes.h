@@ -22,6 +22,7 @@ typedef enum lpSceneId
 	lp_sceneKeep,	// a mortared stone keep of about 2000 pieces with wooden floors: the stress solve at scale
 	lp_sceneTrack,	// a ring road with kerbs, a hump, a plank bridge and a brick wall, three cars that drive laps, a crane
 	lp_sceneMech,	// a hexapod mech on patrol round a yard: a step, rubble, a hump, crates, a brick wall, a parked car
+	lp_sceneContraption, // a domino run that tips a stone onto a volatile vial by a brick wall, about 20 s after it starts
 	lp_sceneCount
 } lpSceneId;
 
@@ -107,6 +108,12 @@ enum
 // and control (unfed, it goes limp). The reservoir holds 100 of fluid: a cut line leaks until its valves close, 3 s
 // later. The femur and knee jam as they are damaged. style picks the paint. Returns the rig.
 int lpAddHexapod( lpWorld* world, lpVec3 base, float yaw, int style );
+
+// The contraption's vial, by lpObjectDef.userId (what the run sets off at its end)
+enum
+{
+	lp_userContraptionVial = 0xF1A5,
+};
 
 // A grab: welds a reaching limb's foot (a claw) to the piece it touches (lpLimbState.touching). Returns the link, or -1
 // if it touches nothing. Destroy the link to let go; lose the claw and the load drops with it.

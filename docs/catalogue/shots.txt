@@ -1,0 +1,7 @@
+# The outcome catalogue's contact sheets (tools/catalogue-shots.ps1 renders them into docs/catalogue/<id>.png).
+# id     scene  script            ticks (frames saved)   view (follow, camera:x,y,z,yawDeg,pitchDeg, or - for the scene's)
+F9       walls  walls_demo.txt    1,30,90,200            camera:0,1.8,4.5,0,-8
+S5       tower  tower_topple.txt  1,150,220,320          camera:-20,7,-3,76,0
+R20-gait mech   mech_demo.txt     330,345,360,375        follow
+E1       contraption -            60,1500,2940,3000     camera:-2,9,13,-20,-38
+R20-crawl mech  mech_crawl.txt    20,60,400,900          follow

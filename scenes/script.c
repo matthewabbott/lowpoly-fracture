@@ -108,6 +108,17 @@ bool lpScriptParseLine( lpScript* script, const char* line )
 		}
 		return true;
 	}
+	if ( named && SameWord( name, "impact" ) )
+	{
+		if ( sscanf( line, "%lld %31s %f %f %f %f %f %f %f %f %f", &t, name, &e.origin.x, &e.origin.y, &e.origin.z, &e.dir.x,
+					 &e.dir.y, &e.dir.z, &e.radius, &e.energy, &e.impulse ) >= 10 )
+		{
+			e.tick = t;
+			e.kind = lp_scriptImpact;
+			Push( script, &e );
+		}
+		return true;
+	}
 	if ( named && SameWord( name, "drive" ) )
 	{
 		if ( sscanf( line, "%lld %31s %d %f %f %f %d", &t, name, &e.index, &e.control.throttle, &e.control.brake,
@@ -136,7 +147,7 @@ bool lpScriptParseLine( lpScript* script, const char* line )
 	}
 	if ( e.kind < 0 )
 	{
-		fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk, reach, grab)\n",
+		fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk, reach, grab, impact)\n",
 				 name );
 		return false;
 	}
@@ -191,6 +202,11 @@ void lpScriptWrite( FILE* file, const lpScriptEvent* e )
 			break;
 		case lp_scriptGrab:
 			fprintf( file, "%lld grab %d %d\n", (long long)e->tick, e->index, e->limb );
+			break;
+		case lp_scriptImpact:
+			fprintf( file, "%lld impact %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g\n", (long long)e->tick, (double)e->origin.x,
+					 (double)e->origin.y, (double)e->origin.z, (double)e->dir.x, (double)e->dir.y, (double)e->dir.z, (double)e->radius,
+					 (double)e->energy, (double)e->impulse );
 			break;
 		case lp_scriptDrive:
 			fprintf( file, "%lld drive %d %.9g %.9g %.9g %d\n", (long long)e->tick, e->index, (double)e->control.throttle,
@@ -354,6 +370,11 @@ void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state
 			im.radius = 0.6f;
 			im.energy = 14000.0f;
 			im.impulse = 60.0f;
+			break;
+		case lp_scriptImpact:
+			im.radius = e->radius;
+			im.energy = e->energy;
+			im.impulse = e->impulse;
 			break;
 		default:
 			return;

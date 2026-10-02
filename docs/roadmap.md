@@ -416,6 +416,33 @@ The catalogue is the contract the integer core must meet, so it comes before the
      (personal reference, never committed). Agents cannot watch video, but they can set a sandbox frame sequence
      (`--frames`, `--screenshot`) beside the reference frames and say what differs. Behaviour references serve the
      catalogue; look and animation references wait for milestone 21.
+
+   **Done (2026-10-02):**
+   - **The catalogue:** [catalogue.md](catalogue.md), 108 contract tests (outcome and determinism) under outcomes in
+     words with their tolerances. Every test has a kind; `lpf_test --contract` runs the contract, and
+     `--check-catalogue` (CTest and CI) keeps the catalogue and the tests in step. Contact sheets for the visual
+     entries are in `docs/catalogue/` (`tools/catalogue-shots.ps1`). The references are links in
+     [references.md](references.md), candidates for the owner to vet; `tools/ref-frames.ps1` sets a clip's frames
+     beside a sheet, in `refs/`.
+   - **CI:** the tests gate every leg; on the contraction leg the self-test must fail.
+   - **Headless:** the sandbox's replay scripts and tools moved to `scenes/script.c`. `lpf_bench --script` replays
+     them with the sandbox's hashes, tick for tick, and `--dump tick:path` writes a world's state as JSON from new
+     inspection queries (bodies, bonds, contacts). Brought forward from step 1, since the gaps needed them.
+   - **Contract tolerances:** three exact pins were loosened to their outcome (the keep's break count, a torn end's
+     two steps, a femur's five), and one wall-clock assert dropped.
+   - **The gaps, each now pinned:**
+     - a struck tower goes over toward its cut and comes down;
+     - fragments in the object's colours;
+     - a building goes quiet;
+     - rubble lingers;
+     - a contraption goes off on time: a new `contraption` scene of giant dominoes, about 50 s;
+     - the gait and a crawl as contact sheets.
+   - **A bug the catalogue found:** pieces broken or split off a spinning body got the spin's velocity twice, about
+     the parent's frame origin. Chips flew at up to 400 m/s, and so did the struck tower's. Fixed, with every rung
+     re-baselined; the numbers are in [perf-log.md](perf-log.md).
+   - **What the run of dominoes showed:** frozen rubble wakes only when struck at 1.5 m/s and keeps none of the
+     strike's momentum. A domino run is pushed over one frozen domino at a time, from rest (slow), and small
+     dominoes stall: a gap for milestone 18's wake work ("wake storms") and for the hauling game's gentle contacts.
 1. **The engine surface.** The core holds mechanisms and data-driven definitions; the kits in `scenes/` (the car, the
    crane, the hexapod) are example content, kept because the tests and the bench need realistic loads and because
    building them finds the engine's gaps. Where game policy leaked into the core:
@@ -633,6 +660,8 @@ Candidates logged so far:
   machine (the research's flip condition for a hybrid).
 - **Outside the active cells:** resting islands sleep; loose debris is resolved by tier (snapped down and frozen, or
   removed); unstable structures are settled with the stress check; flagged Rube Goldberg setups keep simulating.
+  Their test is the catalogue's E1: the `contraption` scene, run far from every observer, still sets off its vial
+  within 10% of its full-rate tick.
 - **Persistence:** zones snapshot alone; a piece lives awake, asleep, frozen, then baked into its zone's static
   geometry, and may be forgotten; the engine offers freeze, bake, wake, delete, restore-to-authored and budgets, the
   games choose the policy. Identity is opt-in, so anonymous rubble bakes and only tagged props persist as bodies (the

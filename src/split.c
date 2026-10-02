@@ -103,6 +103,9 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 	lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, body->id );
 	lpVec3 localCenter = lpPhys_GetLocalCenter( w->phys, body->id );
 	bool isDynamic = lpPhys_IsDynamic( w->phys, body->id );
+	// A component's new body keeps this body's frame, so it starts with the velocity of the frame's origin: setting its
+	// mass moves its centre and adds the spin's share there (the component's own velocity, counted once)
+	lpVec3 originV = isDynamic ? lpAdd( v, lpCross( omega, lpRotateVector( xf.q, lpNeg( localCenter ) ) ) ) : lpVec3_zero;
 
 	int movedAny = 0;
 	for ( int c = 0; c < componentCount; ++c )
@@ -165,7 +168,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		else
 		{
 			uint8_t tier = comp->volume < lpLightVolume( w, comp->material ) ? lp_tierLight : lp_tierFull;
-			int newIndex = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, compV, compOmega,
+			int newIndex = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, originV, compOmega,
 												 w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex; // array may have moved
 			lpBody* nb = w->bodies.data + newIndex;

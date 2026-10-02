@@ -1260,6 +1260,63 @@ static int TestCrashTearsEngine( void )
 	return 0;
 }
 
+// The highest point of any stone piece's centroid
+static float StoneTop( const lpWorld* w )
+{
+	float top = -1.0e9f;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		const lpPiece* p = w->pieces.data + i;
+		lpWorldTransform xf;
+		if ( p->body >= 0 && p->material == lp_stone && lpWorld_GetBodyTransform( w, p->body, &xf ) )
+		{
+			float y = (float)lpTransformWorldPoint( xf, p->shape->centroid ).y;
+			top = y > top ? y : top;
+		}
+	}
+	return top;
+}
+
+// Struck with a felling cut (scripts/tower_topple.txt: cannon shots round the front of its second course), the 13 m
+// stone tower goes over toward the cut and comes down: its top ends low, nothing is left creeping or perched, and no
+// fragment flies faster than the blasts and the fall can throw it (a spinning body's fragments once left at hundreds of
+// m/s). Dry-laid, it falls as a shower of blocks rather than as one column.
+static int TestTowerFelled( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneTower, 1 );
+	lpScript script = { 0 };
+	ENSURE( LoadRepoScript( &script, "tower_topple.txt" ) );
+	lpScriptState state = lpDefaultScriptState();
+	lpVec3 start = MaterialCentroid( s.world, lp_stone );
+	float fastest = 0.0f;
+	float restless = 0.0f;
+	for ( int tick = 0; tick < 900; ++tick )
+	{
+		lpScriptPlay( s.world, &script, tick, &state );
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		float speed = MaxBodySpeed( s.world );
+		fastest = speed > fastest ? speed : fastest;
+		restless = tick >= 840 && speed > restless ? speed : restless;
+		if ( tick == 600 )
+		{
+			lpVec3 c = MaterialCentroid( s.world, lp_stone );
+			float top = StoneTop( s.world );
+			printf( "  after 10 s: the stone's centroid moved (%.2f %.2f %.2f), its top at %.2f m\n", (double)( c.x - start.x ),
+					(double)( c.y - start.y ), (double)( c.z - start.z ), (double)top );
+			ENSURE( c.z - start.z > 2.5f );								 // over, toward the cut (+z)
+			ENSURE( lpAbsFloat( c.x - start.x ) < 0.6f * ( c.z - start.z ) ); // and not off to one side
+			ENSURE( top < 5.0f );
+		}
+	}
+	printf( "  the fastest body all along %.1f m/s; in the last second %.2f m/s\n", (double)fastest, (double)restless );
+	ENSURE( fastest < 25.0f ); // a cannon's push is 18 m/s, a 13 m fall about 16
+	ENSURE( restless < 0.5f );
+	ENSURE( lpWorld_Validate( s.world ) );
+	lpScriptFree( &script );
+	DestroySim( &s );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestSolveSystem, MECHANISM );
@@ -1269,6 +1326,7 @@ int StressTest( void )
 	RUN_TEST( TestCantileverRoot, OUTCOME );
 	RUN_TEST( TestBeamMidspan, OUTCOME );
 	RUN_TEST( TestTowerTopples, OUTCOME );
+	RUN_TEST( TestTowerFelled, OUTCOME );
 	RUN_TEST( TestStressBudget, MECHANISM );
 	RUN_TEST( TestDamagedWallSettles, OUTCOME );
 	RUN_TEST( TestMasonryWallHole, OUTCOME );

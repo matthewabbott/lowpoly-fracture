@@ -38,14 +38,14 @@ a track only when a decision needs its detail.
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`, `lpRigGrab`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol); `lpBuildScene` settles their structures |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`, `lpRigGrab`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol); `lpBuildScene` settles their structures. `script.c`: the replay scripts (read, write, apply; the sandbox's tools live here), `dump.c`: a world's state as JSON |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
-| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md` |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
-| `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1`, `bench.ps1` (ladder), `get-shdc.ps1` |
+| `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them) |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
-| `scripts/` | sandbox replay scripts (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`) |
-| `docs/` | goals (the north star, the kinds of game the engine serves, the feel, outcomes to keep), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
+| `scripts/` | replay scripts for the sandbox and `lpf_bench --script` (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`, `tick impact origin dir radius energy [impulse]`) |
+| `docs/` | goals (the north star, the kinds of game the engine serves, the feel), the outcome catalogue (`catalogue.md`: the contract, every outcome with its test or contact sheet in `catalogue/`), references (clips to aspire to; links only), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
 
 ## Commands (PowerShell; run from the repo root)
 
@@ -53,7 +53,9 @@ a track only when a decision needs its detail.
 pwsh tools/build.ps1 -Test                      # build msvc-release, run all tests
 pwsh tools/build.ps1 -Preset msvc-asan -Test    # ASan build and tests, with lpf asserts on
 pwsh tools/build.ps1 -Shaders                   # after editing app/sandbox/shaders/scene.glsl
-pwsh tools/check-determinism.ps1 -Scene walls -Script scripts/walls_demo.txt   # 1/4/8 workers must match
+pwsh tools/check-determinism.ps1 -Scene walls -Script scripts/walls_demo.txt   # 1/4/8 workers must match (headless)
+build/msvc-release/bin/lpf_test.exe --contract                 # the outcome catalogue's tests (docs/catalogue.md)
+build/msvc-release/bin/lpf_bench.exe --scene mech --script scripts/mech_arms.txt --period 0 --ticks 900 --dump 600:build/s.json
 pwsh tools/bench.ps1 -Repeat 3                  # perf ladder vs bench/baseline.json; exit 3 if a sim hash changed
 pwsh tools/bench.ps1 -StrictSolver              # also exit 3 if a stress solver hash changed (solver refactors)
 build/msvc-release/bin/lpf_bench.exe --scene pile --workers 1,8

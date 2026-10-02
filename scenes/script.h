@@ -8,6 +8,7 @@
 //   tick walk rig forward strafe turn crouch
 //   tick reach rig limb active x y z          a limb strikes at the point (active 1) or steps back into the gait (0)
 //   tick grab rig limb                        the claw grabs what it touches, or lets go of what it holds
+//   tick impact ox oy oz dx dy dz radius energy [impulse]   an impact of your own where the ray hits (dir normalised)
 // pull: origin is the target and dir the grabbed point in the body frame, n the piece; blow: n ticks held (default 1).
 // Events apply at the start of their tick, before the step, in file order.
 
@@ -36,6 +37,7 @@ typedef enum lpScriptKind
 	lp_scriptWalk,
 	lp_scriptReach,
 	lp_scriptGrab,
+	lp_scriptImpact,
 } lpScriptKind;
 
 typedef struct lpScriptEvent
@@ -49,6 +51,9 @@ typedef struct lpScriptEvent
 	bool active;	 // reach: strike, or step back
 	lpVehicleControl control; // drive
 	lpRigControl walk;		  // walk
+	float radius;			  // impact: m
+	float energy;			  // impact: J
+	float impulse;			  // impact: N*s given to loose pieces
 } lpScriptEvent;
 
 typedef struct lpScript

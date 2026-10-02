@@ -431,8 +431,136 @@ static int TestDeferredFracture( void )
 	return 0;
 }
 
+// A body's centre of mass, world (one material: the volume centroid of its pieces)
+static lpPos BodyCenter( const lpWorld* world, int body )
+{
+	lpWorldTransform xf;
+	lpWorld_GetBodyTransform( world, body, &xf );
+	lpVec3 sum = lpVec3_zero;
+	float volume = 0.0f;
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ); ++i )
+	{
+		lpPieceInfo p = lpWorld_GetPieceInfo( world, i );
+		if ( p.body == body )
+		{
+			sum = lpMulAdd( sum, p.volume, p.centroid );
+			volume += p.volume;
+		}
+	}
+	return lpTransformPoint( xf, lpMulSV( 1.0f / volume, sum ) );
+}
+
+// A weightless stone slab, its frame's origin 3 m from it, flying and spinning, broken by a pushless impact (`crack`)
+// or cut in two along its middle: every new body leaves with the motion the slab had at its centre of mass (a body made
+// at the parent's frame once also got its spin's velocity about that origin again: chips flew at hundreds of m/s).
+static float BreakSpinningSlab( bool crack, int* made )
+{
+	Sim s = CreateSim( -1 );
+	lpPartDef parts[2];
+	for ( int k = 0; k < 2; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (lpVec3){ 0.3f, 0.2f, 0.3f };
+		parts[k].transform.p = (lpVec3){ 3.0f + 0.6f * (float)k, 0.0f, 0.0f };
+		parts[k].material = lp_stone;
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (lpPos){ 0.0f, 10.0f, 0.0f };
+	def.parts = parts;
+	def.partCount = 2;
+	def.gravityScale = 0.0f;
+	def.linearVelocity = (lpVec3){ 0.0f, 0.0f, 2.0f };
+	def.angularVelocity = (lpVec3){ 0.0f, 3.0f, 5.0f };
+	int body = lpCreateObject( s.world, &def );
+	Run( &s, 2 );
+
+	lpBodyInfo before = lpWorld_GetBodyInfo( s.world, body );
+	lpPos center = BodyCenter( s.world, body );
+	if ( crack )
+	{
+		lpImpactDef im = { 0 };
+		im.point = lpTransformPoint( before.transform, (lpVec3){ 3.3f, 0.2f, 0.0f } );
+		im.direction = lpRotateVector( before.transform.q, (lpVec3){ 0.0f, -1.0f, 0.0f } );
+		im.radius = 0.25f;
+		im.energy = 3000.0f;
+		lpWorld_AddImpact( s.world, &im );
+	}
+	else
+	{
+		lpBody* b = s.world->bodies.data + body;
+		for ( int k = 0; k < b->pieces.count; ++k )
+		{
+			lpPiece* p = s.world->pieces.data + b->pieces.data[k];
+			while ( p->bonds.count > 0 )
+			{
+				lpBreakBond( s.world, p->bonds.data[p->bonds.count - 1] );
+			}
+		}
+		lpMarkDirty( s.world, body );
+	}
+	Run( &s, 1 );
+
+	// The slab's motion, a step on: its centre moved with it, its spin is unchanged (nothing pushed it)
+	center = lpOffsetPos( center, lpMulSV( 1.0f / 60.0f, before.linearVelocity ) );
+	float worst = 0.0f;
+	*made = 0;
+	for ( int i = 0; i < lpWorld_GetBodyCapacity( s.world ); ++i )
+	{
+		lpBodyInfo b = lpWorld_GetBodyInfo( s.world, i );
+		if ( b.alive == false || b.kind != lp_kindDebris )
+		{
+			continue;
+		}
+		lpVec3 r = lpSubPos( BodyCenter( s.world, i ), center );
+		lpVec3 expected = lpAdd( before.linearVelocity, lpCross( before.angularVelocity, r ) );
+		float error = lpLength( lpSub( b.linearVelocity, expected ) );
+		worst = error > worst ? error : worst;
+		*made += i == body ? 0 : 1;
+	}
+	printf( "  %s: %d new bodies, the worst off the slab's motion by %.3f m/s\n", crack ? "cracked" : "cut", *made, (double)worst );
+	DestroySim( &s );
+	return worst;
+}
+
+static int TestBrokenPiecesKeepMotion( void )
+{
+	int made = 0;
+	float cracked = BreakSpinningSlab( true, &made );
+	ENSURE( made > 0 && cracked < 0.5f );
+	float cut = BreakSpinningSlab( false, &made );
+	ENSURE( made > 0 && cut < 0.5f );
+	return 0;
+}
+
+// Rubble lingers after a fight: a 10 s barrage on the town, then a minute of calm at the default budgets. What the fight
+// knocked loose is still there, settled (frozen as rubble, landed as scrap), not tidied away.
+static int TestRubbleLingers( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneTown, 4 );
+	float before = LooseVolume( s.world );
+	for ( int tick = 0; tick < 600; ++tick )
+	{
+		lpSceneBombard( s.world, lp_sceneTown, tick, 3 );
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+	}
+	float fought = LooseVolume( s.world ) - before;
+	Run( &s, 3600 );
+	float calm = LooseVolume( s.world ) - before;
+	lpStats st = lpWorld_GetStats( s.world );
+	int settled = st.rubbleBodies + st.scrapBodies;
+	printf( "  loose after the fight %.1f m^3, after a minute's calm %.1f m^3; %d settled (rubble and scrap), %d debris (%d awake)\n",
+			(double)fought, (double)calm, settled, st.debrisBodies, st.awakeDebris );
+	ENSURE( fought > 10.0f && calm > 0.9f * fought );
+	ENSURE( settled > 1000 && st.awakeDebris * 100 < settled );
+	DestroySim( &s );
+	return 0;
+}
+
 int DebrisTest( void )
 {
+	RUN_TEST( TestRubbleLingers, OUTCOME );
+	RUN_TEST( TestBrokenPiecesKeepMotion, OUTCOME );
 	RUN_TEST( TestLooseBodyFrame, MECHANISM );
 	RUN_TEST( TestGravityScale, OUTCOME );
 	RUN_TEST( TestSliverAbsorption, OUTCOME );

@@ -308,7 +308,8 @@ void lpConvertToFull( lpWorld* w, int bodyIndex )
 		lpPhysBodyDef def = lpPhys_DefaultBodyDef();
 		def.dynamic = true;
 		def.transform = lpGetTransform( w, b );
-		def.linearVelocity = b->v;
+		// b->v is its centre's; the body starts with its frame origin's, and setting its mass adds the spin's share back
+		def.linearVelocity = lpAdd( b->v, lpCross( b->omega, lpRotateVector( b->q, lpNeg( b->localCenter ) ) ) );
 		def.angularVelocity = b->omega;
 		def.gravityScale = b->gravityScale;
 		def.body = bodyIndex;

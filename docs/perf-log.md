@@ -719,3 +719,17 @@ experiment sits behind a flag (off by default).
   barrage 10.79 / 5.29, siege 19.08 / 10.46, track 0.14 / 0.15, mech 0.09 / 0.11.
 - The lag experiment's capture (every body, contact and joint, each step) cost the town's physics 48%: an
   experiment's cost, not a pipeline's. Off, it changed nothing; the simplicity pass removed it after its verdict.
+
+## 2026-10-02 milestone 9, step 0: fragments keep their parent's motion
+
+What changed: a piece broken or split off a moving, spinning body is made a body at its parent's frame, and was given
+the velocity of its own centre; setting its mass then moved its centre there and the physics engine added the spin's
+share again. On a tumbling tower (11 to 15 rad/s, cells metres from the frame's origin) chips left at 50 to 400 m/s and
+flew kilometres. New bodies now start with the frame origin's velocity (fracture cells, split components, and ghosts
+made physics bodies again), so the engine's own centre update gives each its true velocity
+(`TestBrokenPiecesKeepMotion`: within 0.2 m/s, against 19.7 before; the felling run's fastest body 17.5 m/s against
+390). Found by the outcome catalogue's struck-tower entry (`TestTowerFelled`).
+- Every rung's hashes change. Interleaved A/B over 12 bombardment periods (8 to 19), 600 ticks, 1 worker, mean step:
+  walls +16% (0.81 -> 0.94 ms: what broke off stays near, so awake contacts +37%), town -25% (4.99 -> 3.73: chips at
+  hundreds of m/s no longer set off fracture after fracture, fractures -32%), tower -38% (5.18 -> 3.22, fractures
+  -69%), keep the same (6.92). Pieces: walls +4%, town -17%, tower -58%.

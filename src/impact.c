@@ -238,6 +238,9 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 	lpVec3 v = isDynamic ? lpPhys_GetLinearVelocity( w->phys, body->id ) : lpVec3_zero;
 	lpVec3 omega = isDynamic ? lpPhys_GetAngularVelocity( w->phys, body->id ) : lpVec3_zero;
 	lpVec3 localCenter = isDynamic ? lpPhys_GetLocalCenter( w->phys, body->id ) : lpVec3_zero;
+	// A cell made a body keeps the parent's frame, so it starts with the velocity of the frame's origin: setting its
+	// mass moves its centre there and adds the spin's share (giving it the cell's own velocity once, not twice)
+	lpVec3 originV = lpAdd( v, lpCross( omega, lpRotateVector( xf.q, lpNeg( localCenter ) ) ) );
 
 	// Former neighbors, then retire the parent
 	int neighbors[256];
@@ -382,7 +385,7 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 		else
 		{
 			uint8_t tier = cls == lp_cellLight ? lp_tierLight : lp_tierFull;
-			int debris = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, cellV, omega, gravityScale );
+			int debris = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, originV, omega, gravityScale );
 			if ( lpAttachPiece( w, childIndex, debris ) )
 			{
 				lpApplyMass( w, w->bodies.data + debris );

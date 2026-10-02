@@ -99,3 +99,6 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
   under bombardment), the keep (`scripts/keep_demo.txt`, one 2000-piece structure), the track (its demo under
   bombardment: scripted drivers, a driven car, wheels coming off), and the mech yard (its demo under bombardment: the
   patrol, a walked mech losing legs; `scripts/mech_arms.txt`: reaches, a grab and a stomp), at 1, 4 and 8 workers.
+  The contraption (a minute of dominoes, each frozen and woken in turn) is checked by `TestContraptionOnTime` at 1, 4
+  and 8 workers. `tools/check-determinism.ps1` runs headless through `lpf_bench --script`, whose replays match the
+  sandbox's hash logs tick for tick.

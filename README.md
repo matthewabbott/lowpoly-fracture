@@ -6,11 +6,12 @@ jagged low-poly shards (stone, brick, plaster), long splinters (wood) or radial 
 debris bodies.
 
 - `src/`, `include/lpf/lpf.h`: the destruction core (C17), engine-agnostic
-- `scenes/`: procedural low-poly test scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech)
+- `scenes/`: procedural low-poly test scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption)
 - `app/sandbox/`: playable sandbox (sokol D3D11 + Dear ImGui)
 - `test/`, `bench/`: unit, fuzz and determinism tests; headless benchmark
 - `docs/`: [goals](docs/goals.md) (the games, the feel), [feasibility report](docs/feasibility.md), [roadmap](docs/roadmap.md), [architecture](docs/architecture.md),
-  [determinism rules](docs/determinism-rules.md), [materials](docs/materials.md), [perf log](docs/perf-log.md)
+  [determinism rules](docs/determinism-rules.md), [materials](docs/materials.md), [perf log](docs/perf-log.md),
+  [outcome catalogue](docs/catalogue.md) (the contract a redesign must meet), [references](docs/references.md)
 
 ## Build (Windows)
 
@@ -39,11 +40,13 @@ Q/E step sideways, C crouches, F held strikes at the crosshair with the nearest 
 touches, G again lets go), and V again gets out.
 
 Automation (used by agents and CI): `--script file` replays tool events (see `scripts/`: walls, house flasks, tower
-collapse, tower topple, lumber, blower, ruins, yard, keep, track, mech, mech arms; a `blow` line's last number is how many
+collapse, tower topple, lumber, blower, ruins, yard, keep, track, mech, mech arms, mech crawl; a `blow` line's last number is how many
 ticks it is held; `tick drive vehicle throttle brake steer handbrake` sets a car's controls until the next such line,
 `tick walk rig forward strafe turn crouch` a mech's, `tick reach rig limb active x y z` sends a leg at a point or back into
-its gait, `tick grab rig limb` grabs or lets go), `--record file` writes them,
-`--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame, `--hash-log file` writes the
+its gait, `tick grab rig limb` grabs or lets go, `tick impact ox oy oz dx dy dz radius energy [impulse]` is an impact of
+your own where the ray hits), `--record file` writes them,
+`--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame (with `--screenshot-at f1,f2`,
+those frames, numbered), `--dump tick:out.json` writes the state after that tick as JSON, `--hash-log file` writes the
 per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera chases the car or mech the events steer), `--hide-ui`,
 `--vsync 0`, `--workers N`, `--input-delay N` (walk and drive events apply N ticks late: a feel test of lockstep),
 `--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves. Headless,

@@ -1,0 +1,8 @@
+# The mech crawls: three legs shot through the femur (the right middle, the left rear and the left front) leave it too
+# few to walk, so it drops onto its belly and drags itself on (impact events: origin, direction, radius, energy).
+# Replay: sandbox --scene mech --script scripts/mech_crawl.txt --follow
+0 walk 0 0 0 0 0
+30 impact 1.92 4.0 -24.00   0 -1 0   0.25 60000
+32 impact -1.75 4.0 -25.65  0 -1 0   0.25 60000
+34 impact -1.75 4.0 -22.35  0 -1 0   0.25 60000
+150 walk 0 1 0 0 0

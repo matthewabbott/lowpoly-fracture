@@ -151,6 +151,8 @@ const char* lpSceneName( int scene )
 			return "track";
 		case lp_sceneMech:
 			return "mech";
+		case lp_sceneContraption:
+			return "contraption";
 		default:
 			return "?";
 	}
@@ -1515,6 +1517,79 @@ int lpRigGrab( lpWorld* world, int rig, int limb )
 // The patrol: a loop round the yard, north up x = 0, east, south down x = 16, west
 static const lpVec3 lp_mechPatrol[4] = { { 0.0f, 0.0f, -20.0f }, { 0.0f, 0.0f, 20.0f }, { 16.0f, 0.0f, 20.0f }, { 16.0f, 0.0f, -20.0f } };
 
+// A contraption that runs on its own: a spiral of wooden dominoes, the first leaning past its tipping point as the
+// scene starts, runs outward and ends in six dominoes each 15% taller than the last; the tallest comes down on a volatile
+// vial, which goes off against a brick wall. Nothing drives it: the run is
+// physics alone, waking each frozen domino as it strikes it, so it is the outcome catalogue's stand-in for a trap set
+// well ahead (and for physics left running far away). The vial's part has userId lp_userContraptionVial.
+static lpVec3 lpDomino( lpWorld* world, lpVec3 at, lpVec3 travel, float height, bool lean, uint32_t color )
+{
+	lpVec3 half = { 0.065f * height, 0.5f * height, 0.25f * height }; // thin along the run
+	lpQuat q = lpYaw( lpAtan2( -travel.z, travel.x ) );
+	if ( lean )
+	{
+		q = lpMulQuat( lpMakeQuatFromAxisAngle( lpCross( (lpVec3){ 0.0f, 1.0f, 0.0f }, travel ), 0.25f ), q );
+	}
+	lpBegin();
+	lpBox( lpVec3_zero, half, lpQuat_identity, lp_wood, color, false );
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	lpCommitDef( world, (lpVec3){ at.x, half.y + ( lean ? 0.01f : 0.0f ), at.z }, q, def );
+	return at;
+}
+
+static void lpAddContraption( lpWorld* world )
+{
+	lpAddGround( world, 50.0f );
+
+	// The run: an Archimedean spiral r = r0 + k theta walked outward at a fixed spacing, each domino facing along it, so
+	// what comes after its last domino stands clear of it
+	// Giant dominoes: a frozen one wakes only when struck at lpWorldDef.wakeSpeed (1.5 m/s), and a falling domino strikes at
+	// about sqrt(g height): 1.2 m tall, they strike at 2.3 m/s
+	const int count = 70;
+	const float tall = 1.2f, r0 = 2.6f, k = 0.21f, spacing = 0.75f * tall; // rings 1.3 m apart
+	float theta = 0.0f;
+	lpVec3 travel = lpVec3_zero;
+	lpVec3 last = lpVec3_zero;
+	for ( int i = 0; i < count; ++i )
+	{
+		float r = r0 + k * theta;
+		lpCosSin cs = lpComputeCosSin( theta );
+		travel = lpNormalize( (lpVec3){ k * cs.cosine - r * cs.sine, 0.0f, k * cs.sine + r * cs.cosine } );
+		last = lpDomino( world, (lpVec3){ r * cs.cosine, 0.0f, r * cs.sine }, travel, tall, i == 0, i % 2 == 0 ? LP_PLANK : LP_BEAM );
+		theta += spacing / sqrtf( r * r + k * k );
+	}
+
+	// Six dominoes, each 15% taller, on along the last direction: a domino amplifies (a step much larger stalls, as the
+	// run reaches each domino frozen and pushes it over from rest)
+	float height = tall;
+	for ( int i = 0; i < 6; ++i )
+	{
+		last = lpMulAdd( last, 0.75f * height, travel );
+		height *= 1.15f;
+		lpDomino( world, last, travel, height, false, i % 2 == 0 ? LP_BEAM : LP_PLANK );
+	}
+
+	// The vial where the tallest one's top comes down (at about 8 m/s)
+	lpVec3 pivot = lpMulAdd( last, 0.065f * height, travel );
+	lpQuat facing = lpYaw( lpAtan2( -travel.z, travel.x ) );
+	lpBegin();
+	lpPartDef* vial = lpBox( lpVec3_zero, (lpVec3){ 0.07f, 0.09f, 0.07f }, lpQuat_identity, lp_glass, 0x6FD68Au, false );
+	vial->detonator.triggerSpeed = 4.0f; // where collisions start to register (lpWorldDef.hitSpeed)
+	vial->detonator.radius = 1.8f;
+	vial->detonator.energy = 120000.0f;
+	vial->detonator.speed = 12.0f;
+	lpObjectDef vialDef = lpDefaultObjectDef();
+	vialDef.isStatic = false;
+	vialDef.userId = lp_userContraptionVial;
+	lpVec3 vialAt = lpMulAdd( pivot, 0.9f * height, travel );
+	lpCommitDef( world, (lpVec3){ vialAt.x, 0.09f, vialAt.z }, facing, vialDef );
+
+	// The wall the vial blows a hole in
+	lpVec3 wall = lpMulAdd( (lpVec3){ vialAt.x, 0.0f, vialAt.z }, 1.2f, travel );
+	lpAddWall( world, wall, lpAtan2( -travel.z, travel.x ) + 0.5f * LP_PI, 4.0f, 2.4f, 0.3f, lp_brick, LP_BRICK, 1.6f );
+}
+
 static void lpAddMechYard( lpWorld* world )
 {
 	lpAddGround( world, 50.0f );
@@ -1735,6 +1810,10 @@ void lpBuildScene( lpWorld* world, int scene )
 
 		case lp_sceneMech:
 			lpAddMechYard( world );
+			break;
+
+		case lp_sceneContraption:
+			lpAddContraption( world );
 			break;
 
 		case lp_sceneLumber:

@@ -205,6 +205,10 @@ void SetSceneCamera( int scene )
 			app.yaw = 0.95f * 3.14159265f;
 			app.pitch = -0.2f;
 			break;
+		case lp_sceneContraption:
+			app.camPos = { 0.0f, 7.5f, 9.0f };
+			app.pitch = -0.65f;
+			break;
 		default:
 			break;
 	}

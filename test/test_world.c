@@ -11,6 +11,9 @@
 // lpDeterminismSelfTest's hash on every platform (set from the reference build; CI checks every leg against it)
 #define LP_SELF_TEST_HASH 0x5c6b3dd653cd0c64ull
 
+// The tick the contraption's vial goes off today (TestContraptionOnTime allows 10% either way)
+#define LP_CONTRAPTION_TICK 2986
+
 // Rifle shots walking across the brick wall, then a grenade and a cannon-sized blast
 static void Bombard( Sim* s, int tick )
 {
@@ -361,6 +364,151 @@ static int TestRefractureBonds( void )
 	return 0;
 }
 
+// A vertex colour (0xAABBGGRR) is `rgb` (0xRRGGBB) shaded: the same hue, within rounding, brighter or darker
+static bool Shaded( uint32_t rgba, uint32_t rgb )
+{
+	float c[3] = { (float)( rgba & 0xFF ), (float)( ( rgba >> 8 ) & 0xFF ), (float)( ( rgba >> 16 ) & 0xFF ) };
+	float b[3] = { (float)( ( rgb >> 16 ) & 0xFF ), (float)( ( rgb >> 8 ) & 0xFF ), (float)( rgb & 0xFF ) };
+	float sc = c[0] + c[1] + c[2];
+	float sb = b[0] + b[1] + b[2];
+	if ( c[0] == 255.0f || c[1] == 255.0f || c[2] == 255.0f )
+	{
+		return true; // clipped: no hue to judge
+	}
+	for ( int k = 0; k < 3; ++k )
+	{
+		if ( fabsf( c[k] / sc - b[k] / sb ) > 0.02f + 3.0f / sc )
+		{
+			return false;
+		}
+	}
+	return sc > 0.4f * sb && sc < 1.25f * sb;
+}
+
+// Fragments are carved from the object and coloured like it: after a wall is shot up and blasted, every face of every
+// piece is the object's own colour or its material's cut-face colour, shaded (never a flat grey, never another's)
+static int TestFragmentColours( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
+	for ( int tick = 0; tick < 200; ++tick )
+	{
+		Bombard( &s, tick );
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+	}
+	lpVertex* vertices = (lpVertex*)malloc( sizeof( lpVertex ) * (size_t)lpWorld_GetMaxPieceVertices() );
+	int fragments = 0, faces = 0, wrong = 0;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		if ( p->body < 0 || p->material == lp_ground )
+		{
+			continue;
+		}
+		fragments += p->depth > 0 ? 1 : 0;
+		int count = lpWorld_BuildPieceMesh( s.world, i, vertices, lpWorld_GetMaxPieceVertices() );
+		uint32_t cut = lpGetMaterial( p->material )->interiorColor;
+		for ( int v = 0; v < count; v += 3 )
+		{
+			faces += 1;
+			bool ok = Shaded( vertices[v].color, p->color ) || Shaded( vertices[v].color, cut );
+			if ( ok == false && wrong < 3 )
+			{
+				printf( "  piece %d (material %d): %08x is neither %06x nor %06x shaded\n", i, p->material, vertices[v].color, p->color,
+						cut );
+			}
+			wrong += ok ? 0 : 1;
+		}
+	}
+	free( vertices );
+	printf( "  %d fragments, %d triangles, %d off colour\n", fragments, faces, wrong );
+	ENSURE( fragments > 50 && wrong == 0 );
+	DestroySim( &s );
+	return 0;
+}
+
+// A house that lost two corners slumps or gives out, then goes quiet: no joint breaks after it, no structure left
+// solving or straining, nothing moving
+static int TestBuildingGoesQuiet( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneHouse, 1 );
+	int lastBreak = -1, lastMoving = -1, lastUnsettled = -1;
+	for ( int tick = 0; tick < 1800; ++tick )
+	{
+		if ( tick == 10 || tick == 40 )
+		{
+			lpImpactDef im = { 0 };
+			im.point = (lpPos){ tick == 10 ? -3.2f : 3.2f, 1.0f, -3.5f };
+			im.radius = 2.2f;
+			im.energy = 400000.0f;
+			im.impulse = 15.0f;
+			im.explosion = true;
+			lpWorld_AddImpact( s.world, &im );
+		}
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		lpStats st = lpWorld_GetStats( s.world );
+		lastBreak = st.stressBreaks > 0 ? tick : lastBreak;
+		lastUnsettled = st.unsettledStructures > 0 ? tick : lastUnsettled;
+		lastMoving = MaxBodySpeed( s.world ) > 0.05f ? tick : lastMoving;
+	}
+	printf( "  the last joint broke at %.1f s; the last structure settled at %.1f s; the last body stopped at %.1f s\n",
+			(double)lastBreak / 60.0, (double)lastUnsettled / 60.0, (double)lastMoving / 60.0 );
+	ENSURE( lastBreak < 900 && lastUnsettled < 1200 && lastMoving < 1200 ); // quiet within 20 s of the blasts
+	ENSURE( lpWorld_Validate( s.world ) );
+	DestroySim( &s );
+	return 0;
+}
+
+// Runs the contraption scene until its vial goes off (or a minute passes): the tick it went off (-1: it did not), the
+// dominoes left standing, and the world's hash then
+static int RunContraption( int workers, int* standing, uint64_t* hash )
+{
+	Sim s = CreateSimWorkers( lp_sceneContraption, workers );
+	int detonator = -1;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		detonator = p->body >= 0 && p->userId == lp_userContraptionVial ? p->detonator - 1 : detonator;
+	}
+	int fired = -1;
+	for ( int tick = 0; tick < 3600 && fired < 0 && detonator >= 0; ++tick )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		fired = s.world->detonators.data[detonator].armed ? -1 : tick;
+	}
+	// Dominoes still upright (tilted under 30 degrees)
+	*standing = 0;
+	for ( int i = 0; i < s.world->pieces.count; ++i )
+	{
+		const lpPiece* p = s.world->pieces.data + i;
+		lpWorldTransform xf;
+		if ( p->body >= 0 && p->material == lp_wood && lpWorld_GetBodyTransform( s.world, p->body, &xf ) )
+		{
+			*standing += lpRotateVector( xf.q, (lpVec3){ 0.0f, 1.0f, 0.0f } ).y > 0.866f ? 1 : 0;
+		}
+	}
+	*hash = lpWorld_Hash( s.world );
+	DestroySim( &s );
+	return fired;
+}
+
+// A contraption left to run on its own (a domino run that tips a teetering stone onto a volatile vial) goes off on time:
+// every domino falls (none stalls asleep), and the vial goes off on the same tick at 1, 4 and 8 workers, within 10% of
+// when it does today (the window physics left running far away, simplified or not, must still meet)
+static int TestContraptionOnTime( void )
+{
+	const int expected = LP_CONTRAPTION_TICK;
+	int standing[3];
+	uint64_t hash[3];
+	int fired[3] = { RunContraption( 1, standing + 0, hash + 0 ), RunContraption( 4, standing + 1, hash + 1 ),
+					 RunContraption( 8, standing + 2, hash + 2 ) };
+	printf( "  the vial went off at %.2f s (tick %d; %d expected), %d dominoes left standing\n", (double)fired[0] / 60.0, fired[0],
+			expected, standing[0] );
+	ENSURE( fired[0] >= 0 && standing[0] == 0 );
+	ENSURE( fired[1] == fired[0] && fired[2] == fired[0] && hash[1] == hash[0] && hash[2] == hash[0] );
+	ENSURE( 10 * abs( fired[0] - expected ) <= expected );
+	return 0;
+}
+
 static bool SameEvent( const lpScriptEvent* a, const lpScriptEvent* b )
 {
 	return a->tick == b->tick && a->kind == b->kind && a->origin.x == b->origin.x && a->origin.y == b->origin.y &&
@@ -368,7 +516,8 @@ static bool SameEvent( const lpScriptEvent* a, const lpScriptEvent* b )
 		   a->index == b->index && a->limb == b->limb && a->active == b->active && a->control.throttle == b->control.throttle &&
 		   a->control.brake == b->control.brake && a->control.steer == b->control.steer &&
 		   a->control.handbrake == b->control.handbrake && a->walk.forward == b->walk.forward && a->walk.strafe == b->walk.strafe &&
-		   a->walk.turn == b->walk.turn && a->walk.crouch == b->walk.crouch;
+		   a->walk.turn == b->walk.turn && a->walk.crouch == b->walk.crouch && a->radius == b->radius &&
+		   a->energy == b->energy && a->impulse == b->impulse;
 }
 
 // A replay script read, written and read again gives the same events: a recording replays the session it came from
@@ -385,6 +534,7 @@ static int TestScriptRoundTrip( void )
 		"50 reach 0 2 1 1.5 0.25 -3\n",
 		"60 grab 0 2\n",
 		"70 Grenade 0 0.333333343 1e-3 0 0 -1\n",
+		"75 impact 0 2 8 0 -0.1 -1 0.25 40000 5\n",
 	};
 	lpScript a = { 0 };
 	for ( int i = 0; i < (int)( sizeof( lines ) / sizeof( lines[0] ) ); ++i )
@@ -392,7 +542,8 @@ static int TestScriptRoundTrip( void )
 		ENSURE( lpScriptParseLine( &a, lines[i] ) );
 	}
 	ENSURE( lpScriptParseLine( &a, "80 laser 0 0 0 0 0 1\n" ) == false );
-	ENSURE( a.count == 10 ); // the blower held for 3 ticks is 3 events
+	ENSURE( a.count == 11 ); // the blower held for 3 ticks is 3 events
+	ENSURE( a.events[10].kind == lp_scriptImpact && a.events[10].energy == 40000.0f && a.events[10].impulse == 5.0f );
 	ENSURE( a.events[1].kind == lp_scriptPull && a.events[1].index == 7 );
 	ENSURE( a.events[2].kind == lp_scriptBlow && a.events[4].kind == lp_scriptBlow && a.events[4].tick == 22 );
 	ENSURE( a.events[9].kind == lp_scriptGrenade );
@@ -577,6 +728,9 @@ int WorldTest( void )
 	RUN_TEST( TestFpGuard, DETERMINISM );
 	RUN_TEST( TestDeterminismSelfTest, DETERMINISM );
 	RUN_TEST( TestHouseCollapse, OUTCOME );
+	RUN_TEST( TestFragmentColours, OUTCOME );
+	RUN_TEST( TestBuildingGoesQuiet, OUTCOME );
+	RUN_TEST( TestContraptionOnTime, OUTCOME );
 	RUN_TEST( TestScriptRoundTrip, MECHANISM );
 	RUN_TEST( TestScriptReplay, DETERMINISM );
 	RUN_TEST( TestInspection, MECHANISM );

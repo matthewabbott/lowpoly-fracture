@@ -42,15 +42,16 @@ Serves: "The fracture look", "Mess", "Everything is physical and breaks where it
 | F6 | A log shot through leaves two rough ends | `TestLogEnds` | exactly 2 ends of 1 piece each (the count is the outcome), under 60 triangles each |
 | F7 | A wall under fire breaks up into pieces and debris | `TestWallDamage` | pieces more than double, over 10 fractures, over 20 debris bodies, no clip failures |
 | F8 | Blasts at a house's corners knock a good part of it loose | `TestHouseCollapse` | over 2 m³ loose after two blasts |
-| F9 | Fragments are carved from the object and coloured like it | to come (0d): a face colour test and a contact sheet | every face of every fragment is the object's colour or its material's cut-face colour |
+| F9 | Fragments are carved from the object and coloured like it, never grey cubes | `TestFragmentColours`; sheet [F9](catalogue/F9.png) | after the walls are shot up and blasted, every face of every piece is the object's colour or its material's cut-face colour, shaded (the same hue within 2%) |
 | F10 | Flying fragments land as scrap, or leave the world | `TestGhostLanding` | no ghost left after 5 s; over 5 scrap at a plausible height |
 | F11 | Settled rubble is static but fragile: struck, it comes loose | `TestFragileRubble` | rubble within 1.5 s of landing (tight: the physics engine's sleep timer decides it), loose within 1 s of a hit |
-| F12 | Rubble lingers after a fight | to come (0d) | |
+| F12 | Rubble lingers after a fight: what was knocked loose stays, settled, not tidied away | `TestRubbleLingers` | after a 10 s barrage on the town and a minute of calm at the default budgets, at least 90% of the loose volume is still there (it grows today: late collapses), and under 1% of what settled is awake |
 | F13 | Over budget, debris steps down the ladder (full, light, ghost, scrap) instead of popping out | `TestBudgetLadder` | demotions happen and every cap holds once the ladder has caught up |
 | F14 | Light rubble does not slow a heavy crate sliding through it | `TestShove` | the crate ends within 2 cm of where it ends on clear ground (light debris cannot push dynamic bodies, by design) |
 | F15 | "Fairy dust": a body's gravity scale, kept by what breaks off it | `TestGravityScale` | a quarter scale falls a quarter as far (±0.02 m); a weightless ghost holds its height; split halves keep the scale |
 | F16 | A volatile flask goes off on impact and blows a hole | `TestDetonator` | disarmed, over 20 cells made |
 | F17 | The pull tool lifts a loose piece to its target | `TestPull` | within 0.3 m of the target after 2 s |
+| F18 | Pieces broken or split off a moving, spinning body leave with the motion it had at their centres | `TestBrokenPiecesKeepMotion` | within 0.5 m/s of the rigid motion, a step on (the fix of 2026-10-02: they once got the spin's velocity about the parent's frame origin again, and chips flew at hundreds of m/s) |
 
 ## Structures
 
@@ -62,14 +63,14 @@ Serves: "Breaking in the right place", "Weight and material", "Big events".
 | S2 | A cantilever's root carries it: short stands, long snaps, long in low gravity stands | `TestCantileverRoot` | 0.8 m stands, 2 m snaps, 2 m at 0.1 g stands |
 | S3 | A plank stands alone and snaps under a stone, which falls | `TestBeamMidspan` | as stated |
 | S4 | A tower with a felling cut topples toward the cut | `TestTowerTopples` | the stone's centroid drifts over 1.5 m within 8 s; the same hash at 1 and 4 workers |
-| S5 | A struck stone tower topples and does not stick: it falls as stone, not foam | to come (0d) | |
+| S5 | A stone tower struck with a felling cut goes over toward the cut and comes down; nothing is left creeping or perched, and nothing is thrown faster than the blasts and the fall can throw it | `TestTowerFelled`; sheet [S5](catalogue/S5.png) | its stone's centroid moves over 2.5 m toward the cut within 10 s, less than 0.6 of that sideways; its top under 5 m (of 13); no body over 25 m/s; under 0.5 m/s in its 15th second. Dry-laid, it falls as a shower of blocks, not as one column |
 | S6 | A wall shot up settles and stops creaking | `TestDamagedWallSettles` | no stress breaks and nothing unsettled over 2 s of calm |
 | S7 | A dry arch stands by compression; without its keystone the span falls and the piers stay | `TestArchKeystone` | stands; under half left without the keystone |
 | S8 | A colonnade drops the lintels a lost column carried, and only those | `TestColonnade` | what stands is 3 columns and 1 lintel (to 1e-3 of the volume) |
 | S9 | A breach in the keep's wall: the masonry round it gives, the keep stands and settles | `TestKeepBreach` | over 95% stands; settled within 10 s; 1 to 24 joints break (12 today) |
 | S10 | A cannon hole in the keep: the cells round it crumble, the keep holds | `TestKeepHole` | over 95% stands; decided within 1 s; the clustered solve flips under 1% of joints against the exact one |
 | S11 | A keep under sustained fire is still judged, and comes down where it is hit | `TestKeepUnderFire` | judged at least 5 times; the same hash at 1 and 4 workers |
-| S12 | A building that lost a support slumps and goes quiet, or gives out, without creaking forever | to come (0d) | |
+| S12 | A building that lost a support slumps and goes quiet, or gives out, without creaking forever | `TestBuildingGoesQuiet` | a house blasted at two corners: no joint breaks after 15 s, nothing unsettled and nothing moving (over 5 cm/s) after 20 s (today: 1.1 s and 12.8 s) |
 | S13 | A body in free fall carries nothing: falling does not break it | `TestReliefFreeFall` | utilisation under 1e-3 |
 | S14 | A beam landing across a ridge bends: a short drop holds, a long one snaps it | `TestReliefLandingSnaps` | 0.3 m holds, 4 m snaps |
 
@@ -162,7 +163,7 @@ Serves: "Creatures and machines. They adapt on their own" and "Bodies taken down
 | R17 | Dropped on its feet, nothing breaks | `TestRigLandsWhole` | no breaks; rebound under 3.5 m/s (tight: the physics engine's contact push-out) |
 | R18 | A cracked femur holds standing and snaps on landing, alone | `TestRigCrackedFemurSnaps` | cracked to 3 to 10% of its strength; one break within a quarter second of landing (within 5 steps today) |
 | R19 | Walking does not break its bones, and their check is cheap | `TestRigWalkingBones` | no breaks in 10 s, the worst joint under 60%, at most 20 torso solves |
-| R20 | The look of the gait and of a crawl | to come (0d): contact sheets | judged by eye |
+| R20 | The look of the gait, and of a crawl on three legs | sheets [R20-gait](catalogue/R20-gait.png) and [R20-crawl](catalogue/R20-crawl.png) (`scripts/mech_crawl.txt`: three legs shot through) | judged by eye: the legs swing in turn, the feet plant where they land, the body level; maimed, it drops onto its belly and drags itself on |
 
 ## Far events
 
@@ -170,7 +171,7 @@ Serves: "Scale. Big maps, big events, and things left running far away that stil
 
 | id | outcome | pinned by | tolerance |
 |---|---|---|---|
-| E1 | A contraption left running (something set teetering, a run that takes a minute) goes off on time | to come (0d) | |
+| E1 | A contraption left running goes off on time: the `contraption` scene, a spiral of giant dominoes set teetering, each frozen as it waits and woken as the run strikes it, ends in dominoes growing to 2.8 m whose tallest comes down on a volatile vial by a brick wall | `TestContraptionOnTime`; sheet [E1](catalogue/E1.png) | the vial goes off on the same tick at 1, 4 and 8 workers, within 10% of today's 49.8 s; every domino falls (none stalls asleep). The window is what physics left running far away, simplified or not, must meet (milestone 18). Today each frozen domino is pushed over from rest, so the run is slower than real dominoes |
 
 ## Determinism
 
