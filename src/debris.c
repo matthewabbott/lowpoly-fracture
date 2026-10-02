@@ -715,8 +715,6 @@ static int lpCompareBudget( const void* a, const void* b )
 	return ( x->body > y->body ) - ( x->body < y->body );
 }
 
-typedef bool lpBodyPredicate( const lpBody* b );
-
 static bool lpIsFullDebris( const lpBody* b )
 {
 	return b->kind == lp_kindDebris && b->tier == lp_tierFull;
@@ -742,21 +740,23 @@ static bool lpIsStandingScrap( const lpBody* b )
 	return b->kind == lp_kindScrap && b->sinkTicks == 0;
 }
 
-// Bodies matching the predicate, smallest and oldest first
-static lpBudgetEntry* lpRankBodies( lpWorld* w, lpBodyPredicate* predicate, int* count )
+// Every body a budget may move down (unlinked debris, ghosts, rubble and scrap), smallest and oldest first, ranked once.
+// Each rung below walks it for the bodies of its tier as they are then, so one demoted by a rung above is ranked again
+// in the next: the order is the same as ranking each tier's bodies alone (a total order on one key).
+static lpBudgetEntry* lpRankBodies( lpWorld* w, int* count )
 {
 	int n = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		const lpBody* b = w->bodies.data + i;
-		n += b->alive && lpBodyLinked( w, b ) == false && predicate( b ) ? 1 : 0;
+		n += b->alive && b->kind != lp_kindStructure && lpBodyLinked( w, b ) == false ? 1 : 0;
 	}
 	lpBudgetEntry* entries = lpAlloc( sizeof( lpBudgetEntry ) * (size_t)( n > 0 ? n : 1 ) );
 	int k = 0;
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
 		lpBody* b = w->bodies.data + i;
-		if ( b->alive && lpBodyLinked( w, b ) == false && predicate( b ) )
+		if ( b->alive && b->kind != lp_kindStructure && lpBodyLinked( w, b ) == false )
 		{
 			entries[k++] = (lpBudgetEntry){ b->volume, b->createdTick, i };
 		}
@@ -813,66 +813,85 @@ void lpEnforceBudgets( lpWorld* w )
 		}
 	}
 
+	if ( full <= w->def.maxFullDebris && light <= w->def.maxLightDebris && ghosts <= w->def.maxGhosts &&
+		 rubblePieces <= w->def.maxRubblePieces && scrapPieces <= w->def.maxScrapPieces )
+	{
+		return;
+	}
 	int n;
+	lpBudgetEntry* e = lpRankBodies( w, &n );
 	if ( full > w->def.maxFullDebris )
 	{
-		lpBudgetEntry* e = lpRankBodies( w, lpIsFullDebris, &n );
 		int excess = full - w->def.maxFullDebris;
-		for ( int i = 0; i < n && i < excess && i < 32; ++i )
+		for ( int i = 0, done = 0; i < n && done < excess && done < 32; ++i )
 		{
-			lpConvertToLight( w, e[i].body );
-			w->stats.demotionsThisStep += 1;
-			light += 1;
+			if ( lpIsFullDebris( w->bodies.data + e[i].body ) )
+			{
+				lpConvertToLight( w, e[i].body );
+				w->stats.demotionsThisStep += 1;
+				light += 1;
+				done += 1;
+			}
 		}
-		lpFree( e );
 	}
 	if ( light > w->def.maxLightDebris )
 	{
-		lpBudgetEntry* e = lpRankBodies( w, lpIsLightDebris, &n );
 		int excess = light - w->def.maxLightDebris;
-		for ( int i = 0; i < n && i < excess && i < 128; ++i )
+		for ( int i = 0, done = 0; i < n && done < excess && done < 128; ++i )
 		{
-			lpConvertToGhost( w, e[i].body );
-			w->stats.demotionsThisStep += 1;
-			ghosts += 1;
+			if ( lpIsLightDebris( w->bodies.data + e[i].body ) )
+			{
+				lpConvertToGhost( w, e[i].body );
+				w->stats.demotionsThisStep += 1;
+				ghosts += 1;
+				done += 1;
+			}
 		}
-		lpFree( e );
 	}
 	if ( ghosts > w->def.maxGhosts )
 	{
-		lpBudgetEntry* e = lpRankBodies( w, lpIsGhost, &n );
 		int excess = ghosts - w->def.maxGhosts;
-		for ( int i = 0; i < n && i < excess; ++i )
+		for ( int i = 0, done = 0; i < n && done < excess; ++i )
 		{
-			lpDestroyBody( w, e[i].body, true );
-			w->stats.demotionsThisStep += 1;
+			const lpBody* b = w->bodies.data + e[i].body;
+			if ( b->alive && lpIsGhost( b ) )
+			{
+				lpDestroyBody( w, e[i].body, true );
+				w->stats.demotionsThisStep += 1;
+				done += 1;
+			}
 		}
-		lpFree( e );
 	}
 	if ( rubblePieces > w->def.maxRubblePieces )
 	{
-		lpBudgetEntry* e = lpRankBodies( w, lpIsRubble, &n );
-		for ( int i = 0, done = 0; i < n && rubblePieces > w->def.maxRubblePieces && done < 64; ++i, ++done )
+		for ( int i = 0, done = 0; i < n && rubblePieces > w->def.maxRubblePieces && done < 64; ++i )
 		{
-			int pieces = w->bodies.data[e[i].body].pieces.count;
+			const lpBody* b = w->bodies.data + e[i].body;
+			if ( b->alive == false || lpIsRubble( b ) == false )
+			{
+				continue;
+			}
+			int pieces = b->pieces.count;
 			rubblePieces -= pieces;
 			scrapPieces += pieces; // counted now, so the scrap cap below holds in this same step
 			lpConvertToScrap( w, e[i].body );
 			w->stats.demotionsThisStep += 1;
+			done += 1;
 		}
-		lpFree( e );
 	}
 	if ( scrapPieces > w->def.maxScrapPieces )
 	{
-		lpBudgetEntry* e = lpRankBodies( w, lpIsStandingScrap, &n );
 		for ( int i = 0; i < n && scrapPieces > w->def.maxScrapPieces; ++i )
 		{
 			lpBody* b = w->bodies.data + e[i].body;
-			scrapPieces -= b->pieces.count;
-			b->sinkTicks = 20;
+			if ( b->alive && lpIsStandingScrap( b ) )
+			{
+				scrapPieces -= b->pieces.count;
+				b->sinkTicks = 20;
+			}
 		}
-		lpFree( e );
 	}
+	lpFree( e );
 }
 
 // ---- collision filter ----
