@@ -1,29 +1,28 @@
-# Replays the same scripted session in the sandbox with different worker counts and compares per-tick state hashes.
-#   pwsh tools/check-determinism.ps1 [-Scene walls] [-Script scripts/walls_demo.txt] [-Frames 240] [-Bombard 0]
+# Replays the same scripted session headless (lpf_bench) at 1, 4 and 8 workers and compares per-tick state hashes
+# (the world's and the stress solver's).
+#   pwsh tools/check-determinism.ps1 [-Scene walls] [-Script scripts/walls_demo.txt] [-Ticks 240] [-Period 0]
+# -Period N also bombards the scene every N ticks (lpSceneBombard). The bench replays a script exactly as the sandbox
+# does (same world settings, same order of events), so its hashes match the sandbox's --hash-log.
 param(
     [string]$Scene = 'walls',
     [string]$Script = 'scripts/walls_demo.txt',
-    [int]$Frames = 240,
-    [int]$Bombard = 0,
+    [int]$Ticks = 240,
+    [int]$Period = 0,
     [string]$Preset = 'msvc-release'
 )
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
-$exe = "build/$Preset/bin/sandbox.exe"
+$exe = "build/$Preset/bin/lpf_bench.exe"
 $out = "build/determinism"
 New-Item -ItemType Directory -Force $out | Out-Null
 
-$logs = @()
-foreach ($workers in 1, 4, 8) {
-    $log = "$out/hash_$Scene`_w$workers.txt"
-    $args = "--scene $Scene --frames $Frames --workers $workers --hash-log $log --hide-ui --vsync 0"
-    if ($Script) { $args += " --script $Script" }
-    if ($Bombard -gt 0) { $args += " --bombard $Bombard" }
-    $p = Start-Process -FilePath $exe -ArgumentList $args -NoNewWindow -PassThru -Wait -RedirectStandardOutput "$out/stdout_w$workers.txt"
-    if ($p.ExitCode -ne 0) { Write-Host "sandbox failed with workers=$workers"; exit 1 }
-    $logs += ,$log
-}
+$prefix = "$out/hash_$Scene"
+$a = @('--scene', $Scene, '--ticks', $Ticks, '--period', $Period, '--workers', '1,4,8', '--hash-log', $prefix)
+if ($Script) { $a += @('--script', $Script) }
+& $exe @a | Out-File "$out/bench_$Scene.txt"
+if ($LASTEXITCODE -eq 1) { Write-Host "lpf_bench failed"; exit 1 }
 
+$logs = @(1, 4, 8 | ForEach-Object { "$prefix.w$_.txt" })
 $reference = Get-Content $logs[0]
 $ok = $true
 for ($i = 1; $i -lt $logs.Count; ++$i) {
@@ -37,5 +36,5 @@ for ($i = 1; $i -lt $logs.Count; ++$i) {
         }
     }
 }
-if ($ok) { Write-Host "deterministic: $($reference.Count) ticks identical across 1, 4, 8 workers (final $($reference[-1]))" ; exit 0 }
+if ($ok) { Write-Host "deterministic: $($reference.Count - 1) ticks identical across 1, 4, 8 workers (final $($reference[-1]))"; exit 0 }
 exit 2

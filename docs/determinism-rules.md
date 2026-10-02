@@ -95,7 +95,7 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
   gravity scales that are not 1, vehicles, rigs and pools: a world without them hashes as before). Rendering and particles are deliberately
   excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.
 - Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, ruins (its demo and under
-  bombardment), town under a barrage (`-Bombard 3`, many structures solving at once), the yard (its demo and
+  bombardment), town under a barrage (`-Period 3`, many structures solving at once), the yard (its demo and
   under bombardment), the keep (`scripts/keep_demo.txt`, one 2000-piece structure), the track (its demo under
   bombardment: scripted drivers, a driven car, wheels coming off), and the mech yard (its demo under bombardment: the
   patrol, a walked mech losing legs; `scripts/mech_arms.txt`: reaches, a grab and a stomp), at 1, 4 and 8 workers.

@@ -2,10 +2,12 @@
 // Headless benchmark: build a scene, bombard it on a fixed schedule, time every step.
 //
 //   lpf_bench --scene town --workers 1,4,8 --ticks 600 --period 12 --json bench.json
+//   lpf_bench --scene keep --script scripts/keep_demo.txt --period 0 --ticks 420 --hash-log build/keep
 //
 // Also checks determinism: the final state hash must be the same for every worker count.
 
 #include "scenes.h"
+#include "script.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +67,9 @@ static const char* s_hashLog;
 // --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
 static const char* s_tickLog;
 
+// --script path: a replay script's events, applied before the bombardment each tick (scenes/script.h)
+static lpScript s_script;
+
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
 	lpWorldDef ld = lpDefaultWorldDef();
@@ -119,10 +124,13 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	float* phys = calloc( (size_t)samples, sizeof( float ) );
 	float* update = calloc( (size_t)samples, sizeof( float ) );
 
+	lpScriptState replay = lpDefaultScriptState();
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
+		lpScriptPlay( world, &s_script, tick, &replay );
 		lpSceneBombard( world, scene, tick, period );
-		lpSceneDrive( world, scene, tick, -1, -1 ); // the track's cars drive laps, the mech patrols
+		// the track's cars drive laps, the mech patrols, but for what the script drives
+		lpSceneDrive( world, scene, tick, replay.playerVehicle, replay.playerRig );
 		uint64_t t0 = lpGetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
 		total[tick] = lpGetMilliseconds( t0 );
@@ -275,11 +283,19 @@ int main( int argc, char** argv )
 			s_tickLog = v;
 			++i;
 		}
+		else if ( strcmp( a, "--script" ) == 0 )
+		{
+			if ( lpScriptLoad( &s_script, v ) == false )
+			{
+				return 1;
+			}
+			++i;
+		}
 		else
 		{
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
-					"                 [--hash-log path] [--tick-log path]\n" );
+					"                 [--hash-log path] [--tick-log path] [--script path]\n" );
 			return 1;
 		}
 	}
@@ -352,5 +368,6 @@ int main( int argc, char** argv )
 			fclose( f );
 		}
 	}
+	lpScriptFree( &s_script );
 	return deterministic ? 0 : 2;
 }

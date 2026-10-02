@@ -12,6 +12,7 @@
 #include "renderer.h"
 
 #include "scenes.h"
+#include "script.h"
 
 #include "imgui.h"
 #include "sokol_app.h"
@@ -29,43 +30,30 @@
 namespace
 {
 
+// The tools are the replay scripts' (scenes/script.h), in their order
 enum Tool
 {
-	ToolRifle,
-	ToolGrenade,
-	ToolCannon,
-	ToolHammer,
-	ToolBall,
-	ToolFlask,
-	ToolPull,
-	ToolBlow,
-	ToolCount
+	ToolRifle = lp_scriptRifle,
+	ToolGrenade = lp_scriptGrenade,
+	ToolCannon = lp_scriptCannon,
+	ToolHammer = lp_scriptHammer,
+	ToolBall = lp_scriptBall,
+	ToolFlask = lp_scriptFlask,
+	ToolPull = lp_scriptPull,
+	ToolBlow = lp_scriptBlow,
+	ToolCount = lp_scriptToolCount
 };
 
 const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledgehammer", "Cannonball", "Volatile flask",
 									  "Grab / pull", "Leaf blower" };
 
-// Not tools: a vehicle's controls changed (recorded as `tick drive vehicle throttle brake steer handbrake`), a rig's
-// (`tick walk rig forward strafe turn crouch`), a rig's limb strikes at a point or steps back into the gait
-// (`tick reach rig limb active x y z`), its claw grabs what it touches or lets go (`tick grab rig limb`)
-constexpr int kDrive = ToolCount;
-constexpr int kWalk = ToolCount + 1;
-constexpr int kReach = ToolCount + 2;
-constexpr int kGrab = ToolCount + 3;
+// A sim input: applied at the start of its tick, before the step. Recorded and replayed as script lines.
+using Event = lpScriptEvent;
 
-// A sim input: applied at the start of `tick`, before the step. Recorded and replayed as text.
-struct Event
+lpVec3 ToLp( V3 v )
 {
-	int64_t tick;
-	int tool;  // or kDrive, kWalk, kReach, kGrab
-	V3 origin; // pull: target point; reach: the point
-	V3 dir;	   // pull: grabbed point in the body frame
-	int piece; // pull: the piece; drive: the vehicle; walk, reach, grab: the rig
-	lpVehicleControl control; // drive only
-	lpRigControl walk;		  // walk only
-	int limb;				  // reach, grab
-	bool active;			  // reach: strike, or step back
-};
+	return lpVec3{ v.x, v.y, v.z };
+}
 
 struct Options
 {
@@ -110,19 +98,17 @@ struct App
 	bool firing = false;
 	int fireCooldown = 0;
 
-	// driving: the vehicle the drive events steer (the scene's drivers leave it alone), the one the keys drive here
-	int playerVehicle = -1;
+	// what replaying changed: the vehicle and the rig the events steer (the scene's drivers leave them alone), the
+	// claw's grip
+	lpScriptState replay = lpDefaultScriptState();
+	// driving: the vehicle the keys drive here
 	int driving = -1;
 	lpVehicleControl sent = {};
 	// walking: likewise for a rig
-	int playerRig = -1;
 	int walking = -1;
 	lpRigControl walkSent = {};
-	// its arms: the leg F strikes with (-1: none), and the claw's grip (a weld made by a grab event; -1: none)
+	// its arms: the leg F strikes with (-1: none)
 	int striking = -1;
-	int grip = -1;
-	uint32_t gripGeneration = 0;
-	int gripLimb = -1;
 
 	// grab tool
 	int grabPiece = -1;
@@ -130,8 +116,7 @@ struct App
 	V3 grabLocal = {};
 	float grabDistance = 5.0f;
 
-	std::vector<Event> script;
-	size_t nextScript = 0;
+	lpScript script = {};
 	std::vector<Event> live;
 	FILE* recordFile = nullptr;
 	FILE* hashFile = nullptr;
@@ -250,325 +235,37 @@ void LoadScene( int scene )
 	app.opt.scene = scene;
 	app.tick = 0;
 	app.accumulator = 0.0;
-	app.nextScript = 0;
-	app.playerVehicle = -1;
+	app.replay = lpDefaultScriptState();
 	app.driving = -1;
 	app.sent = {};
-	app.playerRig = -1;
 	app.walking = -1;
 	app.walkSent = {};
 	app.striking = -1;
-	app.grip = -1;
-	app.gripGeneration = 0;
-	app.gripLimb = -1;
 	app.live.clear();
 	app.particles.clear();
 	Renderer_Reset();
 	SetSceneCamera( scene );
 }
 
-const char* ToolToken( int tool )
-{
-	static const char* tokens[ToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull", "blow" };
-	return tokens[tool];
-}
-
 void LoadScript( const std::string& path )
 {
-	FILE* f = fopen( path.c_str(), "r" );
-	if ( f == nullptr )
+	if ( lpScriptLoad( &app.script, path.c_str() ) )
 	{
-		fprintf( stderr, "cannot open script %s\n", path.c_str() );
-		return;
+		printf( "script: %d events from %s\n", app.script.count, path.c_str() );
 	}
-	char line[256];
-	while ( fgets( line, sizeof( line ), f ) )
-	{
-		if ( line[0] == '#' || line[0] == '\n' )
-		{
-			continue;
-		}
-		Event e = {};
-		long long t = 0;
-		char name[32] = {};
-		e.piece = -1;
-		int handbrake = 0;
-		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "walk" ) == 0 )
-		{
-			if ( sscanf( line, "%lld %31s %d %f %f %f %f", &t, name, &e.piece, &e.walk.forward, &e.walk.strafe, &e.walk.turn,
-						 &e.walk.crouch ) == 7 )
-			{
-				e.tick = t;
-				e.tool = kWalk;
-				app.script.push_back( e );
-			}
-			continue;
-		}
-		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "reach" ) == 0 )
-		{
-			int active = 0;
-			if ( sscanf( line, "%lld %31s %d %d %d %f %f %f", &t, name, &e.piece, &e.limb, &active, &e.origin.x, &e.origin.y,
-						 &e.origin.z ) == 8 )
-			{
-				e.tick = t;
-				e.tool = kReach;
-				e.active = active != 0;
-				app.script.push_back( e );
-			}
-			continue;
-		}
-		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "grab" ) == 0 )
-		{
-			if ( sscanf( line, "%lld %31s %d %d", &t, name, &e.piece, &e.limb ) == 4 )
-			{
-				e.tick = t;
-				e.tool = kGrab;
-				app.script.push_back( e );
-			}
-			continue;
-		}
-		if ( sscanf( line, "%lld %31s", &t, name ) == 2 && _stricmp( name, "drive" ) == 0 )
-		{
-			if ( sscanf( line, "%lld %31s %d %f %f %f %d", &t, name, &e.piece, &e.control.throttle, &e.control.brake,
-						 &e.control.steer, &handbrake ) == 7 )
-			{
-				e.tick = t;
-				e.tool = kDrive;
-				e.control.handbrake = handbrake != 0;
-				app.script.push_back( e );
-			}
-			continue;
-		}
-		if ( sscanf( line, "%lld %31s %f %f %f %f %f %f %d", &t, name, &e.origin.x, &e.origin.y, &e.origin.z, &e.dir.x, &e.dir.y,
-					 &e.dir.z, &e.piece ) >= 8 )
-		{
-			e.tick = t;
-			e.tool = -1;
-			for ( int k = 0; k < ToolCount; ++k )
-			{
-				if ( _stricmp( name, ToolToken( k ) ) == 0 )
-				{
-					e.tool = k;
-				}
-			}
-			if ( e.tool < 0 )
-			{
-				fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk, reach, grab)\n",
-						 name );
-				continue;
-			}
-			if ( e.tool != ToolPull )
-			{
-				e.dir = Normalize( e.dir );
-			}
-			// A held blower: the last field is how many ticks it stays on
-			int repeat = e.tool == ToolBlow && e.piece > 1 ? e.piece : 1;
-			for ( int k = 0; k < repeat; ++k )
-			{
-				Event copy = e;
-				copy.tick = e.tick + k;
-				copy.piece = -1;
-				app.script.push_back( copy );
-			}
-		}
-	}
-	fclose( f );
-	printf( "script: %d events from %s\n", (int)app.script.size(), path.c_str() );
 }
 
-// Deterministic: everything below depends only on the event and the world state at this tick.
 void ApplyEvent( const Event& e )
 {
-	lpVec3 origin = { e.origin.x, e.origin.y, e.origin.z };
-	lpVec3 dir = { e.dir.x, e.dir.y, e.dir.z };
-
-	if ( e.tool == kDrive )
-	{
-		lpWorld_SetVehicleControl( app.world, e.piece, &e.control );
-		app.playerVehicle = e.piece; // from now on the scene's drivers leave it to the events
-		return;
-	}
-
-	if ( e.tool == kWalk )
-	{
-		lpWorld_SetRigControl( app.world, e.piece, &e.walk );
-		app.playerRig = e.piece;
-		return;
-	}
-
-	if ( e.tool == kReach )
-	{
-		lpWorld_SetLimbTarget( app.world, e.piece, e.limb, e.active, lpPos{ e.origin.x, e.origin.y, e.origin.z } );
-		app.playerRig = e.piece;
-		return;
-	}
-
-	if ( e.tool == kGrab )
-	{
-		// Lets go of the grip it holds (if it has not broken), else grabs what the claw touches
-		lpLinkState held = app.grip >= 0 ? lpWorld_GetLinkState( app.world, app.grip ) : lpLinkState{};
-		if ( app.grip >= 0 && held.alive && held.generation == app.gripGeneration )
-		{
-			lpDestroyLink( app.world, app.grip );
-			app.grip = -1;
-		}
-		else
-		{
-			app.grip = lpRigGrab( app.world, e.piece, e.limb );
-			app.gripGeneration = app.grip >= 0 ? lpWorld_GetLinkState( app.world, app.grip ).generation : 0;
-			app.gripLimb = e.limb;
-		}
-		app.playerRig = e.piece;
-		return;
-	}
-
-	if ( e.tool == ToolPull )
-	{
-		// origin = target, dir = grabbed point in the body frame
-		lpWorld_Pull( app.world, e.piece, dir, origin, 40.0f, 400.0f );
-		return;
-	}
-
-	if ( e.tool == ToolBlow )
-	{
-		// 8 m cone of air: wakes and pushes rubble, scrap and ghosts, so a road can be cleared. Gentle enough that
-		// blown rubble does not smash into what it lands against (damage starts at 4 m/s).
-		lpWorld_Blow( app.world, origin, dir, 8.0f, 0.35f, 4.5f );
-		return;
-	}
-
-	if ( e.tool == ToolFlask )
-	{
-		// A chunky hexagonal bottle with a neck
-		lpVec3 points[15];
-		for ( int i = 0; i < 6; ++i )
-		{
-			lpCosSin cs = lpComputeCosSin( 1.0471976f * (float)i );
-			points[i] = { 0.09f * cs.cosine, -0.12f, 0.09f * cs.sine };
-			points[6 + i] = { 0.09f * cs.cosine, 0.06f, 0.09f * cs.sine };
-		}
-		points[12] = { 0.04f, 0.2f, 0.0f };
-		points[13] = { -0.03f, 0.2f, 0.035f };
-		points[14] = { -0.03f, 0.2f, -0.035f };
-		lpPartDef part = lpDefaultPartDef();
-		part.points = points;
-		part.pointCount = 15;
-		part.material = lp_glass;
-		part.color = 0x6FD68Au;
-		lpObjectDef def = lpDefaultObjectDef();
-		def.isStatic = false;
-		def.transform.p = lpMulAdd( origin, 0.8f, dir );
-		def.parts = &part;
-		def.partCount = 1;
-		def.linearVelocity = lpAdd( lpMulSV( 16.0f, dir ), lpVec3{ 0.0f, 2.5f, 0.0f } );
-		def.angularVelocity = { 4.0f, 1.0f, 7.0f };
-		def.detonator.triggerSpeed = 4.5f;
-		def.detonator.radius = 1.8f;
-		def.detonator.energy = 120000.0f;
-		def.detonator.speed = 12.0f;
-		lpCreateObject( app.world, &def );
-		return;
-	}
-
-	if ( e.tool == ToolBall )
-	{
-		lpVec3 points[20];
-		for ( int i = 0; i < 20; ++i )
-		{
-			// golden-spiral points on a sphere: a chunky low-poly ball
-			float y = 1.0f - 2.0f * ( (float)i + 0.5f ) / 20.0f;
-			float r = sqrtf( 1.0f - y * y );
-			float a = 2.39996323f * (float)i;
-			lpCosSin cs = lpComputeCosSin( a );
-			points[i] = { 0.3f * r * cs.cosine, 0.3f * y, 0.3f * r * cs.sine };
-		}
-		lpPartDef part = lpDefaultPartDef();
-		part.points = points;
-		part.pointCount = 20;
-		part.material = lp_metal;
-		part.color = 0x3A3D42u;
-		lpObjectDef def = lpDefaultObjectDef();
-		def.isStatic = false;
-		def.transform.p = lpMulAdd( origin, 1.0f, dir );
-		def.parts = &part;
-		def.partCount = 1;
-		def.linearVelocity = lpMulSV( 45.0f, dir );
-		lpCreateObject( app.world, &def );
-		return;
-	}
-
-	float range = e.tool == ToolHammer ? 4.0f : 250.0f;
-	lpRayHit hit = lpWorld_CastRay( app.world, origin, lpMulSV( range, dir ) );
-	if ( hit.hit == false )
-	{
-		return;
-	}
-
-	lpImpactDef im = {};
-	im.point = hit.point;
-	im.direction = dir;
-	switch ( e.tool )
-	{
-		case ToolRifle:
-			im.radius = 0.35f;
-			im.energy = 4000.0f;
-			im.impulse = 20.0f;
-			break;
-		case ToolGrenade:
-			im.radius = 1.4f;
-			im.energy = 80000.0f;
-			im.impulse = 12.0f;
-			im.explosion = true;
-			break;
-		case ToolCannon:
-			im.radius = 2.3f;
-			im.energy = 350000.0f;
-			im.impulse = 18.0f;
-			im.explosion = true;
-			break;
-		case ToolHammer:
-			im.radius = 0.6f;
-			im.energy = 14000.0f;
-			im.impulse = 60.0f;
-			break;
-		default:
-			return;
-	}
-	lpWorld_AddImpact( app.world, &im ); // dust comes from the core, in the colour of what broke
+	lpScriptApply( app.world, &e, &app.replay );
 }
 
 void RecordAndQueue( const Event& e )
 {
 	app.live.push_back( e );
-	// %.9g everywhere: a float's exact value, so a recording replays the session it came from
-	if ( app.recordFile != nullptr && e.tool == kWalk )
+	if ( app.recordFile != nullptr )
 	{
-		fprintf( app.recordFile, "%lld walk %d %.9g %.9g %.9g %.9g\n", (long long)e.tick, e.piece, e.walk.forward, e.walk.strafe,
-				 e.walk.turn, e.walk.crouch );
-		fflush( app.recordFile );
-	}
-	else if ( app.recordFile != nullptr && e.tool == kReach )
-	{
-		fprintf( app.recordFile, "%lld reach %d %d %d %.9g %.9g %.9g\n", (long long)e.tick, e.piece, e.limb, e.active ? 1 : 0,
-				 e.origin.x, e.origin.y, e.origin.z );
-		fflush( app.recordFile );
-	}
-	else if ( app.recordFile != nullptr && e.tool == kGrab )
-	{
-		fprintf( app.recordFile, "%lld grab %d %d\n", (long long)e.tick, e.piece, e.limb );
-		fflush( app.recordFile );
-	}
-	else if ( app.recordFile != nullptr && e.tool == kDrive )
-	{
-		fprintf( app.recordFile, "%lld drive %d %.9g %.9g %.9g %d\n", (long long)e.tick, e.piece, e.control.throttle, e.control.brake,
-				 e.control.steer, e.control.handbrake ? 1 : 0 );
-		fflush( app.recordFile );
-	}
-	else if ( app.recordFile != nullptr )
-	{
-		fprintf( app.recordFile, "%lld %s %.9g %.9g %.9g %.9g %.9g %.9g %d\n", (long long)e.tick, ToolToken( e.tool ), e.origin.x,
-				 e.origin.y, e.origin.z, e.dir.x, e.dir.y, e.dir.z, e.piece );
-		fflush( app.recordFile );
+		lpScriptWrite( app.recordFile, &e );
 	}
 }
 
@@ -577,8 +274,8 @@ void QueueDrive( const lpVehicleControl& control )
 {
 	Event e = {};
 	e.tick = app.tick + app.opt.inputDelay;
-	e.tool = kDrive;
-	e.piece = app.driving;
+	e.kind = lp_scriptDrive;
+	e.index = app.driving;
 	e.control = control;
 	RecordAndQueue( e );
 	app.sent = control;
@@ -589,8 +286,8 @@ void QueueWalk( const lpRigControl& control )
 {
 	Event e = {};
 	e.tick = app.tick + app.opt.inputDelay;
-	e.tool = kWalk;
-	e.piece = app.walking;
+	e.kind = lp_scriptWalk;
+	e.index = app.walking;
 	e.walk = control;
 	RecordAndQueue( e );
 	app.walkSent = control;
@@ -636,11 +333,11 @@ void QueueReach( int limb, bool active, V3 point )
 {
 	Event e = {};
 	e.tick = app.tick;
-	e.tool = kReach;
-	e.piece = app.walking;
+	e.kind = lp_scriptReach;
+	e.index = app.walking;
 	e.limb = limb;
 	e.active = active;
-	e.origin = point;
+	e.origin = ToLp( point );
 	RecordAndQueue( e );
 }
 
@@ -656,14 +353,14 @@ void StrikeKey( bool down )
 	V3 point = {};
 	if ( down && Walk_Aim( app.world, app.walking, app.camPos, Forward(), &limb, &point ) )
 	{
-		if ( app.striking >= 0 && app.striking != limb && app.grip < 0 )
+		if ( app.striking >= 0 && app.striking != limb && app.replay.grip < 0 )
 		{
 			QueueReach( app.striking, false, V3{} );
 		}
-		app.striking = app.grip >= 0 ? app.gripLimb : limb;
+		app.striking = app.replay.grip >= 0 ? app.replay.gripLimb : limb;
 		QueueReach( app.striking, true, point );
 	}
-	else if ( down == false && app.striking >= 0 && app.grip < 0 )
+	else if ( down == false && app.striking >= 0 && app.replay.grip < 0 )
 	{
 		QueueReach( app.striking, false, V3{} );
 		app.striking = -1;
@@ -679,13 +376,13 @@ void ClawKey()
 	}
 	Event e = {};
 	e.tick = app.tick;
-	e.tool = kGrab;
-	e.piece = app.walking;
-	if ( app.grip >= 0 )
+	e.kind = lp_scriptGrab;
+	e.index = app.walking;
+	if ( app.replay.grip >= 0 )
 	{
-		e.limb = app.gripLimb;
+		e.limb = app.replay.gripLimb;
 		RecordAndQueue( e );
-		QueueReach( app.gripLimb, false, V3{} );
+		QueueReach( app.replay.gripLimb, false, V3{} );
 		app.striking = -1;
 		return;
 	}
@@ -701,8 +398,12 @@ void ClawKey()
 
 void QueueFire()
 {
-	V3 f = Forward();
-	Event e = { app.tick, app.tool, app.camPos, f, -1 };
+	Event e = {};
+	e.tick = app.tick;
+	e.kind = app.tool;
+	e.origin = ToLp( app.camPos );
+	e.dir = ToLp( Forward() );
+	e.index = -1;
 	RecordAndQueue( e );
 }
 
@@ -738,18 +439,19 @@ void QueueGrab()
 		return;
 	}
 	V3 target = app.camPos + app.grabDistance * Forward();
-	Event e = { app.tick, ToolPull, target, app.grabLocal, app.grabPiece };
+	Event e = {};
+	e.tick = app.tick;
+	e.kind = ToolPull;
+	e.origin = ToLp( target );
+	e.dir = ToLp( app.grabLocal );
+	e.index = app.grabPiece;
 	RecordAndQueue( e );
 }
 
 void StepSimulation()
 {
 	// Script and live events for this tick, in file order then input order
-	while ( app.nextScript < app.script.size() && app.script[app.nextScript].tick <= app.tick )
-	{
-		ApplyEvent( app.script[app.nextScript] );
-		app.nextScript += 1;
-	}
+	lpScriptPlay( app.world, &app.script, app.tick, &app.replay );
 	// Live events whose tick has come, in input order; delayed ones (--input-delay) wait
 	size_t waiting = 0;
 	for ( size_t i = 0; i < app.live.size(); ++i )
@@ -769,7 +471,7 @@ void StepSimulation()
 	{
 		lpSceneBombard( app.world, app.opt.scene, (int)app.tick, app.opt.bombard );
 	}
-	lpSceneDrive( app.world, app.opt.scene, (int)app.tick, app.playerVehicle, app.playerRig );
+	lpSceneDrive( app.world, app.opt.scene, (int)app.tick, app.replay.playerVehicle, app.replay.playerRig );
 
 	uint64_t t0 = lpGetTicks();
 	lpWorld_Step( app.world, 1.0f / 60.0f, 4 );
@@ -920,14 +622,14 @@ void UpdateParticles( float dt )
 
 void UpdateCamera( float dt )
 {
-	int chase = app.driving >= 0 ? app.driving : ( app.opt.follow ? app.playerVehicle : -1 );
+	int chase = app.driving >= 0 ? app.driving : ( app.opt.follow ? app.replay.playerVehicle : -1 );
 	if ( chase >= 0 )
 	{
 		Drive_Camera( app.world, chase, dt, &app.camPos, &app.yaw, &app.pitch );
 		return; // the keys drive
 	}
 	// Following with no rig walked by events, the scene's first rig (the mech on patrol)
-	int followed = app.playerRig >= 0 ? app.playerRig : ( app.playerVehicle < 0 && lpWorld_GetRigCapacity( app.world ) > 0 ? 0 : -1 );
+	int followed = app.replay.playerRig >= 0 ? app.replay.playerRig : ( app.replay.playerVehicle < 0 && lpWorld_GetRigCapacity( app.world ) > 0 ? 0 : -1 );
 	int walker = app.walking >= 0 ? app.walking : ( app.opt.follow ? followed : -1 );
 	if ( walker >= 0 )
 	{
@@ -984,7 +686,7 @@ void DrawUi()
 	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );
 	ImGui::Text( "triangles %d  draws %d  pages %d  upload %d KB", r.triangles, r.drawCalls, r.pages, r.uploadKB );
 	ImGui::Text( "vehicles %.2f ms  wheel casts %d", app.last.vehicleMs, app.last.wheelCasts );
-	int shown = app.driving >= 0 ? app.driving : app.playerVehicle;
+	int shown = app.driving >= 0 ? app.driving : app.replay.playerVehicle;
 	if ( shown >= 0 )
 	{
 		char line[160];
@@ -993,11 +695,11 @@ void DrawUi()
 	}
 	if ( lpWorld_GetRigCapacity( app.world ) > 0 )
 	{
-		int walker = app.walking >= 0 ? app.walking : ( app.playerRig >= 0 ? app.playerRig : 0 );
+		int walker = app.walking >= 0 ? app.walking : ( app.replay.playerRig >= 0 ? app.replay.playerRig : 0 );
 		char line[256];
 		Walk_Describe( app.world, walker, line, (int)sizeof( line ) );
 		ImGui::Text( "rigs %.2f ms  foot casts %d", app.last.rigMs, app.last.footCasts );
-		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, app.grip >= 0 ? "  gripping" : "" );
+		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, app.replay.grip >= 0 ? "  gripping" : "" );
 	}
 	ImGui::Text( "tick %lld", (long long)app.tick );
 	ImGui::Separator();
@@ -1363,6 +1065,7 @@ void Cleanup()
 	{
 		fclose( app.hashFile );
 	}
+	lpScriptFree( &app.script );
 	DestroyWorld();
 	Renderer_Shutdown();
 	simgui_shutdown();

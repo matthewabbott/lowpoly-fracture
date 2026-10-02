@@ -46,7 +46,9 @@ its gait, `tick grab rig limb` grabs or lets go), `--record file` writes them,
 `--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame, `--hash-log file` writes the
 per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera chases the car or mech the events steer), `--hide-ui`,
 `--vsync 0`, `--workers N`, `--input-delay N` (walk and drive events apply N ticks late: a feel test of lockstep),
-`--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves.
+`--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves. Headless,
+`lpf_bench --scene walls --script scripts/walls_demo.txt --period 0 --ticks 240 --hash-log out` replays the same events
+with the same hashes (the script player is `scenes/script.c`).
 
 ## License
 
