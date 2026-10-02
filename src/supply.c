@@ -21,8 +21,6 @@
 
 #include <string.h>
 
-#define LP_POOL_LEAK 1.0f	  // a leak drains this share of the pool per second for each share of its reach lost
-#define LP_POOL_PRESSURE 0.3f // a pool feeds fully down to this share of its capacity, then less, to nothing empty
 
 static uint8_t lpQuantize( float strength )
 {
@@ -33,7 +31,7 @@ static uint8_t lpQuantize( float strength )
 // How hard a pool still pushes, 0 to 1
 static float lpPoolPressure( const lpPool* pool )
 {
-	return lpClampFloat( pool->level / ( LP_POOL_PRESSURE * pool->capacity ), 0.0f, 1.0f );
+	return lpClampFloat( pool->level / ( pool->pressure * pool->capacity ), 0.0f, 1.0f );
 }
 
 // A source's feed: its share, times the worst supply among what it needs, times its pool's pressure
@@ -161,7 +159,7 @@ void lpUpdateSupply( lpWorld* w )
 		lpPool* pool = w->pools.data + i;
 		if ( pool->reach > 0.0f && pool->found < pool->reach )
 		{
-			pool->leak += LP_POOL_LEAK * pool->capacity * ( pool->reach - pool->found ) / pool->reach;
+			pool->leak += pool->leakRate * pool->capacity * ( pool->reach - pool->found ) / pool->reach;
 		}
 		pool->reach = pool->found;
 	}

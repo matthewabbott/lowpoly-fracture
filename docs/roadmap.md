@@ -454,6 +454,31 @@ The catalogue is the contract the integer core must meet, so it comes before the
    - other constants that are game policy move into defs (a pool's leak rate, the strike speed);
    - diagnostics for agents and tests (numbers, not pictures): queries for bonds and contacts, and a sandbox `--dump`
      of the state at a tick as JSON.
+
+   **Done (2026-10-02), each step hash-neutral but where a test sets something new:**
+   - **Materials and joints per world:** `lpWorldDef.materials` and `.joints`, read back with `lpWorld_GetMaterial`
+     and `lpWorld_GetJoint`; each material names its default joint, and bad tables are refused.
+   - **The gait as a replaceable policy:**
+     - its 31 tunings and the walking fields of `lpRigDef` are now `lpRigDef.gait` (`lpGaitDef`), the strike speed
+       among them;
+     - `rig.c` holds the mechanism walkers share (centre of mass, support margin, the stress re-check of what a foot
+       stands on);
+     - `lpRigDef.walker = lp_walkerNone` hands a rig to the game, which drives each foot (`lpWorld_SetFootTarget`)
+       from a pose (`lpWorld_SetRigPose`), pinned by `TestRigNoWalker`. Not done: splitting the walker's state out of
+       `lpLimb`/`lpRig` (no outcome needs it); the review may take it up.
+   - **Policy into defs:**
+     - a pool's leak rate and pressure (`lpPartSystem`);
+     - a wheel's sliding and handbrake grip and tear ratio (`lpWheelDef`);
+     - a motor's jam knock (`lpMotorDef`);
+     - the pull's spring (`lpWorldDef.pull*`).
+
+     Zero means today's value. Left as they are for the review: the collision-damage calibration, push caps, shove,
+     blow, the light-debris freeze age, and the rig's thresholds.
+   - **The diagnostics** were brought forward into step 0 (above).
+   - **A fuse** (`lpDetonatorDef.delay`): a charge set off inside the simulation goes off that long after, wherever
+     its pieces have gone, from the first piece still carrying it, or fizzles. It is in the core because the core
+     already tracks a charge through fracture; a purely timed charge is a tick-stamped command from milestone 10.
+     Pinned by `TestDetonatorDelay`.
 2. **A seams-first review:** independent reviewers (Fable; GPT-6 Astra in Codex; the Codex reviewer), each
    given the goals, the catalogue and the code, read-only, propose clean boundaries and simpler ways to reach the same
    outcomes per subsystem: fracture, stress, links, wheels and rigs, the debris tiers, supply. One of them prunes,

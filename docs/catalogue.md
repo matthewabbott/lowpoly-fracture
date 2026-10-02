@@ -129,6 +129,7 @@ Serves: "Bodies are systems, not hit points" and the vehicles' innards.
 |---|---|---|---|
 | Y1 | A part with its own detonator goes off alone; the rest of the object takes the blast | `TestPartDetonatorBlowsOnlyItsPart` | only the tank's pieces go |
 | Y2 | A tank torn off its frame stays volatile and goes off once | `TestTankTornOffStaysVolatile` | as stated |
+| Y11 | A charge with a fuse goes off a set time after what sets it off, wherever its pieces have gone | `TestDetonatorDelay` | a crate on a 1 s fuse, knocked by a cannonball: it goes off 59 to 61 steps after it is lit, having slid over 0.1 m, on the same tick at 1, 4 and 8 workers |
 | Y3 | Cut a pipe and the far side goes dry at once | `TestSupplyCut` | in the same step |
 | Y4 | An engine feeds power only while fuel reaches it | `TestSupplyNeeds` | as stated |
 | Y5 | Half an engine gives half the power | `TestSupplyShare` | 0.5 (±0.004) |
@@ -164,6 +165,7 @@ Serves: "Creatures and machines. They adapt on their own" and "Bodies taken down
 | R18 | A cracked femur holds standing and snaps on landing, alone | `TestRigCrackedFemurSnaps` | cracked to 3 to 10% of its strength; one break within a quarter second of landing (within 5 steps today) |
 | R19 | Walking does not break its bones, and their check is cheap | `TestRigWalkingBones` | no breaks in 10 s, the worst joint under 60%, at most 20 torso solves |
 | R20 | The look of the gait, and of a crawl on three legs | sheets [R20-gait](catalogue/R20-gait.png) and [R20-crawl](catalogue/R20-crawl.png) (`scripts/mech_crawl.txt`: three legs shot through) | judged by eye: the legs swing in turn, the feet plant where they land, the body level; maimed, it drops onto its belly and drags itself on |
+| R21 | A rig a game walks itself (no built-in walker) stands on its foot targets, lifts a foot where it is sent, and its legs push the torso after its pose | `TestRigNoWalker` | sinks under 3 cm with feet within 3 cm of their targets; a foot sent 0.25 m up gets within 4 cm while the others hold within 3 cm; pushed 0.1 m, the torso follows 0.07 to 0.13 m; the same at 1 and 8 workers |
 
 ## Far events
 

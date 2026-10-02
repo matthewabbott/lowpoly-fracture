@@ -431,25 +431,6 @@ static int TestDeferredFracture( void )
 	return 0;
 }
 
-// A body's centre of mass, world (one material: the volume centroid of its pieces)
-static lpPos BodyCenter( const lpWorld* world, int body )
-{
-	lpWorldTransform xf;
-	lpWorld_GetBodyTransform( world, body, &xf );
-	lpVec3 sum = lpVec3_zero;
-	float volume = 0.0f;
-	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ); ++i )
-	{
-		lpPieceInfo p = lpWorld_GetPieceInfo( world, i );
-		if ( p.body == body )
-		{
-			sum = lpMulAdd( sum, p.volume, p.centroid );
-			volume += p.volume;
-		}
-	}
-	return lpTransformPoint( xf, lpMulSV( 1.0f / volume, sum ) );
-}
-
 // A weightless stone slab, its frame's origin 3 m from it, flying and spinning, broken by a pushless impact (`crack`)
 // or cut in two along its middle: every new body leaves with the motion the slab had at its centre of mass (a body made
 // at the parent's frame once also got its spin's velocity about that origin again: chips flew at hundreds of m/s).

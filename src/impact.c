@@ -461,7 +461,10 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 }
 
 // Queue the blast of an armed piece's detonator for the next step, and remove the pieces that share it from its body
-// then. The first piece of a detonator to go off disarms it: a tank torn in two explodes once.
+// then. The first piece of a detonator to go off disarms it: a tank torn in two explodes once. With a delay, this lights
+// its fuse instead (lpBurnFuses sets it off).
+static void lpDetonateNow( lpWorld* w, int pieceIndex );
+
 static void lpDetonate( lpWorld* w, int pieceIndex )
 {
 	const lpPiece* piece = w->pieces.data + pieceIndex;
@@ -469,6 +472,50 @@ static void lpDetonate( lpWorld* w, int pieceIndex )
 	{
 		return;
 	}
+	lpDetonator* d = w->detonators.data + piece->detonator - 1;
+	if ( d->def.delay > 0.0f )
+	{
+		if ( d->lit == false )
+		{
+			d->lit = true;
+			d->fuse = d->def.delay;
+		}
+		return;
+	}
+	lpDetonateNow( w, pieceIndex );
+}
+
+void lpBurnFuses( lpWorld* w, float timeStep )
+{
+	for ( int i = 0; i < w->detonators.count; ++i )
+	{
+		lpDetonator* d = w->detonators.data + i;
+		if ( d->armed == false || d->lit == false )
+		{
+			continue;
+		}
+		d->fuse -= timeStep;
+		if ( d->fuse > 0.0f )
+		{
+			continue;
+		}
+		// Out: it goes off from the first piece that still carries it (in piece order); with none left, it fizzles
+		int piece = -1;
+		for ( int k = 0; k < w->pieces.count && piece < 0; ++k )
+		{
+			piece = w->pieces.data[k].body >= 0 && w->pieces.data[k].detonator == i + 1 ? k : -1;
+		}
+		if ( piece >= 0 )
+		{
+			lpDetonateNow( w, piece );
+		}
+		d->armed = false;
+	}
+}
+
+static void lpDetonateNow( lpWorld* w, int pieceIndex )
+{
+	const lpPiece* piece = w->pieces.data + pieceIndex;
 	lpDetonator* d = w->detonators.data + piece->detonator - 1;
 	d->armed = false;
 	const lpBody* b = w->bodies.data + piece->body;

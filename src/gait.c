@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Gait: which feet step, where they land, and how the torso moves over them (rig.c has the limbs and their IK).
+// Gait: the built-in walker (lp_walkerGait), tuned by lpRigDef.gait: which feet step, where they land, and how the torso
+// moves over them. rig.c has the mechanism any walker uses: the limbs, their IK, capability, the rig's centre of mass,
+// the support margin and the stress re-check of what a foot stands on; a game that walks its rigs itself drives each foot
+// there (lp_walkerNone).
 //
 // A free gait, with no pattern tables. Each step, a planted foot steps once it has drifted behind its neutral point
 // (where it rests under the torso) by most of its half-step, the most urgent first, if its nearest able neighbours around
@@ -31,39 +34,6 @@
 #include <math.h>
 #include <string.h>
 
-#define LP_GAIT_DUE 0.6f		// moving, a planted foot steps once it has drifted this share of its half-step behind neutral (and
-								// its neighbours are down: a tripod lifts as the other lands, before it is left carrying nothing)
-#define LP_GAIT_TIDY 0.2f		// standing still, feet further than this share step back to neutral, one at a time
-#define LP_GAIT_LAND 0.7f		// a swing lands at most this share of the stride ahead of neutral
-#define LP_GAIT_KEEP_UP 0.95f	// share of the cadence's top speed the controls may ask for
-#define LP_GAIT_OVERREACH 0.35f // past its stride by this share, a planted foot stops the torso
-#define LP_GAIT_SHIFT 0.5f		// m/s the body leans toward the feet that hold it while a foot waits for balance
-#define LP_GAIT_CLEARANCE 0.8f	// m above the foothold the cast starts
-#define LP_GAIT_DEPTH 1.2f		// m below it the cast looks
-#define LP_GAIT_SOLE 0.1f		// the cast sphere's radius
-#define LP_GAIT_LEAD 0.05f		// m the desired pose may run ahead of the torso (the servos' gains pull it along)
-#define LP_GAIT_LAG 0.3f		// m it may fall behind (or away sideways): a torso that runs on is held back
-#define LP_GAIT_LEAD_TURN 0.3f	// rad its heading may (it keeps the heading it was given, not the torso's)
-#define LP_GAIT_CLIMB 0.5f		// m/s the desired height moves at
-#define LP_GAIT_FALLING 1.0f	// m/s: a torso sinking faster than this is falling
-#define LP_GAIT_CALM_TICKS 30
-#define LP_GAIT_CALM_HEIGHT 0.02f
-#define LP_GAIT_CALM_TILT 0.0175f // rad
-#define LP_GAIT_RECHECK_TICKS 30  // a structure a foot lands on or leaves is re-checked at most this often
-#define LP_GAIT_ARRIVED 0.03f	  // m: a planted foot this near where it was set down has got there
-#define LP_GAIT_ARRIVE_TIME 0.3f  // s it may take
-#define LP_GAIT_MIN_STANCE 0.15f  // s a foot set down stays down
-#define LP_GAIT_SLIPPED 0.1f	  // m: a held foot this far from its hold slipped or was knocked
-#define LP_GAIT_EASE_TIME 0.3f	  // s a held foot's hold takes to ease toward where the legs' geometry has it
-#define LP_GAIT_WALKING_LEGS 4	  // fewer able limbs than this cannot lift one and stay up: it crawls on its belly
-#define LP_GAIT_WEAK_SAG 0.3f	  // share of its height the torso drops as its weakest planted leg's strength goes to 0
-#define LP_GAIT_REACH_SPARE 0.05f // m a leg keeps in hand below its deepest reach
-#define LP_GAIT_CRAWL_SPEED 0.35f // share of its top speed it drags itself at
-#define LP_GAIT_TUCK 0.4f		  // share of its stand height below the torso an unable limb's foot is held at
-#define LP_GAIT_STALL_PACE 0.1f	  // told to move, making less than this share of the speed asked...
-#define LP_GAIT_STALL_TICKS 90	  // ...for this long, it is stuck: it crawls
-#define LP_GAIT_STRIKE 8.0f	  // 1/s: a reaching limb's joints go at full speed until this near their target (4 rad/s: 0.5 rad)
-
 static bool lpControlStill( const lpRigControl* c )
 {
 	return c->forward == 0.0f && c->strafe == 0.0f && c->turn == 0.0f;
@@ -80,123 +50,6 @@ static lpQuat lpLevelRotation( const lpRig* r, lpVec3 heading, lpVec3 worldUp )
 static lpVec3 lpFlatten( lpVec3 v, lpVec3 up )
 {
 	return lpSub( v, lpMulSV( lpDot( v, up ), up ) );
-}
-
-// ---- balance ----
-
-// The rig's centre of mass: its torso and the bodies of its limbs' chains
-static lpPos lpRigCenter( const lpWorld* w, const lpRig* r )
-{
-	int bodies[1 + LP_MAX_RIG_LIMBS * LP_MAX_LIMB_JOINTS];
-	int count = 0;
-	bodies[count++] = r->body;
-	for ( int i = 0; i < r->limbCount; ++i )
-	{
-		const lpLimb* limb = r->limbs + i;
-		for ( int k = 0; k < limb->joints && limb->attached; ++k )
-		{
-			const lpLink* l = w->links.data + limb->def.links[k];
-			int body = w->pieces.data[l->ends[1 - limb->prox[k]].piece].body;
-			bool seen = false;
-			for ( int n = 0; n < count; ++n )
-			{
-				seen = seen || bodies[n] == body;
-			}
-			if ( seen == false )
-			{
-				bodies[count++] = body;
-			}
-		}
-	}
-	lpPos origin = lpPhys_GetWorldCenter( w->phys, w->bodies.data[r->body].id );
-	lpVec3 sum = lpVec3_zero;
-	float mass = 0.0f;
-	for ( int n = 0; n < count; ++n )
-	{
-		lpPhysBody id = w->bodies.data[bodies[n]].id;
-		float m = lpPhys_GetMass( w->phys, id );
-		sum = lpMulAdd( sum, m, lpSubPos( lpPhys_GetWorldCenter( w->phys, id ), origin ) );
-		mass += m;
-	}
-	return mass > 0.0f ? lpOffsetPos( origin, lpMulSV( 1.0f / mass, sum ) ) : origin;
-}
-
-// How far the point lies inside the convex hull of the feet, seen along up (negative outside; -FLT_MAX with fewer than
-// three feet). Feet are 2D in the plane across up; the hull is a monotone chain over a total order.
-static float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpPos point, lpVec3 up )
-{
-	lpVec3 e1 = lpAbs( up ).x < 0.9f ? lpNormalize( lpCross( up, (lpVec3){ 1.0f, 0.0f, 0.0f } ) )
-									 : lpNormalize( lpCross( up, (lpVec3){ 0.0f, 0.0f, 1.0f } ) );
-	lpVec3 e2 = lpCross( up, e1 );
-	float px[LP_MAX_RIG_LIMBS], py[LP_MAX_RIG_LIMBS];
-	int order[LP_MAX_RIG_LIMBS];
-	int n = 0;
-	for ( int i = 0; i < count; ++i )
-	{
-		if ( use[i] )
-		{
-			lpVec3 d = lpSubPos( feet[i], point );
-			px[n] = lpDot( d, e1 );
-			py[n] = lpDot( d, e2 );
-			order[n] = n;
-			n += 1;
-		}
-	}
-	if ( n < 3 )
-	{
-		return -FLT_MAX;
-	}
-	// Insertion sort by x, then y, then index
-	for ( int i = 1; i < n; ++i )
-	{
-		int k = order[i];
-		int j = i - 1;
-		while ( j >= 0 && ( px[order[j]] > px[k] || ( px[order[j]] == px[k] && ( py[order[j]] > py[k] || ( py[order[j]] == py[k] && order[j] > k ) ) ) ) )
-		{
-			order[j + 1] = order[j];
-			j -= 1;
-		}
-		order[j + 1] = k;
-	}
-	int hull[2 * LP_MAX_RIG_LIMBS];
-	int h = 0;
-	for ( int pass = 0; pass < 2; ++pass )
-	{
-		int start = h;
-		for ( int s = 0; s < n; ++s )
-		{
-			int k = order[pass == 0 ? s : n - 1 - s];
-			while ( h >= start + 2 )
-			{
-				int a = hull[h - 2], b = hull[h - 1];
-				float cross = ( px[b] - px[a] ) * ( py[k] - py[a] ) - ( py[b] - py[a] ) * ( px[k] - px[a] );
-				if ( cross > 0.0f )
-				{
-					break;
-				}
-				h -= 1;
-			}
-			hull[h++] = k;
-		}
-		h -= 1; // the last point of each pass starts the other
-	}
-	if ( h < 3 )
-	{
-		return -FLT_MAX;
-	}
-	// Counterclockwise: the point (the origin) is inside by its distance to the nearest edge
-	float margin = FLT_MAX;
-	for ( int e = 0; e < h; ++e )
-	{
-		int a = hull[e], b = hull[( e + 1 ) % h];
-		float ex = px[b] - px[a], ey = py[b] - py[a];
-		float length = sqrtf( ex * ex + ey * ey );
-		if ( length > 1e-6f )
-		{
-			margin = lpMinFloat( margin, ( ex * ( -py[a] ) - ey * ( -px[a] ) ) / length );
-		}
-	}
-	return margin;
 }
 
 // ---- footholds ----
@@ -229,6 +82,7 @@ static bool lpFootAccept( int piece, float fraction, void* context )
 // The ground under a planned foothold: its landing height is where a sole-sized sphere comes to rest on it
 static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, lpVec3 up )
 {
+	const lpGaitDef* g = &r->def.gait;
 	int skip[1 + LP_MAX_RIG_LIMBS * LP_MAX_LIMB_JOINTS];
 	int count = 0;
 	skip[count++] = r->body;
@@ -243,32 +97,16 @@ static void lpCastFoothold( lpWorld* w, const lpRig* r, lpLimb* limb, lpVec3 up 
 	}
 	lpVec3 center = lpVec3_zero;
 	lpPhysFilter filter = { LP_CAT_VEHICLE, LP_CAT_STATIC | LP_CAT_FULL };
-	lpPos from = lpOffsetPos( limb->landing, lpMulSV( LP_GAIT_CLEARANCE + LP_GAIT_SOLE, up ) );
+	lpPos from = lpOffsetPos( limb->landing, lpMulSV( g->clearance + g->sole, up ) );
 	lpFootSkip rig = { w, skip, count };
-	lpPhysCastHit cast = lpPhys_CastShape( w->phys, from, &center, 1, LP_GAIT_SOLE,
-										   lpMulSV( -( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ), up ), filter, lpFootAccept, &rig );
+	lpPhysCastHit cast = lpPhys_CastShape( w->phys, from, &center, 1, g->sole,
+										   lpMulSV( -( g->clearance + g->depth ), up ), filter, lpFootAccept, &rig );
 	w->stats.footCasts += 1;
 	limb->grounded = cast.hit;
 	limb->groundPiece = cast.hit ? cast.piece : -1;
 	limb->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
-	float drop = cast.hit ? cast.fraction * ( LP_GAIT_CLEARANCE + LP_GAIT_DEPTH ) : LP_GAIT_CLEARANCE + 0.3f;
-	limb->landing = lpOffsetPos( from, lpMulSV( -( drop + LP_GAIT_SOLE ), up ) );
-}
-
-// A structure a foot lands on or leaves carries a changed load: check it again (at most every 30 steps per foot)
-static void lpFootMoved( lpWorld* w, lpLimb* limb )
-{
-	int piece = limb->groundPiece;
-	if ( piece < 0 || w->pieces.data[piece].generation != limb->groundGeneration || w->pieces.data[piece].body < 0 )
-	{
-		return;
-	}
-	int body = w->pieces.data[piece].body;
-	if ( w->bodies.data[body].kind == lp_kindStructure && ( limb->recheckTick == 0 || w->tick + 1 >= limb->recheckTick + LP_GAIT_RECHECK_TICKS ) )
-	{
-		lpRequestStressCheck( w, body, false );
-		limb->recheckTick = w->tick + 1;
-	}
+	float drop = cast.hit ? cast.fraction * ( g->clearance + g->depth ) : g->clearance + g->missDrop;
+	limb->landing = lpOffsetPos( from, lpMulSV( -( drop + g->sole ), up ) );
 }
 
 // ---- swings ----
@@ -295,7 +133,8 @@ static lpPos lpSwingPoint( const lpLimb* limb, float s, float stepHeight, lpVec3
 // swing and the feet that carry take turns of the same length (a tripod's rhythm), up to most of the stride
 static float lpHalfStep( const lpRig* r, float rate )
 {
-	return lpMinFloat( LP_GAIT_LAND * r->def.stride, 0.5f * rate * r->def.swingTime );
+	const lpGaitDef* g = &r->def.gait;
+	return lpMinFloat( g->land * g->stride, 0.5f * rate * g->swingTime );
 }
 
 // Where a swinging foot lands, across the ground: ahead of its neutral point by most of the stride (along the way a
@@ -318,6 +157,7 @@ static lpPos lpAimLanding( const lpRig* r, const lpLimb* limb, lpWorldTransform 
 static void lpLiftFoot( lpWorld* w, lpRig* r, int index, lpPos foot, lpWorldTransform pose, lpVec3 heading, lpVec3 side,
 						lpVec3 velocity, float spin, lpVec3 moving, float turning, lpVec3 up )
 {
+	const lpGaitDef* g = &r->def.gait;
 	lpLimb* limb = r->limbs + index;
 	limb->planted = false;
 	limb->swinging = true;
@@ -325,7 +165,7 @@ static void lpLiftFoot( lpWorld* w, lpRig* r, int index, lpPos foot, lpWorldTran
 	limb->castLate = false;
 	limb->liftoff = foot;
 	lpFootMoved( w, limb );
-	limb->landing = lpAimLanding( r, limb, pose, heading, side, velocity, spin, moving, turning, r->def.swingTime, up );
+	limb->landing = lpAimLanding( r, limb, pose, heading, side, velocity, spin, moving, turning, g->swingTime, up );
 	if ( w->stats.footCasts < w->def.maxFootCastsPerStep )
 	{
 		lpCastFoothold( w, r, limb, up );
@@ -339,6 +179,7 @@ static void lpLiftFoot( lpWorld* w, lpRig* r, int index, lpPos foot, lpWorldTran
 // The body leans toward the planted feet but `skip` (the one that waits to lift), to bring its centre of mass over them
 static lpVec3 lpLean( const lpRig* r, const lpPos* feet, const bool* planted, int skip, lpPos center, lpVec3 up, float timeStep )
 {
+	const lpGaitDef* g = &r->def.gait;
 	lpVec3 sum = lpVec3_zero;
 	int n = 0;
 	for ( int i = 0; i < r->limbCount; ++i )
@@ -351,13 +192,14 @@ static lpVec3 lpLean( const lpRig* r, const lpPos* feet, const bool* planted, in
 	}
 	lpVec3 toward = n > 0 ? lpFlatten( lpMulSV( 1.0f / (float)n, sum ), up ) : lpVec3_zero;
 	float distance = lpLength( toward );
-	return distance > 1e-3f ? lpMulSV( lpMinFloat( LP_GAIT_SHIFT, distance / timeStep ) / distance, toward ) : lpVec3_zero;
+	return distance > 1e-3f ? lpMulSV( lpMinFloat( g->shift, distance / timeStep ) / distance, toward ) : lpVec3_zero;
 }
 
 // ---- the step ----
 
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 {
+	const lpGaitDef* g = &r->def.gait;
 	const lpBody* torso = w->bodies.data + r->body;
 	lpWorldTransform xf = lpGetTransform( w, torso );
 	lpVec3 up = lpRigWorldUp( w, r, xf.q );
@@ -422,17 +264,17 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		r->stuck = false;
 		r->stall = 0;
 	}
-	r->crawling = able < LP_GAIT_WALKING_LEGS || r->stuck;
-	float goal = r->def.standHeight * ( 1.0f - r->def.crouchDepth * lpClampFloat( r->control.crouch, 0.0f, 1.0f ) );
-	goal *= 1.0f - LP_GAIT_WEAK_SAG * ( 1.0f - lpClampFloat( weakest, 0.0f, 1.0f ) );
-	goal = lpMinFloat( goal, shortest - LP_GAIT_REACH_SPARE );
-	goal = r->crawling ? r->def.bellyHeight : lpMaxFloat( goal, r->def.bellyHeight );
+	r->crawling = able < g->walkingLegs || r->stuck;
+	float goal = r->def.standHeight * ( 1.0f - g->crouchDepth * lpClampFloat( r->control.crouch, 0.0f, 1.0f ) );
+	goal *= 1.0f - g->weakSag * ( 1.0f - lpClampFloat( weakest, 0.0f, 1.0f ) );
+	goal = lpMinFloat( goal, shortest - g->reachSpare );
+	goal = r->crawling ? g->bellyHeight : lpMaxFloat( goal, g->bellyHeight );
 	bool still = lpControlStill( &r->control );
 
 	// Idle: the targets stay frozen until the controls change or something knocks it well off its stance
 	if ( r->idle )
 	{
-		bool knocked = lpAbsFloat( r->height - goal ) > 2.5f * LP_GAIT_CALM_HEIGHT || tilt > 3.0f * LP_GAIT_CALM_TILT;
+		bool knocked = lpAbsFloat( r->height - goal ) > g->knockHeight * g->calmHeight || tilt > g->knockTilt * g->calmTilt;
 		if ( r->controlChanged == false && ( lpPhys_IsAwake( w->phys, torso->id ) == false || knocked == false ) )
 		{
 			return;
@@ -447,11 +289,11 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	lpVec3 heading = lpFlatten( lpRotateVector( old.q, r->forward ), up );
 	heading = lpLengthSquared( heading ) > 1e-8f ? lpNormalize( heading ) : lpFlatten( lpRotateVector( xf.q, r->forward ), up );
 	lpVec3 side = lpCross( up, heading ); // left
-	float top = lpMinFloat( r->def.maxSpeed, LP_GAIT_KEEP_UP * 2.0f * LP_GAIT_LAND * r->def.stride / r->def.swingTime );
-	// Fewer legs swing in more turns, each foot carrying longer: on five it keeps half its pace, on four a third
-	top *= r->crawling ? LP_GAIT_CRAWL_SPEED : ( able >= 6 ? 1.0f : ( able == 5 ? 0.5f : 0.35f ) );
+	float top = lpMinFloat( g->maxSpeed, g->keepUp * 2.0f * g->land * g->stride / g->swingTime );
+	// Fewer legs swing in more turns, each foot carrying longer (by default: on five it keeps half its pace, on four a third)
+	top *= r->crawling ? g->crawlSpeed : g->legPace[able];
 	lpVec3 velocity = lpMulSV( top, lpSub( lpMulSV( r->control.forward, heading ), lpMulSV( r->control.strafe, side ) ) );
-	float spin = -r->control.turn * r->def.maxTurn; // rad/s about up, left for positive
+	float spin = -r->control.turn * g->maxTurn; // rad/s about up, left for positive
 	float stretch[LP_MAX_RIG_LIMBS]; // how far each foot has drifted from neutral, of the stride
 	float urgency[LP_MAX_RIG_LIMBS]; // moving: how far behind it is along its drift, of its half-step; still: of the stride
 	float worst = 0.0f;
@@ -463,11 +305,11 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		if ( limb->attached )
 		{
 			lpVec3 off = lpFlatten( lpSubPos( feet[i], lpTransformWorldPoint( old, limb->neutral ) ), up );
-			stretch[i] = lpLength( off ) / r->def.stride;
+			stretch[i] = lpLength( off ) / g->stride;
 			lpVec3 drift = lpNeg( lpAdd( velocity, lpCross( lpMulSV( spin, up ), lpSubPos( feet[i], old.p ) ) ) );
 			float rate = lpLength( drift );
 			float half = lpHalfStep( r, rate ); // it landed about this far ahead; it steps once about this far behind
-			urgency[i] = rate > 0.05f * r->def.maxSpeed ? lpDot( off, drift ) / ( rate * lpMaxFloat( half, 0.02f ) ) : stretch[i];
+			urgency[i] = rate > 0.05f * g->maxSpeed ? lpDot( off, drift ) / ( rate * lpMaxFloat( half, 0.02f ) ) : stretch[i];
 			if ( stretch[i] >= 1.0f )
 			{
 				urgency[i] = lpMaxFloat( urgency[i], 1.0f + stretch[i] ); // past its stride any way (a slip, a rock): due first
@@ -475,7 +317,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			worst = limb->planted ? lpMaxFloat( worst, stretch[i] ) : worst;
 		}
 	}
-	float pace = lpClampFloat( 1.0f - ( worst - 1.0f ) / LP_GAIT_OVERREACH, 0.0f, 1.0f );
+	float pace = lpClampFloat( 1.0f - ( worst - 1.0f ) / g->overreach, 0.0f, 1.0f );
 	lpVec3 wanted = velocity; // as commanded, before its feet held it back
 	velocity = lpMulSV( pace, velocity );
 	spin *= pace;
@@ -493,11 +335,11 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			continue;
 		}
 		limb->swingClock += timeStep;
-		float s = limb->swingClock / r->def.swingTime;
-		float remaining = lpMaxFloat( r->def.swingTime - limb->swingClock, 0.0f );
+		float s = limb->swingClock / g->swingTime;
+		float remaining = lpMaxFloat( g->swingTime - limb->swingClock, 0.0f );
 		lpPos aim = lpAimLanding( r, limb, old, heading, side, velocity, spin, moving, turning, remaining, up );
 		limb->landing = lpOffsetPos( aim, lpMulSV( lpDot( lpSubPos( limb->landing, aim ), up ), up ) );
-		if ( s >= 0.66f && limb->castLate == false && w->stats.footCasts < w->def.maxFootCastsPerStep )
+		if ( s >= g->lateCast && limb->castLate == false && w->stats.footCasts < w->def.maxFootCastsPerStep )
 		{
 			limb->castLate = true;
 			lpCastFoothold( w, r, limb, up );
@@ -507,7 +349,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			// Down: it holds its landing point until the foot gets there (the servos lag the arc a little)
 			limb->swinging = false;
 			limb->planted = true;
-			limb->hold = lpSwingPoint( limb, 1.0f, r->def.stepHeight, up );
+			limb->hold = lpSwingPoint( limb, 1.0f, g->stepHeight, up );
 			limb->holdClock = 0.0f;
 			limb->arrived = false;
 			planted[i] = true;
@@ -526,12 +368,12 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			limb->holdClock += timeStep;
 			float off = lpLength( lpSubPos( feet[i], limb->hold ) );
-			if ( limb->arrived == false && ( off < LP_GAIT_ARRIVED || limb->holdClock > LP_GAIT_ARRIVE_TIME ) )
+			if ( limb->arrived == false && ( off < g->arrived || limb->holdClock > g->arriveTime ) )
 			{
 				limb->hold = feet[i];
 				limb->arrived = true;
 			}
-			else if ( limb->arrived && off > LP_GAIT_SLIPPED )
+			else if ( limb->arrived && off > g->slipped )
 			{
 				limb->hold = feet[i]; // it slipped, or was knocked: held where it is now
 			}
@@ -540,7 +382,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 				// The servos hold their angles as stiffly as they can, so feet held a centimetre apart from where the legs'
 				// geometry has them would push against each other through the ground: the hold eases toward the model's
 				// foot, slowly enough to push the torso along
-				limb->hold = lpOffsetPos( limb->hold, lpMulSV( timeStep / LP_GAIT_EASE_TIME, lpSubPos( feet[i], limb->hold ) ) );
+				limb->hold = lpOffsetPos( limb->hold, lpMulSV( timeStep / g->easeTime, lpSubPos( feet[i], limb->hold ) ) );
 			}
 		}
 	}
@@ -548,7 +390,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	// Liftoffs: the most stretched foot first; its nearest able neighbours around the body planted, and the centre of mass
 	// inside the other planted feet by the margin, now and where the torso will be when it lands
 	lpPos center = lpRigCenter( w, r );
-	lpPos later = lpOffsetPos( center, lpMulSV( r->def.swingTime, moving ) );
+	lpPos later = lpOffsetPos( center, lpMulSV( g->swingTime, moving ) );
 
 	// Limbs told to reach leave the gait once the others hold the centre of mass by the margin (crawling, its belly does);
 	// until then the body leans toward them. Told to stop, a limb steps back in (below: a limb neither planted nor
@@ -569,7 +411,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		if ( limb->planted )
 		{
 			planted[i] = false;
-			bool steady = r->crawling || lpSupportMargin( feet, planted, r->limbCount, center, up ) >= r->def.margin;
+			bool steady = r->crawling || lpSupportMargin( feet, planted, r->limbCount, center, up ) >= g->margin;
 			planted[i] = steady == false; // it stays down until the others can hold the body without it
 			if ( steady == false )
 			{
@@ -582,7 +424,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		limb->swinging = false;
 		limb->reaching = true;
 	}
-	float threshold = still ? LP_GAIT_TIDY : LP_GAIT_DUE;
+	float threshold = still ? g->tidy : g->due;
 	lpVec3 shift = lpVec3_zero;
 	bool waited = false;
 	// Feet that swing together are every other able leg around the body (on six, the two tripods; with an odd number
@@ -602,7 +444,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			const lpLimb* limb = r->limbs + i;
 			bool inGroup = group < 0 || ring % 2 == 1 || place[i] % 2 == group;
-			bool settled = limb->holdClock >= LP_GAIT_MIN_STANCE; // just set down, it carries a moment first
+			bool settled = limb->holdClock >= g->minStance; // just set down, it carries a moment first
 			if ( limb->planted && settled && inGroup && urgency[i] >= threshold && ( pick < 0 || urgency[i] > urgency[pick] ) )
 			{
 				pick = i;
@@ -638,7 +480,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		planted[pick] = false;
 		float margin = lpMinFloat( lpSupportMargin( feet, planted, r->limbCount, center, up ),
 								   lpSupportMargin( feet, planted, r->limbCount, later, up ) );
-		if ( margin < r->def.margin && r->crawling == false ) // crawling, its belly holds it
+		if ( margin < g->margin && r->crawling == false ) // crawling, its belly holds it
 		{
 			planted[pick] = true;
 			if ( waited == false )
@@ -670,16 +512,16 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	// shuffle) for a while, it is stuck
 	float asked = lpLength( wanted );
 	float made = asked > 1e-3f ? lpDot( moving, wanted ) / asked : 0.0f;
-	bool getting = asked < 1e-3f || made > LP_GAIT_STALL_PACE * asked; // turning on the spot asks for no speed
+	bool getting = asked < 1e-3f || made > g->stallPace * asked; // turning on the spot asks for no speed
 	r->stall = still == false && getting == false ? r->stall + 1 : 0;
-	r->stuck = r->stuck || r->stall >= LP_GAIT_STALL_TICKS;
+	r->stuck = r->stuck || r->stall >= g->stallTicks;
 
 	// The desired pose: turned and moved by the controls (and leaning for balance), never far ahead of the torso, level,
 	// climbing toward its height over the planted feet
 	lpVec3 measured = lpFlatten( lpRotateVector( xf.q, r->forward ), up );
 	measured = lpLengthSquared( measured ) > 1e-8f ? lpNormalize( measured ) : heading;
 	float yawError = lpAtan2( lpDot( lpCross( measured, heading ), up ), lpDot( measured, heading ) );
-	float yaw = lpClampFloat( yawError + spin * timeStep, -LP_GAIT_LEAD_TURN, LP_GAIT_LEAD_TURN ) - yawError;
+	float yaw = lpClampFloat( yawError + spin * timeStep, -g->leadTurn, g->leadTurn ) - yawError;
 	lpCosSin cs = lpComputeCosSin( yaw );
 	heading = lpAdd( lpMulSV( cs.cosine, heading ), lpMulSV( cs.sine, side ) );
 	lpVec3 ahead = lpMulAdd( lpSubPos( old.p, xf.p ), timeStep, lpAdd( velocity, shift ) ); // from the torso's frame
@@ -687,24 +529,24 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	// runs ahead is held back instead of dragging it along)
 	lpVec3 flat = lpFlatten( ahead, up );
 	float lead = lpLength( flat );
-	if ( lead > LP_GAIT_LAG )
+	if ( lead > g->lag )
 	{
-		flat = lpMulSV( LP_GAIT_LAG / lead, flat );
+		flat = lpMulSV( g->lag / lead, flat );
 	}
 	float pull = lpLength( velocity );
 	float forward = pull > 1e-4f ? lpDot( flat, velocity ) / pull : 0.0f;
-	if ( forward > LP_GAIT_LEAD )
+	if ( forward > g->lead )
 	{
-		flat = lpMulAdd( flat, ( LP_GAIT_LEAD - forward ) / pull, velocity );
+		flat = lpMulAdd( flat, ( g->lead - forward ) / pull, velocity );
 	}
 	// Falling (dropped, or its legs knocked from under it), it follows the torso down: pushed back up to where it was, it
 	// would land and spring up again
 	float height = lpDot( lpSubPos( old.p, xf.p ), up ) - support; // the desired pose's, over the feet
-	if ( lpDot( lpPhys_GetLinearVelocity( w->phys, torso->id ), up ) < -LP_GAIT_FALLING )
+	if ( lpDot( lpPhys_GetLinearVelocity( w->phys, torso->id ), up ) < -g->falling )
 	{
-		height = lpMinFloat( height, r->height + LP_GAIT_LEAD );
+		height = lpMinFloat( height, r->height + g->lead );
 	}
-	float climb = lpClampFloat( goal - height, -LP_GAIT_CLIMB * timeStep, LP_GAIT_CLIMB * timeStep );
+	float climb = lpClampFloat( goal - height, -g->climb * timeStep, g->climb * timeStep );
 	height += climb;
 	r->desired.p = lpOffsetPos( xf.p, lpMulAdd( flat, support + height, up ) );
 	r->desired.q = lpLevelRotation( r, heading, up );
@@ -721,7 +563,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		{
 			continue;
 		}
-		lpVec3 target = lpMulAdd( lpSub( limb->neutral, lpMulSV( lpDot( limb->neutral, r->up ), r->up ) ), -LP_GAIT_TUCK * r->def.standHeight,
+		lpVec3 target = lpMulAdd( lpSub( limb->neutral, lpMulSV( lpDot( limb->neutral, r->up ), r->up ) ), -g->tuck * r->def.standHeight,
 								  r->up );
 		target = lpLerp( lpMulSV( 0.6f, target ), target, 0.5f ); // drawn in toward the torso
 		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
@@ -745,10 +587,10 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 		lpVec3 motion = lpVec3_zero; // of the foot in the world
 		if ( limb->swinging )
 		{
-			float s0 = limb->swingClock / r->def.swingTime;
-			float s1 = ( limb->swingClock + timeStep ) / r->def.swingTime;
-			foot = lpSwingPoint( limb, s1, r->def.stepHeight, up );
-			motion = lpMulSV( 1.0f / timeStep, lpSubPos( foot, lpSwingPoint( limb, s0, r->def.stepHeight, up ) ) );
+			float s0 = limb->swingClock / g->swingTime;
+			float s1 = ( limb->swingClock + timeStep ) / g->swingTime;
+			foot = lpSwingPoint( limb, s1, g->stepHeight, up );
+			motion = lpMulSV( 1.0f / timeStep, lpSubPos( foot, lpSwingPoint( limb, s0, g->stepHeight, up ) ) );
 		}
 		lpVec3 target = lpInvTransformWorldPoint( r->desired, foot );
 		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
@@ -766,7 +608,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			{
 				const lpLink* l = w->links.data + limb->def.links[k];
 				float fastest = l->def.motor.maxSpeed;
-				feed[k] = lpClampFloat( LP_GAIT_STRIKE * ( limb->q[k] - l->angle ), -fastest, fastest );
+				feed[k] = lpClampFloat( g->strike * ( limb->q[k] - l->angle ), -fastest, fastest );
 			}
 		}
 		for ( int k = 0; k < limb->joints; ++k )
@@ -782,10 +624,10 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	{
 		swinging = swinging || r->limbs[i].swinging || r->limbs[i].reaching;
 	}
-	bool settled = lpAbsFloat( height - goal ) < 0.001f && lpAbsFloat( r->height - goal ) < LP_GAIT_CALM_HEIGHT &&
-				   tilt < LP_GAIT_CALM_TILT && swinging == false && waited == false;
+	bool settled = lpAbsFloat( height - goal ) < 0.001f && lpAbsFloat( r->height - goal ) < g->calmHeight &&
+				   tilt < g->calmTilt && swinging == false && waited == false;
 	r->calm = still && settled ? r->calm + 1 : 0;
-	if ( r->calm >= LP_GAIT_CALM_TICKS )
+	if ( r->calm >= g->calmTicks )
 	{
 		r->idle = true;
 		for ( int i = 0; i < r->limbCount; ++i )

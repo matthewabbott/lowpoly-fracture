@@ -30,6 +30,7 @@
 #define LP_RIG_REACH 0.25f		 // the foot as created must be this close to a piece of its body
 #define LP_RIG_STUMP 0.6f		 // a limb that reaches less than this share of the stand height below the torso cannot stand
 #define LP_RIG_TOUCH 0.35f		 // m: a reaching foot touches what it is in contact with this near it
+#define LP_RIG_RECHECK_TICKS 30	 // a structure a foot lands on or leaves is re-checked at most this often
 
 lpRigDef lpDefaultRigDef( void )
 {
@@ -37,13 +38,53 @@ lpRigDef lpDefaultRigDef( void )
 	def.body = -1;
 	def.forward = (lpVec3){ 0.0f, 0.0f, 1.0f };
 	def.up = (lpVec3){ 0.0f, 1.0f, 0.0f };
-	def.crouchDepth = 0.35f;
-	def.stepHeight = 0.35f;
-	def.stride = 0.5f;
-	def.maxSpeed = 2.5f;
-	def.maxTurn = 0.8f;
-	def.swingTime = 0.4f;
-	def.margin = 0.15f;
+	def.walker = lp_walkerGait;
+	lpGaitDef* g = &def.gait;
+	g->crouchDepth = 0.35f;
+	g->stepHeight = 0.35f;
+	g->stride = 0.5f;
+	g->maxSpeed = 2.5f;
+	g->maxTurn = 0.8f;
+	g->swingTime = 0.4f;
+	g->margin = 0.15f;
+	g->keepUp = 0.95f;
+	for ( int able = 0; able <= LP_MAX_RIG_LIMBS; ++able )
+	{
+		g->legPace[able] = able >= 6 ? 1.0f : ( able == 5 ? 0.5f : 0.35f );
+	}
+	g->crawlSpeed = 0.35f;
+	g->walkingLegs = 4;
+	g->due = 0.6f;
+	g->tidy = 0.2f;
+	g->land = 0.7f;
+	g->overreach = 0.35f;
+	g->minStance = 0.15f;
+	g->lateCast = 0.66f;
+	g->clearance = 0.8f;
+	g->depth = 1.2f;
+	g->sole = 0.1f;
+	g->missDrop = 0.3f;
+	g->shift = 0.5f;
+	g->lead = 0.05f;
+	g->lag = 0.3f;
+	g->leadTurn = 0.3f;
+	g->climb = 0.5f;
+	g->falling = 1.0f;
+	g->weakSag = 0.3f;
+	g->reachSpare = 0.05f;
+	g->tuck = 0.4f;
+	g->arrived = 0.03f;
+	g->arriveTime = 0.3f;
+	g->slipped = 0.1f;
+	g->easeTime = 0.3f;
+	g->calmTicks = 30;
+	g->calmHeight = 0.02f;
+	g->calmTilt = 0.0175f;
+	g->knockHeight = 2.5f;
+	g->knockTilt = 3.0f;
+	g->stallPace = 0.1f;
+	g->stallTicks = 90;
+	g->strike = 8.0f;
 	return def;
 }
 
@@ -269,7 +310,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 {
 	lpGuardFp( w ); // computes in float between steps, on the caller's thread
 	if ( def->body < 0 || def->body >= w->bodies.count || def->limbs == NULL || def->limbCount < 1 ||
-		 def->limbCount > LP_MAX_RIG_LIMBS )
+		 def->limbCount > LP_MAX_RIG_LIMBS || ( def->walker != lp_walkerGait && def->walker != lp_walkerNone ) )
 	{
 		return -1;
 	}
@@ -356,17 +397,186 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		}
 		r.def.standHeight = sum / (float)r.limbCount;
 	}
-	if ( r.def.bellyHeight <= 0.0f )
+	if ( r.def.gait.bellyHeight <= 0.0f )
 	{
-		r.def.bellyHeight = 0.2f * r.def.standHeight;
+		r.def.gait.bellyHeight = 0.2f * r.def.standHeight;
 	}
 	lpArray_Push( w->rigs, r );
 	return w->rigs.count - 1;
 }
 
+// ---- balance and footing (shared by walkers) ----
+
+// The rig's centre of mass: its torso and the bodies of its limbs' chains
+lpPos lpRigCenter( const lpWorld* w, const lpRig* r )
+{
+	int bodies[1 + LP_MAX_RIG_LIMBS * LP_MAX_LIMB_JOINTS];
+	int count = 0;
+	bodies[count++] = r->body;
+	for ( int i = 0; i < r->limbCount; ++i )
+	{
+		const lpLimb* limb = r->limbs + i;
+		for ( int k = 0; k < limb->joints && limb->attached; ++k )
+		{
+			const lpLink* l = w->links.data + limb->def.links[k];
+			int body = w->pieces.data[l->ends[1 - limb->prox[k]].piece].body;
+			bool seen = false;
+			for ( int n = 0; n < count; ++n )
+			{
+				seen = seen || bodies[n] == body;
+			}
+			if ( seen == false )
+			{
+				bodies[count++] = body;
+			}
+		}
+	}
+	lpPos origin = lpPhys_GetWorldCenter( w->phys, w->bodies.data[r->body].id );
+	lpVec3 sum = lpVec3_zero;
+	float mass = 0.0f;
+	for ( int n = 0; n < count; ++n )
+	{
+		lpPhysBody id = w->bodies.data[bodies[n]].id;
+		float m = lpPhys_GetMass( w->phys, id );
+		sum = lpMulAdd( sum, m, lpSubPos( lpPhys_GetWorldCenter( w->phys, id ), origin ) );
+		mass += m;
+	}
+	return mass > 0.0f ? lpOffsetPos( origin, lpMulSV( 1.0f / mass, sum ) ) : origin;
+}
+
+// How far the point lies inside the convex hull of the feet, seen along up (negative outside; -FLT_MAX with fewer than
+// three feet). Feet are 2D in the plane across up; the hull is a monotone chain over a total order.
+float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpPos point, lpVec3 up )
+{
+	lpVec3 e1 = lpAbs( up ).x < 0.9f ? lpNormalize( lpCross( up, (lpVec3){ 1.0f, 0.0f, 0.0f } ) )
+									 : lpNormalize( lpCross( up, (lpVec3){ 0.0f, 0.0f, 1.0f } ) );
+	lpVec3 e2 = lpCross( up, e1 );
+	float px[LP_MAX_RIG_LIMBS], py[LP_MAX_RIG_LIMBS];
+	int order[LP_MAX_RIG_LIMBS];
+	int n = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( use[i] )
+		{
+			lpVec3 d = lpSubPos( feet[i], point );
+			px[n] = lpDot( d, e1 );
+			py[n] = lpDot( d, e2 );
+			order[n] = n;
+			n += 1;
+		}
+	}
+	if ( n < 3 )
+	{
+		return -FLT_MAX;
+	}
+	// Insertion sort by x, then y, then index
+	for ( int i = 1; i < n; ++i )
+	{
+		int k = order[i];
+		int j = i - 1;
+		while ( j >= 0 && ( px[order[j]] > px[k] || ( px[order[j]] == px[k] && ( py[order[j]] > py[k] || ( py[order[j]] == py[k] && order[j] > k ) ) ) ) )
+		{
+			order[j + 1] = order[j];
+			j -= 1;
+		}
+		order[j + 1] = k;
+	}
+	int hull[2 * LP_MAX_RIG_LIMBS];
+	int h = 0;
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		int start = h;
+		for ( int s = 0; s < n; ++s )
+		{
+			int k = order[pass == 0 ? s : n - 1 - s];
+			while ( h >= start + 2 )
+			{
+				int a = hull[h - 2], b = hull[h - 1];
+				float cross = ( px[b] - px[a] ) * ( py[k] - py[a] ) - ( py[b] - py[a] ) * ( px[k] - px[a] );
+				if ( cross > 0.0f )
+				{
+					break;
+				}
+				h -= 1;
+			}
+			hull[h++] = k;
+		}
+		h -= 1; // the last point of each pass starts the other
+	}
+	if ( h < 3 )
+	{
+		return -FLT_MAX;
+	}
+	// Counterclockwise: the point (the origin) is inside by its distance to the nearest edge
+	float margin = FLT_MAX;
+	for ( int e = 0; e < h; ++e )
+	{
+		int a = hull[e], b = hull[( e + 1 ) % h];
+		float ex = px[b] - px[a], ey = py[b] - py[a];
+		float length = sqrtf( ex * ex + ey * ey );
+		if ( length > 1e-6f )
+		{
+			margin = lpMinFloat( margin, ( ex * ( -py[a] ) - ey * ( -px[a] ) ) / length );
+		}
+	}
+	return margin;
+}
+
+// A structure a foot lands on or leaves carries a changed load: check it again (at most every 30 steps per foot)
+void lpFootMoved( lpWorld* w, lpLimb* limb )
+{
+	int piece = limb->groundPiece;
+	if ( piece < 0 || w->pieces.data[piece].generation != limb->groundGeneration || w->pieces.data[piece].body < 0 )
+	{
+		return;
+	}
+	int body = w->pieces.data[piece].body;
+	if ( w->bodies.data[body].kind == lp_kindStructure && ( limb->recheckTick == 0 || w->tick + 1 >= limb->recheckTick + LP_RIG_RECHECK_TICKS ) )
+	{
+		lpRequestStressCheck( w, body, false );
+		limb->recheckTick = w->tick + 1;
+	}
+}
+
 // ---- the step ----
 
 static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb );
+
+// lp_walkerNone: each attached limb with an active target drives its foot there, by IK from the rig's pose, its joints
+// fed the speeds that move the foot as asked against the pose's own motion (as the walker drives its feet)
+static void lpDriveFeet( lpWorld* w, lpRig* r )
+{
+	if ( r->posed == false )
+	{
+		r->desired = lpGetTransform( w, w->bodies.data + r->body ); // the pose follows the torso until the game sets one
+	}
+	for ( int i = 0; i < r->limbCount; ++i )
+	{
+		lpLimb* limb = r->limbs + i;
+		if ( limb->attached == false || limb->target.active == false )
+		{
+			continue;
+		}
+		for ( int k = 0; k < limb->joints; ++k )
+		{
+			limb->q[k] = w->links.data[limb->def.links[k]].angle;
+		}
+		lpVec3 target = lpInvTransformWorldPoint( r->desired, limb->target.point );
+		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
+		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
+		lpVec3 arm = lpSubPos( limb->target.point, r->desired.p );
+		lpVec3 pose = lpAdd( r->poseLinear, lpCross( r->poseAngular, arm ) );
+		lpVec3 relative = lpInvRotateVector( r->desired.q, lpSub( limb->target.velocity, pose ) );
+		float feed[LP_MAX_LIMB_JOINTS];
+		lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
+		for ( int k = 0; k < limb->joints; ++k )
+		{
+			lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
+			w->links.data[limb->def.links[k]].feed = feed[k];
+		}
+	}
+}
 
 void lpStepRigs( lpWorld* w, float timeStep )
 {
@@ -420,12 +630,21 @@ void lpStepRigs( lpWorld* w, float timeStep )
 				limb->reach = lpLength( lpSubPos( lpFootWorld( w, limb ), joint ) );
 			}
 		}
-		lpWalkRig( w, r, timeStep );
+		bool walked = r->def.walker == lp_walkerGait;
+		if ( walked )
+		{
+			lpWalkRig( w, r, timeStep );
+		}
+		else
+		{
+			lpDriveFeet( w, r );
+		}
 		r->controlChanged = false;
 		for ( int i = 0; i < r->limbCount; ++i )
 		{
 			lpLimb* limb = r->limbs + i;
-			limb->touching = limb->reaching && limb->attached ? lpFindTouch( w, r, limb ) : -1;
+			bool reaching = walked ? limb->reaching : limb->target.active;
+			limb->touching = reaching && limb->attached ? lpFindTouch( w, r, limb ) : -1;
 		}
 	}
 }
@@ -488,6 +707,28 @@ void lpWorld_SetLimbTarget( lpWorld* w, int rig, int limb, bool active, lpPos po
 		l->reachPoint = active ? point : l->reachPoint;
 		r->controlChanged = true; // wakes it from idle
 	}
+}
+
+void lpWorld_SetFootTarget( lpWorld* w, int rig, int limb, const lpFootTarget* target )
+{
+	if ( rig < 0 || rig >= w->rigs.count || limb < 0 || limb >= w->rigs.data[rig].limbCount )
+	{
+		return;
+	}
+	w->rigs.data[rig].limbs[limb].target = *target;
+}
+
+void lpWorld_SetRigPose( lpWorld* w, int rig, lpWorldTransform pose, lpVec3 linear, lpVec3 angular )
+{
+	if ( rig < 0 || rig >= w->rigs.count )
+	{
+		return;
+	}
+	lpRig* r = w->rigs.data + rig;
+	r->desired = pose;
+	r->poseLinear = linear;
+	r->poseAngular = angular;
+	r->posed = true;
 }
 
 void lpWorld_SetRigControl( lpWorld* w, int rig, const lpRigControl* control )
@@ -613,6 +854,22 @@ uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
 			h = lpHashBytes( h, &limb->holdClock, sizeof( limb->holdClock ) );
 			h = lpHashBytes( h, &limb->reachPoint, sizeof( limb->reachPoint ) );
 			h = lpHashBytes( h, &limb->touching, sizeof( limb->touching ) );
+		}
+		// A rig the game walks: its pose's motion and its feet's targets (a walked rig's hash is as it was)
+		if ( r->def.walker == lp_walkerNone )
+		{
+			uint8_t posed = r->posed ? 1 : 0;
+			h = lpHashBytes( h, &posed, 1 );
+			h = lpHashBytes( h, &r->poseLinear, sizeof( r->poseLinear ) );
+			h = lpHashBytes( h, &r->poseAngular, sizeof( r->poseAngular ) );
+			for ( int i = 0; i < r->limbCount; ++i )
+			{
+				const lpFootTarget* t = &r->limbs[i].target;
+				uint8_t active = t->active ? 1 : 0;
+				h = lpHashBytes( h, &active, 1 );
+				h = lpHashBytes( h, &t->point, sizeof( t->point ) );
+				h = lpHashBytes( h, &t->velocity, sizeof( t->velocity ) );
+			}
 		}
 	}
 	return h;

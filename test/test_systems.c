@@ -655,12 +655,82 @@ static int TestPoolDeterminism( void )
 	return 0;
 }
 
+typedef struct FuseRun
+{
+	int lit;	// tick its fuse was lit (-1: never)
+	int boom;	// tick it went off (-1: never)
+	float slid; // m the charge moved between the two
+	uint64_t hash;
+} FuseRun;
+
+// A volatile crate with a one-second fuse, knocked by a cannonball
+static FuseRun Fuse( int workers )
+{
+	FuseRun r = { -1, -1, 0.0f, 0 };
+	Sim s = CreateSimWorkers( -1, workers );
+	lpPartDef crate = lpDefaultPartDef();
+	crate.halfExtents = (lpVec3){ 0.3f, 0.3f, 0.3f };
+	crate.material = lp_wood;
+	crate.detonator.triggerSpeed = 4.0f;
+	crate.detonator.radius = 1.5f;
+	crate.detonator.energy = 50000.0f;
+	crate.detonator.speed = 10.0f;
+	crate.detonator.delay = 1.0f;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.transform.p = (lpPos){ 0.0f, 0.3f, 0.0f };
+	def.parts = &crate;
+	def.partCount = 1;
+	int body = lpCreateObject( s.world, &def );
+	int detonator = s.world->pieces.data[s.world->bodies.data[body].pieces.data[0]].detonator - 1;
+	lpPartDef ball = lpDefaultPartDef();
+	ball.halfExtents = (lpVec3){ 0.15f, 0.15f, 0.15f };
+	ball.material = lp_metal;
+	def.transform.p = (lpPos){ -2.0f, 0.3f, 0.0f };
+	def.parts = &ball;
+	def.linearVelocity = (lpVec3){ 12.0f, 0.0f, 0.0f };
+	lpCreateObject( s.world, &def );
+	lpPos at = { 0 };
+	for ( int tick = 0; tick < 180 && r.boom < 0; ++tick )
+	{
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		const lpDetonator* d = s.world->detonators.data + detonator;
+		if ( r.lit < 0 && d->lit )
+		{
+			r.lit = tick;
+			at = BodyCenter( s.world, body );
+		}
+		if ( d->armed == false )
+		{
+			r.boom = tick;
+			r.slid = s.world->bodies.data[body].alive ? lpLength( lpSubPos( BodyCenter( s.world, body ), at ) ) : -1.0f;
+		}
+	}
+	r.hash = lpWorld_Hash( s.world );
+	DestroySim( &s );
+	return r;
+}
+
+// A charge with a fuse: knocked, it does not go off at once but a second later, wherever it has slid to by then, on the
+// same tick at 1, 4 and 8 workers
+static int TestDetonatorDelay( void )
+{
+	FuseRun one = Fuse( 1 ), four = Fuse( 4 ), eight = Fuse( 8 );
+	printf( "  lit at tick %d, went off at %d (%d later), having slid %.2f m\n", one.lit, one.boom, one.boom - one.lit,
+			(double)one.slid );
+	ENSURE( one.lit >= 0 && one.boom - one.lit >= 59 && one.boom - one.lit <= 61 );
+	ENSURE( one.slid > 0.1f );
+	ENSURE( four.boom == one.boom && eight.boom == one.boom && four.hash == one.hash && eight.hash == one.hash );
+	return 0;
+}
+
 int SystemsTest( void )
 {
 	RUN_TEST( TestPartIdentitySurvivesFracture, MECHANISM );
 	RUN_TEST( TestPartDetonatorBlowsOnlyItsPart, OUTCOME );
 	RUN_TEST( TestObjectDetonatorUnchanged, MECHANISM );
 	RUN_TEST( TestTankTornOffStaysVolatile, OUTCOME );
+	RUN_TEST( TestDetonatorDelay, OUTCOME );
 	RUN_TEST( TestSupplyCut, OUTCOME );
 	RUN_TEST( TestSupplyNeeds, OUTCOME );
 	RUN_TEST( TestSupplyShare, OUTCOME );

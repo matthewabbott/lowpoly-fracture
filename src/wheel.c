@@ -31,8 +31,6 @@
 #define LP_WHEEL_ITERATIONS 4		  // of the tyre solve per body per step
 #define LP_WHEEL_HERTZ 1.4f			  // default suspension: the chassis's share on a wheel bounces at this rate
 #define LP_WHEEL_ZETA 0.5f			  // default damping ratio
-#define LP_WHEEL_SLIDING_GRIP 0.8f	  // grip while sliding, of the grip
-#define LP_WHEEL_HANDBRAKE_GRIP 0.5f  // sideways grip of a wheel locked by the handbrake
 #define LP_WHEEL_RIM 8				  // points of the tyre's cast shape
 #define LP_WHEEL_RECHECK_TICKS 30	  // a structure under a wheel is re-checked at most this often for a changed load
 
@@ -49,6 +47,9 @@ lpWheelDef lpDefaultWheelDef( void )
 	def.strength = 5000.0f;
 	def.material = lp_wood;
 	def.color = 0x2B2B2Bu;
+	def.slidingGrip = 0.8f;
+	def.handbrakeGrip = 0.5f;
+	def.tearRatio = 0.2f;
 	return def;
 }
 
@@ -173,6 +174,9 @@ int lpCreateVehicle( lpWorld* w, const lpVehicleDef* def )
 		int wi = lpAllocWheel( w );
 		lpWheel* wh = w->wheels.data + wi;
 		wh->def = def->wheels[i];
+		wh->def.slidingGrip = wh->def.slidingGrip > 0.0f ? wh->def.slidingGrip : 0.8f;
+		wh->def.handbrakeGrip = wh->def.handbrakeGrip > 0.0f ? wh->def.handbrakeGrip : 0.5f;
+		wh->def.tearRatio = wh->def.tearRatio > 0.0f ? wh->def.tearRatio : 0.2f;
 		wh->def.radius = lpMaxFloat( wh->def.radius, 0.05f );
 		wh->def.width = lpClampFloat( wh->def.width, 0.02f, 1.8f * wh->def.radius );
 		wh->def.maxLength = lpMaxFloat( wh->def.maxLength, 0.01f );
@@ -461,13 +465,13 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 				vc = lpSub( lpAdd( v, lpCross( omega, wh->r ) ), wh->groundVelocity );
 			}
 			float normal = lpLength( wh->suspension ) * timeStep + wh->lambdaN;
-			float grip = wh->def.grip * wh->friction * ( wh->sliding ? LP_WHEEL_SLIDING_GRIP : 1.0f );
+			float grip = wh->def.grip * wh->friction * ( wh->sliding ? wh->def.slidingGrip : 1.0f );
 			float limit = grip * normal;
 			bool locked = control->handbrake && wh->def.handbrake;
 
 			// Across the tyre: no sliding sideways
 			float lambdaS = wh->lambdaS - wh->massS * lpDot( vc, wh->dirS );
-			float limitS = locked ? LP_WHEEL_HANDBRAKE_GRIP * limit : limit;
+			float limitS = locked ? wh->def.handbrakeGrip * limit : limit;
 			lambdaS = lpClampFloat( lambdaS, -limitS, limitS );
 
 			// Along it: locked, braked, driven toward top speed, or rolling
@@ -525,7 +529,7 @@ static void lpSolveTyres( lpWorld* w, int bodyIndex, const lpBodyWheel* list, in
 			continue;
 		}
 		const lpVehicle* vehicle = w->vehicles.data + wh->vehicle;
-		float grip = wh->def.grip * wh->friction * ( wh->sliding ? LP_WHEEL_SLIDING_GRIP : 1.0f );
+		float grip = wh->def.grip * wh->friction * ( wh->sliding ? wh->def.slidingGrip : 1.0f );
 		float normal = lpLength( wh->suspension ) * timeStep + wh->lambdaN;
 		float total = sqrtf( wh->lambdaF * wh->lambdaF + wh->lambdaS * wh->lambdaS );
 		wh->sliding = total >= 0.999f * grip * normal && normal > 0.0f;

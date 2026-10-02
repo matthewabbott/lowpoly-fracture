@@ -200,6 +200,9 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxDepth = 3;
 	def.maxHitImpacts = 16;
 	def.hitSpeed = 4.0f;
+	def.pullStiffness = 60.0f;
+	def.pullDamping = 14.0f;
+	def.pullSpinKeep = 0.97f;
 	def.wakeSpeed = 1.5f;
 	def.killDepth = -50.0f;
 	def.workerCount = 1;
@@ -866,7 +869,7 @@ static int lpAddDetonator( lpWorld* w, const lpDetonatorDef* def )
 	{
 		return 0;
 	}
-	lpDetonator d = { *def, true };
+	lpDetonator d = { *def, true, false, 0.0f };
 	lpArray_Push( w->detonators, d );
 	return w->detonators.count;
 }
@@ -933,7 +936,9 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		p->pool = 0;
 		if ( part->system.pool > 0.0f && p->sources != 0 )
 		{
-			lpPool pool = { part->system.pool, part->system.pool, 0.0f, lpMaxFloat( part->system.seal, 0.0f ), -1.0f, 0.0f, 16 };
+			lpPool pool = { part->system.pool, part->system.pool, 0.0f, lpMaxFloat( part->system.seal, 0.0f ), -1.0f, 0.0f, 16,
+							part->system.leakRate > 0.0f ? part->system.leakRate : 1.0f,
+							part->system.pressure > 0.0f ? part->system.pressure : 0.3f };
 			lpArray_Push( w->pools, pool );
 			p->pool = w->pools.count;
 		}
@@ -1176,8 +1181,13 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 	}
 	for ( int i = 0; i < w->detonators.count; ++i )
 	{
-		uint8_t armed = w->detonators.data[i].armed ? 1 : 0;
+		const lpDetonator* d = w->detonators.data + i;
+		uint8_t armed = d->armed ? 1 : 0;
 		h = lpHashBytes( h, &armed, sizeof( armed ) );
+		if ( d->lit ) // a fuse burning (an unlit one hashes as before)
+		{
+			h = lpHashBytes( h, &d->fuse, sizeof( d->fuse ) );
+		}
 	}
 	return lpHashLinks( w, h );
 }

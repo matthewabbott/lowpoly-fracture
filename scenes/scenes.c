@@ -1357,9 +1357,9 @@ int lpAddHexapod( lpWorld* world, lpVec3 base, float yaw, int style )
 	}
 	lpRigDef def = lpDefaultRigDef();
 	def.body = torso;
-	def.stride = 0.6f;	   // a step of about 0.85 m
-	def.swingTime = 0.35f; // so a tripod keeps up 2.3 m/s
-	def.maxSpeed = 2.3f;
+	def.gait.stride = 0.6f;	   // a step of about 0.85 m
+	def.gait.swingTime = 0.35f; // so a tripod keeps up 2.3 m/s
+	def.gait.maxSpeed = 2.3f;
 	def.forward = lpRotateVector( q, (lpVec3){ 0.0f, 0.0f, 1.0f } );
 	def.limbs = limbs;
 	def.limbCount = 6;

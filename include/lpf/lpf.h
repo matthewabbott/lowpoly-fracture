@@ -158,6 +158,11 @@ typedef struct lpWorldDef
 	int maxHitImpacts;	   // collision impacts processed per step
 	float hitSpeed;		   // minimum approach speed for collision damage, m/s
 	float killDepth;	   // bodies falling below this height are removed
+	// The pull's spring (lpWorld_Pull, the grab tool): its acceleration is stiffness x the error less damping x the
+	// point's velocity, and the held body's spin is multiplied by spinKeep every step
+	float pullStiffness; // 1/s^2
+	float pullDamping;	 // 1/s
+	float pullSpinKeep;
 	bool debugLog;		   // print every processed impact to stdout (for diagnosing tuning)
 	int workerCount;	   // threads for fracture and stress work, including the caller (results do not depend on it)
 	float stressScale;	   // multiplies every strength in the stress solve; 0 disables collapse under weight
@@ -201,6 +206,7 @@ typedef struct lpDetonatorDef
 	float radius;
 	float energy;
 	float speed; // blast push, m/s at the center
+	float delay; // s from what sets it off to the blast (0: at once): a fuse, burning wherever its pieces go
 } lpDetonatorDef;
 
 // What a part is to the systems a machine or a creature runs on. There are 8 channels (bit n is channel n); the game
@@ -220,6 +226,8 @@ typedef struct lpPartSystem
 	uint8_t needs;	 // channels it must be fed before it feeds its own; only those below its lowest source count
 	float pool;		 // a source's pool (any unit; 0: none, it never runs dry)
 	float seal;		 // s a leak takes to close (0: it bleeds until the pool is empty)
+	float leakRate;	 // share of the pool a leak drains per second for each share of its reach lost (0: 1)
+	float pressure;	 // share of its capacity a pool feeds fully down to, then less, to nothing empty (0: 0.3)
 } lpPartSystem;
 
 // One convex part of an object, in object space. A box when pointCount is zero, else the hull of points.
@@ -296,6 +304,7 @@ typedef struct lpMotorDef
 	uint8_t needs;	  // supply channels it needs fed at either end (0: none)
 	float holdTorque; // N*m it brakes with when unfed
 	float jam;		  // 0 to 1: how much damage jams it (0: never)
+	float jamKnock;	  // share of its strength a jamming motor loses when a piece at an end breaks up (0: 0.25)
 } lpMotorDef;
 
 typedef struct lpLinkDef
@@ -390,6 +399,9 @@ typedef struct lpWheelDef
 	float strength;	   // blast damage it takes, like a link's (J/m^2); 0: immune
 	uint8_t material;  // of the wheel once it comes off
 	uint32_t color;
+	float slidingGrip;	 // of its grip while it slides (0: 0.8)
+	float handbrakeGrip; // of its sideways grip while the handbrake locks it (0: 0.5)
+	float tearRatio;	 // it tears off a mount body lighter than this share of its share of the chassis (0: 0.2)
 } lpWheelDef;
 
 lpWheelDef lpDefaultWheelDef( void );
@@ -487,23 +499,78 @@ typedef struct lpLimbDef
 	lpPos foot;					   // world, at creation: the point it stands on, on the last link's outer body
 } lpLimbDef;
 
+// The built-in walker (gait.c): a free gait for statically stable many-legged bodies. Its tuning, with the defaults of
+// lpDefaultRigDef; a game that walks its rigs itself sets lpRigDef.walker to lp_walkerNone instead.
+typedef struct lpGaitDef
+{
+	// The body and its pace
+	float crouchDepth; // share of the stand height a full crouch lowers it by
+	float bellyHeight; // of the torso's frame resting on its belly (crawling); 0: a fifth of the stand height
+	float stepHeight;  // a swinging foot's lift, m
+	float stride;	   // m a planted foot drifts from where it rests before it steps (half a stride's length)
+	float maxSpeed;	   // m/s
+	float maxTurn;	   // rad/s
+	float swingTime;   // s a step takes
+	float margin;	   // m the centre of mass stays inside the planted feet when a leg lifts
+	float keepUp;	   // share of the cadence's top speed the controls may ask for
+	float legPace[LP_MAX_RIG_LIMBS + 1]; // share of its top speed, by able limbs: fewer swing in more turns
+	float crawlSpeed;  // share of its top speed it drags itself at on its belly
+	int walkingLegs;   // fewer able limbs than this cannot lift one and stay up: it crawls
+	// When a foot steps, and where it lands
+	float due;		 // moving, a planted foot steps once it has drifted this share of its half-step behind its rest point
+	float tidy;		 // standing still, feet further than this share of the stride step back to rest, one at a time
+	float land;		 // a swing lands at most this share of the stride ahead of its rest point
+	float overreach; // past its stride by this share, a planted foot stops the torso
+	float minStance; // s a foot set down stays down
+	float lateCast;	 // share of a swing at which the ground under its landing is cast again
+	// The foothold cast: a sole-sized sphere down from above the planned foothold
+	float clearance; // m above the foothold it starts
+	float depth;	 // m below it it looks
+	float sole;		 // m: the sphere's radius
+	float missDrop;	 // m below the foothold a foot is aimed when the cast finds nothing
+	// The torso's desired pose
+	float shift;	// m/s the body leans toward the feet that hold it while a foot waits for balance
+	float lead;		// m the pose may run ahead of the torso (the servos' gains pull it along)
+	float lag;		// m it may fall behind or away sideways: a torso that runs on is held back
+	float leadTurn; // rad its heading may run ahead
+	float climb;	// m/s its height moves at
+	float falling;	// m/s: a torso sinking faster than this is falling, and the pose follows it down
+	float weakSag;	// share of its height the torso drops as its weakest planted leg's strength goes to 0
+	float reachSpare; // m a leg keeps in hand below its deepest reach
+	float tuck;		  // share of the stand height below the torso an unable limb's foot is held at
+	// Planted feet
+	float arrived;	  // m: a planted foot this near where it was set down has got there
+	float arriveTime; // s it may take
+	float slipped;	  // m: a held foot this far from its hold slipped or was knocked
+	float easeTime;	  // s a held foot's hold takes to ease toward where the legs' geometry has it
+	// Standing still, and stuck
+	int calmTicks;	   // steps settled and still before its targets freeze (it can sleep)
+	float calmHeight;  // m off its height that still counts as settled
+	float calmTilt;	   // rad of tilt that does
+	float knockHeight; // idle, knocked off its height by this many calm heights, or...
+	float knockTilt;   // ...tilted by this many calm tilts, it wakes
+	float stallPace;   // told to move, making less than this share of the speed asked...
+	int stallTicks;	   // ...for this long, it is stuck: it crawls
+	// Strikes
+	float strike; // 1/s: a reaching limb's joints go at full speed until this near their target (8: 4 rad/s at 0.5 rad)
+} lpGaitDef;
+
+typedef enum lpWalkerKind
+{
+	lp_walkerGait, // the built-in walker (lpRigDef.gait)
+	lp_walkerNone, // the game walks it: each limb's foot target and the torso's pose (lpWorld_SetFootTarget, SetRigPose)
+} lpWalkerKind;
+
 typedef struct lpRigDef
 {
 	int body;		// the torso at creation: every limb's first link has an end on it
 	lpVec3 forward; // world, at creation
 	lpVec3 up;
 	const lpLimbDef* limbs;
-	int limbCount;		// 1 to LP_MAX_RIG_LIMBS, in order around the body: each limb's neighbours are the ones next to it
-	float standHeight;	// of the torso's frame above its feet at full strength; 0: as created
-	float crouchDepth;	// share of standHeight a full crouch lowers it by
-	float bellyHeight;	// of the torso's frame resting on its belly (it crawls so with fewer than 4 able limbs); 0: a
-						// fifth of standHeight
-	float stepHeight;	// a swinging foot's lift, m
-	float stride;		// m a planted foot drifts from where it rests before it steps (half a stride's length)
-	float maxSpeed;		// m/s
-	float maxTurn;		// rad/s
-	float swingTime;	// s a step takes
-	float margin;		// m the centre of mass stays inside the planted feet when a leg lifts
+	int limbCount;	   // 1 to LP_MAX_RIG_LIMBS, in order around the body: each limb's neighbours are the ones next to it
+	float standHeight; // of the torso's frame above its feet at full strength; 0: as created
+	int walker;		   // lpWalkerKind
+	lpGaitDef gait;	   // the built-in walker's tuning
 } lpRigDef;
 
 lpRigDef lpDefaultRigDef( void );
@@ -514,7 +581,7 @@ int lpCreateRig( lpWorld* world, const lpRigDef* def );
 
 typedef struct lpRigControl
 {
-	float forward; // -1 to 1 of maxSpeed
+	float forward; // -1 to 1 of the gait's maxSpeed (the built-in walker's controls)
 	float strafe;  // -1 (left) to 1
 	float turn;	   // -1 (left) to 1 of maxTurn
 	float crouch;  // 0 to 1 of crouchDepth
@@ -523,6 +590,23 @@ typedef struct lpRigControl
 // Persists until changed and is applied from the next step. It is simulation state (hashed): record it like any input,
 // at the tick it changed.
 void lpWorld_SetRigControl( lpWorld* world, int rig, const lpRigControl* control );
+
+// A rig the game walks itself (lp_walkerNone): what it asks of one limb. Each active limb's joints are driven toward the
+// IK of its foot at `point` from the rig's pose, fed the joint speeds that move the foot at `velocity` against the pose's
+// own motion. Gait, balance and footholds are the game's (the built-in walker in gait.c is one way to do them).
+// Persists until changed, and is simulation state (hashed): record it like any input.
+typedef struct lpFootTarget
+{
+	bool active;	 // false: its servos keep their last targets
+	lpPos point;	 // world
+	lpVec3 velocity; // world, m/s
+} lpFootTarget;
+
+void lpWorld_SetFootTarget( lpWorld* world, int rig, int limb, const lpFootTarget* target );
+
+// lp_walkerNone: the torso's pose the feet are solved from, and its motion (fed forward). Until set, the pose follows the
+// torso as it is. Persists until changed (hashed).
+void lpWorld_SetRigPose( lpWorld* world, int rig, lpWorldTransform pose, lpVec3 linear, lpVec3 angular );
 
 typedef struct lpRigState
 {

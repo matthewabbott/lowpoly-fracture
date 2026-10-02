@@ -136,6 +136,25 @@ static inline float BodyY( const Sim* s, int body )
 	return (float)xf.p.y;
 }
 
+// A body's centre of mass, world (one material: the volume centroid of its pieces)
+static inline lpPos BodyCenter( const lpWorld* world, int body )
+{
+	lpWorldTransform xf;
+	lpWorld_GetBodyTransform( world, body, &xf );
+	lpVec3 sum = lpVec3_zero;
+	float volume = 0.0f;
+	for ( int i = 0; i < lpWorld_GetPieceCapacity( world ); ++i )
+	{
+		lpPieceInfo p = lpWorld_GetPieceInfo( world, i );
+		if ( p.body == body )
+		{
+			sum = lpMulAdd( sum, p.volume, p.centroid );
+			volume += p.volume;
+		}
+	}
+	return lpTransformPoint( xf, lpMulSV( 1.0f / volume, sum ) );
+}
+
 // The fastest speed of any body's centre of mass (m/s): ghosts in flight count, static bodies and scrap do not. Under a
 // few cm/s, everything is at rest.
 static inline float MaxBodySpeed( const lpWorld* world )

@@ -245,6 +245,7 @@ typedef struct lpLimb
 	lpPos reachPoint; // world
 	bool reaching;	  // out of the gait, reaching
 	int touching;	  // the piece its foot touches while reaching (-1: none)
+	lpFootTarget target; // lp_walkerNone: where the game drives its foot
 	int groundPiece;  // under the foothold (-1: none, or not a piece)
 	uint32_t groundGeneration;
 	uint64_t recheckTick; // tick + 1 it last asked its ground structure for a stress check
@@ -271,6 +272,9 @@ typedef struct lpRig
 	bool stuck;				  // stalled with no foot able to lift: it crawls until its able limbs change
 	int stall;				  // steps stalled so far
 	int ableSeen;			  // able limbs when that was last reset
+	bool posed;				  // lp_walkerNone: the game set `desired` (else it follows the torso)
+	lpVec3 poseLinear;		  // lp_walkerNone: the pose's motion, fed forward
+	lpVec3 poseAngular;
 } lpRig;
 
 // A wheel that came off, spawned as an object of its own at the start of the next step
@@ -458,6 +462,8 @@ typedef struct lpPool
 	float reach; // carrier volume its lowest channel reached at the last supply update (-1: not yet)
 	float found; // this update's
 	int step;	 // level in sixteenths at the last supply update
+	float leakRate; // lpPartSystem's, defaults filled in
+	float pressure;
 } lpPool;
 
 // A detonator of a part or an object, shared by every piece made from it: the first of them to go off disarms it
@@ -465,6 +471,8 @@ typedef struct lpDetonator
 {
 	lpDetonatorDef def;
 	bool armed;
+	bool lit;	// its fuse is burning (def.delay): it goes off when the fuse is out, from the pieces that still carry it
+	float fuse; // s left
 } lpDetonator;
 
 // Pieces of a body that detonated (detonator + 1 of theirs), removed at the start of the next step
@@ -701,6 +709,8 @@ void lpProcessDeferred( lpWorld* w );
 void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
 void lpCollectHits( lpWorld* w );
+// Burns the lit fuses by a step, and sets off the charges whose fuse is out
+void lpBurnFuses( lpWorld* w, float timeStep );
 void lpUpdateBody( lpWorld* w, int bodyIndex );
 void lpUpdateDirtyBodies( lpWorld* w ); // lpUpdateBody on every dirty body, in the order they were marked
 
@@ -760,6 +770,13 @@ static inline void lpApplyMass( lpWorld* w, const lpBody* b )
 // stance, swings and targets: lpWalkRig in gait.c)
 void lpStepRigs( lpWorld* w, float timeStep );
 void lpWalkRig( lpWorld* w, lpRig* r, float timeStep );
+// The rig's centre of mass: its torso and the bodies of its limbs' chains
+lpPos lpRigCenter( const lpWorld* w, const lpRig* r );
+// How far `point` lies inside the convex hull of the feet in `use`, seen along up (negative outside; -FLT_MAX with fewer
+// than three)
+float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpPos point, lpVec3 up );
+// A structure a foot lands on or leaves carries a changed load: it is checked again (at most every 30 steps per foot)
+void lpFootMoved( lpWorld* w, lpLimb* limb );
 lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso ); // against gravity (the rig's own up without it)
 lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb );
 // Joint speeds that move a limb's foot at `velocity` (torso frame): damped least squares on its Jacobian

@@ -248,7 +248,7 @@ static int TestRigCrouch( void )
 		moved = fmaxf( moved, lpLength( lpSubPos( lpWorld_GetLimbState( s.world, rig, i ).foot, feet[i] ) ) );
 	}
 	const lpRigDef* def = &s.world->rigs.data[rig].def;
-	float want = 0.5f * def->crouchDepth * def->standHeight;
+	float want = 0.5f * def->gait.crouchDepth * def->standHeight;
 	float drop = before.height - after.height;
 	printf( "  crouch: dropped %.3f m (wanted %.3f), feet moved %.3f m, idle %d\n", drop, want, moved, after.idle );
 	ENSURE( fabsf( drop - want ) < 0.03f && moved < 0.02f );
@@ -445,7 +445,7 @@ static int TestRigWalksStraight( void )
 	float distance = r.end.z - r.start.z;
 	float speed = distance / 10.0f;
 	float drift = fabsf( r.end.x - r.start.x );
-	float top = s.world->rigs.data[rig].def.maxSpeed;
+	float top = s.world->rigs.data[rig].def.gait.maxSpeed;
 	printf( "  %.2f m/s of %.2f, drift %.2f m over %.1f m, tilt rms %.2f deg (worst %.2f), slip %.3f m (mean %.3f), %d strides, "
 			"utilization %.2f (joint %d)\n",
 			speed, top, drift, distance, r.tiltRms * 57.29578f, r.worstTilt * 57.29578f, r.slip, r.slipMean, r.strides, r.utilization,
@@ -471,7 +471,7 @@ static int TestRigTurns( void )
 	float rate = r.yaw / 4.0f;
 	float moved = sqrtf( ( r.end.x - r.start.x ) * ( r.end.x - r.start.x ) + ( r.end.z - r.start.z ) * ( r.end.z - r.start.z ) );
 	printf( "  %.2f rad/s of %.2f, moved %.2f m, tilt rms %.2f deg, slip %.3f m, %d strides\n", rate,
-			s.world->rigs.data[rig].def.maxTurn, moved, r.tiltRms * 57.29578f, r.slip, r.strides );
+			s.world->rigs.data[rig].def.gait.maxTurn, moved, r.tiltRms * 57.29578f, r.slip, r.strides );
 	ENSURE( r.valid && rate >= 0.5f && moved < 1.0f );
 	DestroySim( &s );
 	return 0;
@@ -1237,6 +1237,90 @@ static int TestRigWalkingBones( void )
 	return 0;
 }
 
+typedef struct NoWalkerReport
+{
+	float sink;		// m the torso dropped standing on its targets
+	float standing; // m: the worst foot off its target, standing
+	float lifted;	// m: the lifted foot off its target
+	float others;	// m: the worst other foot off its target meanwhile
+	float followed; // m the torso moved when its pose was pushed 0.1 m forward
+	uint64_t hash;
+} NoWalkerReport;
+
+static float FootOff( const Sim* s, int rig, int limb, lpPos target )
+{
+	return lpLength( lpSubPos( lpWorld_GetLimbState( s->world, rig, limb ).foot, target ) );
+}
+
+static NoWalkerReport NoWalker( int workers )
+{
+	NoWalkerReport r = { 0 };
+	Sim s = CreateSimWorkers( -1, workers );
+	int rig = lpAddHexapod( s.world, (lpVec3){ 0.0f, 0.0f, 0.0f }, 0.0f, 0 );
+	s.world->rigs.data[rig].def.walker = lp_walkerNone; // the game walks it
+	lpFootTarget targets[6];
+	for ( int i = 0; i < 6; ++i )
+	{
+		targets[i] = (lpFootTarget){ true, lpWorld_GetLimbState( s.world, rig, i ).foot, lpVec3_zero };
+		lpWorld_SetFootTarget( s.world, rig, i, targets + i );
+	}
+	// The pose where the torso stands: the legs hold it there (unset, the pose would follow the torso as it sags)
+	lpWorldTransform stand;
+	lpWorld_GetBodyTransform( s.world, lpWorld_GetRigState( s.world, rig ).body, &stand );
+	lpWorld_SetRigPose( s.world, rig, stand, lpVec3_zero, lpVec3_zero );
+	float start = (float)lpWorld_GetRigState( s.world, rig ).position.y;
+	Run( &s, 120 );
+	r.sink = start - (float)lpWorld_GetRigState( s.world, rig ).position.y;
+	for ( int i = 0; i < 6; ++i )
+	{
+		r.standing = fmaxf( r.standing, FootOff( &s, rig, i, targets[i].point ) );
+	}
+
+	// One foot up 0.25 m
+	targets[0].point.y += 0.25f;
+	lpWorld_SetFootTarget( s.world, rig, 0, targets + 0 );
+	Run( &s, 60 );
+	r.lifted = FootOff( &s, rig, 0, targets[0].point );
+	for ( int i = 1; i < 6; ++i )
+	{
+		r.others = fmaxf( r.others, FootOff( &s, rig, i, targets[i].point ) );
+	}
+	targets[0].point.y -= 0.25f;
+	lpWorld_SetFootTarget( s.world, rig, 0, targets + 0 );
+	Run( &s, 60 );
+
+	// The pose pushed 0.1 m forward: the legs push the torso there
+	lpRigState st = lpWorld_GetRigState( s.world, rig );
+	lpWorldTransform pose;
+	lpWorld_GetBodyTransform( s.world, st.body, &pose );
+	lpPos before = pose.p;
+	pose.p = lpOffsetPos( pose.p, lpMulSV( 0.1f, st.forward ) );
+	lpWorld_SetRigPose( s.world, rig, pose, lpVec3_zero, lpVec3_zero );
+	Run( &s, 120 );
+	lpWorld_GetBodyTransform( s.world, st.body, &pose );
+	r.followed = lpDot( lpSubPos( pose.p, before ), st.forward );
+	r.hash = lpWorld_Hash( s.world );
+	DestroySim( &s );
+	return r;
+}
+
+// A rig the game walks itself (lp_walkerNone): on foot targets where its feet are it stands, holding its height; a foot
+// sent up 0.25 m gets there while the others hold; its pose pushed forward, its legs push the torso after it; and the
+// same targets give the same world at 1 and 8 workers
+static int TestRigNoWalker( void )
+{
+	NoWalkerReport one = NoWalker( 1 );
+	NoWalkerReport eight = NoWalker( 8 );
+	printf( "  standing: sank %.3f m, feet within %.3f m; a foot lifted to %.3f m of its target, the others within %.3f m; "
+			"pushed 0.1 m, the torso moved %.3f m\n",
+			(double)one.sink, (double)one.standing, (double)one.lifted, (double)one.others, (double)one.followed );
+	ENSURE( one.sink < 0.03f && one.standing < 0.03f );
+	ENSURE( one.lifted < 0.04f && one.others < 0.03f );
+	ENSURE( one.followed > 0.07f && one.followed < 0.13f );
+	ENSURE( one.hash == eight.hash );
+	return 0;
+}
+
 int RigTest( void )
 {
 	RUN_TEST( TestKitStands, OUTCOME );
@@ -1264,6 +1348,7 @@ int RigTest( void )
 	RUN_TEST( TestRigStrikeWaitsForBalance, OUTCOME );
 	RUN_TEST( TestRigStompsHarderWhole, OUTCOME );
 	RUN_TEST( TestRigGrabs, OUTCOME );
+	RUN_TEST( TestRigNoWalker, OUTCOME );
 	RUN_TEST( TestRigLandsWhole, OUTCOME );
 	RUN_TEST( TestRigCrackedFemurSnaps, OUTCOME );
 	RUN_TEST( TestRigWalkingBones, OUTCOME );

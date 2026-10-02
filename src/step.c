@@ -202,7 +202,7 @@ static void lpApplyPulls( lpWorld* w )
 		lpPos point = lpTransformWorldPoint( lpPhys_GetTransform( w->phys, b->id ), pull.localPoint );
 		lpVec3 v = lpPhys_GetPointVelocity( w->phys, b->id, point );
 		lpVec3 error = lpSubPos( pull.target, point );
-		lpVec3 accel = lpSub( lpMulSV( 60.0f, error ), lpMulSV( 14.0f, v ) );
+		lpVec3 accel = lpSub( lpMulSV( w->def.pullStiffness, error ), lpMulSV( w->def.pullDamping, v ) );
 		float a = lpLength( accel );
 		if ( a > pull.maxAccel )
 		{
@@ -215,7 +215,7 @@ static void lpApplyPulls( lpWorld* w )
 		lpPhys_ApplyForce( w->phys, b->id, force, point, true );
 		// A little angular damping so held things do not spin forever
 		lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, b->id );
-		lpPhys_SetAngularVelocity( w->phys, b->id, lpMulSV( 0.97f, omega ) );
+		lpPhys_SetAngularVelocity( w->phys, b->id, lpMulSV( w->def.pullSpinKeep, omega ) );
 	}
 	w->pulls.count = 0;
 }
@@ -331,6 +331,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpStepGhosts( w, timeStep );
 	lpShove( w, timeStep );
 	lpCollectHits( w );
+	lpBurnFuses( w, timeStep );
 	lpFreezeOrKill( w );
 	lpEnforceBudgets( w );
 

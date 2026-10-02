@@ -25,8 +25,6 @@
 #define LP_LINK_CLAMP 3.0f	   // utilization above this counts as this (one wild step cannot snap a link)
 #define LP_LINK_STRAIN 10.0f   // strain per second per unit of overload: 10% over lasts about a second
 #define LP_LINK_TEAR_RATIO 0.02f // a rebuilt link between two moving bodies tears when one is under 2% of the other
-#define LP_WHEEL_TEAR_RATIO 0.2f // a wheel tears off a mount body lighter than a fifth of its share of the chassis
-#define LP_JAM_KNOCK 0.25f		 // share of its strength a jamming motor loses when a piece at an end breaks up
 
 lpLinkDef lpDefaultLinkDef( int type )
 {
@@ -38,6 +36,7 @@ lpLinkDef lpDefaultLinkDef( int type )
 	def.dampingRatio = 1.0f;
 	def.motor.maxSpeed = 2.0f;
 	def.motor.gain = 6.0f;
+	def.motor.jamKnock = 0.25f;
 	switch ( type )
 	{
 		case lp_linkRope:
@@ -217,6 +216,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	int index = lpAllocLink( w );
 	lpLink* l = w->links.data + index;
 	l->def = *def;
+	l->def.motor.jamKnock = l->def.motor.jamKnock > 0.0f ? l->def.motor.jamKnock : 0.25f;
 	if ( def->type == lp_linkRope && l->def.length <= 0.0f )
 	{
 		l->def.length = lpLength( lpSubPos( points[1], points[0] ) );
@@ -424,7 +424,7 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 		lpLink* l = w->links.data + move.link;
 		if ( l->def.motor.jam > 0.0f && l->def.strength > 0.0f )
 		{
-			l->health = lpMaxFloat( l->health - LP_JAM_KNOCK * l->def.strength, 0.1f * l->def.strength );
+			l->health = lpMaxFloat( l->health - l->def.motor.jamKnock * l->def.strength, 0.1f * l->def.strength );
 		}
 		lpLinkEnd* e = l->ends + move.end;
 		e->piece = child;
@@ -630,7 +630,7 @@ void lpSyncLinks( lpWorld* w )
 			lpBody* mount = w->bodies.data + w->pieces.data[l->ends[0].piece].body;
 			mount->linkStamp = stamp;
 			if ( lpPhys_IsDynamic( w->phys, mount->id ) &&
-				 lpPhys_GetMass( w->phys, mount->id ) < LP_WHEEL_TEAR_RATIO * w->wheels.data[l->wheel].sprungMass )
+				 lpPhys_GetMass( w->phys, mount->id ) < w->wheels.data[l->wheel].def.tearRatio * w->wheels.data[l->wheel].sprungMass )
 			{
 				lpBreakLink( w, i, true );
 			}

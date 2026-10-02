@@ -33,8 +33,8 @@ a track only when a decision needs its detail.
 | `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: physics joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
-| `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, reaching and touching, state, hash |
-| `src/gait.c` | the gait (`lpWalkRig`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
+| `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, the rig's centre of mass and support margin, reaching and touching, a game's own walking (`lp_walkerNone`: foot targets and a pose), state, hash |
+| `src/gait.c` | the built-in walker (`lpWalkRig`, tuned by `lpRigDef.gait`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
