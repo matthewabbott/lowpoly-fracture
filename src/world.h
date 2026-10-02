@@ -735,6 +735,12 @@ lpPos lpRigCenter( const lpWorld* w, const lpRig* r );
 float lpSupportMargin( const lpPos* feet, const bool* use, int count, lpPos point, lpVec3 up );
 // A structure a foot lands on or leaves carries a changed load: it is checked again (at most every 30 steps per foot)
 void lpFootMoved( lpWorld* w, lpLimb* limb );
+// Drives a limb's foot to `foot` (world) as seen from the rig's pose (r->desired) moving at linear and angular, the foot
+// itself moving at `motion`: its servos' targets are the IK seeded from limb->q, fed the joint speeds that keep the
+// foot there; with strike > 0 (1/s) its joints go at full speed until that near their targets instead (a stomp). Every
+// walker drives its feet through this.
+void lpDriveFoot( lpWorld* w, const lpRig* r, lpLimb* limb, lpPos foot, lpVec3 motion, lpVec3 linear, lpVec3 angular,
+				  float strike );
 lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso ); // against gravity (the rig's own up without it)
 lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb );
 // Joint speeds that move a limb's foot at `velocity` (torso frame): damped least squares on its Jacobian

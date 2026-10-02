@@ -542,6 +542,35 @@ void lpFootMoved( lpWorld* w, lpLimb* limb )
 
 static int lpFindTouch( lpWorld* w, const lpRig* r, const lpLimb* limb );
 
+void lpDriveFoot( lpWorld* w, const lpRig* r, lpLimb* limb, lpPos foot, lpVec3 motion, lpVec3 linear, lpVec3 angular,
+				  float strike )
+{
+	lpVec3 target = lpInvTransformWorldPoint( r->desired, foot );
+	lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
+	lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
+	lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
+	lpVec3 arm = lpSubPos( foot, r->desired.p );
+	lpVec3 relative = lpInvRotateVector( r->desired.q, lpSub( motion, lpAdd( linear, lpCross( angular, arm ) ) ) );
+	float feed[LP_MAX_LIMB_JOINTS];
+	lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
+	if ( strike > 0.0f )
+	{
+		// A strike: its joints go at full speed until they are nearly there (a servo alone slows as it closes in, and a
+		// stomp would land too gently to break anything)
+		for ( int k = 0; k < limb->joints; ++k )
+		{
+			const lpLink* l = w->links.data + limb->def.links[k];
+			float fastest = l->def.motor.maxSpeed;
+			feed[k] = lpClampFloat( strike * ( limb->q[k] - l->angle ), -fastest, fastest );
+		}
+	}
+	for ( int k = 0; k < limb->joints; ++k )
+	{
+		lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
+		w->links.data[limb->def.links[k]].feed = feed[k];
+	}
+}
+
 // lp_walkerNone: each attached limb with an active target drives its foot there, by IK from the rig's pose, its joints
 // fed the speeds that move the foot as asked against the pose's own motion (as the walker drives its feet)
 static void lpDriveFeet( lpWorld* w, lpRig* r )
@@ -561,20 +590,7 @@ static void lpDriveFeet( lpWorld* w, lpRig* r )
 		{
 			limb->q[k] = w->links.data[limb->def.links[k]].angle;
 		}
-		lpVec3 target = lpInvTransformWorldPoint( r->desired, limb->target.point );
-		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
-		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
-		lpVec3 arm = lpSubPos( limb->target.point, r->desired.p );
-		lpVec3 pose = lpAdd( r->poseLinear, lpCross( r->poseAngular, arm ) );
-		lpVec3 relative = lpInvRotateVector( r->desired.q, lpSub( limb->target.velocity, pose ) );
-		float feed[LP_MAX_LIMB_JOINTS];
-		lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
-		for ( int k = 0; k < limb->joints; ++k )
-		{
-			lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
-			w->links.data[limb->def.links[k]].feed = feed[k];
-		}
+		lpDriveFoot( w, r, limb, limb->target.point, limb->target.velocity, r->poseLinear, r->poseAngular, 0.0f );
 	}
 }
 

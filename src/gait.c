@@ -590,30 +590,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			foot = lpSwingPoint( limb, s1, g->stepHeight, up );
 			motion = lpMulSV( 1.0f / timeStep, lpSubPos( foot, lpSwingPoint( limb, s0, g->stepHeight, up ) ) );
 		}
-		lpVec3 target = lpInvTransformWorldPoint( r->desired, foot );
-		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
-		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
-		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
-		lpVec3 arm = lpSubPos( foot, r->desired.p );
-		lpVec3 relative = lpInvRotateVector( r->desired.q, lpSub( motion, lpAdd( linear, lpCross( angular, arm ) ) ) );
-		float feed[LP_MAX_LIMB_JOINTS];
-		lpLimbSpeeds( limb->joints, axes, origins, at, relative, feed );
-		if ( limb->reaching )
-		{
-			// A strike: its joints go at full speed until they are nearly there (a servo alone slows as it closes in, and a
-			// stomp would land too gently to break anything)
-			for ( int k = 0; k < limb->joints; ++k )
-			{
-				const lpLink* l = w->links.data + limb->def.links[k];
-				float fastest = l->def.motor.maxSpeed;
-				feed[k] = lpClampFloat( g->strike * ( limb->q[k] - l->angle ), -fastest, fastest );
-			}
-		}
-		for ( int k = 0; k < limb->joints; ++k )
-		{
-			lpWorld_SetLinkTarget( w, limb->def.links[k], limb->q[k] );
-			w->links.data[limb->def.links[k]].feed = feed[k];
-		}
+		lpDriveFoot( w, r, limb, foot, motion, linear, angular, limb->reaching ? g->strike : 0.0f );
 	}
 
 	// Still, settled and every foot down for a moment: freeze the targets
