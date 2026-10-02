@@ -589,14 +589,7 @@ void lpDriveMotors( lpWorld* w )
 		}
 		if ( l->motorApplied == false || cap != l->appliedCap )
 		{
-			if ( l->def.type == lp_linkHinge )
-			{
-				lpPhys_SetMotorMaxTorque( w->phys, l->joint, cap );
-			}
-			else
-			{
-				lpPhys_SetMotorMaxTorque( w->phys, l->joint, cap );
-			}
+			lpPhys_SetMotorMaxTorque( w->phys, l->joint, cap );
 			if ( l->motorApplied )
 			{
 				lpPhys_WakeJoint( w->phys, l->joint ); // weaker or stronger (unfed, damaged, fed again): a sleeping limb must react

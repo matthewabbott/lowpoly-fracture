@@ -11,24 +11,12 @@
 
 typedef struct lpTaskPool lpTaskPool;
 
-// Fate of a cell after a fracture
-typedef enum lpCellClass
-{
-	lp_cellKeep,  // stays on the parent body, bonded to its neighbours
-	lp_cellPuff,  // particles only
-	lp_cellGhost, // ejected as a ghost (no physics body)
-	lp_cellLight, // ejected as a light debris body
-	lp_cellFull,  // ejected as a full debris body
-} lpCellClass;
-
 // Collision categories (lpPhysFilter). Light shapes also run the pair filter (debris.c, lpPairFilter): a light piece
 // touches a full piece only if the full piece is frozen static rubble.
 #define LP_CAT_STATIC 0x01ull
 #define LP_CAT_FULL 0x02ull
 #define LP_CAT_LIGHT 0x04ull
 #define LP_CAT_VEHICLE 0x08ull
-#define LP_CAT_CHARACTER 0x10ull
-#define LP_CAT_PROJECTILE 0x20ull
 #define LP_CAT_ALL 0xFFFFFFFFFFFFFFFFull
 
 typedef struct lpOverload
@@ -227,7 +215,6 @@ typedef struct lpLimb
 	bool attached;
 	bool able;
 	bool planted;
-	float residual; // how far its IK fell short, m
 	float q[LP_MAX_LIMB_JOINTS]; // the angles last given to its servos
 	// Gait (gait.c)
 	lpVec3 neutral; // torso frame: where its foot rests under the torso, as created
@@ -266,8 +253,6 @@ typedef struct lpRig
 	float height;			  // the torso's frame above its planted feet, this step
 	bool idle;				  // targets frozen: standing still, settled
 	int calm;				  // steps settled and still toward the idle latch
-	float pace;				  // share of the commanded motion its feet allowed this step (an overstretched foot slows it)
-	bool waiting;			  // a foot waited for balance this step
 	bool crawling;			  // fewer than 4 able limbs, or stuck: on its belly
 	bool stuck;				  // stalled with no foot able to lift: it crawls until its able limbs change
 	int stall;				  // steps stalled so far
@@ -533,33 +518,6 @@ typedef struct lpHitCandidate
 	lpPos point;
 	uint64_t key;
 } lpHitCandidate;
-
-#define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
-
-// One piece to fracture during an impact (see impact.c, "fracture jobs")
-typedef struct lpFractureJob
-{
-	int piece;
-	lpVec3 localImpact; // body frame
-	lpVec3 center;		// piece centroid; the fracture runs in a frame centered here
-	lpImpactDef impact; // what broke it: new bonds between its cells start with the damage it did there
-	lpPoly poly;
-	lpFractureInput input;
-	float particleVolume; // tier thresholds of the piece's material, scaled
-	float ghostVolume;
-	float lightVolume;
-	float mergeSlack; // and its merge slack and chip splits: the job runs without the world
-	int chipSplits;
-
-	int cellCount;
-	lpShape* cells[LP_MAX_SITES];
-	int cellSites[LP_MAX_SITES];
-	uint8_t cellClass[LP_MAX_SITES];
-	lpPhysHull* hulls[LP_MAX_SITES];
-	int bondCount;
-	lpCellBond* bonds; // LP_MAX_CELL_BONDS
-	lpFractureStats stats;
-} lpFractureJob;
 
 // A piece whose fracture did not fit in the step's budget; it runs at the start of the next step
 typedef struct lpDeferredJob

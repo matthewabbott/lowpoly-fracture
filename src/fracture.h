@@ -79,3 +79,48 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 // cut faces. Writes new shapes (caller owns them) and returns their count; 0 means the cell was left whole.
 int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
 				lpShape** chips, int capacity );
+
+// Fate of a cell after a fracture
+typedef enum lpCellClass
+{
+	lp_cellKeep,  // stays on the parent body, bonded to its neighbours
+	lp_cellPuff,  // particles only
+	lp_cellGhost, // ejected as a ghost (no physics body)
+	lp_cellLight, // ejected as a light debris body
+	lp_cellFull,  // ejected as a full debris body
+} lpCellClass;
+
+#define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
+
+// One piece to fracture during an impact: impact.c snapshots its input (phase 1), lpFracture_RunJob computes its
+// cells, their fates, hulls and sibling bonds without the world (phase 2, in parallel), impact.c integrates them (3)
+typedef struct lpFractureJob
+{
+	int piece;
+	lpVec3 localImpact; // body frame
+	lpVec3 center;		// piece centroid; the fracture runs in a frame centered here
+	lpImpactDef impact; // what broke it: new bonds between its cells start with the damage it did there
+	lpPoly poly;
+	lpFractureInput input;
+	float particleVolume; // tier thresholds of the piece's material, scaled
+	float ghostVolume;
+	float lightVolume;
+	float mergeSlack; // and its merge slack and chip splits: the job runs without the world
+	int chipSplits;
+
+	int cellCount;
+	lpShape* cells[LP_MAX_SITES];
+	int cellSites[LP_MAX_SITES];
+	uint8_t cellClass[LP_MAX_SITES];
+	lpPhysHull* hulls[LP_MAX_SITES];
+	int bondCount;
+	lpCellBond* bonds; // LP_MAX_CELL_BONDS
+	lpFractureStats stats;
+} lpFractureJob;
+
+// Phase 2 of an impact: the cells, each one's fate, the physics hulls of the cells that need one, and the bonds between
+// the ones that stay. A pure function of the job's snapshot.
+void lpFracture_RunJob( lpFractureJob* job );
+
+// Frees the cells and hulls a job still owns
+void lpFracture_FreeJob( lpFractureJob* job );

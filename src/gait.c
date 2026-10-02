@@ -321,7 +321,6 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	lpVec3 wanted = velocity; // as commanded, before its feet held it back
 	velocity = lpMulSV( pace, velocity );
 	spin *= pace;
-	r->pace = pace;
 
 	// Swings under way: their time, their aim (re-aimed across the ground as the torso goes; the ground's height from the
 	// casts), the second cast, landing
@@ -507,7 +506,6 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 	}
 
 	shift = lpLengthSquared( shift ) > 0.0f ? shift : reachLean;
-	r->waiting = waited || lpLengthSquared( reachLean ) > 0.0f;
 	// Told to move and getting nowhere (its feet may still step: one leg left on a side lifts nothing and the others
 	// shuffle) for a while, it is stuck
 	float asked = lpLength( wanted );
@@ -593,7 +591,7 @@ void lpWalkRig( lpWorld* w, lpRig* r, float timeStep )
 			motion = lpMulSV( 1.0f / timeStep, lpSubPos( foot, lpSwingPoint( limb, s0, g->stepHeight, up ) ) );
 		}
 		lpVec3 target = lpInvTransformWorldPoint( r->desired, foot );
-		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
+		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
 		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
 		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
 		lpVec3 arm = lpSubPos( foot, r->desired.p );

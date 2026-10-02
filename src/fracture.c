@@ -1246,3 +1246,131 @@ int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t mater
 	lpFree( polys );
 	return written;
 }
+
+// ---- the fracture job (impact.c prepares it and integrates its output) ----
+
+// Phase 2. Must not touch the world. Cells inside the break radius are ejecta: their bonds would break anyway, so
+// they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no physics hull at all.
+void lpFracture_RunJob( lpFractureJob* job )
+{
+	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
+	uint64_t ticks = lpGetTicks();
+	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
+	job->stats.voronoiMs = lpGetMillisecondsAndReset( &ticks );
+	job->bondCount = 0;
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		job->hulls[i] = NULL; // the job slot is reused: never leave a stale hull for lpFracture_FreeJob
+	}
+	if ( job->cellCount < 2 )
+	{
+		return;
+	}
+	float r2 = job->input.radius * job->input.radius;
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		lpShape* cell = job->cells[i];
+		lpShape_Translate( cell, job->center );
+		float volume = cell->volume;
+		bool ejecta = lpDistanceSquared( cell->centroid, job->localImpact ) < r2;
+		uint8_t cls;
+		// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
+		float dustBelow = ejecta ? job->particleVolume : job->input.absorbVolume;
+		if ( volume < dustBelow )
+		{
+			cls = lp_cellPuff;
+		}
+		else if ( ejecta == false )
+		{
+			cls = lp_cellKeep;
+		}
+		else if ( volume < job->ghostVolume )
+		{
+			cls = lp_cellGhost;
+		}
+		else if ( volume < job->lightVolume )
+		{
+			cls = lp_cellLight;
+		}
+		else
+		{
+			cls = lp_cellFull;
+		}
+		job->cellClass[i] = cls;
+	}
+
+	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece
+	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, job->mergeSlack,
+								   job->input.interiorMaterial, job->localImpact );
+	job->stats.mergeMs = lpGetMillisecondsAndReset( &ticks );
+
+	// What is still too small to carry load does not stay on the piece: it falls as debris. Structures keep chunks,
+	// not crumbs, which is cheaper for physics and keeps the stress solve well conditioned (no tiny bonds). A crumb is
+	// small in every direction: half a snapped plank is thin but long, and stays.
+	float crumbReach = 4.0f * job->input.fragmentSize;
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		float volume = job->cells[i]->volume;
+		if ( job->cellClass[i] == lp_cellKeep && volume < job->lightVolume && job->cells[i]->radius < crumbReach )
+		{
+			job->cellClass[i] = volume < job->ghostVolume ? lp_cellGhost : lp_cellLight;
+		}
+	}
+
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		uint8_t cls = job->cellClass[i];
+		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
+		job->hulls[i] = needsHull ? lpShape_CreateHull( job->cells[i] ) : NULL;
+	}
+	job->stats.hullMs = lpGetMillisecondsAndReset( &ticks );
+	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
+
+	// Ghost ejecta break into a few real chips: a dirtier spray for a few plane clips. After the bonds, which only
+	// keepers use, so the chips need none. Wood splits along the grain, glass across the pane.
+	int original = job->cellCount;
+	for ( int i = 0; i < original && job->chipSplits > 0; ++i )
+	{
+		if ( job->cellClass[i] != lp_cellGhost )
+		{
+			continue;
+		}
+		bool oriented = job->input.pattern == lp_breakGrain || job->input.pattern == lp_breakRadial;
+		lpRandom rng;
+		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
+		lpShape* chips[4];
+		int room = LP_MAX_SITES - job->cellCount + 1;
+		int count = lpChipCell( job->cells[i], job->chipSplits, oriented ? job->input.axis : lpVec3_zero,
+								job->input.interiorMaterial, job->particleVolume, &rng, chips, room < 4 ? room : 4 );
+		if ( count == 0 )
+		{
+			continue;
+		}
+		lpShape_Destroy( job->cells[i] );
+		job->cells[i] = chips[0];
+		for ( int k = 1; k < count; ++k )
+		{
+			int c = job->cellCount++;
+			job->cells[c] = chips[k];
+			job->cellSites[c] = -1;
+			job->cellClass[c] = lp_cellGhost;
+			job->hulls[c] = NULL;
+		}
+	}
+}
+
+void lpFracture_FreeJob( lpFractureJob* job )
+{
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		if ( job->cells[i] != NULL )
+		{
+			lpShape_Destroy( job->cells[i] );
+		}
+		if ( job->hulls[i] != NULL )
+		{
+			lpPhys_DestroyHull( job->hulls[i] );
+		}
+	}
+	job->cellCount = 0;
+}

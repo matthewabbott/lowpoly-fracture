@@ -562,7 +562,7 @@ static void lpDriveFeet( lpWorld* w, lpRig* r )
 			limb->q[k] = w->links.data[limb->def.links[k]].angle;
 		}
 		lpVec3 target = lpInvTransformWorldPoint( r->desired, limb->target.point );
-		limb->residual = lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
+		lpLimbIK( w, limb, limb->joints, limb->foot, target, limb->q );
 		lpVec3 axes[LP_MAX_LIMB_JOINTS], origins[LP_MAX_LIMB_JOINTS];
 		lpVec3 at = lpLimbForward( w, limb, limb->joints, limb->q, limb->foot, axes, origins );
 		lpVec3 arm = lpSubPos( limb->target.point, r->desired.p );

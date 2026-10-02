@@ -500,7 +500,7 @@ static lpPhysShapeDef lpMakeShapeDef( const lpWorld* w, int pieceIndex, uint8_t 
 	else
 	{
 		def.filter = ( lpPhysFilter ){ LP_CAT_FULL,
-									   LP_CAT_STATIC | LP_CAT_FULL | LP_CAT_LIGHT | LP_CAT_VEHICLE | LP_CAT_CHARACTER | LP_CAT_PROJECTILE };
+									   LP_CAT_STATIC | LP_CAT_FULL | LP_CAT_LIGHT | LP_CAT_VEHICLE };
 		def.hitEvents = true; // also wakes fragile rubble it bumps into
 	}
 	return def;
