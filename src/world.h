@@ -11,22 +11,6 @@
 
 typedef struct lpTaskPool lpTaskPool;
 
-typedef enum lpBodyKind
-{
-	lp_kindStructure, // static until pieces break loose; anchored components stay
-	lp_kindDebris,	  // dynamic physics body
-	lp_kindRubble,	  // debris that settled and was frozen static; wakes when something happens nearby
-	lp_kindGhost,	  // no physics body: flies ballistically and passes through everything
-	lp_kindScrap,	  // no physics body: a landed ghost, render-only
-} lpBodyKind;
-
-// How much a physics debris body interacts (kept when it freezes into rubble)
-typedef enum lpTier
-{
-	lp_tierFull,  // collides with everything
-	lp_tierLight, // collides with static geometry only; cannot push anything
-} lpTier;
-
 // Fate of a cell after a fracture
 typedef enum lpCellClass
 {

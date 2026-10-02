@@ -140,10 +140,6 @@ bool lpScriptParseLine( lpScript* script, const char* line )
 				 name );
 		return false;
 	}
-	if ( e.kind != lp_scriptPull )
-	{
-		e.dir = Normalize( e.dir );
-	}
 	// A held blower: the last field is how many ticks it stays on
 	int repeat = e.kind == lp_scriptBlow && e.index > 1 ? e.index : 1;
 	for ( int k = 0; k < repeat; ++k )
@@ -268,6 +264,8 @@ static void FireBall( lpWorld* world, lpVec3 origin, lpVec3 dir )
 
 void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state )
 {
+	// A tool's aim is normalised here, not on load, so a recorded event replays exactly as it applied live
+	lpVec3 dir = e->kind == lp_scriptPull ? e->dir : Normalize( e->dir );
 	switch ( e->kind )
 	{
 		case lp_scriptDrive:
@@ -311,20 +309,20 @@ void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state
 		case lp_scriptBlow:
 			// 8 m cone of air: wakes and pushes rubble, scrap and ghosts, so a road can be cleared. Gentle enough that
 			// blown rubble does not smash into what it lands against (damage starts at 4 m/s).
-			lpWorld_Blow( world, e->origin, e->dir, 8.0f, 0.35f, 4.5f );
+			lpWorld_Blow( world, e->origin, dir, 8.0f, 0.35f, 4.5f );
 			return;
 		case lp_scriptFlask:
-			ThrowFlask( world, e->origin, e->dir );
+			ThrowFlask( world, e->origin, dir );
 			return;
 		case lp_scriptBall:
-			FireBall( world, e->origin, e->dir );
+			FireBall( world, e->origin, dir );
 			return;
 		default:
 			break;
 	}
 
 	float range = e->kind == lp_scriptHammer ? 4.0f : 250.0f;
-	lpRayHit hit = lpWorld_CastRay( world, e->origin, lpMulSV( range, e->dir ) );
+	lpRayHit hit = lpWorld_CastRay( world, e->origin, lpMulSV( range, dir ) );
 	if ( hit.hit == false )
 	{
 		return;
@@ -332,7 +330,7 @@ void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state
 
 	lpImpactDef im = { 0 };
 	im.point = hit.point;
-	im.direction = e->dir;
+	im.direction = dir;
 	switch ( e->kind )
 	{
 		case lp_scriptRifle:

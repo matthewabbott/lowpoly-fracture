@@ -6,6 +6,7 @@
 //
 // Also checks determinism: the final state hash must be the same for every worker count.
 
+#include "dump.h"
 #include "scenes.h"
 #include "script.h"
 
@@ -69,6 +70,14 @@ static const char* s_tickLog;
 
 // --script path: a replay script's events, applied before the bombardment each tick (scenes/script.h)
 static lpScript s_script;
+
+// --dump tick:path (repeatable): the state after that tick's step as JSON (scenes/dump.h), from the first worker count's
+// run (the others are the same state)
+#define MAX_DUMPS 16
+static int64_t s_dumpTicks[MAX_DUMPS];
+static const char* s_dumpPaths[MAX_DUMPS];
+static int s_dumpCount;
+static bool s_dumped;
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
@@ -183,7 +192,17 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 			fprintf( tickLog, "%d %.3f %.3f %.3f %.3f %d %d\n", tick, (double)total[tick], (double)st.fractureMs,
 					 (double)st.physicsMs, (double)st.stressMs, st.pieceCount, st.awakeDebris );
 		}
+		for ( int d = 0; d < s_dumpCount && s_dumped == false; ++d )
+		{
+			FILE* f = s_dumpTicks[d] == tick ? fopen( s_dumpPaths[d], "w" ) : NULL;
+			if ( f != NULL )
+			{
+				lpDumpWorld( f, world );
+				fclose( f );
+			}
+		}
 	}
+	s_dumped = true;
 	if ( hashLog != NULL )
 	{
 		fclose( hashLog );
@@ -291,11 +310,21 @@ int main( int argc, char** argv )
 			}
 			++i;
 		}
+		else if ( strcmp( a, "--dump" ) == 0 && s_dumpCount < MAX_DUMPS )
+		{
+			if ( lpParseDumpArg( v, s_dumpTicks + s_dumpCount, s_dumpPaths + s_dumpCount ) == false )
+			{
+				printf( "--dump wants tick:path\n" );
+				return 1;
+			}
+			s_dumpCount += 1;
+			++i;
+		}
 		else
 		{
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
-					"                 [--hash-log path] [--tick-log path] [--script path]\n" );
+					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json]\n" );
 			return 1;
 		}
 	}

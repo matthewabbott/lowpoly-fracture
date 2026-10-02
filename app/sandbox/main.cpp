@@ -3,6 +3,7 @@
 //
 // Interactive:  sandbox --scene town
 // Automation:   sandbox --scene walls --script scripts/walls_demo.txt --frames 300 --screenshot shot.png --hash-log h.txt
+//               (--screenshot-at 60,120 saves shot_0060.png and shot_0120.png; --dump 120:state.json the state as JSON)
 //
 // The simulation runs at a fixed 60 Hz. With --frames it advances exactly one tick per rendered frame, so scripted
 // runs are independent of machine speed and their hash logs are comparable across runs.
@@ -11,6 +12,7 @@
 #include "math3d.h"
 #include "renderer.h"
 
+#include "dump.h"
 #include "scenes.h"
 #include "script.h"
 
@@ -61,6 +63,8 @@ struct Options
 	int workers = 4;
 	int frames = 0; // 0 = interactive
 	std::string screenshot;
+	std::vector<int> shotsAt; // --screenshot-at: frames to save (numbered), instead of only the last
+	std::vector<std::pair<int64_t, std::string>> dumps; // --dump tick:path, the state after that tick's step as JSON
 	std::string script;
 	std::string record;
 	std::string hashLog;
@@ -504,6 +508,16 @@ void StepSimulation()
 		app.lastHash = lpWorld_Hash( app.world );
 		fprintf( app.hashFile, "%lld %016llx\n", (long long)app.tick, (unsigned long long)app.lastHash );
 	}
+	for ( const auto& dump : app.opt.dumps )
+	{
+		FILE* f = dump.first == app.tick ? fopen( dump.second.c_str(), "w" ) : nullptr;
+		if ( f != nullptr )
+		{
+			lpDumpWorld( f, app.world );
+			fclose( f );
+			printf( "dump %s\n", dump.second.c_str() );
+		}
+	}
 	app.tick += 1;
 }
 
@@ -895,7 +909,13 @@ void Frame()
 
 	app.frame += 1;
 	bool last = automated && app.frame >= app.opt.frames;
-	if ( app.wantScreenshot || ( last && !app.opt.screenshot.empty() ) )
+	bool listed = false;
+	for ( int at : app.opt.shotsAt )
+	{
+		listed = listed || ( automated && at == app.frame );
+	}
+	bool shoot = app.opt.shotsAt.empty() ? last : listed;
+	if ( app.wantScreenshot || ( shoot && !app.opt.screenshot.empty() ) )
 	{
 		std::string path = app.opt.screenshot;
 		if ( app.wantScreenshot || path.empty() )
@@ -903,6 +923,14 @@ void Frame()
 			char name[64];
 			snprintf( name, sizeof( name ), "screenshot_%03d.png", app.screenshotCounter++ );
 			path = name;
+		}
+		else if ( listed )
+		{
+			// shot.png: shot_0120.png at frame 120
+			size_t dot = path.rfind( '.' );
+			char number[16];
+			snprintf( number, sizeof( number ), "_%04d", app.frame );
+			path.insert( dot == std::string::npos ? path.size() : dot, number );
 		}
 		bool ok = Renderer_Screenshot( path.c_str() );
 		printf( "screenshot %s: %s\n", path.c_str(), ok ? "ok" : "FAILED" );
@@ -1093,6 +1121,26 @@ int main( int argc, char** argv )
 			o.frames = atoi( v );
 		else if ( strcmp( a, "--screenshot" ) == 0 )
 			o.screenshot = v;
+		else if ( strcmp( a, "--screenshot-at" ) == 0 )
+		{
+			for ( const char* c = v; *c != 0; )
+			{
+				o.shotsAt.push_back( atoi( c ) );
+				const char* comma = strchr( c, ',' );
+				c = comma != nullptr ? comma + 1 : c + strlen( c );
+			}
+		}
+		else if ( strcmp( a, "--dump" ) == 0 )
+		{
+			int64_t tick = 0;
+			const char* path = nullptr;
+			if ( lpParseDumpArg( v, &tick, &path ) == false )
+			{
+				printf( "--dump wants tick:path\n" );
+				return 1;
+			}
+			o.dumps.push_back( { tick, path } );
+		}
 		else if ( strcmp( a, "--script" ) == 0 )
 			o.script = v;
 		else if ( strcmp( a, "--record" ) == 0 )
@@ -1129,7 +1177,8 @@ int main( int argc, char** argv )
 		}
 		else
 		{
-			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track] [--workers N] [--frames N] [--screenshot out.png]\n"
+			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers N] [--frames N] [--screenshot out.png]\n"
+					"               [--screenshot-at f1,f2,...] [--dump tick:path.json]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n"
 					"               [--input-delay ticks]\n" );

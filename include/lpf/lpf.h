@@ -699,6 +699,78 @@ typedef struct lpRayHit
 
 lpRayHit lpWorld_CastRay( const lpWorld* world, lpPos origin, lpVec3 translation );
 
+// ---- inspection: the state of things, for tools, tests and agents (reads only) ----
+
+uint64_t lpWorld_GetTick( const lpWorld* world ); // steps taken
+
+typedef enum lpBodyKind
+{
+	lp_kindStructure, // static until pieces break loose; anchored components stay
+	lp_kindDebris,	  // dynamic physics body (vehicles and rigs too)
+	lp_kindRubble,	  // debris that settled and was frozen static; wakes when something happens nearby
+	lp_kindGhost,	  // no physics body: flies ballistically and passes through everything
+	lp_kindScrap,	  // no physics body: a landed ghost, render-only
+} lpBodyKind;
+
+// How much a physics debris body interacts (kept when it freezes into rubble)
+typedef enum lpTier
+{
+	lp_tierFull,  // collides with everything
+	lp_tierLight, // collides with static geometry only; cannot push anything
+} lpTier;
+
+typedef struct lpBodyInfo
+{
+	bool alive;
+	uint32_t generation; // changes when the slot is reused
+	int kind;			 // lpBodyKind
+	int tier;			 // lpTier
+	bool awake;			 // debris the physics engine is moving, or a ghost in flight
+	bool unsettled;		 // structure: its stress solve is still working, or joints are straining toward a break
+	int pieceCount;
+	float volume;				 // m^3
+	lpWorldTransform transform;	 // its frame, in which its pieces' geometry is given
+	lpVec3 linearVelocity;		 // of its centre of mass, world (0 for static bodies and scrap)
+	lpVec3 angularVelocity;
+} lpBodyInfo;
+
+lpBodyInfo lpWorld_GetBodyInfo( const lpWorld* world, int body );
+
+// A joint between two pieces of one body, as its last converged stress check saw it
+typedef struct lpBondInfo
+{
+	bool alive;
+	int pieceA, pieceB; // pieceA < pieceB
+	int joint;			// lpJointId
+	float area;			// m^2
+	lpPos centroid;		// world
+	lpVec3 normal;		// world, unit, from pieceA toward pieceB
+	float health;		// J/m^2 of damage it can still take (strength when intact)
+	float strength;
+	float utilization; // 1 at its limit
+	float strain;	   // overload accumulated over checks; it breaks at 1
+	lpVec3 force;	   // N, world: what it carries (tension along +normal)
+	lpVec3 moment;	   // N m, world
+} lpBondInfo;
+
+int lpWorld_GetBondCapacity( const lpWorld* world );
+lpBondInfo lpWorld_GetBondInfo( const lpWorld* world, int bond );
+
+// A touching contact point of a body's piece
+typedef struct lpContactInfo
+{
+	int piece;		  // the body's own piece
+	int other;		  // the piece it touches, -1 for none (the ground of a test)
+	lpVec3 normal;	  // unit: the way the contact pushes the piece
+	lpPos point;	  // world
+	float separation; // m, negative when overlapping
+	float impulse;	  // total normal impulse over the last step, N s
+} lpContactInfo;
+
+// A physics body's contact points, sorted by (piece, other): copies up to capacity and returns how many there are (0
+// for ghosts, scrap and free slots). Not thread-safe: it reuses the physics backend's report buffer.
+int lpWorld_GetBodyContacts( const lpWorld* world, int body, lpContactInfo* contacts, int capacity );
+
 // ---- rendering access ----
 
 // Vertex of a piece's flat-shaded render mesh, in the body frame.
@@ -718,6 +790,9 @@ typedef struct lpPieceInfo
 	uint16_t tag;		 // that part's system tag
 	float volume;
 	uint8_t supplied;	 // supply channels fed here
+	uint8_t material;	 // lpMaterialId
+	uint8_t joint;		 // lpJointId where it meets other parts
+	lpVec3 centroid;	 // body frame
 } lpPieceInfo;
 
 int lpWorld_GetPieceCapacity( const lpWorld* world );

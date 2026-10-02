@@ -1265,6 +1265,9 @@ lpPieceInfo lpWorld_GetPieceInfo( const lpWorld* w, int piece )
 	const lpPiece* p = w->pieces.data + piece;
 	lpPieceInfo info = { p->body, p->generation, p->userId, p->part, p->tag, p->body >= 0 ? p->shape->volume : 0.0f,
 						 p->body >= 0 ? lpSuppliedMask( p ) : (uint8_t)0 };
+	info.material = p->material;
+	info.joint = p->joint;
+	info.centroid = p->body >= 0 ? p->shape->centroid : lpVec3_zero;
 	return info;
 }
 
@@ -1282,6 +1285,93 @@ bool lpWorld_GetBodyTransform( const lpWorld* w, int body, lpWorldTransform* tra
 	}
 	*transform = lpGetTransform( w, b );
 	return true;
+}
+
+// ---- inspection ----
+
+uint64_t lpWorld_GetTick( const lpWorld* w )
+{
+	return w->tick;
+}
+
+lpBodyInfo lpWorld_GetBodyInfo( const lpWorld* w, int body )
+{
+	const lpBody* b = w->bodies.data + body;
+	lpBodyInfo info = { 0 };
+	info.generation = b->generation;
+	if ( b->alive == false )
+	{
+		return info;
+	}
+	info.alive = true;
+	info.kind = b->kind;
+	info.tier = b->tier;
+	info.unsettled = b->unsettled;
+	info.pieceCount = b->pieces.count;
+	info.volume = b->volume;
+	info.transform = lpGetTransform( w, b );
+	if ( b->kind == lp_kindGhost )
+	{
+		info.awake = true;
+		info.linearVelocity = b->v;
+		info.angularVelocity = b->omega;
+	}
+	else if ( b->kind == lp_kindDebris )
+	{
+		info.awake = lpPhys_IsAwake( w->phys, b->id );
+		info.linearVelocity = lpPhys_GetLinearVelocity( w->phys, b->id );
+		info.angularVelocity = lpPhys_GetAngularVelocity( w->phys, b->id );
+	}
+	return info;
+}
+
+int lpWorld_GetBondCapacity( const lpWorld* w )
+{
+	return w->bonds.count;
+}
+
+lpBondInfo lpWorld_GetBondInfo( const lpWorld* w, int bond )
+{
+	const lpBond* d = w->bonds.data + bond;
+	lpBondInfo info = { 0 };
+	if ( d->alive == false )
+	{
+		return info;
+	}
+	// Both pieces are on one body: the bond's geometry is in its frame
+	lpWorldTransform xf = lpGetTransform( w, w->bodies.data + w->pieces.data[d->a].body );
+	info.alive = true;
+	info.pieceA = d->a;
+	info.pieceB = d->b;
+	info.joint = d->joint;
+	info.area = d->area;
+	info.centroid = lpTransformPoint( xf, d->centroid );
+	info.normal = lpRotateVector( xf.q, d->normal );
+	info.health = d->health;
+	info.strength = d->strength;
+	info.utilization = d->rho;
+	info.strain = d->strain;
+	info.force = lpRotateVector( xf.q, d->force );
+	info.moment = lpRotateVector( xf.q, d->moment );
+	return info;
+}
+
+int lpWorld_GetBodyContacts( const lpWorld* w, int body, lpContactInfo* contacts, int capacity )
+{
+	const lpBody* b = w->bodies.data + body;
+	if ( b->alive == false || LP_PHYS_NULL( b->id ) )
+	{
+		return 0;
+	}
+	const lpPhysContact* found = NULL;
+	int count = lpPhys_GetBodyContacts( w->phys, b->id, &found );
+	for ( int i = 0; i < count && i < capacity; ++i )
+	{
+		lpContactInfo c = { found[i].piece, found[i].other, found[i].normal, found[i].point, found[i].separation,
+							found[i].impulse };
+		contacts[i] = c;
+	}
+	return count;
 }
 
 int lpWorld_BuildPieceMesh( const lpWorld* w, int piece, lpVertex* vertices, int capacity )
