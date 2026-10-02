@@ -438,11 +438,17 @@ static void lpAddTree( lpWorld* world, lpVec3 base, float height, uint64_t seed 
 	for ( int b = 0; b < blobs; ++b )
 	{
 		float cr = 0.35f * height * ( 0.8f + 0.3f * lpUnit( &rng ) );
-		lpVec3 c = { 0.4f * ( lpUnit( &rng ) - 0.5f ), trunkH + cr * ( 0.4f + 0.9f * (float)b ), 0.4f * ( lpUnit( &rng ) - 0.5f ) };
+		lpVec3 c; // one draw per statement: C leaves the order inside an initializer open
+		c.x = 0.4f * ( lpUnit( &rng ) - 0.5f );
+		c.y = trunkH + cr * ( 0.4f + 0.9f * (float)b );
+		c.z = 0.4f * ( lpUnit( &rng ) - 0.5f );
 		lpVec3 pts[14];
 		for ( int i = 0; i < 14; ++i )
 		{
-			lpVec3 d = { lpUnit( &rng ) - 0.5f, 0.8f * ( lpUnit( &rng ) - 0.5f ), lpUnit( &rng ) - 0.5f };
+			lpVec3 d;
+			d.x = lpUnit( &rng ) - 0.5f;
+			d.y = 0.8f * ( lpUnit( &rng ) - 0.5f );
+			d.z = lpUnit( &rng ) - 0.5f;
 			d = lpNormalize( d );
 			pts[i] = lpMulAdd( c, cr * ( 0.85f + 0.3f * lpUnit( &rng ) ), d );
 		}
@@ -1602,7 +1608,10 @@ static void lpAddMechYard( lpWorld* world )
 	for ( int k = 0; k < 14; ++k )
 	{
 		float size = 0.12f + 0.16f * lpUnit( &rng );
-		lpVec3 at = { -3.0f + 6.0f * lpUnit( &rng ), size, -2.0f + 4.0f * lpUnit( &rng ) };
+		lpVec3 at; // one draw per statement
+		at.x = -3.0f + 6.0f * lpUnit( &rng );
+		at.y = size;
+		at.z = -2.0f + 4.0f * lpUnit( &rng );
 		lpBegin();
 		lpBox( lpVec3_zero, (lpVec3){ size, 0.8f * size, 1.2f * size }, lpQuat_identity, lp_stone, LP_STONE_DARK, false );
 		lpCommit( world, at, 6.28f * lpUnit( &rng ), false );
@@ -1712,7 +1721,11 @@ static void lpAddPile( lpWorld* world, lpVec3 center, int count, uint64_t seed )
 					lpVec3 pts[12];
 					for ( int i = 0; i < 12; ++i )
 					{
-						lpVec3 d = lpNormalize( (lpVec3){ lpUnit( &rng ) - 0.5f, lpUnit( &rng ) - 0.5f, lpUnit( &rng ) - 0.5f } );
+						lpVec3 d; // one draw per statement
+						d.x = lpUnit( &rng ) - 0.5f;
+						d.y = lpUnit( &rng ) - 0.5f;
+						d.z = lpUnit( &rng ) - 0.5f;
+						d = lpNormalize( d );
 						pts[i] = lpMulSV( 0.35f * ( 0.8f + 0.4f * lpUnit( &rng ) ), d );
 					}
 					lpHull( pts, 12, lp_stone, LP_STONE, false );
@@ -1869,10 +1882,14 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			float x = -30.0f + (float)( ( shot * 7 ) % 75 );
 			origin = (lpVec3){ x, 1.8f, 0.0f };
 			float side = ( shot % 2 == 0 ) ? -1.0f : 1.0f;
-			target = (lpVec3){ x + 6.0f * ( lpUnit( &rng ) - 0.5f ), 0.4f + 5.0f * lpUnit( &rng ), side * 12.0f };
+			target.x = x + 6.0f * ( lpUnit( &rng ) - 0.5f ); // one draw per statement
+			target.y = 0.4f + 5.0f * lpUnit( &rng );
+			target.z = side * 12.0f;
 			if ( x > 34.0f )
 			{
-				target = (lpVec3){ 40.0f, 0.5f + 8.0f * lpUnit( &rng ), 2.0f * ( lpUnit( &rng ) - 0.5f ) };
+				target.x = 40.0f;
+				target.y = 0.5f + 8.0f * lpUnit( &rng );
+				target.z = 2.0f * ( lpUnit( &rng ) - 0.5f );
 			}
 			break;
 		}
@@ -1880,21 +1897,27 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 		{
 			// Across the whole row: the arch, the colonnade and the balcony wall
 			origin = (lpVec3){ 2.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
-			target = (lpVec3){ -10.0f + 24.0f * lpUnit( &rng ), 0.3f + 3.7f * lpUnit( &rng ), -6.0f };
+			target.x = -10.0f + 24.0f * lpUnit( &rng );
+			target.y = 0.3f + 3.7f * lpUnit( &rng );
+			target.z = -6.0f;
 			break;
 		}
 		case lp_sceneYard:
 		{
 			// Across the whole yard, from the cart's ramp to the gatehouse
 			origin = (lpVec3){ -1.0f + 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
-			target = (lpVec3){ -11.0f + 20.0f * lpUnit( &rng ), 0.3f + 3.2f * lpUnit( &rng ), -8.0f };
+			target.x = -11.0f + 20.0f * lpUnit( &rng );
+			target.y = 0.3f + 3.2f * lpUnit( &rng );
+			target.z = -8.0f;
 			break;
 		}
 		case lp_sceneKeep:
 		{
 			// Across the keep's front, from the foot of the wall to the parapet
 			origin = (lpVec3){ 8.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 14.0f };
-			target = (lpVec3){ -7.0f + 14.0f * lpUnit( &rng ), 0.3f + 12.5f * lpUnit( &rng ), -2.5f };
+			target.x = -7.0f + 14.0f * lpUnit( &rng );
+			target.y = 0.3f + 12.5f * lpUnit( &rng );
+			target.z = -2.5f;
 			break;
 		}
 		case lp_sceneMech:
@@ -1911,7 +1934,9 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			{
 				at = (lpVec3){ (float)rig.position.x, (float)rig.position.y, (float)rig.position.z };
 			}
-			target = lpAdd( at, (lpVec3){ 0.4f * ( lpUnit( &rng ) - 0.5f ), 0.3f * ( lpUnit( &rng ) - 0.5f ), 0.4f * ( lpUnit( &rng ) - 0.5f ) } );
+			target.x = at.x + 0.4f * ( lpUnit( &rng ) - 0.5f );
+			target.y = at.y + 0.3f * ( lpUnit( &rng ) - 0.5f );
+			target.z = at.z + 0.4f * ( lpUnit( &rng ) - 0.5f );
 			float side = shot % 2 == 0 ? 1.0f : -1.0f;
 			origin = lpAdd( target, (lpVec3){ 9.0f * side, 0.8f, 3.0f * ( lpUnit( &rng ) - 0.5f ) } );
 			break;
@@ -1926,14 +1951,18 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 			{
 				at = (lpVec3){ (float)car.position.x, (float)car.position.y, (float)car.position.z };
 			}
-			target = lpAdd( at, (lpVec3){ 2.0f * ( lpUnit( &rng ) - 0.5f ), 0.3f * lpUnit( &rng ), 2.0f * ( lpUnit( &rng ) - 0.5f ) } );
+			target.x = at.x + 2.0f * ( lpUnit( &rng ) - 0.5f );
+			target.y = at.y + 0.3f * lpUnit( &rng );
+			target.z = at.z + 2.0f * ( lpUnit( &rng ) - 0.5f );
 			origin = (lpVec3){ 0.7f * target.x, 1.8f, 0.7f * target.z };
 			break;
 		}
 		default:
 		{
 			origin = (lpVec3){ 6.0f * ( lpUnit( &rng ) - 0.5f ), 1.8f, 10.0f };
-			target = (lpVec3){ 12.0f * ( lpUnit( &rng ) - 0.5f ), 0.3f + 4.0f * lpUnit( &rng ), -8.0f };
+			target.x = 12.0f * ( lpUnit( &rng ) - 0.5f );
+			target.y = 0.3f + 4.0f * lpUnit( &rng );
+			target.z = -8.0f;
 			break;
 		}
 	}

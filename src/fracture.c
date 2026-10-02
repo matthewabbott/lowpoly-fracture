@@ -126,11 +126,11 @@ static bool lpComputeVoronoiCell( const lpPoly* parent, const lpVec3* sites, int
 
 static lpVec3 lpRandomInBox( lpRandom* rng, lpAABB box )
 {
-	return (lpVec3){
-		lpRandom_Range( rng, box.lowerBound.x, box.upperBound.x ),
-		lpRandom_Range( rng, box.lowerBound.y, box.upperBound.y ),
-		lpRandom_Range( rng, box.lowerBound.z, box.upperBound.z ),
-	};
+	lpVec3 p; // one draw per statement: C leaves the order inside an initializer open
+	p.x = lpRandom_Range( rng, box.lowerBound.x, box.upperBound.x );
+	p.y = lpRandom_Range( rng, box.lowerBound.y, box.upperBound.y );
+	p.z = lpRandom_Range( rng, box.lowerBound.z, box.upperBound.z );
+	return p;
 }
 
 // Uniform unit vector by rejection sampling: no trigonometry, so bit-identical everywhere.
