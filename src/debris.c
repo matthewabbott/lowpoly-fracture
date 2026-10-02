@@ -715,6 +715,78 @@ static int lpCompareBudget( const void* a, const void* b )
 	return ( x->body > y->body ) - ( x->body < y->body );
 }
 
+// ---- freezing ----
+
+// A resting debris body becomes static rubble: it costs nothing to simulate, and wakes when struck (lpWakeRubble)
+static void lpFreezeBody( lpWorld* w, lpBody* b )
+{
+	b->freezePending = false;
+	b->kind = lp_kindRubble;
+	lpPhys_SetDynamic( w->phys, b->id, false );
+	w->freezesThisStep += 1;
+}
+
+void lpFreezeOrKill( lpWorld* w )
+{
+	const lpPhysMove* moves;
+	int moveCount = lpPhys_GetMoves( w->phys, &moves );
+	w->scratchBodies.count = 0;
+	for ( int i = 0; i < moveCount; ++i ) // in body order, so this step's new candidates and the kill list are too
+	{
+		const lpPhysMove* e = moves + i;
+		int bodyIndex = e->body;
+		lpBody* b = w->bodies.data + bodyIndex;
+		if ( b->alive == false || b->kind != lp_kindDebris )
+		{
+			continue;
+		}
+		if ( (float)e->transform.p.y < w->def.killDepth )
+		{
+			lpArray_Push( w->scratchBodies, bodyIndex );
+		}
+		else if ( e->fellAsleep && w->def.freezeRubble && b->freezePending == false )
+		{
+			b->freezePending = true;
+			lpArray_Push( w->freezeCandidates, bodyIndex );
+		}
+	}
+
+	// Freeze sleepers that are old enough. Fresh debris wedged in its hole can fall asleep before anything pushed
+	// it out; freezing it at once would glue it back into the wall.
+	int kept = 0;
+	for ( int i = 0; i < w->freezeCandidates.count; ++i )
+	{
+		int bodyIndex = w->freezeCandidates.data[i];
+		lpBody* b = w->bodies.data + bodyIndex;
+		if ( b->alive == false || b->kind != lp_kindDebris || b->freezePending == false )
+		{
+			continue;
+		}
+		if ( lpPhys_IsAwake( w->phys, b->id ) || lpBodyLinked( w, b ) || lpTouchesLinked( w, b ) )
+		{
+			b->freezePending = false; // linked bodies and what rests on them sleep instead: frozen, they would jam
+			continue;
+		}
+		uint64_t minAge = (uint64_t)( b->tier == lp_tierLight ? w->def.freezeAgeLight : w->def.freezeAgeFull );
+		if ( w->tick - b->createdTick >= minAge && w->freezesThisStep < w->def.maxFreezesPerStep )
+		{
+			lpFreezeBody( w, b );
+			continue;
+		}
+		w->freezeCandidates.data[kept++] = bodyIndex;
+	}
+	w->freezeCandidates.count = kept;
+
+	for ( int i = 0; i < w->scratchBodies.count; ++i )
+	{
+		int bodyIndex = w->scratchBodies.data[i];
+		if ( w->bodies.data[bodyIndex].alive )
+		{
+			lpDestroyBody( w, bodyIndex, false );
+		}
+	}
+}
+
 static bool lpIsFullDebris( const lpBody* b )
 {
 	return b->kind == lp_kindDebris && b->tier == lp_tierFull;
@@ -785,15 +857,14 @@ void lpEnforceBudgets( lpWorld* w )
 				full += 1;
 				continue;
 			}
-			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow
-			if ( w->def.freezeRubble && w->tick - b->createdTick >= 240 && w->freezesThisStep < w->def.maxFreezesPerStep &&
-				 lpLength( lpPhys_GetLinearVelocity( w->phys, b->id ) ) < 1.0f && lpBodyLinked( w, b ) == false &&
-				 lpTouchesLinked( w, b ) == false )
+			// Light debris still moving long after it was made (rolling, jittering) is frozen once slow: the sleep events
+			// lpFreezeOrKill acts on never come for it
+			if ( w->def.freezeRubble && w->tick - b->createdTick >= (uint64_t)w->def.freezeDriftAge &&
+				 w->freezesThisStep < w->def.maxFreezesPerStep &&
+				 lpLength( lpPhys_GetLinearVelocity( w->phys, b->id ) ) < w->def.freezeDriftSpeed &&
+				 lpBodyLinked( w, b ) == false && lpTouchesLinked( w, b ) == false )
 			{
-				b->kind = lp_kindRubble;
-				b->freezePending = false;
-				lpPhys_SetDynamic( w->phys, b->id, false );
-				w->freezesThisStep += 1;
+				lpFreezeBody( w, b );
 				rubblePieces += b->pieces.count;
 				continue;
 			}

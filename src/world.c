@@ -200,6 +200,15 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxDepth = 3;
 	def.maxHitImpacts = 16;
 	def.hitSpeed = 4.0f;
+	def.hitEnergy = 100.0f;
+	def.hitRadiusScale = 0.06f;
+	def.hitRadiusMin = 0.15f;
+	def.hitRadiusMax = 1.2f;
+	def.pushSpeedCap = 12.0f;
+	def.freezeAgeFull = 30;
+	def.freezeAgeLight = 6;
+	def.freezeDriftAge = 240;
+	def.freezeDriftSpeed = 1.0f;
 	def.pullStiffness = 60.0f;
 	def.pullDamping = 14.0f;
 	def.pullSpinKeep = 0.97f;

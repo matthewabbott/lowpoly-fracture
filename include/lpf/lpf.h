@@ -157,6 +157,20 @@ typedef struct lpWorldDef
 	int maxDepth;		   // refracture depth limit per piece lineage
 	int maxHitImpacts;	   // collision impacts processed per step
 	float hitSpeed;		   // minimum approach speed for collision damage, m/s
+	// A hit becomes an impact when its energy (less what crumpling soaks up) reaches hitEnergy (J); its radius is
+	// hitRadiusScale x cbrt(energy), within [hitRadiusMin, hitRadiusMax] m. How hard the world hits is the game's.
+	float hitEnergy;
+	float hitRadiusScale;
+	float hitRadiusMin;
+	float hitRadiusMax;
+	float pushSpeedCap; // m/s: the most a directional impact (not a blast) pushes a loose body
+	// Freezing: debris the physics engine puts to sleep becomes static rubble once this many steps old (full, light);
+	// light debris still moving long after it was made is frozen once slower than freezeDriftSpeed (m/s), from
+	// freezeDriftAge steps
+	int freezeAgeFull;
+	int freezeAgeLight;
+	int freezeDriftAge;
+	float freezeDriftSpeed;
 	float killDepth;	   // bodies falling below this height are removed
 	// The pull's spring (lpWorld_Pull, the grab tool): its acceleration is stiffness x the error less damping x the
 	// point's velocity, and the held body's spin is multiplied by spinKeep every step

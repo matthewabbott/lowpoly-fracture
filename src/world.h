@@ -801,6 +801,8 @@ void lpApplyLooseForce( lpWorld* w, const lpForce* force );
 void lpShove( lpWorld* w, float timeStep );
 void lpApplyBlows( lpWorld* w );
 void lpEnforceBudgets( lpWorld* w );
+// Debris the physics engine put to sleep is frozen into rubble once old enough; debris below the kill depth goes
+void lpFreezeOrKill( lpWorld* w );
 bool lpPairFilter( int pieceA, int pieceB, void* context );
 
 // ---- validation (tests) ----

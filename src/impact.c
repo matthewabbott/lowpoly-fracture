@@ -767,7 +767,7 @@ void lpApplyForces( lpWorld* w )
 			}
 			else
 			{
-				float impulse = lpMinFloat( force.impulse * f, 12.0f * mass );
+				float impulse = lpMinFloat( force.impulse * f, w->def.pushSpeedCap * mass );
 				lpPhys_ApplyImpulse( w->phys, b->id, lpMulSV( impulse, force.direction ), center, true );
 			}
 		}
@@ -916,7 +916,7 @@ void lpCollectHits( lpWorld* w )
 		{
 			lpPhys_GetContactCentroid( w->phys, n, &point );
 		}
-		if ( energy < 100.0f )
+		if ( energy < w->def.hitEnergy )
 		{
 			continue;
 		}
@@ -936,7 +936,7 @@ void lpCollectHits( lpWorld* w )
 		lpHitCandidate hit = w->scratchHits.data[i];
 		lpImpactDef impact = { 0 };
 		impact.point = hit.point;
-		impact.radius = lpClampFloat( 0.06f * lpCbrt( hit.energy ), 0.15f, 1.2f );
+		impact.radius = lpClampFloat( w->def.hitRadiusScale * lpCbrt( hit.energy ), w->def.hitRadiusMin, w->def.hitRadiusMax );
 		impact.energy = hit.energy;
 		lpArray_Push( w->nextImpacts, impact );
 	}
