@@ -90,6 +90,13 @@ typedef enum lpCellClass
 	lp_cellFull,  // ejected as a full debris body
 } lpCellClass;
 
+// What a loose piece of this volume becomes, against its material's tier volumes (lpParticleVolume and the rest):
+// particles below the first, a ghost below the second, light debris below the third, full debris above
+static inline uint8_t lpLooseClass( float volume, float particle, float ghost, float light )
+{
+	return volume < particle ? lp_cellPuff : ( volume < ghost ? lp_cellGhost : ( volume < light ? lp_cellLight : lp_cellFull ) );
+}
+
 #define LP_MAX_CELL_BONDS ( LP_MAX_SITES * 24 )
 
 // One piece to fracture during an impact: impact.c snapshots its input (phase 1), lpFracture_RunJob computes its

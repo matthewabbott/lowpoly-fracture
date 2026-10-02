@@ -1273,30 +1273,9 @@ void lpFracture_RunJob( lpFractureJob* job )
 		lpShape_Translate( cell, job->center );
 		float volume = cell->volume;
 		bool ejecta = lpDistanceSquared( cell->centroid, job->localImpact ) < r2;
-		uint8_t cls;
 		// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
-		float dustBelow = ejecta ? job->particleVolume : job->input.absorbVolume;
-		if ( volume < dustBelow )
-		{
-			cls = lp_cellPuff;
-		}
-		else if ( ejecta == false )
-		{
-			cls = lp_cellKeep;
-		}
-		else if ( volume < job->ghostVolume )
-		{
-			cls = lp_cellGhost;
-		}
-		else if ( volume < job->lightVolume )
-		{
-			cls = lp_cellLight;
-		}
-		else
-		{
-			cls = lp_cellFull;
-		}
-		job->cellClass[i] = cls;
+		job->cellClass[i] = ejecta ? lpLooseClass( volume, job->particleVolume, job->ghostVolume, job->lightVolume )
+								   : ( volume < job->input.absorbVolume ? lp_cellPuff : lp_cellKeep );
 	}
 
 	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece

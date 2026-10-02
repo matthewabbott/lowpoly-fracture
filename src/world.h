@@ -617,6 +617,20 @@ struct lpWorld
 	lpStats stats;
 };
 
+// A point of a moving body's frame (body-frame coordinates) moves at its centre's velocity plus the spin's share
+static inline lpVec3 lpFrameVelocity( lpVec3 v, lpVec3 omega, lpQuat q, lpVec3 localCenter, lpVec3 point )
+{
+	return lpAdd( v, lpCross( omega, lpRotateVector( q, lpSub( point, localCenter ) ) ) );
+}
+
+// A body made at a moving body's frame (a fracture cell, a split component, a ghost made a physics body again) starts
+// with the velocity of the frame's origin: setting its mass moves its centre and adds the spin's share there, so each
+// point gets its own velocity once (giving it the centre's twice made chips fly at hundreds of m/s)
+static inline lpVec3 lpOriginVelocity( lpVec3 v, lpVec3 omega, lpQuat q, lpVec3 localCenter )
+{
+	return lpAdd( v, lpCross( omega, lpRotateVector( q, lpNeg( localCenter ) ) ) );
+}
+
 static inline const lpMaterialDef* lpMaterial( const lpWorld* w, int material )
 {
 	LP_ASSERT( 0 <= material && material < lp_materialCount );

@@ -103,9 +103,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 	lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, body->id );
 	lpVec3 localCenter = lpPhys_GetLocalCenter( w->phys, body->id );
 	bool isDynamic = lpPhys_IsDynamic( w->phys, body->id );
-	// A component's new body keeps this body's frame, so it starts with the velocity of the frame's origin: setting its
-	// mass moves its centre and adds the spin's share there (the component's own velocity, counted once)
-	lpVec3 originV = isDynamic ? lpAdd( v, lpCross( omega, lpRotateVector( xf.q, lpNeg( localCenter ) ) ) ) : lpVec3_zero;
+	lpVec3 originV = isDynamic ? lpOriginVelocity( v, omega, xf.q, localCenter ) : lpVec3_zero; // for a new body
 
 	int movedAny = 0;
 	for ( int c = 0; c < componentCount; ++c )
@@ -129,16 +127,13 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		float wakeRadius = lpLength( lpAABB_Extents( wakeBox ) ) + 0.3f;
 		lpArray_Push( w->pendingWakes, ( (lpWake){ wakeCenter, wakeRadius } ) );
 
-		lpVec3 compV = v;
-		if ( isDynamic )
-		{
-			lpVec3 r = lpRotateVector( xf.q, lpSub( comp->centroid, localCenter ) );
-			compV = lpAdd( v, lpCross( omega, r ) );
-		}
+		lpVec3 compV = isDynamic ? lpFrameVelocity( v, omega, xf.q, localCenter, comp->centroid ) : v;
 		lpVec3 compOmega = isDynamic ? omega : lpVec3_zero;
 
 		// The piece's tier follows its size
-		if ( comp->volume < lpParticleVolume( w, comp->material ) )
+		uint8_t fate = lpLooseClass( comp->volume, lpParticleVolume( w, comp->material ), lpGhostVolume( w, comp->material ),
+									 lpLightVolume( w, comp->material ) );
+		if ( fate == lp_cellPuff )
 		{
 			for ( int k = 0; k < comp->count; ++k )
 			{
@@ -153,7 +148,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 				lpFreePieceSlot( w, pi );
 			}
 		}
-		else if ( comp->volume < lpGhostVolume( w, comp->material ) )
+		else if ( fate == lp_cellGhost )
 		{
 			int ghost = lpBeginGhost( w, xf, compV, compOmega, w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex;
@@ -167,7 +162,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 		}
 		else
 		{
-			uint8_t tier = comp->volume < lpLightVolume( w, comp->material ) ? lp_tierLight : lp_tierFull;
+			uint8_t tier = fate == lp_cellLight ? lp_tierLight : lp_tierFull;
 			int newIndex = lpCreateBodyInternal( w, xf, true, lp_kindDebris, tier, originV, compOmega,
 												 w->bodies.data[bodyIndex].gravityScale );
 			body = w->bodies.data + bodyIndex; // array may have moved
