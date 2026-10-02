@@ -440,15 +440,15 @@ static int TestDeferredFracture( void )
 
 int DebrisTest( void )
 {
-	RUN_TEST( TestLooseBodyFrame );
-	RUN_TEST( TestGravityScale );
-	RUN_TEST( TestSliverAbsorption );
-	RUN_TEST( TestLogEnds );
-	RUN_TEST( TestGhostLanding );
-	RUN_TEST( TestLightIgnoresDebris );
-	RUN_TEST( TestShove );
-	RUN_TEST( TestFragileRubble );
-	RUN_TEST( TestBudgetLadder );
-	RUN_TEST( TestDeferredFracture );
+	RUN_TEST( TestLooseBodyFrame, MECHANISM );
+	RUN_TEST( TestGravityScale, OUTCOME );
+	RUN_TEST( TestSliverAbsorption, OUTCOME );
+	RUN_TEST( TestLogEnds, OUTCOME );
+	RUN_TEST( TestGhostLanding, OUTCOME );
+	RUN_TEST( TestLightIgnoresDebris, MECHANISM );
+	RUN_TEST( TestShove, OUTCOME );
+	RUN_TEST( TestFragileRubble, OUTCOME );
+	RUN_TEST( TestBudgetLadder, OUTCOME );
+	RUN_TEST( TestDeferredFracture, MECHANISM );
 	return 0;
 }

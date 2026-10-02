@@ -324,12 +324,12 @@ static int TestChipCell( void )
 
 int FractureTest( void )
 {
-	RUN_TEST( TestImpactPattern );
-	RUN_TEST( TestGrainPattern );
-	RUN_TEST( TestRadialPattern );
-	RUN_TEST( TestFractureDeterminism );
-	RUN_TEST( TestFractureFuzz );
-	RUN_TEST( TestChipCell );
-	RUN_TEST( TestMasonryGrid );
+	RUN_TEST( TestImpactPattern, OUTCOME );
+	RUN_TEST( TestGrainPattern, OUTCOME );
+	RUN_TEST( TestRadialPattern, OUTCOME );
+	RUN_TEST( TestFractureDeterminism, DETERMINISM );
+	RUN_TEST( TestFractureFuzz, MECHANISM );
+	RUN_TEST( TestChipCell, MECHANISM );
+	RUN_TEST( TestMasonryGrid, OUTCOME );
 	return 0;
 }

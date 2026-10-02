@@ -654,20 +654,20 @@ static int TestWheelCost( void )
 
 int VehicleTest( void )
 {
-	RUN_TEST( TestWheelRestHeight );
-	RUN_TEST( TestWheelHighSpeedStable );
-	RUN_TEST( TestWheelSteerNoFlip );
-	RUN_TEST( TestWheelKerb );
-	RUN_TEST( TestWheelParkedOnSlope );
-	RUN_TEST( TestWheelBreaksOnHardLanding );
-	RUN_TEST( TestWheelFollowsFracture );
-	RUN_TEST( TestWheelSplitHalfRolls );
-	RUN_TEST( TestWheelLoadsBridge );
-	RUN_TEST( TestVehicleDeterminism );
-	RUN_TEST( TestTrackLap );
-	RUN_TEST( TestCarWallCrash );
-	RUN_TEST( TestCarTankShot );
-	RUN_TEST( TestCarEngineShot );
-	RUN_TEST( TestWheelCost );
+	RUN_TEST( TestWheelRestHeight, OUTCOME );
+	RUN_TEST( TestWheelHighSpeedStable, OUTCOME );
+	RUN_TEST( TestWheelSteerNoFlip, OUTCOME );
+	RUN_TEST( TestWheelKerb, OUTCOME );
+	RUN_TEST( TestWheelParkedOnSlope, OUTCOME );
+	RUN_TEST( TestWheelBreaksOnHardLanding, OUTCOME );
+	RUN_TEST( TestWheelFollowsFracture, OUTCOME );
+	RUN_TEST( TestWheelSplitHalfRolls, OUTCOME );
+	RUN_TEST( TestWheelLoadsBridge, OUTCOME );
+	RUN_TEST( TestVehicleDeterminism, DETERMINISM );
+	RUN_TEST( TestTrackLap, OUTCOME );
+	RUN_TEST( TestCarWallCrash, OUTCOME );
+	RUN_TEST( TestCarTankShot, OUTCOME );
+	RUN_TEST( TestCarEngineShot, OUTCOME );
+	RUN_TEST( TestWheelCost, TIMING );
 	return 0;
 }

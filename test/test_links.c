@@ -459,7 +459,7 @@ static int TestTinyEndTears( void )
 	int breaks = StepValidated( &s, 10, &valid );
 	ENSURE( valid && breaks == 0 );
 	SplitOffSmallest( &s, pair );
-	breaks = StepValidated( &s, 2, &valid );
+	breaks = StepValidated( &s, 10, &valid ); // it tears within 2 steps today
 	printf( "  after the split: weld %s\n", lpWorld_GetLinkState( s.world, weld ).alive ? "holds" : "tore" );
 	ENSURE( valid );
 	ENSURE( breaks == 1 );
@@ -1166,32 +1166,32 @@ static int TestMotorCost( void )
 
 int LinkTest( void )
 {
-	RUN_TEST( TestLinkCreate );
-	RUN_TEST( TestSignHangs );
-	RUN_TEST( TestWeldOverload );
-	RUN_TEST( TestHingeDoorSwings );
-	RUN_TEST( TestLinkedNeverDemoted );
-	RUN_TEST( TestKillBreaksLink );
-	RUN_TEST( TestLinkSurvivesSplit );
-	RUN_TEST( TestLinkRehomedOnFracture );
-	RUN_TEST( TestLinkBreaksWhenAnchorEjected );
-	RUN_TEST( TestLinkToGhostBreaks );
-	RUN_TEST( TestTinyEndTears );
-	RUN_TEST( TestRopeShotSnaps );
-	RUN_TEST( TestBlastBreaksHinge );
-	RUN_TEST( TestDeferredNoDoubleDamage );
-	RUN_TEST( TestSetRopeLength );
-	RUN_TEST( TestSignPullsBeam );
-	RUN_TEST( TestYardAtRest );
-	RUN_TEST( TestYardCart );
-	RUN_TEST( TestLinkDeterminism );
-	RUN_TEST( TestHingeTorqueAtLimit );
-	RUN_TEST( TestMotorHoldsUntilCap );
-	RUN_TEST( TestMotorJams );
-	RUN_TEST( TestMotorLimpUnsupplied );
-	RUN_TEST( TestMotorSurvivesSplit );
-	RUN_TEST( TestBallServo );
-	RUN_TEST( TestCraneLoadsTower );
-	RUN_TEST( TestMotorCost );
+	RUN_TEST( TestLinkCreate, MECHANISM );
+	RUN_TEST( TestSignHangs, OUTCOME );
+	RUN_TEST( TestWeldOverload, OUTCOME );
+	RUN_TEST( TestHingeDoorSwings, OUTCOME );
+	RUN_TEST( TestLinkedNeverDemoted, MECHANISM );
+	RUN_TEST( TestKillBreaksLink, MECHANISM );
+	RUN_TEST( TestLinkSurvivesSplit, OUTCOME );
+	RUN_TEST( TestLinkRehomedOnFracture, MECHANISM );
+	RUN_TEST( TestLinkBreaksWhenAnchorEjected, OUTCOME );
+	RUN_TEST( TestLinkToGhostBreaks, MECHANISM );
+	RUN_TEST( TestTinyEndTears, OUTCOME );
+	RUN_TEST( TestRopeShotSnaps, OUTCOME );
+	RUN_TEST( TestBlastBreaksHinge, OUTCOME );
+	RUN_TEST( TestDeferredNoDoubleDamage, MECHANISM );
+	RUN_TEST( TestSetRopeLength, OUTCOME );
+	RUN_TEST( TestSignPullsBeam, OUTCOME );
+	RUN_TEST( TestYardAtRest, OUTCOME );
+	RUN_TEST( TestYardCart, OUTCOME );
+	RUN_TEST( TestLinkDeterminism, DETERMINISM );
+	RUN_TEST( TestHingeTorqueAtLimit, OUTCOME );
+	RUN_TEST( TestMotorHoldsUntilCap, OUTCOME );
+	RUN_TEST( TestMotorJams, OUTCOME );
+	RUN_TEST( TestMotorLimpUnsupplied, OUTCOME );
+	RUN_TEST( TestMotorSurvivesSplit, OUTCOME );
+	RUN_TEST( TestBallServo, OUTCOME );
+	RUN_TEST( TestCraneLoadsTower, OUTCOME );
+	RUN_TEST( TestMotorCost, TIMING );
 	return 0;
 }

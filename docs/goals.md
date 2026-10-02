@@ -1,7 +1,7 @@
 # Goals: the vision, the feel, and what the engine owes its games
 
 What the engine is for, written down so that reviewers (and agents new to the repo) judge changes against it. The
-simplicity review's outcome catalogue starts from the last section; the performance review's taste reviewer judges
+outcome catalogue ([catalogue.md](catalogue.md)) pins what it asks for; the performance review's taste reviewer judges
 before-and-after footage against "Feel". Gathered from the owner's notes and our discussions (2026-09-27 to 30).
 
 The games themselves are designed in a private sibling repository, `lowpoly-games` (not open source). If it is checked
@@ -174,36 +174,8 @@ Set by the owner on 2026-09-29, for milestone 7's choice of a multiplayer model:
 | fire, smoke, flammability | hauling, racing | art pass and later |
 | cutting and chopping (clean slices stopped by what is too hard, axes that notch) | impairment, all | milestone 11b |
 
-## Outcomes to pin (first draft)
+## Outcomes to pin
 
-Before any review changes code, the outcomes we like are pinned as tests with tolerances, or as scripted scenes with
-reference screenshots where the outcome is visual. Bench hashes pin exact behaviour for refactors; these pin what must
-survive a redesign. Existing tests cover most of it:
-
-- **Fracture and debris:** patterns (`TestImpactPattern`, `TestGrainPattern`, `TestRadialPattern`), log ends stay
-  whole (`TestLogEnds`), slivers merge (`TestSliverAbsorption`), ghosts land and rubble wakes (`TestGhostLanding`,
-  `TestFragileRubble`), over budget debris steps down the ladder instead of popping (`TestBudgetLadder`).
-- **Structures:** they stand under their own weight (`TestStructuresStand`, `TestScenesSettle`), topple where weak
-  (`TestTowerTopples`, `TestCantileverRoot`, `TestBeamMidspan`), a dry arch falls without its keystone
-  (`TestArchKeystone`), a colonnade drops its lintels (`TestColonnade`), a wall takes damage and settles
-  (`TestWallDamage`, `TestDamagedWallSettles`, `TestMasonryWallHole`), a house collapses (`TestHouseCollapse`), the
-  keep's breach and hole judged as an exact solve would (`TestKeepBreach`, `TestKeepHole`, `TestKeepLocalHit`).
-- **Links:** signs hang and pull their beams, doors swing, welds overload, shot ropes snap, blasts break hinges, links
-  follow their pieces (`test_links.c`), a crane loads its tower (`TestCraneLoadsTower`).
-- **Vehicles:** stable at speed, on kerbs and slopes; wheels break on hard landings (`test_vehicles.c`); a car into a
-  wall keeps most of itself (`TestCarWallCrash`), a shot tank or engine does what it should (`TestCarTankShot`,
-  `TestCarEngineShot`), a crash tears the engine off (`TestCrashTearsEngine`).
-- **Systems:** part identity and detonators (`test_systems.c`), supply cut and shared, pools leak as modelled.
-- **Rigs:** everything in `test_rigs.c`: standing, walking, turning, slopes, steps, stopping and sleeping, losing
-  legs, pegs, weak and limp legs, bleeding out, reaching, strikes that wait for balance, stomps, grabs, landings and
-  bones.
-- **Determinism:** identical hashes at 1, 4 and 8 workers for every checked scene
-  ([determinism-rules.md](determinism-rules.md)).
-
-Gaps to fill first, mostly the feel:
-- a stone tower that is struck topples and does not stick (weight reads as stone);
-- fragments are carved from the object in its colours (a screenshot check);
-- a building that lost a support slumps and goes quiet, or gives out, without creaking forever;
-- rubble lingers after a fight;
-- a trap set a minute ahead goes off on time at every worker count (a scripted scene with a delayed detonator);
-- the look of the gait and of a crawl (reference screenshots from `scripts/mech_demo.txt`).
+The outcomes we like are pinned in [catalogue.md](catalogue.md): each behaviour in words, the test (or the reference
+frames) that pins it, and its tolerance. It is the contract a redesign or a new physics core must meet; the bench
+hashes pin exact behaviour only for refactors that mean to change nothing.

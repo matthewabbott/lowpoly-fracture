@@ -619,7 +619,7 @@ static int TestKeepBreach( void )
 	ENSURE( r.removed > 60 );
 	ENSURE( r.after > 0.95f * r.before );
 	ENSURE( r.decided > 0 && r.settled > 0 && r.settled < 600 ); // exact solves only: about 150 and 590 steps
-	ENSURE( r.breaks == 12 ); // as the exact solves break
+	ENSURE( r.breaks > 0 && r.breaks <= 24 ); // the masonry round the breach gives (12 today, as the exact solves break)
 	return 0;
 }
 
@@ -1297,29 +1297,29 @@ static int TestCrashTearsEngine( void )
 
 int StressTest( void )
 {
-	RUN_TEST( TestSolveSystem );
-	RUN_TEST( TestReducedAssembly );
-	RUN_TEST( TestStructuresStand );
-	RUN_TEST( TestScenesSettle );
-	RUN_TEST( TestCantileverRoot );
-	RUN_TEST( TestBeamMidspan );
-	RUN_TEST( TestTowerTopples );
-	RUN_TEST( TestStressBudget );
-	RUN_TEST( TestDamagedWallSettles );
-	RUN_TEST( TestMasonryWallHole );
-	RUN_TEST( TestArchKeystone );
-	RUN_TEST( TestColonnade );
-	RUN_TEST( TestKeepBreach );
-	RUN_TEST( TestKeepHole );
-	RUN_TEST( TestKeepDeterminism );
-	RUN_TEST( TestKeepLocalHit );
-	RUN_TEST( TestDriftSmallStructures );
-	RUN_TEST( TestKeepUnderFire );
-	RUN_TEST( TestKeepAudit );
-	RUN_TEST( TestReliefBalances );
-	RUN_TEST( TestReliefFreeFall );
-	RUN_TEST( TestReliefMatchesSupported );
-	RUN_TEST( TestReliefLandingSnaps );
-	RUN_TEST( TestCrashTearsEngine );
+	RUN_TEST( TestSolveSystem, MECHANISM );
+	RUN_TEST( TestReducedAssembly, MECHANISM );
+	RUN_TEST( TestStructuresStand, OUTCOME );
+	RUN_TEST( TestScenesSettle, MECHANISM );
+	RUN_TEST( TestCantileverRoot, OUTCOME );
+	RUN_TEST( TestBeamMidspan, OUTCOME );
+	RUN_TEST( TestTowerTopples, OUTCOME );
+	RUN_TEST( TestStressBudget, MECHANISM );
+	RUN_TEST( TestDamagedWallSettles, OUTCOME );
+	RUN_TEST( TestMasonryWallHole, OUTCOME );
+	RUN_TEST( TestArchKeystone, OUTCOME );
+	RUN_TEST( TestColonnade, OUTCOME );
+	RUN_TEST( TestKeepBreach, OUTCOME );
+	RUN_TEST( TestKeepHole, OUTCOME );
+	RUN_TEST( TestKeepDeterminism, DETERMINISM );
+	RUN_TEST( TestKeepLocalHit, MECHANISM );
+	RUN_TEST( TestDriftSmallStructures, MECHANISM );
+	RUN_TEST( TestKeepUnderFire, OUTCOME );
+	RUN_TEST( TestKeepAudit, MECHANISM );
+	RUN_TEST( TestReliefBalances, MECHANISM );
+	RUN_TEST( TestReliefFreeFall, OUTCOME );
+	RUN_TEST( TestReliefMatchesSupported, MECHANISM );
+	RUN_TEST( TestReliefLandingSnaps, OUTCOME );
+	RUN_TEST( TestCrashTearsEngine, OUTCOME );
 	return 0;
 }

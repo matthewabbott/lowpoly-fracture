@@ -1214,7 +1214,8 @@ static int TestRigCrackedFemurSnaps( void )
 			health, r[0].peak, whole[0], r[1].landed, r[1].firstBreak, r[1].breaks, whole[1], able[1] );
 	ENSURE( health > 0.03f && health < 0.1f );
 	ENSURE( r[0].breaks == 0 && whole[0] == 6 && able[0] == 6 && legAble[0] && legAble[1] == false );
-	ENSURE( r[1].breaks == 1 && r[1].firstBreak >= r[1].landed - 5 && r[1].firstBreak <= r[1].landed + 5 && whole[1] == 5 && able[1] == 5 );
+	ENSURE( r[1].breaks == 1 && r[1].firstBreak >= r[1].landed - 15 && r[1].firstBreak <= r[1].landed + 15 && whole[1] == 5 &&
+			able[1] == 5 ); // within a quarter second of landing (within 5 steps today)
 	return 0;
 }
 
@@ -1230,7 +1231,7 @@ static int TestRigWalkingBones( void )
 	BoneReport r = RunBones( &s, rig, 600 );
 	printf( "  walking 10 s: %d stress solves (%d of the torso), the worst joint at %.2f of its limit, %d broke; stress %.4f ms a step\n",
 			r.solves, r.torsoSolves, r.peak, r.breaks, r.stressMs / 600.0f );
-	ENSURE( r.torsoSolves <= 20 && r.breaks == 0 && r.peak < 0.6f && r.stressMs / 600.0f < 0.1f ); // its bones outlast its servos
+	ENSURE( r.torsoSolves <= 20 && r.breaks == 0 && r.peak < 0.6f ); // its bones outlast its servos (the cost is printed)
 	ENSURE( lpWorld_GetRigState( s.world, rig ).able == 6 );
 	DestroySim( &s );
 	return 0;
@@ -1238,33 +1239,33 @@ static int TestRigWalkingBones( void )
 
 int RigTest( void )
 {
-	RUN_TEST( TestKitStands );
-	RUN_TEST( TestRigIKRoundTrip );
-	RUN_TEST( TestRigModelMatchesBodies );
-	RUN_TEST( TestRigModelBent );
-	RUN_TEST( TestRigStumpFoot );
-	RUN_TEST( TestRigStumpIK );
-	RUN_TEST( TestRigCrouch );
-	RUN_TEST( TestRigDeterminism );
-	RUN_TEST( TestRigCost );
-	RUN_TEST( TestRigWalksStraight );
-	RUN_TEST( TestRigTurns );
-	RUN_TEST( TestRigClimbsSlope );
-	RUN_TEST( TestRigStepsUpAndDown );
-	RUN_TEST( TestRigStops );
-	RUN_TEST( TestRigWalkDeterminism );
-	RUN_TEST( TestRigWalkCost );
-	RUN_TEST( TestRigPatrols );
-	RUN_TEST( TestRigLosesLegs );
-	RUN_TEST( TestRigWalksOnAPeg );
-	RUN_TEST( TestRigWeakAndLimpLegs );
-	RUN_TEST( TestRigBleedsOut );
-	RUN_TEST( TestRigReaches );
-	RUN_TEST( TestRigStrikeWaitsForBalance );
-	RUN_TEST( TestRigStompsHarderWhole );
-	RUN_TEST( TestRigGrabs );
-	RUN_TEST( TestRigLandsWhole );
-	RUN_TEST( TestRigCrackedFemurSnaps );
-	RUN_TEST( TestRigWalkingBones );
+	RUN_TEST( TestKitStands, OUTCOME );
+	RUN_TEST( TestRigIKRoundTrip, MECHANISM );
+	RUN_TEST( TestRigModelMatchesBodies, MECHANISM );
+	RUN_TEST( TestRigModelBent, MECHANISM );
+	RUN_TEST( TestRigStumpFoot, MECHANISM );
+	RUN_TEST( TestRigStumpIK, MECHANISM );
+	RUN_TEST( TestRigCrouch, OUTCOME );
+	RUN_TEST( TestRigDeterminism, DETERMINISM );
+	RUN_TEST( TestRigCost, TIMING );
+	RUN_TEST( TestRigWalksStraight, OUTCOME );
+	RUN_TEST( TestRigTurns, OUTCOME );
+	RUN_TEST( TestRigClimbsSlope, OUTCOME );
+	RUN_TEST( TestRigStepsUpAndDown, OUTCOME );
+	RUN_TEST( TestRigStops, OUTCOME );
+	RUN_TEST( TestRigWalkDeterminism, DETERMINISM );
+	RUN_TEST( TestRigWalkCost, TIMING );
+	RUN_TEST( TestRigPatrols, OUTCOME );
+	RUN_TEST( TestRigLosesLegs, OUTCOME );
+	RUN_TEST( TestRigWalksOnAPeg, OUTCOME );
+	RUN_TEST( TestRigWeakAndLimpLegs, OUTCOME );
+	RUN_TEST( TestRigBleedsOut, OUTCOME );
+	RUN_TEST( TestRigReaches, OUTCOME );
+	RUN_TEST( TestRigStrikeWaitsForBalance, OUTCOME );
+	RUN_TEST( TestRigStompsHarderWhole, OUTCOME );
+	RUN_TEST( TestRigGrabs, OUTCOME );
+	RUN_TEST( TestRigLandsWhole, OUTCOME );
+	RUN_TEST( TestRigCrackedFemurSnaps, OUTCOME );
+	RUN_TEST( TestRigWalkingBones, OUTCOME );
 	return 0;
 }

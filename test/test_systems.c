@@ -657,20 +657,20 @@ static int TestPoolDeterminism( void )
 
 int SystemsTest( void )
 {
-	RUN_TEST( TestPartIdentitySurvivesFracture );
-	RUN_TEST( TestPartDetonatorBlowsOnlyItsPart );
-	RUN_TEST( TestObjectDetonatorUnchanged );
-	RUN_TEST( TestTankTornOffStaysVolatile );
-	RUN_TEST( TestSupplyCut );
-	RUN_TEST( TestSupplyNeeds );
-	RUN_TEST( TestSupplyShare );
-	RUN_TEST( TestSupplyOverLink );
-	RUN_TEST( TestCutPowerCoasts );
-	RUN_TEST( TestSupplyDeterminism );
-	RUN_TEST( TestSupplyCost );
-	RUN_TEST( TestPoolLeaksWhenCut );
-	RUN_TEST( TestPoolRingDoesNotLeak );
-	RUN_TEST( TestPoolChippedLineLeaksALittle );
-	RUN_TEST( TestPoolDeterminism );
+	RUN_TEST( TestPartIdentitySurvivesFracture, MECHANISM );
+	RUN_TEST( TestPartDetonatorBlowsOnlyItsPart, OUTCOME );
+	RUN_TEST( TestObjectDetonatorUnchanged, MECHANISM );
+	RUN_TEST( TestTankTornOffStaysVolatile, OUTCOME );
+	RUN_TEST( TestSupplyCut, OUTCOME );
+	RUN_TEST( TestSupplyNeeds, OUTCOME );
+	RUN_TEST( TestSupplyShare, OUTCOME );
+	RUN_TEST( TestSupplyOverLink, OUTCOME );
+	RUN_TEST( TestCutPowerCoasts, OUTCOME );
+	RUN_TEST( TestSupplyDeterminism, DETERMINISM );
+	RUN_TEST( TestSupplyCost, TIMING );
+	RUN_TEST( TestPoolLeaksWhenCut, OUTCOME );
+	RUN_TEST( TestPoolRingDoesNotLeak, OUTCOME );
+	RUN_TEST( TestPoolChippedLineLeaksALittle, OUTCOME );
+	RUN_TEST( TestPoolDeterminism, DETERMINISM );
 	return 0;
 }

@@ -84,14 +84,24 @@ jobs:
           fi
           bash .github/determinism/ladder.sh build/default/$sub/lpf_bench$exe $out/default ${{ matrix.runner }}
 
+      # The tests gate every leg. The positive control must fail the determinism self-test (contraction changes its
+      # answers) and is not asked for the rest.
       - name: Tests
         shell: bash
         timeout-minutes: 15
-        continue-on-error: true
         run: |
           code=0
+          if [ "${{ matrix.contract }}" = "true" ]; then
+            ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE world TestDeterminismSelfTest > out/test_log.txt 2>&1 || code=$?
+            if [ $code -ne 0 ]; then verdict="as it must"; else verdict="it must fail"; fi
+            echo "exit $code: the self-test under contraction, $verdict" > out/test.txt
+            cat out/test.txt
+            [ $code -ne 0 ]
+            exit $?
+          fi
           ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE > out/test_log.txt 2>&1 || code=$?
-          echo "exit $code: $(grep -m 3 'FAILED' out/test_log.txt | tr '\n' ' ') $(tail -n 1 out/test_log.txt)" > out/test.txt
+          ${{ matrix.runner }} build/default/$BIN_SUB/lpf_test$EXE --check-catalogue docs/catalogue.md >> out/test_log.txt 2>&1 || code=$?
+          echo "exit $code: $(grep -E -m 3 'FAILED|catalogue: .*names|not name' out/test_log.txt | tr '\n' ' ') $(tail -n 1 out/test_log.txt)" > out/test.txt
           cat out/test.txt
           exit $code
 

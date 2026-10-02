@@ -140,9 +140,9 @@ static int TestContactArea( void )
 
 int PolyTest( void )
 {
-	RUN_TEST( TestBox );
-	RUN_TEST( TestClipBox );
-	RUN_TEST( TestClipFuzz );
-	RUN_TEST( TestContactArea );
+	RUN_TEST( TestBox, MECHANISM );
+	RUN_TEST( TestClipBox, MECHANISM );
+	RUN_TEST( TestClipFuzz, MECHANISM );
+	RUN_TEST( TestContactArea, MECHANISM );
 	return 0;
 }
