@@ -298,8 +298,6 @@ typedef struct lpPiece
 	int mark;
 	int solveSlot;	// stress solve: node index, -1 for anchored pieces
 	lpVec6 stressX; // stress solve: last solution in newtons of load (the warm start after a topology change)
-	lpVec6 stressR; // stress solve: residual and search direction, so a solve continues across steps
-	lpVec6 stressP;
 	lpVec6 stressLoad; // contact load from what rests on it (newtons, body frame), sampled when a solve starts
 	lpVec6 stressResidual; // newtons: what its structure's last judged solve left unbalanced at it, within its tolerance.
 						   // A correction solves only for what changed since, so it does not chase this everywhere.

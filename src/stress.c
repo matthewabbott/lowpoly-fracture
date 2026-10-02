@@ -538,18 +538,9 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 		return;
 	}
 
-	// A solve in progress continues from where the last step left it
-	if ( job->continuing )
-	{
-		lpVec6* r = x + 2 * n;
-		lpVec6* p = x + 4 * n;
-		for ( int i = 0; i < n; ++i )
-		{
-			const lpPiece* piece = w->pieces.data + s->nodes.data[i];
-			r[i] = piece->stressR;
-			p[i] = piece->stressP;
-		}
-	}
+	// A solve in progress continues from where the last step left it: on the body's own system, which kept its residual
+	// and search direction
+	LP_ASSERT( job->continuing == false || job->cached );
 }
 
 // Limits of a bond: its joint's, or the weaker material's for a solid joint
@@ -1116,18 +1107,11 @@ static void lpRunStressJob( int index, void* context )
 	}
 	// Kept on the pieces: a solution continues from here after a restart. A correction is kept only once it has
 	// converged: a partial one moves clusters rigidly out of balance, and a restart would chase that everywhere.
-	const lpVec6* r = s->vectors.data + 2 * n;
-	const lpVec6* p = s->vectors.data + 4 * n;
 	for ( int i = 0; i < n && ( red == NULL || job->solve.converged ); ++i )
 	{
 		lpPiece* piece = w->pieces.data + s->nodes.data[i];
 		piece->stressX.f = lpMulSV( s->forceScale, x[i].f );
 		piece->stressX.t = lpMulSV( s->forceScale, x[i].t );
-		if ( red == NULL )
-		{
-			piece->stressR = r[i];
-			piece->stressP = p[i];
-		}
 	}
 	job->peak = 0.0f;
 	job->slender.count = 0;
@@ -1566,7 +1550,7 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 									   red->clusterStamp == body->clusterStamp
 								  : system->factored );
 		// A correction continues only on its reduced system, and a solve only in the mode it started in
-		continuing = continuing && body->solveClustered == clustered && ( cached || clustered == false );
+		continuing = continuing && body->solveClustered == clustered && cached;
 		int solvedEdges = clustered ? reducedEdges : edges;
 		int overhead = cached ? 0 : 2 * edges; // a build and the first residual
 

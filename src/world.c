@@ -1210,6 +1210,14 @@ uint64_t lpWorld_HashStress( const lpWorld* w )
 		{
 			h = lpHashBytes( h, &b->solveRz, sizeof( b->solveRz ) );
 		}
+		// A solve in progress continues from its system's residual and search direction
+		const lpStressSystem* s = b->system;
+		if ( b->solving && s != NULL && s->built )
+		{
+			int n = s->nodes.count;
+			h = lpHashBytes( h, s->vectors.data + 2 * n, sizeof( lpVec6 ) * (size_t)n );
+			h = lpHashBytes( h, s->vectors.data + 4 * n, sizeof( lpVec6 ) * (size_t)n );
+		}
 	}
 	for ( int i = 0; i < w->pieces.count; ++i )
 	{
@@ -1221,11 +1229,6 @@ uint64_t lpWorld_HashStress( const lpWorld* w )
 		h = lpHashBytes( h, &p->stressX, sizeof( lpVec6 ) );
 		h = lpHashBytes( h, &p->stressLoad, sizeof( lpVec6 ) );
 		h = lpHashBytes( h, &p->strain, sizeof( float ) );
-		if ( w->bodies.data[p->body].solving )
-		{
-			h = lpHashBytes( h, &p->stressR, sizeof( lpVec6 ) ); // a solve in progress continues from these
-			h = lpHashBytes( h, &p->stressP, sizeof( lpVec6 ) );
-		}
 	}
 	for ( int i = 0; i < w->bonds.count; ++i )
 	{
