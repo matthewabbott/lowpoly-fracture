@@ -733,3 +733,6 @@ made physics bodies again), so the engine's own centre update gives each its tru
   walls +16% (0.81 -> 0.94 ms: what broke off stays near, so awake contacts +37%), town -25% (4.99 -> 3.73: chips at
   hundreds of m/s no longer set off fracture after fracture, fractures -32%), tower -38% (5.18 -> 3.22, fractures
   -69%), keep the same (6.92). Pieces: walls +4%, town -17%, tower -58%.
+- The new baseline (best of 3, commit ddf91f8), step avg ms at 1 / 8 workers: walls 0.69 / 0.47, town 3.42 / 2.03, pile
+  2.06 / 0.87, lumber 0.21 / 0.18, tower 3.02 / 1.39, ruins 0.14 / 0.12, yard 0.12 / 0.12, keep 6.39 / 4.61, barrage
+  8.41 / 4.41, siege 17.13 / 9.37, track 0.14 / 0.15, mech 0.08 / 0.10.
