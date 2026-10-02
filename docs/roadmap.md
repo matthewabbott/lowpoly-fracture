@@ -9,8 +9,8 @@ The direction since milestone 7 (agreed 2026-09-30, [multiplayer-research.md](mu
 Box3D replaced by a block-scaled integer rigid-body core that runs on the GPU with a bit-identical CPU twin.
 
 Standing practices:
-- every milestone ends with a short simplicity pass by an independent reviewer (seams first: a subsystem behind a
-  clean boundary with its own outcome tests can be swapped whole);
+- every milestone ends with a short simplicity pass by an independent reviewer, Fable or the Codex reviewer (seams
+  first: a subsystem behind a clean boundary with its own outcome tests can be swapped whole);
 - performance is measured at 1 and 2 workers and on the Intel GPU as the low-end proxies (fewer busy cores, less
   heat), as well as at 8;
 - the `determinism` CI runs on every push to `sandbox`; `master` is fast-forwarded to `sandbox` after each milestone;
@@ -374,7 +374,7 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
    on the physics state (freeze if still asleep) become commands the step checks when it applies them; and every read
    in a tick comes from one snapshot. The rest of the core takes a step of lag as it is. The capture itself is the
    experiment's cost, not a pipeline's (the town's physics +48%); off, the flag changes nothing (hashes identical).
-6. **The simplicity pass** (standing practice): an independent reviewer (the Codex or Kimi reviewer, or Fable) reads
+6. **The simplicity pass** (standing practice): an independent reviewer (Fable or the Codex reviewer) reads
    the milestone's diff and the seam; proposals adjudicated as in milestone 9. **Done** with Fable and GPT-5.6 Sol
    (the Codex reviewer; the Kimi reviewer could not run: its CLI wants a login). Neither found a determinism or
    lifetime bug. Taken, hash-neutral (every rung `same`, the solver's too; ASan and clang clean), 368 lines fewer:
@@ -409,6 +409,12 @@ The catalogue is the contract the integer core must meet, so it comes before the
    reference screenshots; the gaps found and filled first. The contract is the outcomes, not the bench hashes (a
    simpler design, or a new physics core, changes the numerics). The first draft, with the goals and the feel it
    serves, is in [goals.md](goals.md).
+   - **A reference corpus** (the owner's idea, 2026-10-02): an entry may cite the behaviour it aspires to, a clip from
+     another game or real footage, with timestamps and what to match (how a slice separates, how a chopped tree goes
+     over, how a wall gives). Links only, in `docs/references.md`; frames grabbed for comparison stay in `refs/`
+     (personal reference, never committed). Agents cannot watch video, but they can set a sandbox frame sequence
+     (`--frames`, `--screenshot`) beside the reference frames and say what differs. Behaviour references serve the
+     catalogue; look and animation references wait for milestone 21.
 1. **The engine surface.** The core holds mechanisms and data-driven definitions; the kits in `scenes/` (the car, the
    crane, the hexapod) are example content, kept because the tests and the bench need realistic loads and because
    building them finds the engine's gaps. Where game policy leaked into the core:
@@ -419,7 +425,7 @@ The catalogue is the contract the integer core must meet, so it comes before the
    - other constants that are game policy move into defs (a pool's leak rate, the strike speed);
    - diagnostics for agents and tests (numbers, not pictures): queries for bonds and contacts, and a sandbox `--dump`
      of the state at a tick as JSON.
-2. **A seams-first review:** independent reviewers (Fable; GPT-6 Astra in Codex; the Codex and Kimi reviewers), each
+2. **A seams-first review:** independent reviewers (Fable; GPT-6 Astra in Codex; the Codex reviewer), each
    given the goals, the catalogue and the code, read-only, propose clean boundaries and simpler ways to reach the same
    outcomes per subsystem: fracture, stress, links, wheels and rigs, the debris tiers, supply. One of them prunes,
    having read [How Complex Systems Fail](https://how.complexsystems.fail/) first. The physics plumbing that milestone
@@ -633,6 +639,47 @@ Effects and mess, noted while tuning debris:
 - **Dust:** soft, fading dust clouds instead of solid motes once a transparent particle pass exists.
 - **Toaster profile:** one switch that lowers caps (debris, ghosts, scrap), raises the fragment scale and render
   scale, and turns off shadows, so low-end machines still get the destruction.
+
+## Features not yet placed
+
+Ideas with a design sketch, waiting for a slot in the order above (the owner places them).
+
+### Cutting and chopping
+
+The owner's idea (2026-10-02): a third way to break things besides crushing and blasting. A blade slices an object
+cleanly in the stylised manner of Metal Gear Rising: Revengeance, until it meets something too hard for its edge (the
+bone in an arm); an axe bites a notch into a trunk, an idealised low-poly chop, until the tree goes over. With bodies
+taken down by impairment (goals.md), a cut is how a limb is lost.
+
+**What exists.** A plane clip (`lpPoly_Clip`), and a snap that cuts one piece in two along one plane through the
+fracture pipeline (`lpFractureSnap`, used by the stress solve for overloaded slender pieces). Pieces re-bond and bodies
+split by connectivity; supply is recomputed when carriers go, pools leak, links follow or lose their pieces; rigs adapt
+to a lost limb; slender pieces snap under load. Ropes are hit by rays already.
+
+**What is missing:**
+- **A blade:** `lpWorld_Slice` with the edge as a segment swept along a direction, so the cut is a bounded patch of a
+  plane, not an infinite plane; an edge (sharpness: cut energy per area it can spend) and a hardness.
+- **Resistance:** a cut resistance (J/m^2) and a hardness per material. The pieces the patch crosses are cut in the
+  order the edge reaches them, each costing its section's area times its resistance; the cut stops at the first piece
+  harder than the edge or beyond the energy left, and the blade is reported embedded there (a game can make it stick).
+  An arm cut to the bone hangs by the bone.
+- **Clean cuts:** each crossed piece clipped in two exactly along the plane (no Voronoi, no chips, no random tilt), cut
+  faces in the interior colour; bonds and links the patch crosses break (a rope parts).
+- **Chops:** an axe is a short, heavy, blunt blade. A blow takes out a wedge (two planes, a V) to a depth its energy
+  and the material allow; the wedge flies as a chip, and the remainder is three convex pieces (the core behind the
+  notch, the flanks above and below it) bonded where the wood goes on. A blow near an existing notch deepens it. The
+  stress solve and the slender-piece snap fell the tree once the core cannot hold, away from the notch.
+- **Determinism:** pure geometry on pieces in their bodies' frames, in piece order, as fracture jobs are; a swing is
+  one tick-stamped command (milestone 10). The exact integer geometry of milestone 11 makes cuts exact too.
+- **A sandbox tool** (a sword stroke and an axe blow on the mouse), and outcomes for the catalogue: a log sliced into
+  two halves whose cut faces match; a sword stopped by a bone with the arm hanging; a rope cut; a tree felled in a
+  set number of blows, falling away from the notch; a moving body sliced in flight; a structure cut through whose top
+  then falls (the stress check).
+
+**Size and slot:** about a milestone (600 to 900 lines with its tests). Recommended between milestones 9 and 10 (as
+9b, so later numbers and their references stay): after the catalogue and the engine surface, so it is built on the
+cleaned-up surface and pinned by its own outcomes, and before the command queue, so a swing is designed as a command
+from the start. It needs nothing from the integer core.
 
 ## Research queue
 
