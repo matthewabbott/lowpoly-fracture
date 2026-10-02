@@ -167,14 +167,14 @@ void lpSystemResize( lpStressSystem* s )
 	int n = s->nodes.count;
 	lpArray_Reserve( s->vectors, 6 * n );
 	s->vectors.count = 6 * n;
-	lpArray_Reserve( s->blocks, n );
-	s->blocks.count = n;
 	s->factored = false;
 }
 
 void lpSystemFactor( lpStressSystem* s )
 {
 	int n = s->nodes.count;
+	lpArray_Reserve( s->blocks, n ); // only a factored system has blocks (a fine one solved through a reduced one has none)
+	s->blocks.count = n;
 	lpBlock6* blocks = s->blocks.data;
 	memset( blocks, 0, sizeof( lpBlock6 ) * (size_t)n );
 	for ( int k = 0; k < s->edges.count; ++k )
@@ -396,9 +396,8 @@ void lpSystemReduce( const lpStressSystem* fine, const lpVec3* nodeRef, const lp
 		reduced->edges.data[reduced->edges.count++] = e;
 	}
 	reduced->forceScale = fine->forceScale;
-	lpSystemResize( reduced );
+	lpSystemResize( reduced ); // no incidence: only the fine system's is read (the slender-piece check)
 	lpSystemFactor( reduced );
-	lpSystemIncidence( reduced );
 }
 
 void lpPartitionRestrict( const lpPartition* part, const lpVec3* nodeRef, const lpVec6* fine, int nodeCount, lpVec6* reduced )

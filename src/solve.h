@@ -71,7 +71,7 @@ void lpEdgeForce( const lpStressEdge* e, const lpVec6* x, lpVec3* force, lpVec3*
 // y = K x, matrix free, in edge order
 void lpSystemApply( const lpStressSystem* s, const lpVec6* x, lpVec6* y );
 
-// Sizes the vectors and blocks for the nodes; x and f are left for the caller to fill
+// Sizes the vectors for the nodes (lpSystemFactor sizes the blocks); x and f are left for the caller to fill
 void lpSystemResize( lpStressSystem* s );
 
 // Each node's block of K from the edges, Cholesky-factored (the preconditioner)
