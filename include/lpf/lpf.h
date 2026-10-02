@@ -92,16 +92,21 @@ typedef struct lpMaterialDef
 	// Share of a collision's energy its crumpling soaks up before anything breaks (sheet metal, rubber): the harder
 	// of two things that hit decides
 	float crush;
+
+	uint8_t joint;	   // lpJointId between its parts and others when a part asks for lp_jointAuto (auto: solid)
+	uint8_t cellJoint; // lpJointId between the cells of its course grid (lp_breakMasonry; auto: mortar)
 } lpMaterialDef;
 
-const lpMaterialDef* lpGetMaterial( int materialId );
+// The built-in materials (lp_materialCount of them, in lpMaterialId order): copy, tune, and give the copy to
+// lpWorldDef.materials. Every world holds its own table.
+const lpMaterialDef* lpDefaultMaterials( void );
 
 // How two parts are joined. A bond between parts takes the weaker joint of the two; a bond between fracture cells of
 // one part is solid. Structures break at their joints first: mortar before brick, nails before timber.
 typedef enum lpJointId
 {
-	lp_jointAuto,	// by material: mortar for stone, brick, concrete and plaster, nails for wood, bolts for sheet metal,
-					// solid otherwise
+	lp_jointAuto,	// by material (lpMaterialDef.joint): mortar for stone, brick, concrete and plaster, nails for wood,
+					// bolts for sheet metal, solid otherwise
 	lp_jointSolid,	// as strong as the weaker of the two materials
 	lp_jointMortar, // weak in tension: masonry cracks and hinges at its joints
 	lp_jointDry,	// stacked with nothing between: no tension or cohesion, friction only
@@ -121,7 +126,9 @@ typedef struct lpJointDef
 	float friction;
 } lpJointDef;
 
-const lpJointDef* lpGetJoint( int jointId );
+// The built-in joints (lp_jointCount of them, in lpJointId order; the auto row is a placeholder, and solid's strengths
+// are unused: a solid bond holds what the weaker material does)
+const lpJointDef* lpDefaultJoints( void );
 
 // ---- world ----
 
@@ -129,6 +136,10 @@ typedef struct lpWorldDef
 {
 	lpVec3 gravity; // m/s^2 (the physics world is the lpf world's own)
 	uint64_t seed;
+	// The materials and joints, copied when the world is made (lp_materialCount and lp_jointCount entries, in id
+	// order; NULL: the built-ins). A material's auto joints become its defaults. Names are borrowed.
+	const lpMaterialDef* materials;
+	const lpJointDef* joints;
 	// Budgets. Over budget, the smallest-oldest bodies move down a tier (full -> light -> ghost -> particles,
 	// rubble -> scrap, scrap sinks away) instead of popping out of existence.
 	int maxFullDebris;	 // moving full-physics debris bodies
@@ -172,8 +183,13 @@ lpWorldDef lpDefaultWorldDef( void );
 
 typedef struct lpWorld lpWorld;
 
+// NULL, with a message on stderr, if the def's materials or joints are out of range
 lpWorld* lpCreateWorld( const lpWorldDef* def );
 void lpDestroyWorld( lpWorld* world );
+
+// The world's own materials and joints (its copies of lpWorldDef.materials and .joints)
+const lpMaterialDef* lpWorld_GetMaterial( const lpWorld* world, int material );
+const lpJointDef* lpWorld_GetJoint( const lpWorld* world, int joint );
 
 // ---- objects ----
 

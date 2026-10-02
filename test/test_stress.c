@@ -1109,7 +1109,7 @@ static int TestReliefBalances( void )
 	for ( int k = 0; k < b->pieces.count; ++k )
 	{
 		const lpPiece* p = s.world->pieces.data + b->pieces.data[k];
-		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		float m = p->shape->volume * lpWorld_GetMaterial( s.world, p->material )->density;
 		lpVec3 r = lpSub( p->shape->centroid, b->reliefCenter );
 		lpVec3 accel = lpAdd( lpAdd( b->reliefAccel, lpCross( b->reliefAlpha, r ) ), lpCross( b->reliefOmega, lpCross( b->reliefOmega, r ) ) );
 		lpVec3 f = lpSub( lpAdd( p->stressLoad.f, lpMulSV( m, g ) ), lpMulSV( m, accel ) );

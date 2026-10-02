@@ -52,7 +52,7 @@ static void lpChoosePin( lpWorld* w, lpBody* body, int bodyIndex )
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
 		const lpPiece* p = w->pieces.data + body->pieces.data[i];
-		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		float m = p->shape->volume * lpMaterial( w, p->material )->density;
 		center = lpMulAdd( center, m, p->shape->centroid );
 		mass += m;
 	}
@@ -111,7 +111,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 		lpVec3 alpha = lpInvRotateVector( q, lpMulSV( inv, lpSub( body->stepOmega[1], body->stepOmega[0] ) ) );
 		// A rigid body stops in a step; a crumple zone takes several: the harder part of the stop is spread by the struck
 		// material's crush (what gravity did stays)
-		float spread = body->hitTick == w->tick ? 1.0f - lpGetMaterial( body->hitMaterial )->crush : 1.0f;
+		float spread = body->hitTick == w->tick ? 1.0f - lpMaterial( w, body->hitMaterial )->crush : 1.0f;
 		body->reliefAccel = lpMulAdd( gravity, spread, lpSub( accel, gravity ) );
 		body->reliefAlpha = lpMulSV( spread, alpha );
 		body->reliefOmega = lpInvRotateVector( q, body->stepOmega[1] );
@@ -125,7 +125,7 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
 		const lpPiece* p = w->pieces.data + body->pieces.data[i];
-		float m = p->shape->volume * lpGetMaterial( p->material )->density;
+		float m = p->shape->volume * lpMaterial( w, p->material )->density;
 		lpVec3 r = lpSub( p->shape->centroid, c );
 		lpVec3 load = lpMulAdd( p->stressLoad.f, m, gravity );
 		mass += m;
@@ -178,7 +178,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
 		w->scratchLoads.data[i] = p->stressLoad;
 		p->stressLoad = lp_vec6Zero;
-		weight += p->shape->volume * lpGetMaterial( p->material )->density * g;
+		weight += p->shape->volume * lpMaterial( w, p->material )->density * g;
 	}
 
 	if ( w->lastTimeStep > 0.0f )
@@ -233,7 +233,7 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 		float moved = lpLength( lpSub( p->stressLoad.f, w->scratchLoads.data[i].f ) ) +
 					  lpLength( lpSub( p->stressLoad.t, w->scratchLoads.data[i].t ) ) / size;
 		change += moved;
-		if ( moved > 0.02f * p->shape->volume * lpGetMaterial( p->material )->density * g )
+		if ( moved > 0.02f * p->shape->volume * lpMaterial( w, p->material )->density * g )
 		{
 			lpTouchPiece( w, pi );
 		}
@@ -329,7 +329,7 @@ static void lpStressBuildReduced( lpWorld* w, lpStressJob* job )
 			}
 		}
 		part->group.data[i] = g;
-		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
+		float mass = p->shape->volume * lpMaterial( w, p->material )->density;
 		part->members.data[g] += 1;
 		job->groupMass.data[g] += mass;
 		part->ref.data[g] = lpMulAdd( part->ref.data[g], mass, p->shape->centroid );
@@ -425,7 +425,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 			{
 				p->solveSlot = slot++;
 				lpArray_Push( s->nodes, pi );
-				float weight = p->shape->volume * lpGetMaterial( p->material )->density;
+				float weight = p->shape->volume * lpMaterial( w, p->material )->density;
 				heaviest = weight > heaviest ? weight : heaviest;
 			}
 		}
@@ -502,7 +502,7 @@ static void lpStressBuild( lpWorld* w, lpStressJob* job )
 	for ( int i = 0; i < n; ++i )
 	{
 		const lpPiece* p = w->pieces.data + s->nodes.data[i];
-		float mass = p->shape->volume * lpGetMaterial( p->material )->density;
+		float mass = p->shape->volume * lpMaterial( w, p->material )->density;
 		f[i].f = lpMulSV( mass / scale, g );
 		f[i].t = lpVec3_zero;
 		if ( body->solveStress )
@@ -557,19 +557,19 @@ static void lpBondLimits( const lpWorld* w, const lpBond* bond, float* tension, 
 {
 	if ( bond->joint != lp_jointSolid )
 	{
-		const lpJointDef* j = lpGetJoint( bond->joint );
+		const lpJointDef* j = lpJoint( w, bond->joint );
 		*tension = j->tensileStrength;
 		*compression = j->compressiveStrength;
 		*shear = j->shearStrength;
 		*mu = j->friction;
 		return;
 	}
-	const lpMaterialDef* ma = lpGetMaterial( w->pieces.data[bond->a].material );
-	const lpMaterialDef* mb = lpGetMaterial( w->pieces.data[bond->b].material );
+	const lpMaterialDef* ma = lpMaterial( w, w->pieces.data[bond->a].material );
+	const lpMaterialDef* mb = lpMaterial( w, w->pieces.data[bond->b].material );
 	*tension = lpMinFloat( ma->tensileStrength, mb->tensileStrength );
 	*compression = lpMinFloat( ma->compressiveStrength, mb->compressiveStrength );
 	*shear = lpMinFloat( ma->shearStrength, mb->shearStrength );
-	*mu = lpGetJoint( lp_jointSolid )->friction;
+	*mu = lpJoint( w, lp_jointSolid )->friction;
 }
 
 static int lpCompareOverload( const void* a, const void* b )
@@ -763,7 +763,7 @@ static int lpStressRejudge( lpWorld* w, int bodyIndex, bool recompute, int* stra
 // its bonds' forces. Its extents along its axis (from its centroid) and across it, if it is.
 static bool lpSlenderExtents( const lpWorld* w, const lpPiece* p, float* lo, float* hi, float* w1, float* w2 )
 {
-	const lpMaterialDef* m = lpGetMaterial( p->material );
+	const lpMaterialDef* m = lpMaterial( w, p->material );
 	if ( m->breakable == false || m->pattern == lp_breakRadial )
 	{
 		return false;
@@ -801,7 +801,7 @@ static void lpStressSlender( lpWorld* w, lpStressJob* job, const lpVec6* x )
 	{
 		int pi = s->nodes.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		const lpMaterialDef* m = lpGetMaterial( p->material );
+		const lpMaterialDef* m = lpMaterial( w, p->material );
 		float lo, hi, w1, w2;
 		if ( p->depth >= w->def.maxDepth || p->bonds.count < 2 || lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 ) == false )
 		{
@@ -892,7 +892,7 @@ static int lpStrainSlender( lpWorld* w, lpWorldTransform xf, int pi, int* strain
 	}
 
 	// Snap it where it is weakest: a blow sized to the section, through the normal fracture pipeline
-	const lpMaterialDef* m = lpGetMaterial( p->material );
+	const lpMaterialDef* m = lpMaterial( w, p->material );
 	p->strain = 0.0f;
 	lpImpactDef impact = { 0 };
 	impact.point = lpTransformWorldPoint( xf, lpMulAdd( p->shape->centroid, p->slenderAt, p->axis ) );

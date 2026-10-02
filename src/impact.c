@@ -37,7 +37,7 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 								  bool snap )
 {
 	lpPiece* piece = w->pieces.data + pieceIndex;
-	const lpMaterialDef* m = lpGetMaterial( piece->material );
+	const lpMaterialDef* m = lpMaterial( w, piece->material );
 	float fragment = m->fragmentSize * w->def.fragmentScale;
 
 	// Radius inside which bonds will break: (1 - x)^2 >= strength * pi R^2 / E
@@ -61,6 +61,8 @@ static void lpPrepareFractureJob( lpWorld* w, lpFractureJob* job, int pieceIndex
 	job->particleVolume = lpParticleVolume( w, piece->material );
 	job->ghostVolume = lpGhostVolume( w, piece->material );
 	job->lightVolume = lpLightVolume( w, piece->material );
+	job->mergeSlack = lpMaterial( w, piece->material )->mergeSlack;
+	job->chipSplits = lpMaterial( w, piece->material )->chipSplits;
 	job->cellCount = 0;
 	job->bondCount = 0;
 	memset( &job->stats, 0, sizeof( job->stats ) );
@@ -138,8 +140,7 @@ static void lpRunFractureJob( int index, void* context )
 	}
 
 	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece
-	float slack = lpGetMaterial( job->input.interiorMaterial )->mergeSlack;
-	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, slack,
+	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, job->mergeSlack,
 								   job->input.interiorMaterial, job->localImpact );
 	job->stats.mergeMs = lpGetMillisecondsAndReset( &ticks );
 
@@ -167,9 +168,8 @@ static void lpRunFractureJob( int index, void* context )
 
 	// Ghost ejecta break into a few real chips: a dirtier spray for a few plane clips. After the bonds, which only
 	// keepers use, so the chips need none. Wood splits along the grain, glass across the pane.
-	const lpMaterialDef* m = lpGetMaterial( job->input.interiorMaterial );
 	int original = job->cellCount;
-	for ( int i = 0; i < original && m->chipSplits > 0; ++i )
+	for ( int i = 0; i < original && job->chipSplits > 0; ++i )
 	{
 		if ( job->cellClass[i] != lp_cellGhost )
 		{
@@ -180,7 +180,7 @@ static void lpRunFractureJob( int index, void* context )
 		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
 		lpShape* chips[4];
 		int room = LP_MAX_SITES - job->cellCount + 1;
-		int count = lpChipCell( job->cells[i], m->chipSplits, oriented ? job->input.axis : lpVec3_zero,
+		int count = lpChipCell( job->cells[i], job->chipSplits, oriented ? job->input.axis : lpVec3_zero,
 								job->input.interiorMaterial, job->particleVolume, &rng, chips, room < 4 ? room : 4 );
 		if ( count == 0 )
 		{
@@ -430,7 +430,8 @@ static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 			// Cells of one piece: its own material holds them, cracked by the blow that broke it. Far from the
 			// impact the stone is whole; near it the cracks barely hold, and past the break radius not at all.
 			float damage = lpImpactDensity( &job->impact, lpDistance( cb.contact.centroid, job->localImpact ) );
-			uint8_t cellJoint = job->input.pattern == lp_breakMasonry ? lp_jointMortar : lp_jointSolid;
+			uint8_t cellJoint = job->input.pattern == lp_breakMasonry ? lpMaterial( w, job->input.interiorMaterial )->cellJoint
+																	  : lp_jointSolid;
 			int bi = lpAddBond( w, a, b, &cb.contact, cellJoint );
 			lpBond* bond = w->bonds.data + bi;
 			bond->health -= damage;
@@ -554,7 +555,7 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 		{
 			continue;
 		}
-		const lpMaterialDef* m = lpGetMaterial( p->material );
+		const lpMaterialDef* m = lpMaterial( w, p->material );
 		if ( m->breakable == false || p->depth >= w->def.maxDepth )
 		{
 			continue;
@@ -980,7 +981,7 @@ void lpCollectHits( lpWorld* w )
 		float crush = 0.0f;
 		for ( int k = 0; k < 2; ++k )
 		{
-			crush = pieces[k] >= 0 ? lpMaxFloat( crush, lpGetMaterial( w->pieces.data[pieces[k]].material )->crush ) : crush;
+			crush = pieces[k] >= 0 ? lpMaxFloat( crush, lpMaterial( w, w->pieces.data[pieces[k]].material )->crush ) : crush;
 		}
 		energy *= 1.0f - crush;
 		// and spreads the blow over the face that hit, not the first corner that touched

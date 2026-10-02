@@ -69,9 +69,9 @@ static uint32_t lpMixColor( uint32_t a, uint32_t b, float t )
 }
 
 // 0xRRGGBB of a cut face of `material` at object-space point p
-static uint32_t lpInteriorColor( uint8_t material, lpVec3 p, lpVec3 axis )
+static uint32_t lpInteriorColor( const lpMaterialDef* materials, uint8_t material, lpVec3 p, lpVec3 axis )
 {
-	const lpMaterialDef* m = lpGetMaterial( material );
+	const lpMaterialDef* m = materials + material;
 	uint32_t base = m->interiorColor;
 
 	switch ( material )
@@ -172,7 +172,7 @@ int lpBuildFacetMesh( const lpShape* shape, const lpFacetParams* params, lpVerte
 				c = lpAdd( c, shape->vertices[shape->indices[face->first + k]] );
 			}
 			c = lpMulSV( 1.0f / (float)face->count, c );
-			rgb = lpInteriorColor( face->material, c, params->axis );
+			rgb = lpInteriorColor( params->materials, face->material, c, params->axis );
 		}
 		uint32_t color = lpToRGBA( rgb );
 

@@ -23,36 +23,48 @@
 // Tier volumes (particle / ghost / light) as cube edges: stone and brick about 4 / 9 / 22 cm, plaster 6 / 12 / 25 cm,
 // wood 5 / 18 / 31 cm (splinters are long and thin, so most are ghosts), glass shards nearly all ghosts, foliage mostly
 // leaves. plateSize keeps the far side of a broken piece in a few big plates (a log keeps two whole ends).
-static lpMaterialDef lp_materials[lp_materialCount] = {
+static const lpMaterialDef lp_materials[lp_materialCount] = {
 	[lp_wood] = { "wood", 600.0f, 2000.0f, 1600.0f, 0.14f, 0.6f, 0.05f, lp_breakGrain, 3.5f, 0xE0B070u, true,
-				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f, 0.0f, 0.0f },
+				  3.4e-6f, 6.0e-3f, 3.0e-2f, 1.6f, 20, lp_particleSplinter, 0.3f, 1, 30e6f, 40e6f, 5e6f, 0.0f, 0.0f,
+				  .joint = lp_jointNails },
 	[lp_stone] = { "stone", 2400.0f, 8000.0f, 6400.0f, 0.18f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0x9A968Cu, true,
-				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f, 0.0f, 0.0f },
+				   3.4e-6f, 7.3e-4f, 1.06e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 5e6f, 60e6f, 8e6f, 0.0f, 0.0f,
+				   .joint = lp_jointMortar },
 	[lp_brick] = { "brick", 1900.0f, 3000.0f, 2400.0f, 0.16f, 0.7f, 0.02f, lp_breakMasonry, 1.0f, 0xC8704Au, true,
-				   3.4e-6f, 7.3e-4f, 2.0e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f, 0.15f, 0.3f },
+				   3.4e-6f, 7.3e-4f, 2.0e-2f, 1.2f, 28, lp_particleChip, 0.08f, 2, 2e6f, 20e6f, 3e6f, 0.15f, 0.3f,
+				   .joint = lp_jointMortar },
 	[lp_plaster] = { "plaster", 1200.0f, 1200.0f, 1000.0f, 0.16f, 0.6f, 0.02f, lp_breakImpact, 1.0f, 0xEEE6D2u, true,
-					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f, 0.0f, 0.0f },
+					 3.4e-6f, 1.7e-3f, 1.56e-2f, 1.2f, 24, lp_particleDust, 0.1f, 3, 1e6f, 5e6f, 1e6f, 0.0f, 0.0f,
+					 .joint = lp_jointMortar },
 	[lp_concrete] = { "concrete", 2400.0f, 10000.0f, 8000.0f, 0.2f, 0.7f, 0.02f, lp_breakImpact, 1.0f, 0xA5A39Cu, true,
-					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f, 0.0f, 0.0f },
+					  3.4e-6f, 7.3e-4f, 1.06e-2f, 1.4f, 28, lp_particleChip, 0.08f, 2, 3e6f, 30e6f, 5e6f, 0.0f, 0.0f,
+					  .joint = lp_jointMortar },
 	[lp_glass] = { "glass", 2500.0f, 300.0f, 240.0f, 0.1f, 0.4f, 0.05f, lp_breakRadial, 1.0f, 0xC6EEF2u, true,
-				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f, 0.0f, 0.0f },
+				   3.4e-6f, 3.4e-3f, 1.0e-2f, 0.8f, 32, lp_particleGlint, 0.0f, 3, 30e6f, 500e6f, 20e6f, 0.0f, 0.0f,
+				   .joint = lp_jointSolid },
 	[lp_metal] = { "metal", 7800.0f, 1e9f, 1e9f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x70757Bu, false,
-				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f },
+				   6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleChip, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f,
+				   .joint = lp_jointSolid },
 	[lp_ground] = { "ground", 2000.0f, 1e9f, 1e9f, 1.0f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x6E5B45u, false,
-					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f },
+					6.4e-5f, 7.3e-4f, 1.06e-2f, 1.0f, 16, lp_particleDust, 0.0f, 0, 1e12f, 1e12f, 1e12f, 0.0f, 0.0f,
+					.joint = lp_jointSolid },
 	[lp_foliage] = { "foliage", 150.0f, 300.0f, 240.0f, 0.4f, 0.8f, 0.0f, lp_breakImpact, 1.0f, 0x4E8C3Au, true,
-					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f, 0.0f, 0.0f },
+					 8.0e-3f, 9.0e-2f, 0.5f, 2.5f, 12, lp_particleLeaf, 0.3f, 0, 10e6f, 10e6f, 10e6f, 0.0f, 0.0f,
+					 .joint = lp_jointSolid },
 	// Panels are thick stand-ins for thin sheet, so the density is a car's, not steel's. They tear into a few big
 	// plates, and their crumpling soaks up most of a crash before anything breaks.
 	[lp_sheetMetal] = { "sheet metal", 1200.0f, 2500.0f, 6000.0f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x8A9098u, true,
 						3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 10, lp_particleChip, 0.3f, 0, 200e6f, 200e6f, 120e6f, 0.0f, 0.0f,
-						0.7f },
+						0.7f,
+						.joint = lp_jointBolts },
 	[lp_rubber] = { "rubber", 900.0f, 20000.0f, 30000.0f, 0.25f, 1.0f, 0.1f, lp_breakImpact, 1.0f, 0x2A2A2Au, true,
-					3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 8, lp_particleChip, 0.3f, 0, 20e6f, 50e6f, 20e6f, 0.0f, 0.0f, 0.6f },
+					3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 8, lp_particleChip, 0.3f, 0, 20e6f, 50e6f, 20e6f, 0.0f, 0.0f, 0.6f,
+					.joint = lp_jointSolid },
 	// Welded plate. Like sheet metal the parts are stand-ins for a shell, so the density is a hull's, but it takes ten
 	// times the damage: a grenade (13 kJ/m^2 at its centre) or a cannon blast (20) chips at most its welds' edges
 	[lp_armor] = { "armor", 1200.0f, 25000.0f, 60000.0f, 0.3f, 0.5f, 0.1f, lp_breakImpact, 1.0f, 0x6A6F75u, true,
-				   3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 10, lp_particleChip, 0.3f, 0, 400e6f, 400e6f, 250e6f, 0.0f, 0.0f, 0.5f },
+				   3.4e-6f, 2.0e-3f, 2.0e-2f, 1.2f, 10, lp_particleChip, 0.3f, 0, 400e6f, 400e6f, 250e6f, 0.0f, 0.0f, 0.5f,
+				   .joint = lp_jointSolid },
 };
 
 // Joints (Pa). Mortar is weak in tension, so masonry hinges and cracks at its joints; dry stacking holds only by
@@ -69,40 +81,37 @@ static const lpJointDef lp_joints[lp_jointCount] = {
 	[lp_jointWeld] = { "weld", 40e6f, 200e6f, 25e6f, 0.6f },
 };
 
-const lpJointDef* lpGetJoint( int jointId )
+const lpJointDef* lpDefaultJoints( void )
 {
-	LP_ASSERT( 0 <= jointId && jointId < lp_jointCount );
-	return lp_joints + jointId;
+	return lp_joints;
 }
 
-// The joint a part gets when it asks for lp_jointAuto
-static uint8_t lpResolveJoint( uint8_t joint, uint8_t material )
+const lpMaterialDef* lpDefaultMaterials( void )
 {
-	if ( joint != lp_jointAuto )
-	{
-		return joint;
-	}
-	switch ( material )
-	{
-		case lp_stone:
-		case lp_brick:
-		case lp_concrete:
-		case lp_plaster:
-			return lp_jointMortar;
-		case lp_wood:
-			return lp_jointNails;
-		case lp_sheetMetal:
-			return lp_jointBolts;
-		default:
-			return lp_jointSolid;
-	}
+	return lp_materials;
+}
+
+const lpMaterialDef* lpWorld_GetMaterial( const lpWorld* w, int material )
+{
+	return lpMaterial( w, material );
+}
+
+const lpJointDef* lpWorld_GetJoint( const lpWorld* w, int joint )
+{
+	return lpJoint( w, joint );
+}
+
+// The joint a part gets when it asks for lp_jointAuto: its material's
+static uint8_t lpResolveJoint( const lpWorld* w, uint8_t joint, uint8_t material )
+{
+	return joint != lp_jointAuto ? joint : lpMaterial( w, material )->joint;
 }
 
 // The weaker of two joints: lower tensile strength, then the higher id
-static uint8_t lpWeakerJoint( uint8_t a, uint8_t b )
+static uint8_t lpWeakerJoint( const lpWorld* w, uint8_t a, uint8_t b )
 {
-	float ta = lp_joints[a].tensileStrength;
-	float tb = lp_joints[b].tensileStrength;
+	float ta = lpJoint( w, a )->tensileStrength;
+	float tb = lpJoint( w, b )->tensileStrength;
 	if ( ta != tb )
 	{
 		return ta < tb ? a : b;
@@ -110,10 +119,69 @@ static uint8_t lpWeakerJoint( uint8_t a, uint8_t b )
 	return a > b ? a : b;
 }
 
-const lpMaterialDef* lpGetMaterial( int materialId )
+// Copies the def's tables into the world, auto joints made their defaults. False, saying why on stderr, for one out of
+// range.
+static bool lpTakeTables( lpWorld* w, const lpWorldDef* def )
 {
-	LP_ASSERT( 0 <= materialId && materialId < lp_materialCount );
-	return lp_materials + materialId;
+	const lpMaterialDef* materials = def->materials != NULL ? def->materials : lp_materials;
+	const lpJointDef* joints = def->joints != NULL ? def->joints : lp_joints;
+	memcpy( w->materials, materials, sizeof( w->materials ) );
+	memcpy( w->joints, joints, sizeof( w->joints ) );
+	w->def.materials = w->materials;
+	w->def.joints = w->joints;
+	for ( int i = 0; i < lp_jointCount; ++i )
+	{
+		const lpJointDef* j = w->joints + i;
+		if ( i != lp_jointAuto && ( j->tensileStrength < 0.0f || j->compressiveStrength < 0.0f || j->shearStrength < 0.0f ||
+									j->friction < 0.0f ) )
+		{
+			fprintf( stderr, "lpCreateWorld: joint %d (%s) has a negative strength or friction\n", i, j->name );
+			return false;
+		}
+	}
+	for ( int i = 0; i < lp_materialCount; ++i )
+	{
+		lpMaterialDef* m = w->materials + i;
+		m->joint = m->joint == lp_jointAuto ? (uint8_t)lp_jointSolid : m->joint;
+		m->cellJoint = m->cellJoint == lp_jointAuto ? (uint8_t)lp_jointMortar : m->cellJoint;
+		const char* wrong = NULL;
+		if ( m->density <= 0.0f || m->fragmentSize <= 0.0f || m->tensileStrength <= 0.0f || m->compressiveStrength <= 0.0f ||
+			 m->shearStrength <= 0.0f )
+		{
+			wrong = "a density, fragment size or strength that is not positive";
+		}
+		else if ( m->pattern < lp_breakImpact || m->pattern > lp_breakMasonry || m->particleKind < lp_particleDust ||
+				  m->particleKind > lp_particleGlint )
+		{
+			wrong = "an unknown pattern or particle kind";
+		}
+		else if ( m->maxCells < 2 || m->maxCells > LP_MAX_SITES || m->chipSplits < 0 )
+		{
+			wrong = "maxCells outside 2 to LP_MAX_SITES, or negative chip splits";
+		}
+		else if ( m->particleVolume > m->ghostVolume || m->ghostVolume > m->lightVolume )
+		{
+			wrong = "tier volumes out of order (particle <= ghost <= light)";
+		}
+		else if ( m->crush < 0.0f || m->crush >= 1.0f )
+		{
+			wrong = "a crush outside [0, 1)";
+		}
+		else if ( m->pattern == lp_breakMasonry && ( m->courseHeight <= 0.0f || m->brickLength <= 0.0f ) )
+		{
+			wrong = "a masonry pattern without a course grid";
+		}
+		else if ( m->joint >= lp_jointCount || m->cellJoint >= lp_jointCount )
+		{
+			wrong = "an unknown joint";
+		}
+		if ( wrong != NULL )
+		{
+			fprintf( stderr, "lpCreateWorld: material %d (%s) has %s\n", i, m->name, wrong );
+			return false;
+		}
+	}
+	return true;
 }
 
 lpWorldDef lpDefaultWorldDef( void )
@@ -156,17 +224,17 @@ lpWorldDef lpDefaultWorldDef( void )
 
 float lpParticleVolume( const lpWorld* w, int material )
 {
-	return lpGetMaterial( material )->particleVolume * w->def.debrisScale;
+	return lpMaterial( w, material )->particleVolume * w->def.debrisScale;
 }
 
 float lpGhostVolume( const lpWorld* w, int material )
 {
-	return lpGetMaterial( material )->ghostVolume * w->def.debrisScale;
+	return lpMaterial( w, material )->ghostVolume * w->def.debrisScale;
 }
 
 float lpLightVolume( const lpWorld* w, int material )
 {
-	return lpGetMaterial( material )->lightVolume * w->def.debrisScale;
+	return lpMaterial( w, material )->lightVolume * w->def.debrisScale;
 }
 
 lpObjectDef lpDefaultObjectDef( void )
@@ -298,6 +366,11 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	lpWorld* w = lpAlloc( sizeof( lpWorld ) );
 	memset( w, 0, sizeof( lpWorld ) );
 	w->def = *def;
+	if ( lpTakeTables( w, def ) == false )
+	{
+		lpFree( w );
+		return NULL;
+	}
 	w->freePiece = -1;
 	w->freeBond = -1;
 	w->freeBody = -1;
@@ -401,9 +474,9 @@ void lpDestroyWorld( lpWorld* w )
 
 // Filters follow the body's tier (see world.h). Set at shape creation only; changing a filter later is as costly as
 // recreating the shape.
-static lpPhysShapeDef lpMakeShapeDef( int pieceIndex, uint8_t material, const lpBody* body )
+static lpPhysShapeDef lpMakeShapeDef( const lpWorld* w, int pieceIndex, uint8_t material, const lpBody* body )
 {
-	const lpMaterialDef* m = lpGetMaterial( material );
+	const lpMaterialDef* m = lpMaterial( w, material );
 	lpPhysShapeDef def = { 0 };
 	def.density = m->density;
 	def.friction = m->friction;
@@ -446,7 +519,7 @@ bool lpCreatePieceShape( lpWorld* w, int pieceIndex, int bodyIndex )
 	}
 	w->stats.hullMs += lpGetMilliseconds( t0 );
 	uint64_t t1 = lpGetTicks();
-	lpPhysShapeDef def = lpMakeShapeDef( pieceIndex, p->material, b );
+	lpPhysShapeDef def = lpMakeShapeDef( w, pieceIndex, p->material, b );
 	p->shapeId = lpPhys_CreateHullShape( w->phys, b->id, &def, p->hull );
 	w->stats.shapeMs += lpGetMilliseconds( t1 );
 	return true;
@@ -517,8 +590,8 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 {
 	lpPiece* pa = w->pieces.data + a;
 	lpPiece* pb = w->pieces.data + b;
-	float strengthA = lpGetMaterial( pa->material )->bondStrength;
-	float strengthB = lpGetMaterial( pb->material )->bondStrength;
+	float strengthA = lpMaterial( w, pa->material )->bondStrength;
+	float strengthB = lpMaterial( w, pb->material )->bondStrength;
 
 	if ( pa->body >= 0 )
 	{
@@ -565,7 +638,7 @@ void lpTryBond( lpWorld* w, int a, int b )
 		return;
 	}
 
-	uint8_t joint = lpWeakerJoint( pa->joint, pb->joint );
+	uint8_t joint = lpWeakerJoint( w, pa->joint, pb->joint );
 	lpContact contact;
 	if ( lpShape_Contact( pa->shape, pb->shape, tolerance, &contact ) && contact.area >= 1e-4f )
 	{
@@ -601,7 +674,7 @@ lpWorldTransform lpGetTransform( const lpWorld* w, const lpBody* b )
 // Emit a cosmetic particle at a body-frame point, coloured and shaped by the material
 void lpEmitParticle( lpWorld* w, lpWorldTransform xf, lpVec3 localPoint, lpVec3 velocity, float size, uint8_t material )
 {
-	const lpMaterialDef* m = lpGetMaterial( material );
+	const lpMaterialDef* m = lpMaterial( w, material );
 	uint32_t rgb = m->interiorColor;
 	lpPos p = lpTransformWorldPoint( xf, localPoint );
 	lpParticle particle;
@@ -845,7 +918,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		lpPiece* p = w->pieces.data + pieceIndex;
 		p->shape = shape;
 		p->material = part->material;
-		p->joint = lpResolveJoint( part->joint, part->material );
+		p->joint = lpResolveJoint( w, part->joint, part->material );
 		p->color = part->color;
 		p->seed = (uint32_t)lpMix64( w->def.seed ^ ( (uint64_t)pieceIndex << 20 ) ^ w->pieceSerial++ );
 		p->userId = def->userId;
@@ -866,7 +939,7 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 		}
 
 		lpQuat q = part->pointCount == 0 ? part->transform.q : lpQuat_identity;
-		int pattern = lpGetMaterial( part->material )->pattern;
+		int pattern = lpMaterial( w, part->material )->pattern;
 		bool glass = pattern == lp_breakRadial;
 		if ( lpLengthSquared( part->grainAxis ) > 0.0f )
 		{
@@ -1381,7 +1454,7 @@ int lpWorld_BuildPieceMesh( const lpWorld* w, int piece, lpVertex* vertices, int
 	{
 		return 0;
 	}
-	lpFacetParams params = { p->color, p->axis };
+	lpFacetParams params = { p->color, p->axis, w->materials };
 	return lpBuildFacetMesh( p->shape, &params, vertices, capacity );
 }
 

@@ -120,8 +120,8 @@ static void Pieces( FILE* f, const lpWorld* world )
 		lpWorld_GetBodyTransform( world, p.body, &xf );
 		fprintf( f, "%s\n    {\"index\": %d, \"body\": %d, \"generation\": %u, \"userId\": %u, \"part\": %d, \"tag\": %u, "
 					"\"material\": \"%s\", \"joint\": \"%s\", \"supplied\": %u",
-				 first ? "" : ",", i, p.body, p.generation, p.userId, p.part, (unsigned)p.tag, lpGetMaterial( p.material )->name,
-				 lpGetJoint( p.joint )->name, (unsigned)p.supplied );
+				 first ? "" : ",", i, p.body, p.generation, p.userId, p.part, (unsigned)p.tag, lpWorld_GetMaterial( world, p.material )->name,
+				 lpWorld_GetJoint( world, p.joint )->name, (unsigned)p.supplied );
 		Field( f, "volume", p.volume );
 		Vec( f, "centroid", lpTransformPoint( xf, p.centroid ) );
 		fprintf( f, "}" );
@@ -142,7 +142,7 @@ static void Bonds( FILE* f, const lpWorld* world )
 			continue;
 		}
 		fprintf( f, "%s\n    {\"index\": %d, \"a\": %d, \"b\": %d, \"joint\": \"%s\"", first ? "" : ",", i, d.pieceA, d.pieceB,
-				 lpGetJoint( d.joint )->name );
+				 lpWorld_GetJoint( world, d.joint )->name );
 		Field( f, "area", d.area );
 		Field( f, "health", d.health );
 		Field( f, "strength", d.strength );

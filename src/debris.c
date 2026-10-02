@@ -487,7 +487,7 @@ static float lpLooseMass( const lpWorld* w, const lpBody* b )
 	for ( int i = 0; i < b->pieces.count; ++i )
 	{
 		const lpPiece* p = w->pieces.data + b->pieces.data[i];
-		mass += p->shape->volume * lpGetMaterial( p->material )->density;
+		mass += p->shape->volume * lpMaterial( w, p->material )->density;
 	}
 	return mass > 0.01f ? mass : 0.01f;
 }

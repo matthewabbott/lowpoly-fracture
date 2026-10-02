@@ -446,7 +446,8 @@ The catalogue is the contract the integer core must meet, so it comes before the
 1. **The engine surface.** The core holds mechanisms and data-driven definitions; the kits in `scenes/` (the car, the
    crane, the hexapod) are example content, kept because the tests and the bench need realistic loads and because
    building them finds the engine's gaps. Where game policy leaked into the core:
-   - `lpSetJoint`, as `lpSetMaterial` does for materials (the joint table is fixed today);
+   - materials and joints per world (the joint table was fixed; `lpSetMaterial`, a global setter, had been pruned as
+     dead API): `lpWorldDef.materials` and `.joints`, each material's default joint in its def;
    - the gait as one replaceable walking policy: `rig.c` keeps the mechanism (the model, IK, capability, balance
      checks, foothold casts, per-foot targets a game can drive itself), `gait.c` is the statically stable many-legged
      walker, its tuning in a def instead of constants;

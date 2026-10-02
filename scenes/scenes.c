@@ -178,7 +178,7 @@ void lpAddGround( lpWorld* world, float halfSize )
 }
 
 // Wall segment along local x in [0, length], split into panels and rows. Panels in the bottom row are anchored.
-static void lpWallPanels( lpVec3 origin, float length, float y0, float y1, float thickness, int material, uint32_t color,
+static void lpWallPanels( const lpWorld* world, lpVec3 origin, float length, float y0, float y1, float thickness, int material, uint32_t color,
 						  float panelWidth, bool anchorBottom )
 {
 	int columns = (int)ceilf( length / panelWidth );
@@ -186,7 +186,7 @@ static void lpWallPanels( lpVec3 origin, float length, float y0, float y1, float
 	float height = y1 - y0;
 	int rows = (int)ceilf( height / 1.6f );
 	rows = rows < 1 ? 1 : rows;
-	if ( lpGetMaterial( material )->pattern == lp_breakMasonry )
+	if ( lpWorld_GetMaterial( world, material )->pattern == lp_breakMasonry )
 	{
 		columns = rows = 1; // one solid wall: its course grid decides where it breaks
 	}
@@ -207,7 +207,7 @@ static void lpAddWall( lpWorld* world, lpVec3 base, float yaw, float length, flo
 				uint32_t color, float panelWidth )
 {
 	lpBegin();
-	lpWallPanels( (lpVec3){ -0.5f * length, 0.0f, 0.0f }, length, 0.0f, height, thickness, material, color, panelWidth, true );
+	lpWallPanels( world, (lpVec3){ -0.5f * length, 0.0f, 0.0f }, length, 0.0f, height, thickness, material, color, panelWidth, true );
 	lpCommit( world, base, yaw, true );
 }
 
@@ -1173,7 +1173,7 @@ int lpAddCrane( lpWorld* world, lpVec3 base, float loadMass )
 		beam->grainAxis = (lpVec3){ 1.0f, 0.0f, 0.0f };
 	}
 	int jib = lpCommitDef( world, lpAdd( base, (lpVec3){ 5.0f, 9.4f, 0.0f } ), lpQuat_identity, lpDynamicDef() );
-	float side = lpCbrt( loadMass / lpGetMaterial( lp_metal )->density );
+	float side = lpCbrt( loadMass / lpWorld_GetMaterial( world, lp_metal )->density );
 	lpBegin();
 	lpBox( lpVec3_zero, (lpVec3){ 0.5f * side, 0.5f * side, 0.5f * side }, lpQuat_identity, lp_metal, 0x3A3D42u, false );
 	int load = lpCommitDef( world, lpAdd( base, (lpVec3){ 9.8f, 9.2f - 5.0f - 0.5f * side, 0.0f } ), lpQuat_identity, lpDynamicDef() );

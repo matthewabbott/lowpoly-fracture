@@ -365,8 +365,10 @@ tiers instead of popping them.
 - `lpDetonatorDef` on an object: explodes when hit at `triggerSpeed` or caught in a blast (flasks, volatile cargo,
   chain reactions).
 - `lpWorld_Pull`: spring pull on a piece with max acceleration and max liftable mass (grab tool, winch, crane hook).
-- `lpMaterialDef` table (`lpSetMaterial`): density, strengths, fragment size, pattern, grain stretch, interior colour,
-  tier thresholds, plate size, cells per fracture, particle kind, merge slack.
+- `lpMaterialDef` and `lpJointDef` tables, one copy per world (`lpWorldDef.materials` and `.joints`; NULL for the
+  built-ins, `lpDefaultMaterials` and `lpDefaultJoints`; read back with `lpWorld_GetMaterial` and `lpWorld_GetJoint`):
+  density, strengths, fragment size, pattern, grain stretch, interior colour, tier thresholds, plate size, cells per
+  fracture, particle kind, merge slack, and each material's default joints.
 - `lpWorldDef`: fragment scale (main performance knob), debris scale (tier thresholds), per-tier caps, fracture
   jobs per step, stress scale and budgets, worker count, debug log (`LPF_DEBUG=1` in the sandbox).
 - `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).

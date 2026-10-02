@@ -305,7 +305,7 @@ static void lpCastWheel( lpWorld* w, lpWheel* wh, int chassis, lpWorldTransform 
 	wh->contactPoint = cast.point;
 	// A cast that starts inside the ground reports no normal: push straight up the suspension
 	wh->contactNormal = lpLengthSquared( cast.normal ) > 0.5f ? cast.normal : lpNeg( down );
-	wh->friction = cast.material >= 0 && cast.material < lp_materialCount ? lpGetMaterial( cast.material )->friction : 0.6f;
+	wh->friction = cast.material >= 0 && cast.material < lp_materialCount ? lpMaterial( w, cast.material )->friction : 0.6f;
 	wh->groundPiece = cast.piece;
 	wh->groundGeneration = cast.piece >= 0 ? w->pieces.data[cast.piece].generation : 0;
 }

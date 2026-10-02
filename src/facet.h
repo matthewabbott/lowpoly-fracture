@@ -13,6 +13,7 @@ typedef struct lpFacetParams
 {
 	uint32_t exteriorColor; // 0xRRGGBB
 	lpVec3 axis;			// grain axis in the body frame
+	const lpMaterialDef* materials; // the world's, for the cut faces' colours
 } lpFacetParams;
 
 // Returns the vertex count (3 per triangle), or -1 if capacity is too small.

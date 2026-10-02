@@ -406,7 +406,7 @@ static int TestFragmentColours( void )
 		}
 		fragments += p->depth > 0 ? 1 : 0;
 		int count = lpWorld_BuildPieceMesh( s.world, i, vertices, lpWorld_GetMaxPieceVertices() );
-		uint32_t cut = lpGetMaterial( p->material )->interiorColor;
+		uint32_t cut = lpWorld_GetMaterial( s.world, p->material )->interiorColor;
 		for ( int v = 0; v < count; v += 3 )
 		{
 			faces += 1;
@@ -455,6 +455,72 @@ static int TestBuildingGoesQuiet( void )
 	ENSURE( lastBreak < 900 && lastUnsettled < 1200 && lastMoving < 1200 ); // quiet within 20 s of the blasts
 	ENSURE( lpWorld_Validate( s.world ) );
 	DestroySim( &s );
+	return 0;
+}
+
+// Each world holds its own materials and joints: where glass is unbreakable a rifle round leaves the pane whole, while it
+// shatters in a default world beside it; a world's tables are its own copies (and every joint's strength as given);
+// auto joints are each material's default; a table out of range is refused
+static int GlassPieces( const lpWorld* w )
+{
+	int count = 0;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		count += w->pieces.data[i].body >= 0 && w->pieces.data[i].material == lp_glass ? 1 : 0;
+	}
+	return count;
+}
+
+static int TestWorldTables( void )
+{
+	lpMaterialDef materials[lp_materialCount];
+	lpJointDef joints[lp_jointCount];
+	memcpy( materials, lpDefaultMaterials(), sizeof( materials ) );
+	memcpy( joints, lpDefaultJoints(), sizeof( joints ) );
+	materials[lp_glass].breakable = false;
+	joints[lp_jointMortar].tensileStrength = 1.0f;
+	lpWorldDef tough = lpDefaultWorldDef();
+	tough.materials = materials;
+	tough.joints = joints;
+	tough.workerCount = 1;
+	Sim a = CreateSimDef( tough, lp_sceneWall );
+	Sim b = CreateSimWorkers( lp_sceneWall, 1 );
+	materials[lp_glass].breakable = true; // the world took a copy
+	joints[lp_jointMortar].tensileStrength = 2.0f;
+	ENSURE( lpWorld_GetMaterial( a.world, lp_glass )->breakable == false && lpWorld_GetMaterial( b.world, lp_glass )->breakable );
+	ENSURE( lpWorld_GetJoint( a.world, lp_jointMortar )->tensileStrength == 1.0f );
+	ENSURE( lpWorld_GetJoint( b.world, lp_jointMortar )->tensileStrength == lpDefaultJoints()[lp_jointMortar].tensileStrength );
+
+	lpImpactDef round = { 0 };
+	round.point = (lpPos){ -3.0f, 1.6f, 1.0f }; // the pane
+	round.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
+	round.radius = 0.35f;
+	round.energy = 4000.0f;
+	round.impulse = 20.0f;
+	lpWorld_AddImpact( a.world, &round );
+	lpWorld_AddImpact( b.world, &round );
+	Run( &a, 10 );
+	Run( &b, 10 );
+	printf( "  a rifle round into the pane: %d glass pieces where glass is unbreakable, %d by default\n", GlassPieces( a.world ),
+			GlassPieces( b.world ) );
+	ENSURE( GlassPieces( a.world ) == 1 && GlassPieces( b.world ) > 10 );
+
+	// The default joints a part asking for lp_jointAuto gets, by material
+	const uint8_t expected[lp_materialCount] = {
+		[lp_wood] = lp_jointNails,	   [lp_stone] = lp_jointMortar,	 [lp_brick] = lp_jointMortar,  [lp_plaster] = lp_jointMortar,
+		[lp_concrete] = lp_jointMortar, [lp_glass] = lp_jointSolid,	 [lp_metal] = lp_jointSolid,	 [lp_ground] = lp_jointSolid,
+		[lp_foliage] = lp_jointSolid,	[lp_sheetMetal] = lp_jointBolts, [lp_rubber] = lp_jointSolid, [lp_armor] = lp_jointSolid,
+	};
+	for ( int m = 0; m < lp_materialCount; ++m )
+	{
+		ENSURE( lpWorld_GetMaterial( b.world, m )->joint == expected[m] );
+		ENSURE( lpWorld_GetMaterial( b.world, m )->cellJoint == lp_jointMortar );
+	}
+	DestroySim( &a );
+	DestroySim( &b );
+
+	materials[lp_stone].density = -1.0f;
+	ENSURE( lpCreateWorld( &tough ) == NULL );
 	return 0;
 }
 
@@ -731,6 +797,7 @@ int WorldTest( void )
 	RUN_TEST( TestFragmentColours, OUTCOME );
 	RUN_TEST( TestBuildingGoesQuiet, OUTCOME );
 	RUN_TEST( TestContraptionOnTime, OUTCOME );
+	RUN_TEST( TestWorldTables, MECHANISM );
 	RUN_TEST( TestScriptRoundTrip, MECHANISM );
 	RUN_TEST( TestScriptReplay, DETERMINISM );
 	RUN_TEST( TestInspection, MECHANISM );

@@ -2,8 +2,9 @@
 
 A catalog of what a material is, for the engine now and for the games later. Values are starting points to be
 tuned by feel: stone should feel like stone, hardwood like hardwood, dry wood like kindling, plaster and foam like
-nothing much. The engine table lives in `src/world.c` (`lp_materials`); the struct is `lpMaterialDef` in
-`include/lpf/lpf.h`.
+nothing much. The built-in table lives in `src/world.c` (`lp_materials`, returned by `lpDefaultMaterials`); the struct
+is `lpMaterialDef` in `include/lpf/lpf.h`. Every world holds its own copy: a game passes its table in
+`lpWorldDef.materials` (and its joints in `.joints`).
 
 ## Properties the engine uses today
 

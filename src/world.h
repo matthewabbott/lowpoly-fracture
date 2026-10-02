@@ -540,6 +540,8 @@ typedef struct lpFractureJob
 	float particleVolume; // tier thresholds of the piece's material, scaled
 	float ghostVolume;
 	float lightVolume;
+	float mergeSlack; // and its merge slack and chip splits: the job runs without the world
+	int chipSplits;
 
 	int cellCount;
 	lpShape* cells[LP_MAX_SITES];
@@ -563,8 +565,10 @@ typedef struct lpDeferredJob
 
 struct lpWorld
 {
-	lpWorldDef def;
+	lpWorldDef def; // def.materials and def.joints point at the world's own copies below
 	lpPhys* phys;
+	lpMaterialDef materials[lp_materialCount];
+	lpJointDef joints[lp_jointCount];
 
 	LP_ARRAY( lpPiece ) pieces;
 	LP_ARRAY( lpBond ) bonds;
@@ -648,6 +652,18 @@ struct lpWorld
 	int fpRepairs; // control words put back on the calling thread (lpFpGuard), since the world was made
 	lpStats stats;
 };
+
+static inline const lpMaterialDef* lpMaterial( const lpWorld* w, int material )
+{
+	LP_ASSERT( 0 <= material && material < lp_materialCount );
+	return w->materials + material;
+}
+
+static inline const lpJointDef* lpJoint( const lpWorld* w, int joint )
+{
+	LP_ASSERT( 0 <= joint && joint < lp_jointCount );
+	return w->joints + joint;
+}
 
 // ---- shared internals (world.c, impact.c, split.c, step.c) ----
 
