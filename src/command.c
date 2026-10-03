@@ -139,7 +139,8 @@ static bool lpApplyCommand( lpWorld* w, lpCommand* c )
 			lpImpactDef def = c->impact.def;
 			if ( c->impact.range > 0.0f )
 			{
-				lpRayHit hit = lpWorld_CastRay( w, c->impact.origin, lpMulSV( c->impact.range, def.direction ) );
+				float range = lpMinFloat( c->impact.range, w->def.maxRayRange ); // how far one step's ray reaches
+				lpRayHit hit = lpWorld_CastRay( w, c->impact.origin, lpMulSV( range, def.direction ) );
 				if ( hit.hit == false || ( c->impact.piecesOnly && hit.piece < 0 ) )
 				{
 					return true; // it missed

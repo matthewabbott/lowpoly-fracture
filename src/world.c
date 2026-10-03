@@ -221,6 +221,8 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxStressIterations = 256;
 	def.stressHopsPerTick = 16;
 	def.supplyHopsPerTick = 16;
+	def.maxImpactRadius = 4.0f; // past every tool and blast in the scenes (a cannon's 2.3 m)
+	def.maxRayRange = 250.0f;
 	def.maxSettleIterations = 4000;
 	def.stressLargeNodes = 512;
 	def.stressGlue = 0.3f;
@@ -1048,7 +1050,9 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 void lpWorld_AddImpact( lpWorld* w, const lpImpactDef* impact )
 {
 	lpGuardFp( w ); // computes in float between steps, on the caller's thread
-	lpArray_Push( w->impacts, *impact );
+	lpImpactDef capped = *impact;
+	capped.radius = lpMinFloat( capped.radius, w->def.maxImpactRadius ); // how far one step's impact reaches
+	lpArray_Push( w->impacts, capped );
 }
 
 // ---- piece queries ----

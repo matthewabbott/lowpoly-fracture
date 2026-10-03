@@ -67,6 +67,8 @@ static const lpSessionField lp_defFields[] = {
 	LP_DEF_FIELD( maxStressIterations, lp_fieldInt ),
 	LP_DEF_FIELD( stressHopsPerTick, lp_fieldInt ),
 	LP_DEF_FIELD( supplyHopsPerTick, lp_fieldInt ),
+	LP_DEF_FIELD( maxImpactRadius, lp_fieldFloat ),
+	LP_DEF_FIELD( maxRayRange, lp_fieldFloat ),
 	LP_DEF_FIELD( maxSettleIterations, lp_fieldInt ),
 	LP_DEF_FIELD( stressLargeNodes, lp_fieldInt ),
 	LP_DEF_FIELD( stressGlue, lp_fieldFloat ),
@@ -80,7 +82,7 @@ static const lpSessionField lp_defFields[] = {
 
 // A field added to one of these defs must go into its line or digest below, or be left out with a reason; these sizes
 // (on 64-bit targets) fail to compile until it is
-_Static_assert( sizeof( void* ) != 8 || sizeof( lpWorldDef ) == 224, "lpWorldDef changed: describe the new field in lp_defFields" );
+_Static_assert( sizeof( void* ) != 8 || sizeof( lpWorldDef ) == 232, "lpWorldDef changed: describe the new field in lp_defFields" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( lpMaterialDef ) == 112, "lpMaterialDef changed: digest the new field" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( lpJointDef ) == 24, "lpJointDef changed: digest the new field" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( lpObjectDef ) == 104, "lpObjectDef changed: digest the new field" );

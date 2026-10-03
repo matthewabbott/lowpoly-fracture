@@ -1066,6 +1066,48 @@ static int TestCausalUnits( void )
 	return 0;
 }
 
+// How far one step's queries reach: an impact asked for with a 10 m radius acts within maxImpactRadius, and a command's
+// ray finds a wall 200 m away but not one 300 m away (past maxRayRange), whatever range it asked for
+static int TestQueryBounds( void )
+{
+	Sim s = CreateSim( -1 );
+	lpImpactDef wide = { 0 };
+	wide.point = (lpPos){ 0.0f, 0.5f, 0.0f };
+	wide.direction = (lpVec3){ 0.0f, -1.0f, 0.0f };
+	wide.radius = 10.0f;
+	wide.energy = 1.0f;
+	lpWorld_AddImpact( s.world, &wide );
+	ENSURE( s.world->impacts.data[s.world->impacts.count - 1].radius == s.world->def.maxImpactRadius );
+	DestroySim( &s );
+
+	const float distances[2] = { 200.0f, 300.0f };
+	for ( int k = 0; k < 2; ++k )
+	{
+		Sim t = CreateSim( -1 );
+		lpPartDef part = lpDefaultPartDef();
+		part.halfExtents = (lpVec3){ 0.5f, 2.0f, 2.0f };
+		part.material = lp_stone;
+		part.anchored = true;
+		lpObjectDef wall = lpDefaultObjectDef();
+		wall.isStatic = true;
+		wall.transform.p = (lpPos){ distances[k], 2.0f, 0.0f };
+		wall.parts = &part;
+		wall.partCount = 1;
+		lpCreateObject( t.world, &wall );
+		lpCommand c = RoundCommand( (int64_t)lpWorld_GetTick( t.world ), 0, 0, (lpPos){ 0.0f, 2.0f, 0.0f } );
+		c.impact.origin = (lpPos){ 0.0f, 2.0f, 0.0f };
+		c.impact.def.direction = (lpVec3){ 1.0f, 0.0f, 0.0f };
+		c.impact.range = 400.0f;
+		ENSURE( lpWorld_Submit( t.world, &c ) );
+		Run( &t, 1 );
+		int impacts = lpWorld_GetStats( t.world ).impactsThisStep;
+		printf( "  a ray of 400 m at a wall %.0f m away: %s\n", (double)distances[k], impacts > 0 ? "hit" : "missed" );
+		ENSURE( impacts == ( k == 0 ? 1 : 0 ) );
+		DestroySim( &t );
+	}
+	return 0;
+}
+
 static int TestWorldTables( void )
 {
 	lpMaterialDef materials[lp_materialCount];
@@ -1416,6 +1458,7 @@ int WorldTest( void )
 	RUN_TEST( TestBuildingGoesQuiet, OUTCOME );
 	RUN_TEST( TestContraptionOnTime, OUTCOME );
 	RUN_TEST( TestWorldTables, MECHANISM );
+	RUN_TEST( TestQueryBounds, MECHANISM );
 	RUN_TEST( TestScriptRoundTrip, MECHANISM );
 	RUN_TEST( TestScriptReplay, DETERMINISM );
 	RUN_TEST( TestInspection, MECHANISM );

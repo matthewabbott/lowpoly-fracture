@@ -261,6 +261,19 @@ tiers instead of popping them.
 - It is judged once per check: a moment's load strains and breaks joints but does not creak on. What breaks splits as
   usual, and split-off bodies keep `solveStress`.
 
+## Speeds of propagation and cones (milestone 10)
+
+What one input can change in a step is bounded, so repair, rollback and zones can be bounded too:
+- Between bodies, cause travels with matter: contacts, links and the ground under wheels and feet (the causal units,
+  `units.c`).
+- Within a structure, stress reaches `stressHopsPerTick` bonds further a step (the region solve, above).
+- Along carriers, supply reaches `supplyHopsPerTick` carriers further a step (the supply wave, `supply.c`).
+- Queries reach a bounded distance: an impact or a blast at most `maxImpactRadius` from its point, a command's ray
+  `maxRayRange`. A command's cone is its ray's path, then the impact's radius, then the speeds above.
+- Not bounded yet (they couple units unseen, measured by E3's cones): the world-wide budgets (fracture jobs, the
+  stress share, debris ranks, freezes, free lists) and casts that only read what they hit. Milestones 12, 16 and 18
+  take them on.
+
 ## Links (`link.c`)
 
 - A link joins two objects (or an object and a fixed point) with a Box3D weld, revolute, spherical or distance joint.

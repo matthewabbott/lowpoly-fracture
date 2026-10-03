@@ -421,7 +421,7 @@ static void lpDetonateNow( lpWorld* w, int pieceIndex )
 	{
 		blast.point = lpTransformWorldPoint( xf, lpMulSV( 1.0f / volume, center ) );
 	}
-	blast.radius = d->def.radius;
+	blast.radius = lpMinFloat( d->def.radius, w->def.maxImpactRadius );
 	blast.energy = d->def.energy;
 	blast.impulse = d->def.speed;
 	blast.explosion = true;

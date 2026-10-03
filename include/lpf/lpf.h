@@ -193,6 +193,11 @@ typedef struct lpWorldDef
 	// The speed of propagation of supply: a cut line's drop (or a joined one's rise) reaches at most this many carriers
 	// further each step, and a pool's leak opens when it reaches the pool. 0: everywhere at once.
 	int supplyHopsPerTick;
+	// How far one step's queries reach: an impact or a blast acts within at most maxImpactRadius (m) of its point, and a
+	// command's ray finds what it hits within maxRayRange (m). With the speeds of propagation, they bound what one input
+	// can change in a step (its cone: the ray's path, then the impact's radius).
+	float maxImpactRadius;
+	float maxRayRange;
 	int maxSettleIterations;	// per structure in lpWorld_SettleStructures, which has no per-step budget
 	// Structures with more pieces than this solve changes on a reduced system: their lightly loaded parts, found by
 	// their last exact solve, move as rigid clusters, and only the correction to that solution is solved for
