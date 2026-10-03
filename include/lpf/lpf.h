@@ -459,6 +459,7 @@ typedef struct lpVehicleState
 	bool alive;
 	int body;		// the body holding most of its attached wheels (-1: none left)
 	uint32_t bodyGeneration;
+	int controller;	// the peer whose commands drive it (-1: the scene's drivers)
 	int wheelCount; // as created
 	int attached;	// wheels still on
 	int grounded;
@@ -629,6 +630,7 @@ typedef struct lpRigState
 	bool alive;
 	int body;		// the torso (-1: no limb left on anything)
 	uint32_t bodyGeneration;
+	int controller;	// the peer whose commands drive it (-1: the scene's drivers)
 	int limbCount;	// as created
 	int attached;	// limbs whose first link is still on the torso
 	int able;		// of those, the ones that can stand and step
@@ -661,6 +663,8 @@ typedef struct lpLimbState
 	bool reaching;	// out of the gait, reaching for its target
 	int touching;	// reaching: the piece its foot touches (-1: none), for a grab
 	uint32_t footBodyGeneration, touchingGeneration;
+	int grip;				 // the link its claw holds (-1: none)
+	uint32_t gripGeneration;
 } lpLimbState;
 
 lpLimbState lpWorld_GetLimbState( const lpWorld* world, int rig, int limb );
@@ -698,6 +702,178 @@ void lpWorld_SetGravityScale( lpWorld* world, int body, float scale );
 // Structures cannot be pulled; frozen rubble wakes up. The pull accelerates at most maxAccel and treats bodies
 // heavier than maxMass as maxMass (so a crane can lift a beam but not a house).
 void lpWorld_Pull( lpWorld* world, int piece, lpVec3 localPoint, lpPos target, float maxAccel, float maxMass );
+
+// ---- commands ----
+//
+// Everything from outside the simulation (a player's tools and controls, a claw, a game's spawns) enters as a command
+// stamped with the tick it applies at, the peer that sent it and that peer's own sequence number. A tick's commands are
+// applied as its step begins, in (peer, sequence) order, whatever order they were submitted in, so every machine of a
+// session that submits the same commands computes the same world. Logic that every machine runs from world state alone
+// (a scene's drivers) submits as LP_PEER_SCENE, applied after the players; anything else that does not come from world
+// state must be a command (determinism rule 10). The immediate calls above stay for building a scene and for tests.
+//
+// A command names a slot and its generation (LP_ANY_GENERATION: whatever holds the slot when it is applied). One whose
+// reference went stale is dropped, and so is a scene's control of a vehicle or rig a player drives: a player's control,
+// limb or claw command takes it over until that player releases it.
+
+#define LP_PEER_SCENE 255
+#define LP_ANY_GENERATION 0xFFFFFFFFu
+
+typedef enum lpCommandKind
+{
+	lp_commandImpact,		  // an impact where a ray from origin along def.direction first hits (range > 0), or at def.point
+	lp_commandPull,			  // pull a piece toward a target this step (lpWorld_Pull)
+	lp_commandSpawn,		  // an object from a template (lpWorld_AddTemplate), placed and moving
+	lp_commandVehicleControl, // (lpWorld_SetVehicleControl)
+	lp_commandRigControl,	  // (lpWorld_SetRigControl)
+	lp_commandLimbTarget,	  // (lpWorld_SetLimbTarget)
+	lp_commandFootTarget,	  // (lpWorld_SetFootTarget)
+	lp_commandRigPose,		  // (lpWorld_SetRigPose)
+	lp_commandRelease,		  // the peer lets go of a vehicle or rig: the scene's drivers take it back
+	lp_commandClaw,			  // a reaching limb grabs what it touches (a weld at its foot), lets go of it, or toggles
+	lp_commandLinkTarget,	  // (lpWorld_SetLinkTarget: link.value is the angle)
+	lp_commandLinkRotation,	  // (lpWorld_SetLinkTargetRotation)
+	lp_commandRopeLength,	  // (lpWorld_SetRopeLength: link.value is the length)
+	lp_commandCreateLink,	  // (lpCreateLink)
+	lp_commandDestroyLink,	  // (lpDestroyLink)
+	lp_commandGravityScale,	  // (lpWorld_SetGravityScale)
+	lp_commandPromote,		  // (lpWorld_PromoteBody)
+	lp_commandKindCount
+} lpCommandKind;
+
+typedef enum lpClawMode
+{
+	lp_clawGrab,
+	lp_clawRelease,
+	lp_clawToggle,
+} lpClawMode;
+
+typedef struct lpCommandImpact
+{
+	lpImpactDef def;
+	lpPos origin;
+	float range; // > 0: def.point is where the ray from origin, range along def.direction, first hits (a miss does nothing)
+	bool piecesOnly; // a ray that first hits a rope or a wheel does nothing
+} lpCommandImpact;
+
+typedef struct lpCommandPull
+{
+	int piece;
+	uint32_t generation;
+	lpVec3 localPoint;
+	lpPos target;
+	float maxAccel, maxMass;
+} lpCommandPull;
+
+typedef struct lpCommandSpawn
+{
+	int templateIndex;
+	lpWorldTransform transform;
+	lpVec3 linearVelocity, angularVelocity;
+} lpCommandSpawn;
+
+typedef struct lpCommandVehicleControl
+{
+	int vehicle;
+	lpVehicleControl control;
+} lpCommandVehicleControl;
+
+typedef struct lpCommandRigControl
+{
+	int rig;
+	lpRigControl control;
+} lpCommandRigControl;
+
+typedef struct lpCommandLimbTarget
+{
+	int rig, limb;
+	bool active;
+	lpPos point;
+} lpCommandLimbTarget;
+
+typedef struct lpCommandFootTarget
+{
+	int rig, limb;
+	lpFootTarget target;
+} lpCommandFootTarget;
+
+typedef struct lpCommandRigPose
+{
+	int rig;
+	lpWorldTransform pose;
+	lpVec3 linear, angular;
+} lpCommandRigPose;
+
+typedef struct lpCommandRelease
+{
+	int vehicle, rig; // one of them, the other -1
+} lpCommandRelease;
+
+typedef struct lpCommandClaw
+{
+	int rig, limb;
+	uint8_t mode; // lpClawMode
+	float maxForce, maxTorque, strength; // of the grip it makes
+} lpCommandClaw;
+
+typedef struct lpCommandLink
+{
+	int link;
+	uint32_t generation;
+	float value;
+	lpQuat rotation;
+} lpCommandLink;
+
+typedef struct lpCommandCreateLink
+{
+	lpLinkDef def;
+	uint32_t generationA, generationB; // of def.bodyA and def.bodyB
+} lpCommandCreateLink;
+
+typedef struct lpCommandBody
+{
+	int body;
+	uint32_t generation;
+	float scale;
+} lpCommandBody;
+
+typedef struct lpCommand
+{
+	int64_t tick; // the step it applies at: lpWorld_GetTick or later
+	uint32_t seq; // the peer's own count: (peer, seq) orders a tick's commands, and is unique in it. The world numbers
+				  // LP_PEER_SCENE's commands itself, in the order they are submitted.
+	uint8_t peer; // the player who sent it (0 to 254), or LP_PEER_SCENE
+	uint8_t kind; // lpCommandKind
+	// Filled when applied (lpWorld_GetAppliedCommands)
+	bool dropped; // a stale reference, or a scene's control of what a player drives
+	int result;	  // the body a spawn made, the link a claw or a link command made (-1: none)
+	union
+	{
+		lpCommandImpact impact;
+		lpCommandPull pull;
+		lpCommandSpawn spawn;
+		lpCommandVehicleControl vehicleControl;
+		lpCommandRigControl rigControl;
+		lpCommandLimbTarget limbTarget;
+		lpCommandFootTarget footTarget;
+		lpCommandRigPose rigPose;
+		lpCommandRelease release;
+		lpCommandClaw claw;
+		lpCommandLink link;
+		lpCommandCreateLink createLink;
+		lpCommandBody body;
+	};
+} lpCommand;
+
+// Queues a command. False, and nothing queued, if its tick has passed or that (tick, peer, seq) is queued already.
+bool lpWorld_Submit( lpWorld* world, const lpCommand* command );
+
+// The commands the last step applied, in the order it applied them, dropped ones included: for recordings
+const lpCommand* lpWorld_GetAppliedCommands( const lpWorld* world, int* count );
+
+// An object to spawn by command (lp_commandSpawn), copied whole; returns its index. Its transform and velocities are
+// the command's. Register templates in the same order on every machine of a session.
+int lpWorld_AddTemplate( lpWorld* world, const lpObjectDef* def );
 lpVec3 lpWorld_ToBodyFrame( const lpWorld* world, int piece, lpPos worldPoint );
 lpPos lpWorld_ToWorldFrame( const lpWorld* world, int piece, lpVec3 localPoint );
 
@@ -791,6 +967,8 @@ typedef struct lpStats
 	// Floating-point control words found changed (flush-to-zero, rounding) and put back since the world was created:
 	// a library or driver on one of our threads changed it. Nonzero is worth a warning (determinism rule 15).
 	int fpRepairs;
+	int commandsApplied; // this step
+	int commandsDropped; // this step: stale references, or a scene's control of what a player drives
 	// the physics engine's, after the step
 	int shapes;
 	int contacts;

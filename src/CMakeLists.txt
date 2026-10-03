@@ -1,4 +1,5 @@
 add_library(lpf_core OBJECT
+	command.c
 	core.c
 	core.h
 	debris.c

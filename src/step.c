@@ -195,6 +195,11 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->particles.count = 0;
 	w->jobsThisStep = 0;
 	w->freezesThisStep = 0;
+	w->stats.commandsApplied = 0;
+	w->stats.commandsDropped = 0;
+
+	// This tick's commands, in (peer, seq) order, before anything else the step does
+	lpApplyCommands( w );
 
 	uint64_t ticks = lpGetTicks();
 

@@ -475,6 +475,9 @@ void lpDestroyWorld( lpWorld* w )
 	lpTaskPool_Destroy( w->tasks );
 	lpArray_Free( w->pulls );
 	lpArray_Free( w->deferred );
+	lpArray_Free( w->commands );
+	lpArray_Free( w->applied );
+	lpFreeTemplates( w );
 	lpArray_Free( w->scratchLoose );
 	lpArray_Free( w->scratchHits );
 	lpArray_Free( w->scratchComponents );

@@ -519,6 +519,177 @@ static int TestPullSkipsReusedSlot( void )
 	return 0;
 }
 
+static lpCommand RoundCommand( int64_t tick, uint8_t peer, uint32_t seq, lpPos point )
+{
+	lpCommand c = { 0 };
+	c.tick = tick;
+	c.peer = peer;
+	c.seq = seq;
+	c.kind = lp_commandImpact;
+	c.impact.def.point = point;
+	c.impact.def.direction = (lpVec3){ 0.0f, 0.0f, -1.0f };
+	c.impact.def.radius = 0.35f;
+	c.impact.def.energy = 4000.0f;
+	c.impact.def.impulse = 20.0f;
+	return c;
+}
+
+// A tick's commands apply in (peer, seq) order however they were submitted, so two worlds given them in opposite orders
+// agree; a late command, or one whose (tick, peer, seq) is queued already, is refused
+static int TestCommandOrder( void )
+{
+	uint64_t hashes[2] = { 0 };
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSimWorkers( lp_sceneWall, 1 );
+		lpCommand rounds[3] = {
+			RoundCommand( 3, 0, 0, (lpPos){ -3.0f, 1.6f, 1.0f } ), // three rounds into the pane in one tick
+			RoundCommand( 3, 1, 0, (lpPos){ -2.7f, 1.4f, 1.0f } ),
+			RoundCommand( 3, 0, 1, (lpPos){ -3.3f, 1.8f, 1.0f } ),
+		};
+		for ( int k = 0; k < 3; ++k )
+		{
+			ENSURE( lpWorld_Submit( s.world, rounds + ( run == 0 ? k : 2 - k ) ) );
+		}
+		ENSURE( lpWorld_Submit( s.world, rounds + 1 ) == false );
+		Run( &s, 4 );
+		int count;
+		const lpCommand* applied = lpWorld_GetAppliedCommands( s.world, &count );
+		ENSURE( count == 3 );
+		ENSURE( applied[0].peer == 0 && applied[0].seq == 0 && applied[1].peer == 0 && applied[1].seq == 1 && applied[2].peer == 1 );
+		ENSURE( lpWorld_GetStats( s.world ).commandsApplied == 3 );
+		lpCommand late = RoundCommand( 2, 0, 9, (lpPos){ -3.0f, 1.6f, 1.0f } );
+		ENSURE( lpWorld_Submit( s.world, &late ) == false );
+		Run( &s, 20 );
+		hashes[run] = lpWorld_Hash( s.world );
+		DestroySim( &s );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+	return 0;
+}
+
+static lpCommand DriveCommand( int64_t tick, uint8_t peer, uint32_t seq, float throttle )
+{
+	lpCommand c = { 0 };
+	c.tick = tick;
+	c.peer = peer;
+	c.seq = seq;
+	c.kind = lp_commandVehicleControl;
+	c.vehicleControl.vehicle = 0;
+	c.vehicleControl.control.throttle = throttle;
+	return c;
+}
+
+// A player's control takes a vehicle over: the scene's controls of it are dropped until that player releases it, and
+// another player cannot release it. A command naming a slot whose generation moved on is dropped.
+static int TestCommandReferences( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneTrack, 1 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).controller == -1 );
+	lpCommand player = DriveCommand( 2, 0, 0, 0.75f );
+	lpCommand scene = DriveCommand( 2, LP_PEER_SCENE, 0, -1.0f );
+	lpCommand sceneLater = DriveCommand( 3, LP_PEER_SCENE, 1, -1.0f );
+	ENSURE( lpWorld_Submit( s.world, &scene ) && lpWorld_Submit( s.world, &player ) && lpWorld_Submit( s.world, &sceneLater ) );
+	Run( &s, 3 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).controller == 0 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).control.throttle == 0.75f );
+	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 );
+	Run( &s, 1 );
+	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 && lpWorld_GetVehicleState( s.world, 0 ).control.throttle == 0.75f );
+
+	lpCommand release = { 0 };
+	release.tick = 5;
+	release.peer = 1; // not the one driving it
+	release.kind = lp_commandRelease;
+	release.release.vehicle = 0;
+	release.release.rig = -1;
+	ENSURE( lpWorld_Submit( s.world, &release ) );
+	release.peer = 0;
+	release.tick = 6;
+	ENSURE( lpWorld_Submit( s.world, &release ) );
+	lpCommand sceneAfter = DriveCommand( 7, LP_PEER_SCENE, 2, -0.5f );
+	ENSURE( lpWorld_Submit( s.world, &sceneAfter ) );
+	Run( &s, 2 );
+	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 ); // peer 1's release
+	Run( &s, 1 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).controller == -1 );
+	Run( &s, 1 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).control.throttle == -0.5f );
+
+	// A pull naming a piece's next generation is stale
+	int piece = -1;
+	for ( int i = 0; i < s.world->pieces.count && piece < 0; ++i )
+	{
+		piece = s.world->pieces.data[i].body >= 0 ? i : -1;
+	}
+	lpCommand pull = { 0 };
+	pull.tick = (int64_t)lpWorld_GetTick( s.world );
+	pull.kind = lp_commandPull;
+	pull.pull.piece = piece;
+	pull.pull.generation = s.world->pieces.data[piece].generation + 1;
+	pull.pull.maxAccel = 40.0f;
+	pull.pull.maxMass = 400.0f;
+	ENSURE( lpWorld_Submit( s.world, &pull ) );
+	Run( &s, 1 );
+	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 && lpWorld_GetStats( s.world ).commandsApplied == 0 );
+	DestroySim( &s );
+	return 0;
+}
+
+// An object spawned by command from a template is the object lpCreateObject makes from the same def at that tick
+static int TestTemplateSpawn( void )
+{
+	lpVec3 points[8];
+	for ( int i = 0; i < 8; ++i )
+	{
+		points[i] = (lpVec3){ i & 1 ? 0.3f : -0.3f, i & 2 ? 0.25f : -0.25f, i & 4 ? 0.4f : -0.4f };
+	}
+	lpPartDef part = lpDefaultPartDef();
+	part.points = points;
+	part.pointCount = 8;
+	part.material = lp_wood;
+	lpObjectDef crate = lpDefaultObjectDef();
+	crate.isStatic = false;
+	crate.parts = &part;
+	crate.partCount = 1;
+	crate.transform.p = (lpPos){ 0.5f, 6.0f, 0.5f };
+	crate.linearVelocity = (lpVec3){ 0.0f, -8.0f, 1.0f };
+	crate.angularVelocity = (lpVec3){ 1.0f, 2.0f, 0.5f };
+	uint64_t hashes[2] = { 0 };
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSimWorkers( lp_scenePile, 1 );
+		int template = -1;
+		if ( run == 1 )
+		{
+			template = lpWorld_AddTemplate( s.world, &crate );
+			points[0].x = 9.0f; // the world kept its own copy
+		}
+		Run( &s, 2 );
+		if ( run == 0 )
+		{
+			lpCreateObject( s.world, &crate );
+		}
+		else
+		{
+			lpCommand spawn = { 0 };
+			spawn.tick = 2;
+			spawn.kind = lp_commandSpawn;
+			spawn.spawn.templateIndex = template;
+			spawn.spawn.transform = crate.transform;
+			spawn.spawn.linearVelocity = crate.linearVelocity;
+			spawn.spawn.angularVelocity = crate.angularVelocity;
+			ENSURE( lpWorld_Submit( s.world, &spawn ) );
+			points[0].x = -0.3f;
+		}
+		Run( &s, 60 );
+		hashes[run] = lpWorld_Hash( s.world );
+		DestroySim( &s );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+	return 0;
+}
+
 static int TestWorldTables( void )
 {
 	lpMaterialDef materials[lp_materialCount];
@@ -835,6 +1006,9 @@ int WorldTest( void )
 	RUN_TEST( TestDetonatorIndexReuse, MECHANISM );
 	RUN_TEST( TestPull, OUTCOME );
 	RUN_TEST( TestPullSkipsReusedSlot, MECHANISM );
+	RUN_TEST( TestCommandOrder, MECHANISM );
+	RUN_TEST( TestCommandReferences, MECHANISM );
+	RUN_TEST( TestTemplateSpawn, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );

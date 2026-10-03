@@ -360,6 +360,7 @@ int lpCreateRig( lpWorld* w, const lpRigDef* def )
 		}
 		limb->defFoot = lpInvTransformWorldPoint( lpGetTransform( w, w->bodies.data + inner ), limb->def.foot );
 		limb->tipBody = -1;
+		limb->grip = -1;
 		lpLimbCapability( w, limb, lpInvRotateVector( lpPhys_GetTransform( w->phys, torso->id ).q, lpNormalize( def->up ) ) );
 	}
 
@@ -767,6 +768,7 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 {
 	lpRigState s = { 0 };
 	s.body = -1;
+	s.controller = -1;
 	if ( rig < 0 || rig >= w->rigs.count )
 	{
 		return s;
@@ -775,6 +777,7 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	s.alive = r->alive;
 	s.body = r->body;
 	s.bodyGeneration = r->body >= 0 ? w->bodies.data[r->body].generation : 0;
+	s.controller = (int)r->controller - 1;
 	s.limbCount = r->limbCount;
 	s.idle = r->idle;
 	s.crawling = r->crawling;
@@ -807,6 +810,7 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 {
 	lpLimbState s = { 0 };
 	s.footBody = -1;
+	s.grip = -1;
 	if ( rig < 0 || rig >= w->rigs.count || limb < 0 || limb >= w->rigs.data[rig].limbCount )
 	{
 		return s;
@@ -823,6 +827,9 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 	s.reaching = l->reaching;
 	s.touching = l->touching;
 	s.touchingGeneration = l->touching >= 0 ? w->pieces.data[l->touching].generation : 0;
+	bool holding = l->grip >= 0 && w->links.data[l->grip].alive && w->links.data[l->grip].generation == l->gripGeneration;
+	s.grip = holding ? l->grip : -1;
+	s.gripGeneration = holding ? l->gripGeneration : 0;
 	if ( l->tipBody >= 0 && w->bodies.data[l->tipBody].alive )
 	{
 		s.footBody = l->tipBody;
@@ -830,6 +837,37 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 		s.foot = lpFootWorld( w, l );
 	}
 	return s;
+}
+
+int lpApplyClaw( lpWorld* w, int rig, int limb, int mode, float maxForce, float maxTorque, float strength )
+{
+	lpLimb* l = w->rigs.data[rig].limbs + limb;
+	bool holding = l->grip >= 0 && w->links.data[l->grip].alive && w->links.data[l->grip].generation == l->gripGeneration;
+	if ( holding && mode != lp_clawGrab )
+	{
+		lpDestroyLink( w, l->grip );
+		l->grip = -1;
+		return -1;
+	}
+	if ( holding || mode == lp_clawRelease )
+	{
+		return -1;
+	}
+	lpLimbState st = lpWorld_GetLimbState( w, rig, limb );
+	if ( st.reaching == false || st.touching < 0 || st.footBody < 0 )
+	{
+		return -1;
+	}
+	lpLinkDef grip = lpDefaultLinkDef( lp_linkWeld );
+	grip.bodyA = st.footBody;
+	grip.bodyB = w->pieces.data[st.touching].body;
+	grip.anchorA = st.foot;
+	grip.maxForce = maxForce;
+	grip.maxTorque = maxTorque;
+	grip.strength = strength;
+	l->grip = lpCreateLink( w, &grip );
+	l->gripGeneration = l->grip >= 0 ? w->links.data[l->grip].generation : 0;
+	return l->grip;
 }
 
 // ---- hash, validation ----

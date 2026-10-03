@@ -188,6 +188,7 @@ typedef struct lpVehicle
 	lpVehicleControl control;
 	bool controlChanged;
 	bool alive;
+	uint8_t controller; // peer + 1 whose commands drive it (0: the scene's drivers)
 	int wheelCount;
 	int links[LP_MAX_VEHICLE_WHEELS]; // each wheel's link as created (-1: it came off)
 } lpVehicle;
@@ -202,6 +203,8 @@ typedef struct lpLimb
 	float lower[LP_MAX_LIMB_JOINTS];  // the angles its targets keep within (just inside the hinge's limits)
 	float upper[LP_MAX_LIMB_JOINTS];
 	lpVec3 defFoot; // the foot as created, in the frame of the last link's outer body
+	int grip;				 // the link its claw holds (lp_commandClaw; -1: none)
+	uint32_t gripGeneration;
 	// Capability, every step
 	int joints;		// links on in a chain from the torso
 	int rootBody;	// the body of its first link's inner end (-1: that link is gone)
@@ -247,6 +250,7 @@ typedef struct lpRig
 	lpRigControl control;
 	bool controlChanged;
 	bool alive;
+	uint8_t controller; // peer + 1 whose commands drive it (0: the scene's drivers)
 	int body; // the torso this step (-1: none)
 	int limbCount;
 	lpLimb limbs[LP_MAX_RIG_LIMBS];
@@ -468,6 +472,14 @@ typedef struct lpPendingBlast
 	int detonator;
 } lpPendingBlast;
 
+// An object registered for spawning by command (lpWorld_AddTemplate): its def, with its own copy of the parts and points
+typedef struct lpTemplate
+{
+	lpObjectDef def;
+	lpPartDef* parts;
+	lpVec3* points;
+} lpTemplate;
+
 typedef struct lpPull
 {
 	int piece;
@@ -581,6 +593,10 @@ struct lpWorld
 	LP_ARRAY( int ) scratchCarriers;
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpDeferredJob ) deferred;
+	LP_ARRAY( lpCommand ) commands; // queued, by (tick, peer, seq)
+	uint32_t sceneSeq;			   // numbers the scene peer's commands as they are submitted
+	LP_ARRAY( lpCommand ) applied;	 // by the last step
+	LP_ARRAY( lpTemplate ) templates;
 
 	LP_ARRAY( int ) scratchPieces;
 	LP_ARRAY( int ) scratchBodies;
@@ -671,6 +687,11 @@ void lpMarkDirty( lpWorld* w, int bodyIndex );
 void lpProcessDeferred( lpWorld* w );
 void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
+// Commands (command.c): the current tick's, as the step begins; templates freed with the world
+void lpApplyCommands( lpWorld* w );
+void lpFreeTemplates( lpWorld* w );
+// A limb's claw (rig.c): grabs what its reaching foot touches, lets go, or toggles; returns the grip made (-1: none)
+int lpApplyClaw( lpWorld* w, int rig, int limb, int mode, float maxForce, float maxTorque, float strength );
 void lpCollectHits( lpWorld* w );
 // Burns the lit fuses by a step, and sets off the charges whose fuse is out
 void lpBurnFuses( lpWorld* w, float timeStep );

@@ -730,12 +730,14 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 {
 	lpVehicleState s = { 0 };
 	s.body = -1;
+	s.controller = -1;
 	if ( vehicle < 0 || vehicle >= w->vehicles.count )
 	{
 		return s;
 	}
 	const lpVehicle* v = w->vehicles.data + vehicle;
 	s.alive = v->alive;
+	s.controller = (int)v->controller - 1;
 	s.wheelCount = v->wheelCount;
 	s.control = v->control;
 	int bodies[LP_MAX_VEHICLE_WHEELS];
