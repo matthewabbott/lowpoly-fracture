@@ -29,6 +29,7 @@ a track only when a decision needs its detail.
 | `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, validation |
 | `src/command.c` | commands: the tick-stamped queue (`lpWorld_Submit`), applied in (peer, seq) order as the step begins; who controls a vehicle or rig; templates for spawns |
 | `src/hash.c` | the state hash: an element per body, piece, stress state, link, ...; categories as order-free sums, kept per slot and rehashed where marked; the descent API and `lpWorld_CheckHash` |
+| `src/session.c` | what machines that play together must agree on, as "key value" lines (`lpWorld_DescribeSession`: the def by field, digests of materials, joints and templates, the self-test, the hash), and `lpSessionCompare`, which names the first key that differs |
 | `src/impact.c` | impacts: choosing the pieces and integrating their fracture jobs, bond damage, detonators and fuses, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |

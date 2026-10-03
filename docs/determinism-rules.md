@@ -76,6 +76,13 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    `lpHashMarkStress` or `lpHashMarkPiece` (`lpTouchPiece` marks the piece and its body), and a new physics setter
    records its body in the backend's touched list. A missed mark does not change the simulation, only the kept hash,
    and `lpWorld_CheckHash` names the element that changed unmarked.
+20. **Machines agree on a session before the first tick.** `lpWorld_DescribeSession` lists what the simulation reads
+   besides commands: every simulation field of `lpWorldDef` (a new field must join its table in `src/session.c`, or be
+   left out there with a reason: a size check fails to compile until it is), a digest per material, joint and
+   template, the self-test's hash and the state hash; the apps add their build, protocol, scene, period, time step and
+   substeps (`lpSceneDescribeSession`). A peer whose description differs is refused by the key that does
+   (`lpSessionCompare`). Text carries floats as `%.9g` in the C locale: nothing calls `setlocale`, and the self-test
+   checks that the C library prints and reads them back exactly.
 
 ## How it is checked
 

@@ -50,6 +50,14 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
 // nothing in scenes without either.
 void lpSceneDrive( lpWorld* world, int scene, int tick );
 
+// The session protocol's version: the handshake's lines, and the script text commands travel in (script.h)
+#define LP_PROTOCOL_VERSION 1
+
+// A scene's session description: the world's (lpWorld_DescribeSession), then the app's own lines: the build (the git
+// commit when it was configured), the protocol, the scene, its bombardment period, the time step and substeps.
+// Writes at most size bytes, NUL-terminated; returns the length it needs.
+int lpSceneDescribeSession( const lpWorld* world, int scene, int period, float timeStep, int subSteps, char* buffer, int size );
+
 // The objects the sandbox's tools throw, registered by lpBuildScene first, in this order (lp_commandSpawn)
 enum
 {

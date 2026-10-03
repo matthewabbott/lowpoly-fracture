@@ -9,7 +9,7 @@
 #include <stdlib.h>
 
 // lpDeterminismSelfTest's hash on every platform (set from the reference build; CI checks every leg against it)
-#define LP_SELF_TEST_HASH 0x5c6b3dd653cd0c64ull
+#define LP_SELF_TEST_HASH 0xe6c87a41bbafe2ddull
 
 // The tick the contraption's vial goes off today (TestContraptionOnTime allows 10% either way)
 #define LP_CONTRAPTION_TICK 2986
@@ -183,6 +183,92 @@ static int TestDeterminismSelfTest( void )
 		return 1;
 	}
 	return hash == LP_SELF_TEST_HASH ? 0 : 1;
+}
+
+static char* Describe( const lpWorld* world )
+{
+	int length = lpWorld_DescribeSession( world, NULL, 0 );
+	char* text = malloc( (size_t)length + 1 );
+	if ( text != NULL && ( lpWorld_DescribeSession( world, text, length + 1 ) != length || (int)strlen( text ) != length ) )
+	{
+		free( text );
+		text = NULL;
+	}
+	return text;
+}
+
+// Two machines' sessions agree only when every setting, material, joint and template does: a peer whose world differs
+// in one is refused by the key that names it
+static int TestSessionHandshake( void )
+{
+	lpWorldDef def = lpDefaultWorldDef();
+	lpWorld* a = lpCreateWorld( &def );
+	lpWorld* same = lpCreateWorld( &def );
+	def.maxStressWork += 1;
+	lpWorld* work = lpCreateWorld( &def );
+	def = lpDefaultWorldDef();
+	lpMaterialDef materials[lp_materialCount];
+	memcpy( materials, lpDefaultMaterials(), sizeof( materials ) );
+	materials[lp_brick].bondStrength *= 1.01f;
+	def.materials = materials;
+	lpWorld* brick = lpCreateWorld( &def );
+	def = lpDefaultWorldDef();
+	def.workerCount = 7; // results do not depend on it
+	lpWorld* workers = lpCreateWorld( &def );
+	lpWorld* spawns = lpCreateWorld( &def );
+	lpPartDef part = lpDefaultPartDef();
+	lpObjectDef ball = lpDefaultObjectDef();
+	ball.parts = &part;
+	ball.partCount = 1;
+	lpWorld_AddTemplate( spawns, &ball );
+
+	char* textA = Describe( a );
+	char* textSame = Describe( same );
+	char* textWork = Describe( work );
+	char* textBrick = Describe( brick );
+	char* textWorkers = Describe( workers );
+	char* textSpawns = Describe( spawns );
+	ENSURE( textA && textSame && textWork && textBrick && textWorkers && textSpawns );
+	char key[64];
+	ENSURE( lpSessionCompare( textA, textSame, key, sizeof( key ) ) && key[0] == 0 );
+	ENSURE( lpSessionCompare( textA, textWorkers, key, sizeof( key ) ) );
+	ENSURE( lpSessionCompare( textA, textWork, key, sizeof( key ) ) == false && strcmp( key, "maxStressWork" ) == 0 );
+	printf( "  maxStressWork + 1: refused on '%s'\n", key );
+	char expected[32];
+	snprintf( expected, sizeof( expected ), "material.%d", (int)lp_brick );
+	ENSURE( lpSessionCompare( textA, textBrick, key, sizeof( key ) ) == false && strcmp( key, expected ) == 0 );
+	printf( "  brick 1%% stronger: refused on '%s'\n", key );
+	ENSURE( lpSessionCompare( textA, textSpawns, key, sizeof( key ) ) == false && strcmp( key, "template.0" ) == 0 );
+	ENSURE( lpSessionCompare( textSpawns, textA, key, sizeof( key ) ) == false && strcmp( key, "template.0" ) == 0 );
+	printf( "  a template only one side has: refused on '%s'\n", key );
+
+	// An app's own lines, in another order on the other side, still agree; a truncated buffer still reports the length
+	size_t n = strlen( textA );
+	char* withApp = malloc( n + 64 );
+	char* withAppReordered = malloc( n + 64 );
+	ENSURE( withApp != NULL && withAppReordered != NULL );
+	snprintf( withApp, n + 64, "%sscene town\r\ndt 0.0166666675\n", textA );
+	snprintf( withAppReordered, n + 64, "dt 0.0166666675\nscene town\n%s", textA );
+	ENSURE( lpSessionCompare( withApp, withAppReordered, key, sizeof( key ) ) );
+	ENSURE( lpSessionCompare( withApp, textA, key, sizeof( key ) ) == false && strcmp( key, "scene" ) == 0 );
+	char small[16];
+	ENSURE( lpWorld_DescribeSession( a, small, sizeof( small ) ) == (int)n && strlen( small ) == sizeof( small ) - 1 );
+
+	free( withApp );
+	free( withAppReordered );
+	free( textA );
+	free( textSame );
+	free( textWork );
+	free( textBrick );
+	free( textWorkers );
+	free( textSpawns );
+	lpDestroyWorld( a );
+	lpDestroyWorld( same );
+	lpDestroyWorld( work );
+	lpDestroyWorld( brick );
+	lpDestroyWorld( workers );
+	lpDestroyWorld( spawns );
+	return 0;
 }
 
 
@@ -1116,6 +1202,7 @@ int WorldTest( void )
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );
 	RUN_TEST( TestDeterminismSelfTest, DETERMINISM );
+	RUN_TEST( TestSessionHandshake, MECHANISM );
 	RUN_TEST( TestHouseCollapse, OUTCOME );
 	RUN_TEST( TestFragmentColours, OUTCOME );
 	RUN_TEST( TestBuildingGoesQuiet, OUTCOME );

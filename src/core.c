@@ -4,6 +4,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #if defined( _WIN32 )
 #define WIN32_LEAN_AND_MEAN
@@ -279,6 +280,19 @@ uint64_t lpDeterminismSelfTest( int* failures )
 		h = lpMix64( h ^ lpBits( cs.sine ) );
 		h = lpMix64( h ^ lpBits( lpAtan2( cs.sine * three, cs.cosine - half ) ) );
 		h = lpMix64( h ^ lpBits( lpCbrt( angle * angle * angle + tenth ) ) );
+	}
+
+	// Commands and sessions travel as text: %.9g must read back to the same bits, and print the same characters on every
+	// machine (a correctly rounding C library, in the C locale)
+	float awkward[10] = { tenth,		 one / three,	 tiny * half, tiny,			 16777215.0f * two,
+						  3.40282347e38f, -1.17549435e-38f, 123456.789f, -zero, 0.3f + tenth * three };
+	for ( int i = 0; i < 10; ++i )
+	{
+		char text[32];
+		int length = snprintf( text, sizeof( text ), "%.9g", (double)awkward[i] );
+		float back = strtof( text, NULL );
+		failed += lpBits( back ) != lpBits( awkward[i] ) ? 1 : 0;
+		h = lpMix64( lpHashWords( h, text, (size_t)( length > 0 ? length : 0 ) ) );
 	}
 
 	if ( failures != NULL )

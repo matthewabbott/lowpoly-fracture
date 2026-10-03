@@ -921,10 +921,26 @@ uint64_t lpWorld_HashElement( const lpWorld* world, int category, int slot ); //
 bool lpWorld_CheckHash( const lpWorld* world, char* message, int size );
 
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
-// flush-to-zero, correctly rounded sqrt and division, the min and max conventions) and the engine's own trig and cube
-// root. Returns a hash that must be equal on every machine that plays together (a session handshake compares it), and
-// counts the known answers that came out wrong in *failures (may be NULL).
+// flush-to-zero, correctly rounded sqrt and division, the min and max conventions), the engine's own trig and cube
+// root, and floats printed as %.9g and read back (the text format of commands and sessions). Returns a hash that must
+// be equal on every machine that plays together (a session handshake compares it), and counts the known answers that
+// came out wrong in *failures (may be NULL).
 uint64_t lpDeterminismSelfTest( int* failures );
+
+// ---- sessions ----
+//
+// Machines that play together must agree on everything the simulation reads besides their commands. A session's
+// description says it as "key value" lines: every simulation setting of the world's def (by field name), a digest of
+// each material, joint and template ("material.3"), the self-test's hash ("selftest"), and the tick and state hash
+// now. An app adds its own lines (its build, the scene, the time step), and a host refuses a peer whose description
+// differs, by the key that does (lpSessionCompare).
+
+// Writes the world's description into buffer (at most size bytes, NUL-terminated); returns the length it needs
+int lpWorld_DescribeSession( const lpWorld* world, char* buffer, int size );
+
+// True if two descriptions have the same keys with the same values, in any order. Else false, with the first key of a
+// that b lacks or values differently, or else the first key of b that a lacks, in key (up to keySize bytes).
+bool lpSessionCompare( const char* a, const char* b, char* key, int keySize );
 
 typedef struct lpStats
 {

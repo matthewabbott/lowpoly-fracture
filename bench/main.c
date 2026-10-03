@@ -70,6 +70,9 @@ static const char* s_hashLog;
 // --check-hash: every tick, the incremental state hash against a full recompute (slow); exit 4 if they differ
 static bool s_checkHash;
 
+// --session path: the session's description once the scene is built (lpSceneDescribeSession), from the first run
+static const char* s_sessionPath;
+
 // --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
 static const char* s_tickLog;
 
@@ -98,6 +101,23 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	uint64_t loadTicks = lpGetTicks();
 	lpBuildScene( world, scene );
 	r.loadMs = lpGetMilliseconds( loadTicks );
+	if ( s_sessionPath != NULL )
+	{
+		int length = lpSceneDescribeSession( world, scene, period, 1.0f / 60.0f, 4, NULL, 0 );
+		char* text = malloc( (size_t)length + 1 );
+		FILE* f = fopen( s_sessionPath, "w" );
+		if ( text != NULL && f != NULL )
+		{
+			lpSceneDescribeSession( world, scene, period, 1.0f / 60.0f, 4, text, length + 1 );
+			fputs( text, f );
+		}
+		if ( f != NULL )
+		{
+			fclose( f );
+		}
+		free( text );
+		s_sessionPath = NULL;
+	}
 	lpStats loaded = lpWorld_GetStats( world );
 	r.settleMs = loaded.settleMs;
 	r.settleIterations = loaded.settleIterations;
@@ -316,6 +336,11 @@ int main( int argc, char** argv )
 			s_checkHash = true;
 			continue;
 		}
+		else if ( strcmp( a, "--session" ) == 0 )
+		{
+			s_sessionPath = v;
+			++i;
+		}
 		else if ( strcmp( a, "--hash-log" ) == 0 )
 		{
 			s_hashLog = v;
@@ -348,7 +373,8 @@ int main( int argc, char** argv )
 		{
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
-					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json]\n" );
+					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json] [--check-hash]\n"
+					"                 [--session path]\n" );
 			return 1;
 		}
 	}

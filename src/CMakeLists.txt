@@ -16,6 +16,7 @@ add_library(lpf_core OBJECT
 	poly.c
 	poly.h
 	rig.c
+	session.c
 	solve.c
 	solve.h
 	split.c

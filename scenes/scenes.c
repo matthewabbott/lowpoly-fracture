@@ -4,6 +4,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -124,6 +125,26 @@ static float lpUnit( uint64_t* state )
 #define LP_BARK 0x6B4A2Fu
 #define LP_GRASS 0x7FA35Au
 #define LP_CONCRETE 0xA8A49Au
+
+#ifndef LPF_BUILD_ID
+#define LPF_BUILD_ID "unknown"
+#endif
+
+int lpSceneDescribeSession( const lpWorld* world, int scene, int period, float timeStep, int subSteps, char* buffer, int size )
+{
+	int length = lpWorld_DescribeSession( world, buffer, size );
+	char app[256];
+	int n = snprintf( app, sizeof( app ), "build %s\nprotocol %d\nscene %s\nperiod %d\ndt %.9g\nsubsteps %d\n", LPF_BUILD_ID,
+					  LP_PROTOCOL_VERSION, lpSceneName( scene ), period, (double)timeStep, subSteps );
+	n = n < (int)sizeof( app ) ? n : (int)sizeof( app ) - 1;
+	if ( length < size - 1 )
+	{
+		int fit = n < size - 1 - length ? n : size - 1 - length;
+		memcpy( buffer + length, app, (size_t)fit );
+		buffer[length + fit] = 0;
+	}
+	return length + n;
+}
 
 const char* lpSceneName( int scene )
 {
