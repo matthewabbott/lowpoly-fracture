@@ -3,12 +3,14 @@
 //
 //   lpf_bench --scene town --workers 1,4,8 --ticks 600 --period 12 --json bench.json
 //   lpf_bench --scene keep --script scripts/keep_demo.txt --period 0 --ticks 420 --hash-log build/keep
+//   lpf_bench --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep   (twin.c)
 //
 // Also checks determinism: the final state hash must be the same for every worker count.
 
 #include "dump.h"
 #include "scenes.h"
 #include "script.h"
+#include "twin.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -277,6 +279,9 @@ int main( int argc, char** argv )
 	float fragmentScale = 1.0f;
 	int maxDebris = 400;
 	const char* jsonPath = NULL;
+	const char* twin = NULL; // --twin: two worlds and an injected desync (twin.c)
+	const char* repair = NULL;
+	const char* conePath = NULL;
 
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -341,6 +346,21 @@ int main( int argc, char** argv )
 			s_sessionPath = v;
 			++i;
 		}
+		else if ( strcmp( a, "--twin" ) == 0 )
+		{
+			twin = v;
+			++i;
+		}
+		else if ( strcmp( a, "--repair" ) == 0 )
+		{
+			repair = v;
+			++i;
+		}
+		else if ( strcmp( a, "--cone" ) == 0 )
+		{
+			conePath = v;
+			++i;
+		}
 		else if ( strcmp( a, "--hash-log" ) == 0 )
 		{
 			s_hashLog = v;
@@ -374,9 +394,14 @@ int main( int argc, char** argv )
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
 					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json] [--check-hash]\n"
-					"                 [--session path]\n" );
+					"                 [--session path] [--twin velocity|warm:tick[:ulps] [--repair motion,warm,sleep[@delay]] [--cone path]]\n" );
 			return 1;
 		}
+	}
+
+	if ( twin != NULL )
+	{
+		return lpBenchTwin( scene, period, ticks, workers[0], &s_script, twin, repair, conePath );
 	}
 
 	printf( "scene %s, %d ticks at 60 Hz, a blast every %d ticks, fragment scale %.2f, debris cap %d\n",

@@ -194,3 +194,4 @@ compilers.
 | D9 | Supply under fire | `TestSupplyDeterminism` | 1, 4 and 8 workers |
 | D10 | Pools leaking | `TestPoolDeterminism` | 1 and 4 workers |
 | D11 | A rig standing, and walking and turning | `TestRigDeterminism`, `TestRigWalkDeterminism` | 1, 4 and 8 workers |
+| D12 | Two worlds side by side stay equal; a one-ulp desync injected into one is named (the body, its generation, its unit), and a repair of that unit stays repaired | `TestTwinWorlds`, `TestDesyncNamed` | every tick's hash; exact names |

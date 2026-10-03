@@ -85,6 +85,10 @@ B3_API void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3Cont
 /// lowpoly-fracture patch: the same over contact slots [begin, end) of b3World_GetContactSlotCount, so the walk can be
 /// split among threads (read only)
 B3_API int b3World_GetContactSlotCount( b3WorldId worldId );
+
+/// lowpoly-fracture patch: writes a touching contact's manifolds and recycling caches back (a lab that copies one
+/// world's state into another); false if the slot holds no touching contact with that many manifolds
+B3_API bool b3World_RestoreContactState( b3WorldId worldId, int slot, const b3ContactState* state );
 B3_API void b3World_VisitContactStateRange( b3WorldId worldId, bool awakeOnly, int begin, int end, b3ContactStateFcn* fcn,
 											void* context );
 
@@ -732,6 +736,9 @@ B3_API float b3Body_GetSleepThreshold( b3BodyId bodyId );
 
 /// lowpoly-fracture patch: how long the body has been still enough to sleep (seconds), for a state hash
 B3_API float b3Body_GetSleepTime( b3BodyId bodyId );
+
+/// lowpoly-fracture patch: sets it, for a lab that copies one world's state into another
+B3_API void b3Body_SetSleepTime( b3BodyId bodyId, float sleepTime );
 
 /// Set the continuous collision safety factor. Smaller is safer but can lead to hitching. Recommended range [0.01, 0.5]. Non-dimensional.
 B3_API void b3Body_SetSafetyFactor( b3BodyId bodyId, float safetyFactor );

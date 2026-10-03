@@ -26,7 +26,10 @@
   covers it.
   Reading the same through `b3Body_GetContactData` per body costs 0.5 to 2 ms at the bench peaks.
   `b3World_VisitContactStateRange` and `b3World_GetContactSlotCount` split the walk among threads.
-- `body.c`, `b3Body_GetSleepTime` (new): the body's sleep timer, for the state hash.
+- `body.c`, `b3Body_GetSleepTime` (new): the body's sleep timer, for the state hash. `b3Body_SetSleepTime` (new) sets
+  it, for the two-world lab's repair (src/lab.c).
+- `physics_world.c`, `b3World_RestoreContactState` (new): writes a touching contact's manifolds and recycling caches
+  back, by its slot, for the same lab (a repair that copies warm starts, and the injected warm-start desync).
 - `body.c`, `b3Body_GetMotion` (new): the transform and both velocities in one lookup instead of three, for the state
   hash, which reads every body that moved each tick.
 

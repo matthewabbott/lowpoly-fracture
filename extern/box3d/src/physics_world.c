@@ -1799,6 +1799,26 @@ void b3World_VisitContactStateRange( b3WorldId worldId, bool awakeOnly, int begi
 	}
 }
 
+bool b3World_RestoreContactState( b3WorldId worldId, int slot, const b3ContactState* state )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL || slot < 0 || slot >= world->contacts.count )
+	{
+		return false;
+	}
+	b3Contact* contact = world->contacts.data + slot;
+	if ( contact->setIndex == B3_NULL_INDEX || ( contact->flags & b3_contactTouchingFlag ) == 0 ||
+		 contact->manifoldCount != state->manifoldCount )
+	{
+		return false;
+	}
+	memcpy( contact->manifolds, state->manifolds, sizeof( b3Manifold ) * (size_t)state->manifoldCount );
+	contact->cachedRotationA = state->cachedRotationA;
+	contact->cachedRotationB = state->cachedRotationB;
+	contact->cachedRelativePose = state->cachedRelativePose;
+	return true;
+}
+
 b3SensorEvents b3World_GetSensorEvents( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );

@@ -31,6 +31,7 @@ a track only when a decision needs its detail.
 | `src/hash.c` | the state hash: an element per body, piece, stress state, link, ...; categories as order-free sums, kept per slot and rehashed where marked; the descent API and `lpWorld_CheckHash` |
 | `src/session.c` | what machines that play together must agree on, as "key value" lines (`lpWorld_DescribeSession`: the def by field, digests of materials, joints and templates, the self-test, the hash), and `lpSessionCompare`, which names the first key that differs |
 | `src/units.c` | causal units: union-find over bodies joined by contacts (not through anchored pieces or rubble), links, vehicles, rigs, the ground under wheels and feet, shared detonators and pools; each element of the hash mapped to its unit (for the two-world lab) |
+| `src/lab.c` | the two-world lab: injected desyncs (a velocity, a warm start), `lpLab_Diff` (the hash followed down to elements), repair by unit (motion, warm starts, sleep timers); `bench/twin.c` runs it (`lpf_bench --twin warm:200 --repair motion,warm,sleep@4 --cone path`) |
 | `src/impact.c` | impacts: choosing the pieces and integrating their fracture jobs, bond damage, detonators and fuses, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |

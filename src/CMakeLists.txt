@@ -10,6 +10,7 @@ add_library(lpf_core OBJECT
 	gait.c
 	hash.c
 	impact.c
+	lab.c
 	link.c
 	lpmath.c
 	phys.h

@@ -123,6 +123,101 @@ static int TestDeterminism( void )
 	return 0;
 }
 
+// Two worlds in one process, stepped in turn on the same inputs, stay equal: worlds share nothing (the two-world lab
+// relies on it), and following the hash down finds no difference
+static int TestTwinWorlds( void )
+{
+	Sim a = CreateSimWorkers( lp_sceneTown, 1 );
+	Sim b = CreateSimWorkers( lp_sceneTown, 4 );
+	for ( int tick = 0; tick < 180; ++tick )
+	{
+		lpSceneBombard( a.world, lp_sceneTown, tick, 6 );
+		lpSceneBombard( b.world, lp_sceneTown, tick, 6 );
+		lpWorld_Step( a.world, 1.0f / 60.0f, 4 );
+		lpWorld_Step( b.world, 1.0f / 60.0f, 4 );
+		if ( lpWorld_Hash( a.world ) != lpWorld_Hash( b.world ) )
+		{
+			printf( "  the twins differ at tick %d\n", tick );
+			return 1;
+		}
+	}
+	lpLabDiff diff;
+	ENSURE( lpLab_Diff( a.world, b.world, &diff, 1 ) == 0 );
+	printf( "  180 ticks of the barrage side by side: equal every tick\n" );
+	DestroySim( &a );
+	DestroySim( &b );
+	return 0;
+}
+
+// An injected desync is named: a one-ulp nudge to a crate's velocity, or to the warm start of one of its contacts, is
+// followed down the hash to that body (with its generation) and its unit; repaired at once, by copying that unit's
+// motion, warm starts and sleep timers from the other world, the two stay equal
+static int TestDesyncNamed( void )
+{
+	for ( int warm = 0; warm < 2; ++warm )
+	{
+		Sim a = CreateSimWorkers( lp_scenePile, 1 );
+		Sim b = CreateSimWorkers( lp_scenePile, 1 );
+		for ( int tick = 0; tick < 60; ++tick )
+		{
+			lpWorld_Step( a.world, 1.0f / 60.0f, 4 );
+			lpWorld_Step( b.world, 1.0f / 60.0f, 4 );
+		}
+		int body = -1;
+		for ( int i = 0; i < lpWorld_GetBodyCapacity( b.world ) && body < 0; ++i )
+		{
+			lpBodyInfo info = lpWorld_GetBodyInfo( b.world, i );
+			if ( info.alive && info.kind == lp_kindDebris && info.awake && lpWorld_GetBodyContacts( b.world, i, NULL, 0 ) > 0 )
+			{
+				body = i;
+			}
+		}
+		ENSURE( body >= 0 );
+		if ( warm )
+		{
+			ENSURE( lpLab_NudgeWarmStart( b.world, body, 1 ) );
+		}
+		else
+		{
+			lpLab_NudgeVelocity( b.world, body, 1 );
+		}
+
+		// Named: the body's element (velocity) or its physics engine element (warm start), in the body's unit
+		lpLabDiff diffs[16];
+		int count = lpLab_Diff( a.world, b.world, diffs, 16 );
+		int capacity = lpWorld_GetBodyCapacity( a.world );
+		int* units = malloc( sizeof( int ) * (size_t)capacity );
+		ENSURE( units != NULL && lpWorld_GetUnits( a.world, units, capacity ) > 0 );
+		int category = warm ? lp_hashBackend : lp_hashBodies;
+		bool named = false, elsewhere = false;
+		for ( int k = 0; k < count && k < 16; ++k )
+		{
+			int unit = lpWorld_GetElementUnit( a.world, units, diffs[k].category, diffs[k].slot );
+			named = named || ( diffs[k].category == category && diffs[k].slot == body &&
+							   diffs[k].generation == lpWorld_GetBodyInfo( a.world, body ).generation && unit == units[body] );
+			elsewhere = elsewhere || unit != units[body];
+		}
+		ENSURE( count >= 1 && count <= 16 && named && elsewhere == false );
+		printf( "  %s nudge on body %d: %d element(s) differ, the first %d:%d, all in its unit (%d)\n",
+				warm ? "warm-start" : "velocity", body, count, diffs[0].category, diffs[0].slot, units[body] );
+
+		// Repaired at once, it stays repaired
+		int bytes = lpLab_RepairUnit( b.world, a.world, units, units[body], lp_labMotion | lp_labWarmStarts | lp_labSleep );
+		ENSURE( lpLab_Diff( a.world, b.world, diffs, 16 ) == 0 );
+		for ( int tick = 0; tick < 60; ++tick )
+		{
+			lpWorld_Step( a.world, 1.0f / 60.0f, 4 );
+			lpWorld_Step( b.world, 1.0f / 60.0f, 4 );
+			ENSURE( lpWorld_Hash( a.world ) == lpWorld_Hash( b.world ) );
+		}
+		printf( "    repaired with its unit (%d bytes): equal for the next 60 ticks\n", bytes );
+		free( units );
+		DestroySim( &a );
+		DestroySim( &b );
+	}
+	return 0;
+}
+
 // A library that turns flush-to-zero on behind our back (milestone 7's E9: it changed the stress solver) changes
 // nothing: the step puts the control word back first, and counts it
 static int TestFpGuard( void )
@@ -1311,6 +1406,8 @@ int WorldTest( void )
 	RUN_TEST( TestCausalUnits, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
+	RUN_TEST( TestTwinWorlds, DETERMINISM );
+	RUN_TEST( TestDesyncNamed, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );
 	RUN_TEST( TestDeterminismSelfTest, DETERMINISM );
 	RUN_TEST( TestSessionHandshake, MECHANISM );

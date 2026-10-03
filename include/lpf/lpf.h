@@ -935,6 +935,40 @@ int lpWorld_GetElementUnit( const lpWorld* world, const int* units, int category
 // Each unit's hash: the sum of its elements (count entries of sums)
 void lpWorld_HashUnits( const lpWorld* world, const int* units, int count, uint64_t* sums );
 
+// ---- the two-world lab ----
+//
+// Experiments with two worlds stepped on the same inputs (lpf_bench --twin, the tests): a desync injected on purpose,
+// found by following the state hash down, and repaired by copying one world's state into the other, unit by unit.
+// Never in a game.
+
+// Nudges the largest component of a body's linear velocity by ulps units in the last place
+void lpLab_NudgeVelocity( lpWorld* world, int body, int ulps );
+// Nudges the warm start of a touching contact of the body by ulps (the physics engine's hidden state); false if it
+// touches nothing
+bool lpLab_NudgeWarmStart( lpWorld* world, int body, int ulps );
+
+typedef struct lpLabDiff
+{
+	int category; // lpHashCategory
+	int slot;
+	uint32_t generation; // of the body, piece or link in a's slot (0 in other categories)
+} lpLabDiff;
+
+// The elements whose hashes differ between two worlds, in (category, slot) order, found as a host and a peer would:
+// categories, then 64-slot buckets, then elements. Writes up to capacity; returns how many differ.
+int lpLab_Diff( const lpWorld* a, const lpWorld* b, lpLabDiff* out, int capacity );
+
+typedef enum lpLabRepair
+{
+	lp_labMotion = 1,	  // transforms and velocities (a ghost's or scrap's own motion and landing plan)
+	lp_labWarmStarts = 2, // the contacts' manifolds: impulses and the feature ids that match them up
+	lp_labSleep = 4,	  // sleep timers
+} lpLabRepair;
+
+// Copies a unit (lpWorld_GetUnits' numbering, in src) from src to dst: the parts asked for (lpLabRepair). State only:
+// both worlds must hold the same bodies with the same pieces there. Returns the bytes a host would have sent.
+int lpLab_RepairUnit( lpWorld* dst, const lpWorld* src, const int* units, int unit, int parts );
+
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions), the engine's own trig and cube
 // root, and floats printed as %.9g and read back (the text format of commands and sessions). Returns a hash that must

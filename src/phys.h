@@ -128,6 +128,18 @@ bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body );
 void lpPhys_GetMotion( const lpPhys* p, lpPhysBody body, lpWorldTransform* transform, lpVec3* linear, lpVec3* angular );
 // How long the body has been still enough to sleep, s (the engine's hidden state, for the state hash)
 float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body );
+
+// The two-world lab (lab.c) only: moving a body, setting its sleep timer, and reaching into the hidden contact state
+void lpPhys_SetTransform( lpPhys* p, lpPhysBody body, lpWorldTransform transform );
+void lpPhys_SetSleepTime( lpPhys* p, lpPhysBody body, float seconds );
+// Nudges the first manifold point's normal impulse (its warm start) of a touching contact of the body by ulps; false
+// if it has none
+bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps );
+// Copies the manifolds (impulses, feature ids) and recycling caches of every touching contact in src with a body whose
+// bit is set in bodies (by body index, bodyCount of them) to the contact of dst between the same two shapes, where it
+// has the same manifold count; returns the bytes of what carries over (the fields the state hash covers). A contact
+// one world has and the other lacks stays so: a state-only repair cannot make or end contacts.
+int lpPhys_CopyContacts( lpPhys* dst, const lpPhys* src, const uint8_t* bodies, int bodyCount );
 // The engine's hidden contact state (warm starts, the feature ids matching them, recycling caches): adds one hash per
 // touching contact of awake bodies (a sleeping body's contacts are as they were when it slept, hashed then) to the
 // sums of its non-static bodies (by body index; bodyCount entries), so the sums do not depend

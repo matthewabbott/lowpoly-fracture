@@ -382,6 +382,134 @@ float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body )
 	return b3Body_GetSleepTime( lpB3Body( body ) );
 }
 
+// ---- the two-world lab ----
+
+void lpPhys_SetTransform( lpPhys* p, lpPhysBody body, lpWorldTransform transform )
+{
+	b3Body_SetTransform( lpB3Body( body ), lpB3Vec( transform.p ), lpB3Quat( transform.q ) );
+	lpTouch( p, lpB3Body( body ) );
+}
+
+void lpPhys_SetSleepTime( lpPhys* p, lpPhysBody body, float seconds )
+{
+	b3Body_SetSleepTime( lpB3Body( body ), seconds );
+	lpTouch( p, lpB3Body( body ) );
+}
+
+typedef struct lpNudge
+{
+	b3WorldId world;
+	int body;
+	int ulps;
+	bool done;
+} lpNudge;
+
+static void lpNudgeContact( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
+{
+	lpNudge* nudge = context;
+	int a = (int)(intptr_t)bodyA - 1, b = (int)(intptr_t)bodyB - 1;
+	if ( nudge->done || ( a != nudge->body && b != nudge->body ) || s->manifoldCount == 0 || s->manifoldCount > 2 ||
+		 s->manifolds[0].pointCount == 0 )
+	{
+		return;
+	}
+	b3Manifold manifolds[2];
+	memcpy( manifolds, s->manifolds, sizeof( b3Manifold ) * (size_t)s->manifoldCount );
+	uint32_t bits;
+	memcpy( &bits, &manifolds[0].points[0].normalImpulse, 4 );
+	bits += (uint32_t)nudge->ulps;
+	memcpy( &manifolds[0].points[0].normalImpulse, &bits, 4 );
+	b3ContactState state = *s;
+	state.manifolds = manifolds;
+	nudge->done = b3World_RestoreContactState( nudge->world, s->slot, &state );
+}
+
+bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps )
+{
+	lpNudge nudge = { p->world, body, ulps, false };
+	b3World_VisitContactState( p->world, false, lpNudgeContact, &nudge );
+	return nudge.done;
+}
+
+// A contact's manifolds and caches, keyed by its two shapes
+typedef struct lpContactCopy
+{
+	uint64_t key;
+	b3ContactState state; // its manifolds point at the copy's own
+	b3Manifold manifolds[2];
+} lpContactCopy;
+
+typedef struct lpCopyContacts
+{
+	const uint8_t* bodies;
+	int bodyCount;
+	LP_ARRAY( lpContactCopy ) copies;
+	b3WorldId world; // written to
+	int bytes;
+} lpCopyContacts;
+
+static uint64_t lpShapePairKey( void* shapeA, void* shapeB )
+{
+	return ( (uint64_t)(uint32_t)(intptr_t)shapeA << 32 ) | (uint32_t)(intptr_t)shapeB;
+}
+
+static void lpTakeContact( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
+{
+	lpCopyContacts* c = context;
+	int a = (int)(intptr_t)bodyA - 1, b = (int)(intptr_t)bodyB - 1;
+	bool wanted = ( a >= 0 && a < c->bodyCount && c->bodies[a] ) || ( b >= 0 && b < c->bodyCount && c->bodies[b] );
+	if ( wanted == false || s->manifoldCount > 2 )
+	{
+		return;
+	}
+	lpContactCopy copy = { lpShapePairKey( shapeA, shapeB ), *s };
+	memcpy( copy.manifolds, s->manifolds, sizeof( b3Manifold ) * (size_t)s->manifoldCount );
+	lpArray_Push( c->copies, copy );
+}
+
+static int lpCompareCopy( const void* x, const void* y )
+{
+	uint64_t a = ( (const lpContactCopy*)x )->key, b = ( (const lpContactCopy*)y )->key;
+	return ( a > b ) - ( a < b );
+}
+
+static void lpPutContact( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
+{
+	lpCopyContacts* c = context;
+	lpContactCopy probe = { lpShapePairKey( shapeA, shapeB ) };
+	const lpContactCopy* found = bsearch( &probe, c->copies.data, (size_t)c->copies.count, sizeof( lpContactCopy ), lpCompareCopy );
+	if ( found == NULL )
+	{
+		return;
+	}
+	b3ContactState state = found->state;
+	state.manifolds = found->manifolds;
+	if ( b3World_RestoreContactState( c->world, s->slot, &state ) )
+	{
+		// What carries into the next step, as the state hash counts it: the caches, and per manifold its impulses and
+		// per point its impulses, feature id and persistence (the geometry is found anew each step)
+		c->bytes += 4 * 15;
+		for ( int m = 0; m < state.manifoldCount; ++m )
+		{
+			c->bytes += 4 * 8 + 4 * 4 * state.manifolds[m].pointCount;
+		}
+	}
+}
+
+int lpPhys_CopyContacts( lpPhys* dst, const lpPhys* src, const uint8_t* bodies, int bodyCount )
+{
+	lpCopyContacts c = { bodies, bodyCount };
+	c.world = dst->world;
+	b3World_VisitContactState( src->world, false, lpTakeContact, &c );
+	if ( c.copies.count > 0 )
+	{
+		qsort( c.copies.data, (size_t)c.copies.count, sizeof( lpContactCopy ), lpCompareCopy ); // keys are unique
+		b3World_VisitContactState( dst->world, false, lpPutContact, &c );
+	}
+	lpArray_Free( c.copies );
+	return c.bytes;
+}
+
 typedef struct lpContactSums
 {
 	const uint8_t* only;
