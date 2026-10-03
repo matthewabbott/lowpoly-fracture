@@ -477,6 +477,14 @@ void lpSystemSolveFront( lpStressSystem* s, int limit, int budget, double tolera
 	}
 	const int* active = s->activeNodes.data;
 	int count = s->activeNodes.count;
+#if !defined( NDEBUG ) || defined( LP_FORCE_ASSERT )
+	int inRegion = 0; // the lists kept while it continues are a cache of the depths (the hashed region): they agree
+	for ( int i = 0; i < n; ++i )
+	{
+		inRegion += depth[i] <= limit ? 1 : 0;
+	}
+	LP_ASSERT( inRegion == count && s->depthLimit == limit );
+#endif
 	if ( count == n )
 	{
 		// The whole system: the same steps in the same order as a plain solve, without the lists

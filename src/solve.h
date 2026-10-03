@@ -51,10 +51,13 @@ typedef struct lpStressSystem
 	LP_ARRAY( float ) nodeScale;
 	LP_ARRAY( float ) nodeArm;
 	double loadNorm2; // > 0: tolerances are relative to this squared load instead of |f|^2 (a correction's system)
-	LP_ARRAY( int ) depth;		// front solves: each node's bonds from the front
-	LP_ARRAY( int ) activeNodes; // front solves: the nodes within the limit, and the edges between them
+	// Region solves (lpSystemSolveFront): each node's depth, 0 in the region (the caller fills it for every solve); the
+	// region's nodes, the edges with an end in it and the held nodes just past it, found when a solve starts and kept
+	// while it continues (a cache of depth: assert builds check that they agree)
+	LP_ARRAY( int ) depth;
+	LP_ARRAY( int ) activeNodes;
 	LP_ARRAY( int ) activeEdges;
-	LP_ARRAY( int ) boundary; // front solves: the nodes just past the region (held where they were)
+	LP_ARRAY( int ) boundary;
 	int depthLimit;
 } lpStressSystem;
 

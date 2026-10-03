@@ -316,7 +316,6 @@ typedef struct lpPiece
 	float slenderDepth; // of the section
 	uint32_t changed;  // w->changeSerial when its bonds, their health or its load last changed
 	uint32_t accepted; // w->changeSerial when its structure's last solve was judged: changed after it, it is a seed
-	int frontDepth;	   // region solves, phase 1 to phase 2 of a check: 0 in this step's region
 	bool inFront;	   // region solves: in its structure's region while a solve is in progress
 	bool unaudited;	   // its solution came from a reduced system's judgement: an audit starts from it
 	lpVec6 acceptedLoad; // region solves: the load its structure's last judgement solved for here (the drift guard)
@@ -397,7 +396,6 @@ typedef struct lpBody
 	int clusters;			  // structure: clusters formed at its last exact solve (some may have dissolved since)
 	int meterRounds;		  // structure: clusters dissolved by the residual meter since its last judgement
 	bool frontGrow;			  // structure: its region solve converged but its boundary was not quiet: it grows next step
-	int frontEdges;			  // structure: the edges of its region at the last search (derived: kept while its solve continues)
 	int solveNodes, solveEdges;
 	bool solveClustered; // the last solve ran on the reduced system
 	bool provisional;	 // structure: judged on a reduced system; an exact audit is queued (w->audits)

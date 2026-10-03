@@ -1128,8 +1128,8 @@ static void lpStressFrontDepths( lpWorld* w, lpStressJob* job )
 	for ( int i = 0; i < n; ++i )
 	{
 		lpPiece* p = w->pieces.data + s->nodes.data[i];
-		s->depth.data[i] = p->frontDepth == 0 ? 0 : INT_MAX;
-		if ( p->frontDepth == 0 && job->clustered == false && job->continuing == false )
+		s->depth.data[i] = p->inFront ? 0 : INT_MAX;
+		if ( p->inFront && job->clustered == false && job->continuing == false )
 		{
 			p->stressResidual = lp_vec6Zero;
 		}
@@ -1668,23 +1668,18 @@ static void lpStressSeed( lpWorld* w, lpBody* body )
 // A region solve's region this step (phase 1): the region of its solve in progress, then everything within `hops` bonds
 // of the pieces changed since its last judgement (at a restart; an audit adds the pieces a reduced judgement left
 // unaudited), then everything within `hops` of that region when it must grow (it converged, but what it puts on the
-// held nodes just past it is not within tolerance). Fixed pieces carry nothing across. On a reduced system a hop is a
-// step from group to group: a cluster comes in whole, at no cost (a breadth-first search on a deque). Region pieces get
-// frontDepth 0, the rest INT_MAX. Returns the edges the solve runs on: those with an end in the region (on a reduced
-// system, those between groups), and in *grew whether the region took in pieces its solve in progress did not hold.
+// held nodes just past it is not within tolerance). Fixed pieces carry nothing across; a changed fixed piece seeds what
+// it holds. On a reduced system a hop is a step from group to group: a cluster comes in whole, at no cost (a
+// breadth-first search on a deque). The region is the pieces' inFront (hashed; the judgement clears it once the solve
+// converges). Returns the edges the solve runs on: those with an end in the region (on a reduced system, those between
+// groups), and in *grew whether the region took in pieces its solve in progress did not hold.
 static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, bool grow, bool clustered, bool* grew )
 {
 	lpHashMarkStress( w, bodyIndex );
 	lpBody* body = w->bodies.data + bodyIndex;
 	int n = body->pieces.count;
-	bool search = restart || grow;
-	if ( search == false )
-	{
-		// The region stays what the last search found (a solve continues only on an unchanged structure): its depths are
-		// still on the pieces, and its edge count on the body
-		*grew = false;
-		return body->frontEdges;
-	}
+	bool search = restart || grow; // otherwise the region stays what it was
+	*grew = false;
 
 	// A reduced system's clusters, member by member (a counting sort by cluster)
 	bool index = search && clustered;
@@ -1730,7 +1725,6 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 	{
 		lpPiece* p = w->pieces.data + body->pieces.data[i];
 		p->inFront = p->inFront && body->solving; // a region is kept only while its solve is in progress
-		p->frontDepth = p->inFront ? 0 : INT_MAX;
 	}
 	for ( int pass = 0; pass < 2; ++pass )
 	{
@@ -1746,7 +1740,7 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 			int pi = body->pieces.data[i];
 			lpPiece* p = w->pieces.data + pi;
 			bool seed = p->changed > p->accepted || ( body->auditing && p->unaudited );
-			bool source = pass == 0 ? seed : p->frontDepth == 0;
+			bool source = pass == 0 ? seed : p->inFront;
 			if ( source && lpFixed( body, pi, p ) == false && p->mark != stamp )
 			{
 				p->mark = stamp;
@@ -1772,7 +1766,8 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 			int pi = dequePiece[head];
 			int depth = dequeDepth[head++];
 			lpPiece* p = w->pieces.data + pi;
-			p->frontDepth = 0;
+			*grew = *grew || p->inFront == false;
+			p->inFront = true;
 			for ( int k = index && p->cluster > 0 ? start[p->cluster] : 0; index && p->cluster > 0 && k < start[p->cluster + 1]; ++k )
 			{
 				lpPiece* o = w->pieces.data + members[k];
@@ -1808,23 +1803,21 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 	}
 
 	int edges = 0;
-	*grew = false;
 	for ( int i = 0; i < n; ++i )
 	{
 		int pi = body->pieces.data[i];
 		const lpPiece* p = w->pieces.data + pi;
-		if ( p->frontDepth != 0 )
+		if ( p->inFront == false )
 		{
 			continue;
 		}
-		*grew = *grew || p->inFront == false;
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
 			int other = bond->a == pi ? bond->b : bond->a;
 			const lpPiece* o = w->pieces.data + other;
 			bool inside = clustered && p->cluster != 0 && p->cluster == o->cluster; // within a group: no edge
-			bool once = lpFixed( body, other, o ) || o->frontDepth != 0 || other > pi;
+			bool once = lpFixed( body, other, o ) || o->inFront == false || other > pi;
 			edges += inside == false && once ? 1 : 0;
 		}
 	}
@@ -1833,7 +1826,6 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 		lpFree( start );
 		lpFree( members );
 	}
-	body->frontEdges = edges;
 	return edges;
 }
 
