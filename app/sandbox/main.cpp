@@ -42,12 +42,11 @@ enum Tool
 	ToolBall = lp_scriptBall,
 	ToolFlask = lp_scriptFlask,
 	ToolPull = lp_scriptPull,
-	ToolBlow = lp_scriptBlow,
 	ToolCount = lp_scriptToolCount
 };
 
 const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledgehammer", "Cannonball", "Volatile flask",
-									  "Grab / pull", "Leaf blower" };
+									  "Grab / pull" };
 
 // A sim input: applied at the start of its tick, before the step. Recorded and replayed as script lines.
 using Event = lpScriptEvent;
@@ -752,8 +751,8 @@ void DrawUi()
 	ImGui::Checkbox( "shadows", &app.rs.shadows );
 	ImGui::SliderFloat( "fog", &app.rs.fogDensity, 0.0f, 0.04f, "%.3f" );
 	ImGui::Checkbox( "paused (P)", &app.paused );
-	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-8 tools" );
-	ImGui::TextDisabled( "grab / blower: hold LMB, wheel changes grab distance" );
+	ImGui::TextDisabled( "RMB look, WASD/QE move, shift fast, LMB fire, 1-7 tools" );
+	ImGui::TextDisabled( "grab: hold LMB, wheel changes grab distance" );
 	ImGui::TextDisabled( "R reload, B bombard, L links, F1 ui, F12 screenshot" );
 	ImGui::TextDisabled( "V drive the nearest car (WASD, space handbrake) or mech (WASD, QE sideways, C crouch," );
 	ImGui::TextDisabled( "  F strike at the crosshair, G grab and lift what the claw touches / let go), V again to get out" );
@@ -871,10 +870,6 @@ void Frame()
 			if ( app.firing && app.tool == ToolPull )
 			{
 				QueueGrab();
-			}
-			if ( app.firing && app.tool == ToolBlow )
-			{
-				QueueFire(); // one blow per tick while held
 			}
 			StepSimulation();
 			app.fireCooldown -= 1;
@@ -1046,7 +1041,7 @@ void Event_( const sapp_event* ev )
 				{
 					BeginGrab();
 				}
-				else if ( app.tool != ToolRifle && app.tool != ToolBlow )
+				else if ( app.tool != ToolRifle )
 				{
 					QueueFire();
 				}

@@ -38,7 +38,7 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 9. **Cosmetic state lives outside the simulation.** Dust particles are emitted by the core but simulated only by
    the app; they never feed back.
 10. **Inputs are events stamped with a tick.** The sandbox records tool use as text (`--record`), replays it
-   (`--script`) and applies it before the step of that tick. A pull/grab or a held blower is one event per tick.
+   (`--script`) and applies it before the step of that tick. A held pull/grab is one event per tick.
    Vehicle controls are persistent simulation state (hashed): a `drive` event sets them when they change, and they
    hold until the next one. So are a rig's controls (`walk` events) and its limbs' targets (`reach` events); a `grab`
    event welds a claw to what it touches, or lets go, from the state at its tick. Scripted drivers (`lpSceneDrive`: the
@@ -94,7 +94,7 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 - `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
   gravity scales that are not 1, vehicles, rigs and pools: a world without them hashes as before). Rendering and particles are deliberately
   excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.
-- Checked scenes: walls, house (flasks), tower (collapse), lumber, the blower demo, ruins (its demo and under
+- Checked scenes: walls, house (flasks), tower (collapse), lumber, ruins (its demo and under
   bombardment), town under a barrage (`-Period 3`, many structures solving at once), the yard (its demo and
   under bombardment), the keep (`scripts/keep_demo.txt`, one 2000-piece structure), the track (its demo under
   bombardment: scripted drivers, a driven car, wheels coming off), and the mech yard (its demo under bombardment: the

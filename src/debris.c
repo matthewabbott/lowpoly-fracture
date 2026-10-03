@@ -597,68 +597,6 @@ void lpShove( lpWorld* w, float timeStep )
 	}
 }
 
-void lpWorld_Blow( lpWorld* w, lpPos origin, lpVec3 direction, float range, float halfAngleRadians, float speed )
-{
-	lpBlow blow = { origin, lpNormalize( direction ), range, lpComputeCosSin( halfAngleRadians ).cosine, speed };
-	lpArray_Push( w->blows, blow );
-}
-
-void lpApplyBlows( lpWorld* w )
-{
-	for ( int i = 0; i < w->blows.count; ++i )
-	{
-		lpBlow blow = w->blows.data[i];
-		lpVec3 o = lpToVec3( blow.origin );
-		lpVec3 e = lpMulAdd( o, blow.range, blow.direction );
-		float spread = blow.range * sqrtf( lpMaxFloat( 1.0f - blow.cosAngle * blow.cosAngle, 0.0f ) ) + 0.5f;
-		lpVec3 pad = { spread, spread, spread };
-		lpAABB box = { lpSub( lpMin( o, e ), pad ), lpAdd( lpMax( o, e ), pad ) };
-
-		lpQueryPieces( w, box );
-		w->stamp += 1;
-		int stamp = w->stamp;
-		for ( int k = 0; k < w->scratchPieces.count; ++k )
-		{
-			int bi = w->pieces.data[w->scratchPieces.data[k]].body;
-			lpBody* b = w->bodies.data + bi;
-			if ( b->kind == lp_kindStructure || b->stamp == stamp )
-			{
-				continue;
-			}
-			b->stamp = stamp;
-			lpPos c = lpPhys_GetWorldCenter( w->phys, b->id );
-			lpVec3 rel = lpSubPos( c, blow.origin );
-			float d = lpLength( rel );
-			if ( d > blow.range || d < 1e-3f || lpDot( rel, blow.direction ) < blow.cosAngle * d )
-			{
-				continue;
-			}
-			float f = 1.0f - d / blow.range;
-			lpWakeRubble( w, bi );
-			float mass = lpPhys_GetMass( w->phys, b->id );
-			float dv = blow.speed * f * lpClampFloat( 25.0f / lpMaxFloat( mass, 0.01f ), 0.05f, 1.0f );
-			lpVec3 push = lpMulAdd( lpMulSV( dv, blow.direction ), 0.3f * dv, (lpVec3){ 0.0f, 1.0f, 0.0f } );
-			lpPhys_ApplyImpulse( w->phys, b->id, lpMulSV( mass, push ), c, true );
-		}
-
-		lpQueryLoose( w, box );
-		for ( int k = 0; k < w->scratchLoose.count; ++k )
-		{
-			lpBody* b = w->bodies.data + w->scratchLoose.data[k];
-			lpVec3 rel = lpSubPos( b->com, blow.origin );
-			float d = lpLength( rel );
-			if ( d > blow.range || d < 1e-3f || lpDot( rel, blow.direction ) < blow.cosAngle * d )
-			{
-				continue;
-			}
-			float f = 1.0f - d / blow.range;
-			lpLoosen( b );
-			b->v = lpMulAdd( lpMulAdd( b->v, blow.speed * f, blow.direction ), 0.3f * blow.speed * f, (lpVec3){ 0.0f, 1.0f, 0.0f } );
-		}
-	}
-	w->blows.count = 0;
-}
-
 void lpWorld_PromoteBody( lpWorld* w, int body )
 {
 	if ( body >= 0 && body < w->bodies.count && w->bodies.data[body].alive )

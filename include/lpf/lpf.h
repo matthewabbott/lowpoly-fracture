@@ -682,10 +682,6 @@ typedef struct lpImpactDef
 // Queued; applied at the start of the next step, in call order.
 void lpWorld_AddImpact( lpWorld* world, const lpImpactDef* impact );
 
-// Leaf blower: wakes rubble, scrap and ghosts in a cone and pushes them along the direction (light things strongly,
-// heavy things barely). Call every tick while blowing; applied at the next step.
-void lpWorld_Blow( lpWorld* world, lpPos origin, lpVec3 direction, float range, float halfAngleRadians, float speed );
-
 // Make a body full physics again (a thrown or launched piece). Ghost and scrap bodies get a Box3D body back.
 void lpWorld_PromoteBody( lpWorld* world, int body );
 

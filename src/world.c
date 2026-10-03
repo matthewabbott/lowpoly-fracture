@@ -473,7 +473,6 @@ void lpDestroyWorld( lpWorld* w )
 	lpFree( w->jobs );
 	lpTaskPool_Destroy( w->tasks );
 	lpArray_Free( w->pulls );
-	lpArray_Free( w->blows );
 	lpArray_Free( w->deferred );
 	lpArray_Free( w->scratchLoose );
 	lpArray_Free( w->scratchHits );

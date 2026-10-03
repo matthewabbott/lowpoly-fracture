@@ -245,7 +245,6 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 
 	lpApplyWakes( w );
 	lpApplyForces( w );
-	lpApplyBlows( w );
 	lpApplyPulls( w );
 	lpSyncLinks( w ); // every body of this step exists now
 	lpDrainPools( w, timeStep );

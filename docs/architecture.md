@@ -38,11 +38,10 @@ tiers instead of popping them.
   VEHICLE and CHARACTER, LIGHT with static bodies only: full rubble keeps its FULL category once frozen, so a custom
   filter lets a moving light piece touch structures and rubble but never moving full debris.
 - Ghost flight plans cast the chord of the next 8 ticks against static bodies (structures and rubble), capped per
-  step. Loose ghosts and scrap live in a hashed 2 m grid for blasts, shoves and the blower.
+  step. Loose ghosts and scrap live in a hashed 2 m grid for blasts and shoves.
 - Rest and promotion: fast heavy full bodies shove light rubble and scrap aside one way (styrofoam) and wake full
   rubble so Box3D resolves the collision; hit events wake rubble above `wakeSpeed`; `lpWorld_Pull`,
-  `lpWorld_PromoteBody` and blasts give pieces full physics back; `lpWorld_Blow` pushes rubble, scrap and ghosts
-  (the sandbox's leaf blower).
+  `lpWorld_PromoteBody` and blasts give pieces full physics back.
 - Budgets form a ladder: full over its cap becomes light, light becomes ghost, ghosts end as particles, rubble over
   its cap becomes scrap, and scrap over its cap sinks into the ground. Fracture jobs per step are capped too;
   overflow is deferred to the next step, nearest first.
@@ -371,7 +370,7 @@ tiers instead of popping them.
   fracture, particle kind, merge slack, and each material's default joints.
 - `lpWorldDef`: fragment scale (main performance knob), debris scale (tier thresholds), per-tier caps, fracture
   jobs per step, stress scale and budgets, worker count, debug log (`LPF_DEBUG=1` in the sandbox).
-- `lpWorld_Blow` (cone push) and `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
+- `lpWorld_PromoteBody` (full physics for a thrown or launched piece).
 - `lpCreateLink` (weld, hinge, ball, rope) with `lpWorld_GetLinkState` (force, utilization, strain, health) and
   `lpWorld_SetRopeLength` (winches, cranes); `lpObjectDef.gravityScale` and `lpWorld_SetGravityScale`.
 - Motors on hinges and ball joints (`lpMotorDef`, `lpWorld_SetLinkTarget`, `lpWorld_SetLinkTargetRotation`), and rigs

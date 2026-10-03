@@ -3,13 +3,13 @@
 // applied to a world, so the sandbox, the benchmark and the tests replay the same session headless or not.
 //
 // One event per line, `#` starts a comment:
-//   tick tool ox oy oz dx dy dz [n]           tool: rifle grenade cannon hammer ball flask pull blow (dir normalised)
+//   tick tool ox oy oz dx dy dz [n]           tool: rifle grenade cannon hammer ball flask pull (dir normalised)
 //   tick drive vehicle throttle brake steer handbrake
 //   tick walk rig forward strafe turn crouch
 //   tick reach rig limb active x y z          a limb strikes at the point (active 1) or steps back into the gait (0)
 //   tick grab rig limb                        the claw grabs what it touches, or lets go of what it holds
 //   tick impact ox oy oz dx dy dz radius energy [impulse]   an impact of your own where the ray hits (dir normalised)
-// pull: origin is the target and dir the grabbed point in the body frame, n the piece; blow: n ticks held (default 1).
+// pull: origin is the target and dir the grabbed point in the body frame, n the piece.
 // Events apply at the start of their tick, before the step, in file order.
 
 #pragma once
@@ -31,7 +31,6 @@ typedef enum lpScriptKind
 	lp_scriptBall,
 	lp_scriptFlask,
 	lp_scriptPull,
-	lp_scriptBlow,
 	lp_scriptToolCount,
 	lp_scriptDrive = lp_scriptToolCount,
 	lp_scriptWalk,
@@ -77,8 +76,8 @@ typedef struct lpScriptState
 
 lpScriptState lpDefaultScriptState( void );
 
-// Appends the events of one line (none for a comment or a blank line; a held blower gives one per tick). Returns false
-// if the line names an unknown tool.
+// Appends the event of one line (none for a comment or a blank line). Returns false if the line names an unknown
+// tool.
 bool lpScriptParseLine( lpScript* script, const char* line );
 
 // Appends a file's events. Returns false if it cannot be read.

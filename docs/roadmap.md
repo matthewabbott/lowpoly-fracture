@@ -45,7 +45,7 @@ Order (one at a time):
 "Cooking the books": the fracture detail is real, but most fragments become cheap objects. A log shot through leaves
 cosmetic splinters and two rough ends of a handful of triangles each.
 
-Done: the tiers (puff, ghost, light, full), rest states, shoving, the budget ladder and the blower are described
+Done: the tiers (puff, ghost, light, full), rest states, shoving and the budget ladder are described
 in [architecture.md](architecture.md) ("Debris tiers"); numbers are in [perf-log.md](perf-log.md).
 
 Grabbing or launching a piece promotes it to full. Over budget, debris is demoted down the ladder instead of
@@ -533,12 +533,13 @@ The catalogue is the contract the integer core must meet, so it comes before the
      - one motor-capability evaluation;
      - the impact, supply and wheel-load adapters.
    - **The rig's thresholds into `lpRigDef` (Sol).** Small; with the creatures milestone.
-   - **Pruning the leaf blower** (Fable: it serves no catalogue outcome) is the owner's call, and is still pending.
+   - **The leaf blower** (Fable: it serves no catalogue outcome) was pruned after the close, at the owner's word: a
+     convenience a game can script, not an engine feature.
 
 ## 10. Commands, hashes and the first co-op
 
 The multiplayer primitive's first half (L1a in the research), and two machines playing together on today's Box3D.
-- **A command queue in the core:** every input (impacts, pulls, blows, controls, limb targets, grabs, spawns)
+- **A command queue in the core:** every input (impacts, pulls, controls, limb targets, grabs, spawns)
   tick-stamped, with exact floats and keyed references, applied in `(peer, sequence)` order before the step; the
   sandbox's tools and claw become commands (T0 #18, #19).
 - **Stable ids:** generations for bonds, wheels and bodies; global keys for runtime objects (T0 #13, #14).

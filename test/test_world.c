@@ -594,7 +594,6 @@ static int TestScriptRoundTrip( void )
 		"\n",
 		"10 rifle 0 2.2 8 -1.5 -0.4 -11\n",
 		"12 pull 1 2 3 0.25 -0.5 0.125 7\n",
-		"20 blow 0 1 2 0 0.1 -1 3\n",
 		"30 drive 0 1 0 -0.25 1\n",
 		"40 walk 0 0.5 0 0.1 0.3\n",
 		"50 reach 0 2 1 1.5 0.25 -3\n",
@@ -608,11 +607,10 @@ static int TestScriptRoundTrip( void )
 		ENSURE( lpScriptParseLine( &a, lines[i] ) );
 	}
 	ENSURE( lpScriptParseLine( &a, "80 laser 0 0 0 0 0 1\n" ) == false );
-	ENSURE( a.count == 11 ); // the blower held for 3 ticks is 3 events
-	ENSURE( a.events[10].kind == lp_scriptImpact && a.events[10].energy == 40000.0f && a.events[10].impulse == 5.0f );
+	ENSURE( a.count == 8 );
+	ENSURE( a.events[7].kind == lp_scriptImpact && a.events[7].energy == 40000.0f && a.events[7].impulse == 5.0f );
 	ENSURE( a.events[1].kind == lp_scriptPull && a.events[1].index == 7 );
-	ENSURE( a.events[2].kind == lp_scriptBlow && a.events[4].kind == lp_scriptBlow && a.events[4].tick == 22 );
-	ENSURE( a.events[9].kind == lp_scriptGrenade );
+	ENSURE( a.events[6].kind == lp_scriptGrenade );
 
 	FILE* f = fopen( "lpf_test_script.txt", "w+" ); // in the working directory: tmpfile() may want the drive's root
 	ENSURE( f != NULL );
@@ -649,7 +647,6 @@ static int TestScriptReplay( void )
 		"50 ball    0 2.2 8    0.2 -0.1 -1\n",
 		"60 flask   0 2.2 8   -0.3 -0.05 -1\n",
 		"90 cannon  0 2.2 8    0 -0.3 -11\n",
-		"150 blow   0 0.6 -2   0 0 -1 20\n",
 	};
 	lpScript script = { 0 };
 	for ( int i = 0; i < (int)( sizeof( lines ) / sizeof( lines[0] ) ); ++i )

@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* s_tokens[lp_scriptToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull", "blow" };
+static const char* s_tokens[lp_scriptToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull" };
 
 lpScriptState lpDefaultScriptState( void )
 {
@@ -147,19 +147,12 @@ bool lpScriptParseLine( lpScript* script, const char* line )
 	}
 	if ( e.kind < 0 )
 	{
-		fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, blow, drive, walk, reach, grab, impact)\n",
+		fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, drive, walk, reach, grab, impact)\n",
 				 name );
 		return false;
 	}
-	// A held blower: the last field is how many ticks it stays on
-	int repeat = e.kind == lp_scriptBlow && e.index > 1 ? e.index : 1;
-	for ( int k = 0; k < repeat; ++k )
-	{
-		lpScriptEvent copy = e;
-		copy.tick = e.tick + k;
-		copy.index = e.kind == lp_scriptPull ? e.index : -1;
-		Push( script, &copy );
-	}
+	e.index = e.kind == lp_scriptPull ? e.index : -1;
+	Push( script, &e );
 	return true;
 }
 
@@ -321,11 +314,6 @@ void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state
 		case lp_scriptPull:
 			// origin = target, dir = grabbed point in the body frame
 			lpWorld_Pull( world, e->index, e->dir, e->origin, 40.0f, 400.0f );
-			return;
-		case lp_scriptBlow:
-			// 8 m cone of air: wakes and pushes rubble, scrap and ghosts, so a road can be cleared. Gentle enough that
-			// blown rubble does not smash into what it lands against (damage starts at 4 m/s).
-			lpWorld_Blow( world, e->origin, dir, 8.0f, 0.35f, 4.5f );
 			return;
 		case lp_scriptFlask:
 			ThrowFlask( world, e->origin, dir );

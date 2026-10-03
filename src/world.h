@@ -475,15 +475,6 @@ typedef struct lpPull
 	float maxMass;
 } lpPull;
 
-typedef struct lpBlow
-{
-	lpPos origin;
-	lpVec3 direction;
-	float range;
-	float cosAngle;
-	float speed;
-} lpBlow;
-
 typedef struct lpWake
 {
 	lpVec3 center;
@@ -586,7 +577,6 @@ struct lpWorld
 	bool supplyDirty; // a carrier's connections changed: supply is recomputed before the next physics step
 	LP_ARRAY( int ) scratchCarriers;
 	LP_ARRAY( lpPull ) pulls;
-	LP_ARRAY( lpBlow ) blows;
 	LP_ARRAY( lpDeferredJob ) deferred;
 
 	LP_ARRAY( int ) scratchPieces;
@@ -813,7 +803,6 @@ void lpQueryLoose( lpWorld* w, lpAABB box );
 void lpStepGhosts( lpWorld* w, float timeStep );
 void lpApplyLooseForce( lpWorld* w, const lpForce* force );
 void lpShove( lpWorld* w, float timeStep );
-void lpApplyBlows( lpWorld* w );
 void lpEnforceBudgets( lpWorld* w );
 // Debris the physics engine put to sleep is frozen into rubble once old enough; debris below the kill depth goes
 void lpFreezeOrKill( lpWorld* w );

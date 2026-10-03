@@ -17,7 +17,7 @@ a track only when a decision needs its detail.
 
 | path | what it is |
 |---|---|
-| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, blows, stats, queries |
+| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, stats, queries |
 | `include/lpf/lpmath.h`, `src/lpmath.c` | vector maths (`lpVec3`, `lpQuat`, `lpTransform`, `lpPos`, ...), Box3D's own taken over with each operation kept; the trig is hand coded for determinism |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
@@ -37,7 +37,7 @@ a track only when a decision needs its detail.
 | `src/gait.c` | the built-in walker (`lpWalkRig`, tuned by `lpRigDef.gait`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
-| `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, blow, budget ladder, filters |
+| `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`, `lpRigGrab`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol); `lpBuildScene` settles their structures. `script.c`: the replay scripts (read, write, apply; the sandbox's tools live here), `dump.c`: a world's state as JSON |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
 | `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md` |
