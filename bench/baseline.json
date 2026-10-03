@@ -118,8 +118,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "8af4565c57010612",
-        "solverHash": "686a3d231c6e9159"
+        "hash": "b374fa9e02670307",
+        "solverHash": "8dd78523405e1fce"
       },
       {
         "workers": 8,
@@ -156,8 +156,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "8af4565c57010612",
-        "solverHash": "686a3d231c6e9159"
+        "hash": "b374fa9e02670307",
+        "solverHash": "8dd78523405e1fce"
       }
     ],
     "pile": [
@@ -586,8 +586,8 @@
         "bonds": 6296,
         "over16ms": 13,
         "over33ms": 1,
-        "hash": "4157354bf29d8517",
-        "solverHash": "c4e74b65b16acd80"
+        "hash": "0396202738d682d3",
+        "solverHash": "d7873c83b0e0c015"
       },
       {
         "workers": 8,
@@ -624,8 +624,8 @@
         "bonds": 6296,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "4157354bf29d8517",
-        "solverHash": "c4e74b65b16acd80"
+        "hash": "0396202738d682d3",
+        "solverHash": "d7873c83b0e0c015"
       }
     ],
     "barrage": [
@@ -664,8 +664,8 @@
         "bonds": 3612,
         "over16ms": 6,
         "over33ms": 0,
-        "hash": "54025c1ad26b9188",
-        "solverHash": "f224625e8e03a2a9"
+        "hash": "bae6abb4508cccd5",
+        "solverHash": "c2417dde31c33f07"
       },
       {
         "workers": 8,
@@ -702,8 +702,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "54025c1ad26b9188",
-        "solverHash": "f224625e8e03a2a9"
+        "hash": "bae6abb4508cccd5",
+        "solverHash": "c2417dde31c33f07"
       }
     ],
     "siege": [
@@ -742,8 +742,8 @@
         "bonds": 6296,
         "over16ms": 355,
         "over33ms": 32,
-        "hash": "ce4786f0a822c913",
-        "solverHash": "d645c8c8a224cfbf"
+        "hash": "218ccf656777d895",
+        "solverHash": "495fa09fc51ba805"
       },
       {
         "workers": 8,
@@ -780,8 +780,8 @@
         "bonds": 6296,
         "over16ms": 27,
         "over33ms": 0,
-        "hash": "ce4786f0a822c913",
-        "solverHash": "d645c8c8a224cfbf"
+        "hash": "218ccf656777d895",
+        "solverHash": "495fa09fc51ba805"
       }
     ],
     "track": [

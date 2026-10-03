@@ -167,6 +167,9 @@ void lpSystemResize( lpStressSystem* s )
 	int n = s->nodes.count;
 	lpArray_Reserve( s->vectors, 6 * n );
 	s->vectors.count = 6 * n;
+	// Cleared: a region solve never writes the solver's vectors past its region, and they are state (hashed while it
+	// solves), so what was in the memory before must not show
+	memset( s->vectors.data, 0, sizeof( lpVec6 ) * (size_t)( 6 * n ) );
 	s->factored = false;
 }
 
