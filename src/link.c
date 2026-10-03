@@ -242,7 +242,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 	}
 	lpBuildJoint( w, index );
 	w->linkCount += 1;
-	lpCarriersChanged( w, def->carries );
+	lpCarriersChanged( w, def->carries, l->ends[0].piece, l->ends[1].piece );
 	return index;
 }
 
@@ -348,7 +348,7 @@ static void lpReleaseLink( lpWorld* w, int index, bool broken )
 			lpPhys_DestroyBody( w->phys, l->anchor[k] );
 		}
 	}
-	lpCarriersChanged( w, l->def.carries );
+	lpCarriersChanged( w, l->def.carries, l->ends[0].piece, l->ends[1].piece );
 	l->alive = false;
 	l->joint = lp_nullPhysJoint;
 	l->nextFree = w->freeLink;

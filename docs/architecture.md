@@ -109,6 +109,15 @@ tiers instead of popping them.
   pass. It is recomputed once a step, after `lpSyncLinks`, and only when a carrier's connections changed (a bond or
   link between carriers made or broken, a carrier made or freed); only carriers are walked. Wheels drive as well as
   the worst of their `driveNeeds` is fed at their mount and steer at that rate for `steerNeeds` (unfed, they hold).
+- The supply wave (`supplyHopsPerTick`, 16; milestone 10): what an update finds reaches each carrier
+  `(d + 2 r) / H` steps later, where d is its distance (over carriers sharing a channel, and links carrying one) from
+  the nearest place carriers' connections changed (`lpCarriersChanged` records them) and r how far that connected
+  set's other change sites lie from its first; no site is further than d + 2 r, so nothing arrives before its cause.
+  Until then the carrier keeps what it had; the change waits in `w->supplyWaves` (hashed with the world), applied at
+  the start of the step it is due, in (tick, channel, piece) order. A wave already on its way with the same value keeps
+  its arrival, and one a later update undoes is dropped. A pool's leak opens when the wave reaches the pool's source.
+  A new object's supply comes at once (its own bonds change nothing that was there), and so does a change no site
+  reaches. `TestSupplyCone`: the drop of a cut 60-box line runs exactly H boxes a step.
 - Pools (`lpPartSystem.pool`, `seal`): a source part's fluid (hydraulics, fuel, blood), shared by every piece made from
   it (`w->pools`; cells kept on the body inherit it, chips thrown clear do not). Each supply update measures the
   carrier volume the pool's lowest channel reaches; when that drops, a leak opens that drains the share lost per second

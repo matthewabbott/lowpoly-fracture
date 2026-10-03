@@ -929,7 +929,7 @@ static int TestMotorJams( void )
 		{
 			s.world->pieces.data[post->pieces.data[i]].sources = 0;
 		}
-		lpCarriersChanged( s.world, 0xFF );
+		lpCarriersChanged( s.world, 0xFF, -1, -1 );
 		float held = lpWorld_GetLinkState( s.world, a.link ).angle;
 		Run( &s, 120 );
 		falls[k] = held - lpWorld_GetLinkState( s.world, a.link ).angle;

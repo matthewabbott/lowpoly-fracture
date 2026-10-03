@@ -450,6 +450,19 @@ typedef struct lpBody
 	int gridNext;
 } lpBody;
 
+// A supply change on its way (supply.c, lpWorldDef.supplyHopsPerTick): a carrier's channel takes a value, or a pool's
+// leak opens, when the change reaches it
+typedef struct lpSupplyWave
+{
+	uint64_t tick; // it arrives as this tick's step updates supply
+	int piece;	   // the carrier (-1: a pool's leak)
+	uint32_t generation;
+	int pool; // the pool whose leak opens (-1: a carrier)
+	float leak;
+	uint8_t channel;
+	uint8_t value;
+} lpSupplyWave;
+
 // A source part's pool (supply.c), shared by every piece made from it
 typedef struct lpPool
 {
@@ -462,6 +475,7 @@ typedef struct lpPool
 	int step;	 // level in sixteenths at the last supply update
 	float leakRate; // lpPartSystem's, defaults filled in
 	float pressure;
+	int source; // a piece holding it, found by the last supply update: its leak's wave arrives there (-1: none yet)
 } lpPool;
 
 // A detonator of a part or an object, shared by every piece made from it: the first of them to go off disarms it
@@ -620,6 +634,8 @@ struct lpWorld
 	LP_ARRAY( lpDetonator ) detonators;
 	LP_ARRAY( lpPool ) pools;
 	bool supplyDirty; // a carrier's connections changed: supply is recomputed before the next physics step
+	LP_ARRAY( int ) supplySites;		   // the carriers where they changed since the last update (the waves start there)
+	LP_ARRAY( lpSupplyWave ) supplyWaves; // changes on their way, by (tick, channel, piece, pool)
 	LP_ARRAY( int ) scratchCarriers;
 	LP_ARRAY( lpPull ) pulls;
 	LP_ARRAY( lpDeferredJob ) deferred;
@@ -765,13 +781,27 @@ void lpAddWheelLoads( lpWorld* w, int bodyIndex, lpWorldTransform xf );
 
 // supply (supply.c): recomputed once a step, after lpSyncLinks, when a carrier's connections changed
 void lpUpdateSupply( lpWorld* w );
+// The supply changes due by this step arrive (lpWorldDef.supplyHopsPerTick)
+void lpApplySupplyWaves( lpWorld* w );
 uint8_t lpSuppliedMask( const lpPiece* p );			  // channels fed at all here
 // Before the supply update: leaks drain their pools and close; a pool that crosses a sixteenth asks for an update
 void lpDrainPools( lpWorld* w, float timeStep );
 float lpSupplyOf( const lpPiece* p, uint8_t channels ); // the worst of those channels here, 0 to 1 (1 for none)
-static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
+// Carriers' connections changed at pieces a and b (-1: none): supply is updated, and its changes travel from there
+static inline void lpCarriersChanged( lpWorld* w, uint8_t channels, int a, int b )
 {
 	w->supplyDirty = w->supplyDirty || channels != 0;
+	if ( channels != 0 && w->def.supplyHopsPerTick > 0 )
+	{
+		if ( a >= 0 )
+		{
+			lpArray_Push( w->supplySites, a );
+		}
+		if ( b >= 0 )
+		{
+			lpArray_Push( w->supplySites, b );
+		}
+	}
 }
 bool lpValidateWheel( const lpWorld* w, int link );
 void lpFreeVehicles( lpWorld* w );

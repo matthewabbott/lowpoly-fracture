@@ -254,6 +254,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpApplyForces( w );
 	lpApplyPulls( w );
 	lpSyncLinks( w ); // every body of this step exists now
+	lpApplySupplyWaves( w );
 	lpDrainPools( w, timeStep );
 	lpUpdateSupply( w );
 	w->stats.fractureMs = lpGetMillisecondsAndReset( &ticks );

@@ -52,6 +52,210 @@ static float lpSourceFeed( const lpWorld* w, const lpPiece* p )
 	return feed;
 }
 
+// The k-th neighbour of a carrier over what carries a channel both share: its bonds, then its links (-1: none there)
+static int lpCarrierNeighbour( const lpWorld* w, int pi, int k )
+{
+	const lpPiece* p = w->pieces.data + pi;
+	int other = -1;
+	uint8_t carried = p->carries;
+	if ( k < p->bonds.count )
+	{
+		const lpBond* bond = w->bonds.data + p->bonds.data[k];
+		other = bond->a == pi ? bond->b : bond->a;
+	}
+	else
+	{
+		const lpLink* l = w->links.data + p->links.data[k - p->bonds.count];
+		other = l->ends[0].piece == pi ? l->ends[1].piece : l->ends[0].piece;
+		carried &= l->def.carries;
+	}
+	bool joined = other >= 0 && w->pieces.data[other].body >= 0 && ( w->pieces.data[other].carries & carried ) != 0;
+	return joined ? other : -1;
+}
+
+static bool lpLiveSite( const lpWorld* w, int site )
+{
+	return site >= 0 && site < w->pieces.count && w->pieces.data[site].body >= 0 && w->pieces.data[site].carries != 0;
+}
+
+// Breadth first from the queue's first `tail` pieces (their dist set), over carriers: dist for the rest it reaches
+// (those still at -1); comp, when given, takes the first's set
+static void lpCarrierSearch( const lpWorld* w, int* queue, int tail, int* dist, int* comp )
+{
+	for ( int head = 0; head < tail; ++head )
+	{
+		int pi = queue[head];
+		const lpPiece* p = w->pieces.data + pi;
+		for ( int k = 0; k < p->bonds.count + p->links.count; ++k )
+		{
+			int other = lpCarrierNeighbour( w, pi, k );
+			if ( other >= 0 && dist[other] < 0 )
+			{
+				dist[other] = dist[pi] + 1;
+				if ( comp != NULL )
+				{
+					comp[other] = comp[pi];
+				}
+				queue[tail++] = other;
+			}
+		}
+	}
+}
+
+// The supply wave (supplyHopsPerTick): how many steps after this one a change reaches each carrier, from the sites
+// where carriers' connections changed. A carrier d hops from the nearest site, in a connected set of carriers whose
+// sites lie within r hops of its first, gets (d + 2 r) / H: no site is further than d + 2 r from it, so nothing arrives
+// before its cause could have. Into offset (by piece); -1 where no site reaches.
+static void lpSupplyArrivals( lpWorld* w, int* offset )
+{
+	int n = w->pieces.count;
+	int* comp = lpAlloc( sizeof( int ) * (size_t)( n > 0 ? n : 1 ) );
+	int* queue = lpAlloc( sizeof( int ) * (size_t)( n > 0 ? n : 1 ) );
+	LP_ARRAY( int ) spread = { 0 };
+	for ( int i = 0; i < n; ++i )
+	{
+		offset[i] = -1; // distances first
+		comp[i] = -1;
+	}
+
+	// Each connected set holding a site: the distances from its first site, and how far its other sites lie
+	for ( int s = 0; s < w->supplySites.count; ++s )
+	{
+		int site = w->supplySites.data[s];
+		if ( lpLiveSite( w, site ) == false || comp[site] >= 0 )
+		{
+			continue;
+		}
+		comp[site] = spread.count;
+		offset[site] = 0;
+		queue[0] = site;
+		lpCarrierSearch( w, queue, 1, offset, comp );
+		int r = 0;
+		for ( int t = 0; t < w->supplySites.count; ++t )
+		{
+			int other = w->supplySites.data[t];
+			r = lpLiveSite( w, other ) && comp[other] == comp[site] ? lpMaxInt( r, offset[other] ) : r;
+		}
+		lpArray_Push( spread, r );
+	}
+
+	// From every site at once: the nearest
+	for ( int i = 0; i < n; ++i )
+	{
+		offset[i] = -1;
+	}
+	int tail = 0;
+	for ( int s = 0; s < w->supplySites.count; ++s )
+	{
+		int site = w->supplySites.data[s];
+		if ( lpLiveSite( w, site ) && offset[site] < 0 )
+		{
+			offset[site] = 0;
+			queue[tail++] = site;
+		}
+	}
+	lpCarrierSearch( w, queue, tail, offset, NULL );
+
+	int hops = w->def.supplyHopsPerTick;
+	for ( int i = 0; i < n; ++i )
+	{
+		offset[i] = comp[i] >= 0 && offset[i] >= 0 ? ( offset[i] + 2 * spread.data[comp[i]] ) / hops : -1;
+	}
+	lpArray_Free( spread );
+	lpFree( comp );
+	lpFree( queue );
+}
+
+static int lpCompareWave( const void* x, const void* y )
+{
+	const lpSupplyWave* a = x;
+	const lpSupplyWave* b = y;
+	if ( a->tick != b->tick )
+	{
+		return a->tick < b->tick ? -1 : 1;
+	}
+	if ( a->channel != b->channel )
+	{
+		return a->channel < b->channel ? -1 : 1;
+	}
+	if ( a->piece != b->piece )
+	{
+		return a->piece < b->piece ? -1 : 1;
+	}
+	return ( a->pool > b->pool ) - ( a->pool < b->pool );
+}
+
+void lpApplySupplyWaves( lpWorld* w )
+{
+	int due = 0;
+	while ( due < w->supplyWaves.count && w->supplyWaves.data[due].tick <= w->tick )
+	{
+		const lpSupplyWave* wave = w->supplyWaves.data + due;
+		if ( wave->piece >= 0 )
+		{
+			lpPiece* p = w->pieces.data + wave->piece;
+			if ( p->body >= 0 && p->generation == wave->generation && p->supply[wave->channel] != wave->value )
+			{
+				p->supply[wave->channel] = wave->value;
+				lpHashMarkPiece( w, wave->piece );
+			}
+		}
+		else if ( wave->pool >= 0 && wave->pool < w->pools.count )
+		{
+			w->pools.data[wave->pool].leak += wave->leak;
+		}
+		due += 1;
+	}
+	if ( due > 0 )
+	{
+		memmove( w->supplyWaves.data, w->supplyWaves.data + due, sizeof( lpSupplyWave ) * (size_t)( w->supplyWaves.count - due ) );
+		w->supplyWaves.count -= due;
+	}
+}
+
+// With waves: a carrier keeps what it had where what the update found has not reached it yet, and the change goes on
+// its way. One already on its way with the same value keeps its arrival; one the update undoes is dropped.
+static void lpSendSupply( lpWorld* w, const uint8_t* before, const int* offset )
+{
+	uint8_t* sent = lpAlloc( (size_t)( w->pieces.count > 0 ? w->pieces.count : 1 ) );
+	memset( sent, 0, (size_t)w->pieces.count );
+	int kept = 0;
+	for ( int k = 0; k < w->supplyWaves.count; ++k )
+	{
+		lpSupplyWave wave = w->supplyWaves.data[k];
+		if ( wave.piece >= 0 )
+		{
+			lpPiece* p = w->pieces.data + wave.piece;
+			bool same = p->body >= 0 && p->generation == wave.generation && p->carries != 0;
+			if ( same == false || p->supply[wave.channel] != wave.value )
+			{
+				continue; // the piece is gone, or the update found something else (sent below)
+			}
+			p->supply[wave.channel] = before[LP_CHANNELS * wave.piece + wave.channel];
+			sent[wave.piece] |= (uint8_t)( 1u << wave.channel );
+		}
+		w->supplyWaves.data[kept++] = wave;
+	}
+	w->supplyWaves.count = kept;
+	for ( int i = 0; i < w->scratchCarriers.count; ++i )
+	{
+		int pi = w->scratchCarriers.data[i];
+		lpPiece* p = w->pieces.data + pi;
+		for ( int c = 0; c < LP_CHANNELS && offset[pi] > 0; ++c )
+		{
+			uint8_t now = before[LP_CHANNELS * pi + c];
+			if ( ( sent[pi] & ( 1u << c ) ) != 0 || p->supply[c] == now )
+			{
+				continue;
+			}
+			lpSupplyWave wave = { w->tick + (uint64_t)offset[pi], pi, p->generation, -1, 0.0f, (uint8_t)c, p->supply[c] };
+			lpArray_Push( w->supplyWaves, wave );
+			p->supply[c] = now; // here when it arrives (at once where it is due now, or where no change site reaches)
+		}
+	}
+	lpFree( sent );
+}
+
 void lpUpdateSupply( lpWorld* w )
 {
 	if ( w->supplyDirty == false )
@@ -75,6 +279,15 @@ void lpUpdateSupply( lpWorld* w )
 	for ( int i = 0; i < w->pools.count; ++i )
 	{
 		w->pools.data[i].found = 0.0f;
+		w->pools.data[i].source = -1;
+	}
+	// What each carrier has before the update finds anew (with waves, the change reaches it later)
+	bool waves = w->def.supplyHopsPerTick > 0;
+	uint8_t* before = waves ? lpAlloc( (size_t)LP_CHANNELS * (size_t)( w->pieces.count > 0 ? w->pieces.count : 1 ) ) : NULL;
+	for ( int i = 0; waves && i < count; ++i )
+	{
+		int pi = w->scratchCarriers.data[i];
+		memcpy( before + LP_CHANNELS * pi, w->pieces.data[pi].supply, LP_CHANNELS );
 	}
 	for ( int c = 0; c < LP_CHANNELS; ++c )
 	{
@@ -157,21 +370,47 @@ void lpUpdateSupply( lpWorld* w )
 				{
 					lpPool* pool = w->pools.data + p->pool - 1;
 					pool->found = lpMaxFloat( pool->found, volume );
+					pool->source = pool->source < 0 ? queue[k] : pool->source;
 				}
 			}
 		}
 	}
 
-	// Lines that lost volume leak
+	int* offset = NULL;
+	if ( waves )
+	{
+		offset = lpAlloc( sizeof( int ) * (size_t)( w->pieces.count > 0 ? w->pieces.count : 1 ) );
+		lpSupplyArrivals( w, offset );
+		lpSendSupply( w, before, offset );
+	}
+
+	// Lines that lost volume leak (with waves, once the change reaches the pool)
 	for ( int i = 0; i < w->pools.count; ++i )
 	{
 		lpPool* pool = w->pools.data + i;
 		if ( pool->reach > 0.0f && pool->found < pool->reach )
 		{
-			pool->leak += pool->leakRate * pool->capacity * ( pool->reach - pool->found ) / pool->reach;
+			float leak = pool->leakRate * pool->capacity * ( pool->reach - pool->found ) / pool->reach;
+			int arrives = waves && pool->source >= 0 ? offset[pool->source] : 0;
+			if ( arrives > 0 )
+			{
+				lpSupplyWave wave = { w->tick + (uint64_t)arrives, -1, 0, i, leak, 0, 0 };
+				lpArray_Push( w->supplyWaves, wave );
+			}
+			else
+			{
+				pool->leak += leak;
+			}
 		}
 		pool->reach = pool->found;
 	}
+	if ( waves && w->supplyWaves.count > 1 )
+	{
+		qsort( w->supplyWaves.data, (size_t)w->supplyWaves.count, sizeof( lpSupplyWave ), lpCompareWave );
+	}
+	w->supplySites.count = 0;
+	lpFree( before );
+	lpFree( offset );
 }
 
 void lpDrainPools( lpWorld* w, float timeStep )
@@ -193,13 +432,13 @@ void lpDrainPools( lpWorld* w, float timeStep )
 		if ( pool->level <= 0.0f )
 		{
 			pool->leak = 0.0f; // empty: nothing left to push
-			w->supplyDirty = true;
+			lpCarriersChanged( w, 0xFF, pool->source, -1 );
 		}
 		int step = (int)( 16.0f * pool->level / pool->capacity );
 		if ( step != pool->step )
 		{
 			pool->step = step;
-			w->supplyDirty = true;
+			lpCarriersChanged( w, 0xFF, pool->source, -1 ); // what its source feeds changes there
 		}
 	}
 }

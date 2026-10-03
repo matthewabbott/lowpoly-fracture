@@ -5,6 +5,7 @@
 #include "test_sim.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 enum
 {
@@ -307,6 +308,83 @@ static int TestSupplyCut( void )
 	ENSURE( SupplyAt( &s, 1u, 3, 0 ) == 1.0f && SupplyAt( &s, 1u, 4, 0 ) == 0.0f && SupplyAt( &s, 1u, 6, 0 ) == 0.0f );
 	ENSURE( lpWorld_Validate( s.world ) );
 	DestroySim( &s );
+	return 0;
+}
+
+// A fuel line `count` boxes long, fixed to the ground, its first box the source
+static int AddLine( Sim* s, int count, uint32_t userId )
+{
+	lpPartDef* parts = malloc( sizeof( lpPartDef ) * (size_t)count );
+	for ( int k = 0; k < count; ++k )
+	{
+		parts[k] = lpDefaultPartDef();
+		parts[k].halfExtents = (lpVec3){ 0.2f, 0.2f, 0.2f };
+		parts[k].transform.p = (lpVec3){ 0.4f * (float)k - 0.2f * (float)count, 0.2f, 0.0f };
+		parts[k].material = lp_metal;
+		parts[k].anchored = true;
+		parts[k].system = (lpPartSystem){ 0, Fuel, k == 0 ? Fuel : 0, 0 };
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = true;
+	def.parts = parts;
+	def.partCount = count;
+	def.userId = userId;
+	int body = lpCreateObject( s->world, &def );
+	free( parts );
+	return body;
+}
+
+// The finite speed of propagation of supply (supplyHopsPerTick): two fuel lines 60 boxes long, cut near the source in
+// the second. Step by step the drop runs down the line: every box whose supply differs between them lies within H d
+// boxes of the cut after d steps, and the difference reaches past H (d - 1).
+static int TestSupplyCone( void )
+{
+	enum
+	{
+		hopsPerTick = 4,
+		count = 60
+	};
+	lpWorldDef def = lpDefaultWorldDef();
+	def.supplyHopsPerTick = hopsPerTick;
+	Sim a = CreateSimDef( def, -1 );
+	Sim b = CreateSimDef( def, -1 );
+	AddLine( &a, count, 1u );
+	AddLine( &b, count, 1u );
+	Run( &a, 2 );
+	Run( &b, 2 );
+	ENSURE( SupplyAt( &b, 1u, count - 1, 0 ) == 1.0f && lpWorld_Hash( a.world ) == lpWorld_Hash( b.world ) );
+
+	// Cut between boxes 1 and 2
+	lpPiece* p1 = b.world->pieces.data + PieceOf( &b, 1u, 1 );
+	int p2 = PieceOf( &b, 1u, 2 );
+	for ( int k = 0; k < p1->bonds.count; ++k )
+	{
+		const lpBond* bond = b.world->bonds.data + p1->bonds.data[k];
+		if ( bond->a == p2 || bond->b == p2 )
+		{
+			lpBreakBond( b.world, p1->bonds.data[k] );
+			break;
+		}
+	}
+	lpMarkDirty( b.world, p1->body );
+	for ( int d = 1; d <= 12; ++d )
+	{
+		Run( &a, 1 );
+		Run( &b, 1 );
+		int farthest = -1;
+		for ( int part = 0; part < count; ++part )
+		{
+			if ( SupplyAt( &a, 1u, part, 0 ) != SupplyAt( &b, 1u, part, 0 ) )
+			{
+				ENSURE( part >= 2 );
+				farthest = part - 2 > farthest ? part - 2 : farthest; // boxes from the cut
+			}
+		}
+		printf( "  step %2d: the drop has run %2d boxes down the line (bound %d)\n", d, farthest + 1, hopsPerTick * d );
+		ENSURE( farthest < hopsPerTick * d && farthest >= hopsPerTick * ( d - 1 ) );
+	}
+	DestroySim( &a );
+	DestroySim( &b );
 	return 0;
 }
 
@@ -732,6 +810,7 @@ int SystemsTest( void )
 	RUN_TEST( TestTankTornOffStaysVolatile, OUTCOME );
 	RUN_TEST( TestDetonatorDelay, OUTCOME );
 	RUN_TEST( TestSupplyCut, OUTCOME );
+	RUN_TEST( TestSupplyCone, MECHANISM );
 	RUN_TEST( TestSupplyNeeds, OUTCOME );
 	RUN_TEST( TestSupplyShare, OUTCOME );
 	RUN_TEST( TestSupplyOverLink, OUTCOME );

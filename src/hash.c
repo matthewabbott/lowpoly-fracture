@@ -108,6 +108,16 @@ static uint64_t lpHashWorldElement( const lpWorld* w )
 		h = lpHashWords( h, ref, sizeof( ref ) );
 		h = lpHashWords( h, v, sizeof( v ) );
 	}
+	// Supply changes on their way, and where the next ones start (supplyHopsPerTick)
+	h = lpHashWords( h, w->supplySites.data, sizeof( int ) * (size_t)w->supplySites.count );
+	for ( int i = 0; i < w->supplyWaves.count; ++i )
+	{
+		const lpSupplyWave* s = w->supplyWaves.data + i;
+		uint32_t wave[7] = { (uint32_t)s->tick, (uint32_t)( s->tick >> 32 ), (uint32_t)s->piece, s->generation, (uint32_t)s->pool,
+							 0, (uint32_t)s->channel | ( (uint32_t)s->value << 8 ) };
+		memcpy( wave + 5, &s->leak, 4 );
+		h = lpHashWords( h, wave, sizeof( wave ) );
+	}
 	return lpMix64( h );
 }
 
@@ -473,6 +483,10 @@ static uint64_t lpHashPoolElement( const lpWorld* w, int i )
 	float state[8] = { p->capacity, p->level, p->leak, p->seal, p->reach, p->found, p->leakRate, p->pressure };
 	h = lpHashWords( h, state, sizeof( state ) );
 	LP_FIELD( h, p->step );
+	if ( w->def.supplyHopsPerTick > 0 )
+	{
+		LP_FIELD( h, p->source ); // where its leak's wave arrives
+	}
 	return lpMix64( h );
 }
 

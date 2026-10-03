@@ -220,6 +220,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxStressStructureWork = 10000;
 	def.maxStressIterations = 256;
 	def.stressHopsPerTick = 16;
+	def.supplyHopsPerTick = 16;
 	def.maxSettleIterations = 4000;
 	def.stressLargeNodes = 512;
 	def.stressGlue = 0.3f;
@@ -305,7 +306,7 @@ void lpFreePieceSlot( lpWorld* w, int index )
 	lpHashMarkPiece( w, index );
 	lpBreakPieceLinks( w, index );
 	lpPiece* p = w->pieces.data + index;
-	lpCarriersChanged( w, p->carries );
+	lpCarriersChanged( w, p->carries, index, -1 );
 	lpShape_Destroy( p->shape );
 	if ( p->hull != NULL )
 	{
@@ -460,6 +461,8 @@ void lpDestroyWorld( lpWorld* w )
 	lpArray_Free( w->detonators );
 	lpArray_Free( w->pools );
 	lpArray_Free( w->scratchCarriers );
+	lpArray_Free( w->supplySites );
+	lpArray_Free( w->supplyWaves );
 	for ( int i = 0; i < w->stressJobCapacity; ++i )
 	{
 		lpArray_Free( w->stressJobs[i].slender );
@@ -602,7 +605,7 @@ void lpBreakBond( lpWorld* w, int bondIndex )
 	}
 	lpRemoveBondFromPiece( w->pieces.data + bond->a, bondIndex );
 	lpRemoveBondFromPiece( w->pieces.data + bond->b, bondIndex );
-	lpCarriersChanged( w, w->pieces.data[bond->a].carries & w->pieces.data[bond->b].carries );
+	lpCarriersChanged( w, w->pieces.data[bond->a].carries & w->pieces.data[bond->b].carries, bond->a, bond->b );
 	lpTouchPiece( w, bond->a );
 	lpTouchPiece( w, bond->b );
 	bond->alive = false;
@@ -641,7 +644,7 @@ int lpAddBond( lpWorld* w, int a, int b, const lpContact* contact, uint8_t joint
 	bond->alive = true;
 	lpArray_Push( pa->bonds, index );
 	lpArray_Push( pb->bonds, index );
-	lpCarriersChanged( w, pa->carries & pb->carries );
+	lpCarriersChanged( w, pa->carries & pb->carries, a, b );
 	lpTouchPiece( w, a );
 	lpTouchPiece( w, b );
 	w->bondCount += 1;
@@ -1023,10 +1026,12 @@ int lpCreateObject( lpWorld* w, const lpObjectDef* def )
 			total += q->sources == p->sources ? q->shape->volume : 0.0f;
 		}
 		p->sourceShare = total > 0.0f ? p->shape->volume / total : 0.0f;
-		lpCarriersChanged( w, p->carries );
+		lpCarriersChanged( w, p->carries, -1, -1 ); // new: its supply comes at once, nothing changed
 	}
 
+	int sites = w->supplySites.count;
 	lpBondParts( w, bodyIndex, first );
+	w->supplySites.count = sites; // a new object's own bonds change no supply that was there: its own comes at once
 
 	w->bodies.data[bodyIndex].inertiaRadius = lpMaxFloat( def->inertiaRadius, 0.0f );
 	if ( def->isStatic == false )

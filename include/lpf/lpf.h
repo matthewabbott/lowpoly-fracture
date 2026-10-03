@@ -190,6 +190,9 @@ typedef struct lpWorldDef
 	// holding the rest where it was, and is judged once the region's boundary is quiet, so a collapse spreads as a
 	// cascade over steps and what one event changes stays within a bounded cone. 0: the whole structure at once.
 	int stressHopsPerTick;
+	// The speed of propagation of supply: a cut line's drop (or a joined one's rise) reaches at most this many carriers
+	// further each step, and a pool's leak opens when it reaches the pool. 0: everywhere at once.
+	int supplyHopsPerTick;
 	int maxSettleIterations;	// per structure in lpWorld_SettleStructures, which has no per-step budget
 	// Structures with more pieces than this solve changes on a reduced system: their lightly loaded parts, found by
 	// their last exact solve, move as rigid clusters, and only the correction to that solution is solved for

@@ -855,7 +855,7 @@ static void HarmLimpLeg( Sim* s, int rig )
 	// The hip no longer carries the lines: what lies beyond it goes unfed, and its servos limp
 	lpLink* hip = s->world->links.data + s->world->rigs.data[rig].limbs[1].def.links[0];
 	hip->def.carries = 0;
-	lpCarriersChanged( s->world, 0xFF );
+	lpCarriersChanged( s->world, 0xFF, -1, -1 );
 }
 
 static void PrintHobble( const char* what, Hobble h, float intact )

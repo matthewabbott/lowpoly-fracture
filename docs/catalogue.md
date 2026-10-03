@@ -130,7 +130,7 @@ Serves: "Bodies are systems, not hit points" and the vehicles' innards.
 | Y1 | A part with its own detonator goes off alone; the rest of the object takes the blast | `TestPartDetonatorBlowsOnlyItsPart` | only the tank's pieces go |
 | Y2 | A tank torn off its frame stays volatile and goes off once | `TestTankTornOffStaysVolatile` | as stated |
 | Y11 | A charge with a fuse goes off a set time after what sets it off, wherever its pieces have gone | `TestDetonatorDelay` | a crate on a 1 s fuse, knocked by a cannonball: it goes off 59 to 61 steps after it is lit, having slid over 0.1 m, on the same tick at 1, 4 and 8 workers |
-| Y3 | Cut a pipe and the far side goes dry at once | `TestSupplyCut` | in the same step |
+| Y3 | Cut a pipe and the far side goes dry: the drop runs down the line at `supplyHopsPerTick` carriers a step (16), so a line shorter than that goes dry in the same step | `TestSupplyCut` | a 7-box line: in the same step |
 | Y4 | An engine feeds power only while fuel reaches it | `TestSupplyNeeds` | as stated |
 | Y5 | Half an engine gives half the power | `TestSupplyShare` | 0.5 (±0.004) |
 | Y6 | A hose between two objects carries fuel | `TestSupplyOverLink` | as stated |
