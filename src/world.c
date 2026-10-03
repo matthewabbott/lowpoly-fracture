@@ -219,6 +219,7 @@ lpWorldDef lpDefaultWorldDef( void )
 	def.maxStressWork = 60000;
 	def.maxStressStructureWork = 10000;
 	def.maxStressIterations = 256;
+	def.stressHopsPerTick = 16;
 	def.maxSettleIterations = 4000;
 	def.stressLargeNodes = 512;
 	def.stressGlue = 0.3f;

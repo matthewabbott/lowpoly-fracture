@@ -4,6 +4,10 @@
 #include "test_macros.h"
 #include "test_sim.h"
 
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+
 // Every scene's structures stand on their own: nothing detaches at rest, and the stress solve settles
 static int TestStructuresStand( void )
 {
@@ -1317,6 +1321,210 @@ static int TestTowerFelled( void )
 	return 0;
 }
 
+// A wall `columns` blocks long and `rows` high, settled; returns its body. Stone, its bottom row anchored; or a bridge:
+// welded steel, held only at its two ends
+static int AddLongWall( Sim* s, int columns, int rows, bool bridge )
+{
+	int count = columns * rows;
+	lpPartDef* defs = malloc( sizeof( lpPartDef ) * (size_t)count );
+	for ( int r = 0; r < rows; ++r )
+	{
+		for ( int c = 0; c < columns; ++c )
+		{
+			lpPartDef* d = defs + r * columns + c;
+			*d = lpDefaultPartDef();
+			d->halfExtents = (lpVec3){ 0.25f, 0.25f, 0.25f };
+			d->transform.p = (lpVec3){ -0.25f * (float)columns + 0.5f * (float)c + 0.25f, 0.25f + 0.5f * (float)r, 0.0f };
+			d->material = bridge ? lp_armor : lp_stone;
+			d->joint = bridge ? lp_jointSolid : lp_jointAuto;
+			d->anchored = bridge ? c == 0 || c == columns - 1 : r == 0;
+		}
+	}
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = true;
+	def.parts = defs;
+	def.partCount = count;
+	int body = lpCreateObject( s->world, &def );
+	free( defs );
+	lpWorld_SettleStructures( s->world );
+	return body;
+}
+
+// Bonds from the pieces `from` (count of them) to every piece of the body, through free pieces only (fixed ones carry
+// nothing across, as in the solve); INT_MAX where none reaches
+static void FreeHops( const lpWorld* w, int body, const int* from, int count, int* hops )
+{
+	const lpBody* b = w->bodies.data + body;
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		hops[i] = INT_MAX;
+	}
+	int* queue = malloc( sizeof( int ) * (size_t)w->pieces.count );
+	int head = 0, tail = 0;
+	for ( int k = 0; k < count; ++k )
+	{
+		hops[from[k]] = 0;
+		queue[tail++] = from[k];
+	}
+	while ( head < tail )
+	{
+		int pi = queue[head++];
+		const lpPiece* p = w->pieces.data + pi;
+		for ( int k = 0; k < p->bonds.count; ++k )
+		{
+			const lpBond* bond = w->bonds.data + p->bonds.data[k];
+			int other = bond->a == pi ? bond->b : bond->a;
+			if ( hops[other] == INT_MAX && w->pieces.data[other].anchored == false && w->pieces.data[other].body == body )
+			{
+				hops[other] = hops[pi] + 1;
+				queue[tail++] = other;
+			}
+		}
+	}
+	free( queue );
+	(void)b;
+}
+
+static bool SameVec6( lpVec6 a, lpVec6 b )
+{
+	return memcmp( &a, &b, sizeof( lpVec6 ) ) == 0;
+}
+
+// The finite speed of propagation (stressHopsPerTick): two settled bridges 60 blocks long, held at their ends, a joint
+// near one end broken in the second (the whole span bends differently). Step by step, every piece whose stress state
+// differs between them lies within H d bonds of the break after d steps (and the held nodes just past the region,
+// whose joints and residuals a judgement writes), and the difference reaches past H (d - 1): the cone is bounded, and
+// the bound is tight.
+static int TestStressCone( void )
+{
+	enum
+	{
+		hopsPerTick = 4,
+		columns = 60
+	};
+	lpWorldDef def = lpDefaultWorldDef();
+	def.stressHopsPerTick = hopsPerTick;
+	Sim a = CreateSimDef( def, -1 );
+	Sim b = CreateSimDef( def, -1 );
+	int wallA = AddLongWall( &a, columns, 2, true );
+	int wallB = AddLongWall( &b, columns, 2, true );
+	Run( &a, 30 );
+	Run( &b, 30 );
+	ENSURE( wallA == wallB && lpWorld_Hash( a.world ) == lpWorld_Hash( b.world ) );
+
+	// The joint between the second and third blocks of the top row
+	const lpBody* body = b.world->bodies.data + wallB;
+	int top[2] = { -1, -1 }, broken = -1;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		const lpPiece* p = b.world->pieces.data + body->pieces.data[i];
+		lpVec3 c = p->shape->centroid;
+		top[0] = c.y > 0.5f && c.x > -14.5f && c.x < -14.0f ? body->pieces.data[i] : top[0];
+	}
+	ENSURE( top[0] >= 0 );
+	const lpPiece* first = b.world->pieces.data + top[0];
+	for ( int k = 0; k < first->bonds.count && broken < 0; ++k )
+	{
+		const lpBond* bond = b.world->bonds.data + first->bonds.data[k];
+		int other = bond->a == top[0] ? bond->b : bond->a;
+		const lpVec3 c = b.world->pieces.data[other].shape->centroid;
+		if ( c.y > 0.5f && c.x > b.world->pieces.data[top[0]].shape->centroid.x )
+		{
+			broken = first->bonds.data[k];
+			top[1] = other;
+		}
+	}
+	ENSURE( broken >= 0 );
+	int* hops = malloc( sizeof( int ) * (size_t)b.world->pieces.count );
+	FreeHops( b.world, wallB, top, 2, hops );
+	lpBreakBond( b.world, broken );
+	lpMarkDirty( b.world, wallB );
+
+	int reached = 0;
+	for ( int d = 1; d <= 12; ++d )
+	{
+		Run( &a, 1 );
+		Run( &b, 1 );
+		int farthest = -1, differing = 0;
+		for ( int i = 0; i < b.world->pieces.count; ++i )
+		{
+			const lpPiece* pa = a.world->pieces.data + i;
+			const lpPiece* pb = b.world->pieces.data + i;
+			if ( pb->body != wallB || pa->body != wallA || pb->anchored )
+			{
+				continue; // an anchored piece's joints are compared from the free piece across them
+			}
+			bool same = SameVec6( pa->stressX, pb->stressX ) && SameVec6( pa->stressResidual, pb->stressResidual ) &&
+						pa->inFront == pb->inFront && pa->slenderRho == pb->slenderRho;
+			for ( int k = 0; k < pb->bonds.count && same; ++k )
+			{
+				const lpBond* x = a.world->bonds.data + pb->bonds.data[k];
+				const lpBond* y = b.world->bonds.data + pb->bonds.data[k];
+				same = x->rho == y->rho && x->strain == y->strain;
+			}
+			if ( same == false )
+			{
+				differing += 1;
+				ENSURE( hops[i] != INT_MAX );
+				farthest = hops[i] > farthest ? hops[i] : farthest;
+			}
+		}
+		printf( "  step %2d: %3d pieces differ, the farthest %2d bonds from the break (bound %d)\n", d, differing, farthest, hopsPerTick * d );
+		ENSURE( farthest <= hopsPerTick * d + 1 ); // the region, and the held nodes just past it (their joints and residuals)
+		if ( hopsPerTick * d < columns - 4 )
+		{
+			ENSURE( farthest > hopsPerTick * ( d - 1 ) ); // tight: it does travel that fast
+		}
+		reached = farthest;
+	}
+	ENSURE( reached >= 40 );
+	free( hops );
+	DestroySim( &a );
+	DestroySim( &b );
+	return 0;
+}
+
+// The drift guard: a load that crept away from what its structure's last judgement solved for, by less than the
+// threshold at each look but past it in all, is a change: when the structure solves again (a joint breaks at its far
+// end), the region takes in that piece too. Below the threshold it is left alone.
+static int TestStressDriftGuard( void )
+{
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSim( -1 );
+		int wall = AddLongWall( &s, 40, 3, false );
+		Run( &s, 10 );
+		lpBody* body = s.world->bodies.data + wall;
+		int far = -1, near = -1;
+		for ( int i = 0; i < body->pieces.count; ++i )
+		{
+			const lpPiece* p = s.world->pieces.data + body->pieces.data[i];
+			far = p->shape->centroid.y > 1.0f && p->shape->centroid.x > 9.5f ? body->pieces.data[i] : far;
+			near = p->shape->centroid.y > 1.0f && p->shape->centroid.x < -9.5f ? body->pieces.data[i] : near;
+		}
+		ENSURE( far >= 0 && near >= 0 && body->solving == false );
+		lpPiece* p = s.world->pieces.data + far;
+		float weight = p->shape->volume * lpMaterial( s.world, p->material )->density * lpLength( s.world->def.gravity );
+		// What the last judgement solved for differs from the load now by 3% of the piece's weight (drift), or by 1%
+		p->acceptedLoad.f.y = p->stressLoad.f.y + ( run == 0 ? 0.03f : 0.01f ) * weight;
+		uint32_t accepted = p->accepted;
+		const lpPiece* n = s.world->pieces.data + near;
+		lpBreakBond( s.world, n->bonds.data[n->bonds.count - 1] );
+		lpMarkDirty( s.world, wall );
+		for ( int tick = 0; tick < 30 && ( tick == 0 || body->solving ); ++tick )
+		{
+			Run( &s, 1 );
+		}
+		ENSURE( body->solving == false );
+		bool seeded = p->accepted != accepted;
+		printf( "  drift of %s of its weight: %s\n", run == 0 ? "3%" : "1%", seeded ? "a change, solved" : "not a change" );
+		ENSURE( seeded == ( run == 0 ) );
+		ENSURE( run == 1 || SameVec6( p->acceptedLoad, p->stressLoad ) );
+		DestroySim( &s );
+	}
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestSolveSystem, MECHANISM );
@@ -1339,6 +1547,8 @@ int StressTest( void )
 	RUN_TEST( TestDriftSmallStructures, MECHANISM );
 	RUN_TEST( TestKeepUnderFire, OUTCOME );
 	RUN_TEST( TestKeepAudit, MECHANISM );
+	RUN_TEST( TestStressCone, MECHANISM );
+	RUN_TEST( TestStressDriftGuard, MECHANISM );
 	RUN_TEST( TestReliefBalances, MECHANISM );
 	RUN_TEST( TestReliefFreeFall, OUTCOME );
 	RUN_TEST( TestReliefMatchesSupported, MECHANISM );

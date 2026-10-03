@@ -185,6 +185,11 @@ typedef struct lpWorldDef
 	int maxStressWork;			// per step, over all structures; structures past it wait for the next step
 	int maxStressStructureWork; // per structure per step; a structure that needs more keeps creaking for a few steps
 	int maxStressIterations;	// per structure per step
+	// The speed of propagation of stress: a change in a structure (a joint broken or weakened, a load) reaches at most
+	// this many bonds further each step (on a big structure's clustered system, groups). Its solve runs on that region,
+	// holding the rest where it was, and is judged once the region's boundary is quiet, so a collapse spreads as a
+	// cascade over steps and what one event changes stays within a bounded cone. 0: the whole structure at once.
+	int stressHopsPerTick;
 	int maxSettleIterations;	// per structure in lpWorld_SettleStructures, which has no per-step budget
 	// Structures with more pieces than this solve changes on a reduced system: their lightly loaded parts, found by
 	// their last exact solve, move as rigid clusters, and only the correction to that solution is solved for

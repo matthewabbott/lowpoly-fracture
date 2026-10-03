@@ -40,8 +40,8 @@
         "bonds": 75,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "2a33d4b23b555672",
-        "solverHash": "1ea097ce187d8b77"
+        "hash": "1d4288b707ab319c",
+        "solverHash": "71c1eb7f6f76153a"
       },
       {
         "workers": 8,
@@ -78,8 +78,8 @@
         "bonds": 75,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "2a33d4b23b555672",
-        "solverHash": "1ea097ce187d8b77"
+        "hash": "1d4288b707ab319c",
+        "solverHash": "71c1eb7f6f76153a"
       }
     ],
     "town": [
@@ -118,8 +118,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "82196c477ac7e546",
-        "solverHash": "0e4c8648f0da5dbf"
+        "hash": "e3f309889962f4be",
+        "solverHash": "1b616f262a731066"
       },
       {
         "workers": 8,
@@ -156,8 +156,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "82196c477ac7e546",
-        "solverHash": "0e4c8648f0da5dbf"
+        "hash": "e3f309889962f4be",
+        "solverHash": "1b616f262a731066"
       }
     ],
     "pile": [
@@ -196,8 +196,8 @@
         "bonds": 0,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "f665af4fe2052c6c",
-        "solverHash": "28f8248b2cdcca61"
+        "hash": "d5579086deb36cda",
+        "solverHash": "0b418926f7708635"
       },
       {
         "workers": 8,
@@ -234,8 +234,8 @@
         "bonds": 0,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "f665af4fe2052c6c",
-        "solverHash": "28f8248b2cdcca61"
+        "hash": "d5579086deb36cda",
+        "solverHash": "0b418926f7708635"
       }
     ],
     "lumber": [
@@ -274,8 +274,8 @@
         "bonds": 120,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "0fbb107c58318455",
-        "solverHash": "c231495e2029bf84"
+        "hash": "ae377d91cf97255f",
+        "solverHash": "08ce5dae4e507722"
       },
       {
         "workers": 8,
@@ -312,8 +312,8 @@
         "bonds": 120,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "0fbb107c58318455",
-        "solverHash": "c231495e2029bf84"
+        "hash": "ae377d91cf97255f",
+        "solverHash": "08ce5dae4e507722"
       }
     ],
     "tower": [
@@ -352,8 +352,8 @@
         "bonds": 250,
         "over16ms": 2,
         "over33ms": 0,
-        "hash": "cc5928d285b2f914",
-        "solverHash": "4e20911c299f1885"
+        "hash": "241104698e218e4e",
+        "solverHash": "7fcd8a7175463c03"
       },
       {
         "workers": 8,
@@ -390,8 +390,8 @@
         "bonds": 250,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "cc5928d285b2f914",
-        "solverHash": "4e20911c299f1885"
+        "hash": "241104698e218e4e",
+        "solverHash": "7fcd8a7175463c03"
       }
     ],
     "ruins": [
@@ -430,8 +430,8 @@
         "bonds": 20,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "bb0290dcd6da6785",
-        "solverHash": "dc59bcd7c5cf398c"
+        "hash": "db3d6c00e34fa6be",
+        "solverHash": "cc18c6434fe49081"
       },
       {
         "workers": 8,
@@ -468,8 +468,8 @@
         "bonds": 20,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "bb0290dcd6da6785",
-        "solverHash": "dc59bcd7c5cf398c"
+        "hash": "db3d6c00e34fa6be",
+        "solverHash": "cc18c6434fe49081"
       }
     ],
     "yard": [
@@ -508,8 +508,8 @@
         "bonds": 20,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "3bf7070f3c66a01c",
-        "solverHash": "954c40eb00233dad"
+        "hash": "5c58f3cff6b7f6e5",
+        "solverHash": "7bc6bc4924d9729d"
       },
       {
         "workers": 8,
@@ -546,8 +546,8 @@
         "bonds": 20,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "3bf7070f3c66a01c",
-        "solverHash": "954c40eb00233dad"
+        "hash": "5c58f3cff6b7f6e5",
+        "solverHash": "7bc6bc4924d9729d"
       }
     ],
     "keep": [
@@ -586,8 +586,8 @@
         "bonds": 6296,
         "over16ms": 13,
         "over33ms": 1,
-        "hash": "b9ffe1ab8e28f2ad",
-        "solverHash": "2774236533319ff1"
+        "hash": "85ce0e1ecb1fd8e8",
+        "solverHash": "2aba40fc454b13a6"
       },
       {
         "workers": 8,
@@ -624,8 +624,8 @@
         "bonds": 6296,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "b9ffe1ab8e28f2ad",
-        "solverHash": "2774236533319ff1"
+        "hash": "85ce0e1ecb1fd8e8",
+        "solverHash": "2aba40fc454b13a6"
       }
     ],
     "barrage": [
@@ -664,8 +664,8 @@
         "bonds": 3612,
         "over16ms": 6,
         "over33ms": 0,
-        "hash": "575911308708c838",
-        "solverHash": "33378e377436efd8"
+        "hash": "c36cb0c2c8009235",
+        "solverHash": "b76c6ede822d1788"
       },
       {
         "workers": 8,
@@ -702,8 +702,8 @@
         "bonds": 3612,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "575911308708c838",
-        "solverHash": "33378e377436efd8"
+        "hash": "c36cb0c2c8009235",
+        "solverHash": "b76c6ede822d1788"
       }
     ],
     "siege": [
@@ -742,8 +742,8 @@
         "bonds": 6296,
         "over16ms": 355,
         "over33ms": 32,
-        "hash": "df6ad387af7aefbc",
-        "solverHash": "9f5b5078bb552c33"
+        "hash": "f1638df1109fa2f7",
+        "solverHash": "bb283a7d7250d017"
       },
       {
         "workers": 8,
@@ -780,8 +780,8 @@
         "bonds": 6296,
         "over16ms": 27,
         "over33ms": 0,
-        "hash": "df6ad387af7aefbc",
-        "solverHash": "9f5b5078bb552c33"
+        "hash": "f1638df1109fa2f7",
+        "solverHash": "bb283a7d7250d017"
       }
     ],
     "track": [
@@ -820,8 +820,8 @@
         "bonds": 116,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "9c88585c6f113080",
-        "solverHash": "c25d2af24f812af1"
+        "hash": "f458f3f52df62c10",
+        "solverHash": "3db69d5e4dc3acdb"
       },
       {
         "workers": 8,
@@ -858,8 +858,8 @@
         "bonds": 116,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "9c88585c6f113080",
-        "solverHash": "c25d2af24f812af1"
+        "hash": "f458f3f52df62c10",
+        "solverHash": "3db69d5e4dc3acdb"
       }
     ],
     "mech": [
@@ -898,8 +898,8 @@
         "bonds": 52,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "7990421eb5e1c2c1",
-        "solverHash": "3b01dca71a513348"
+        "hash": "fa981b17ecfdb45c",
+        "solverHash": "44c3a15ec60dc899"
       },
       {
         "workers": 8,
@@ -936,8 +936,8 @@
         "bonds": 52,
         "over16ms": 0,
         "over33ms": 0,
-        "hash": "7990421eb5e1c2c1",
-        "solverHash": "3b01dca71a513348"
+        "hash": "fa981b17ecfdb45c",
+        "solverHash": "44c3a15ec60dc899"
       }
     ]
   }

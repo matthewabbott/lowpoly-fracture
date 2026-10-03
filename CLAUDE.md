@@ -34,8 +34,8 @@ a track only when a decision needs its detail.
 | `src/lab.c` | the two-world lab: injected desyncs (a velocity, a warm start), `lpLab_Diff` (the hash followed down to elements), repair by unit (motion, warm starts, sleep timers); `bench/twin.c` runs it (`lpf_bench --twin warm:200 --repair motion,warm,sleep@4 --cone path`) |
 | `src/impact.c` | impacts: choosing the pieces and integrating their fracture jobs, bond damage, detonators and fuses, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
-| `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
-| `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
+| `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient (whole, or on a region with the rest held) |
+| `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), the speed of propagation (region solves that grow `stressHopsPerTick` bonds a step), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: physics joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
 | `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, the rig's centre of mass and support margin, reaching and touching, a game's own walking (`lp_walkerNone`: foot targets and a pose), state |

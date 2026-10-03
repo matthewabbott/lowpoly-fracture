@@ -32,6 +32,7 @@
 #include "world.h"
 
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -41,6 +42,18 @@ static const lpVec6 lp_vec6Zero = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } }
 static inline bool lpFixed( const lpBody* body, int pieceIndex, const lpPiece* p )
 {
 	return body->solveStress ? pieceIndex == body->stressPin : p->anchored;
+}
+
+// In a region solve's region (lpStressFront), or not a region solve: what it may move, judge and write
+static bool lpInRegion( const lpStressJob* job, int node )
+{
+	return job->front == false || job->system->depth.data[node] == 0;
+}
+
+static bool lpEdgeInRegion( const lpStressJob* job, const lpStressEdge* e )
+{
+	return job->front == false || ( e->a >= 0 && job->system->depth.data[e->a] == 0 ) ||
+		   ( e->b >= 0 && job->system->depth.data[e->b] == 0 );
 }
 
 // A moving body's pin: the piece nearest where it was struck in the last step (the crash's force enters there), else
@@ -165,7 +178,8 @@ static void lpComputeRelief( lpWorld* w, lpBody* body, lpVec3 gravity )
 // (rubble on a floor, a stone on a plank, a cart on a bridge), and what hangs on it by links, into each piece's
 // stressLoad. Sampled when a solve starts and kept, so the solve can continue across steps while the contacts jitter.
 // Returns how much the loads changed (forces, and torques over each piece's size), relative to the structure's own
-// weight; a piece whose load changed by more than 2% of its own weight is stamped.
+// weight; a piece whose load changed by more than 2% of its own weight is stamped. With region solves a change also
+// counts from the load the last judgement solved for (the drift guard).
 static float lpSampleLoads( lpWorld* w, int bodyIndex )
 {
 	lpBody* body = w->bodies.data + bodyIndex;
@@ -225,6 +239,9 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 		lpAddWheelLoads( w, bodyIndex, xf ); // and wheels standing on it (a cart on a bridge)
 	}
 
+	// Region solves (stressHopsPerTick) also guard against drift: a load that crept away from what the last judgement
+	// solved for, a little each time, is a change too, or the region would never reach it
+	bool guard = w->def.stressHopsPerTick > 0;
 	float change = 0.0f;
 	for ( int i = 0; i < n; ++i )
 	{
@@ -233,8 +250,12 @@ static float lpSampleLoads( lpWorld* w, int bodyIndex )
 		float size = lpCbrt( p->shape->volume );
 		float moved = lpLength( lpSub( p->stressLoad.f, w->scratchLoads.data[i].f ) ) +
 					  lpLength( lpSub( p->stressLoad.t, w->scratchLoads.data[i].t ) ) / size;
-		change += moved;
-		if ( moved > 0.02f * p->shape->volume * lpMaterial( w, p->material )->density * g )
+		float drift = guard ? lpLength( lpSub( p->stressLoad.f, p->acceptedLoad.f ) ) +
+								  lpLength( lpSub( p->stressLoad.t, p->acceptedLoad.t ) ) / size
+							: 0.0f;
+		change += lpMaxFloat( moved, drift );
+		float limit = 0.02f * p->shape->volume * lpMaterial( w, p->material )->density * g;
+		if ( moved > limit || drift > limit )
 		{
 			lpTouchPiece( w, pi );
 		}
@@ -695,6 +716,11 @@ static void lpStressUtilizations( lpWorld* w, lpStressJob* job, const lpVec6* x 
 	{
 		const lpStressEdge* e = s->edges.data + k;
 		lpBond* bond = w->bonds.data + e->bond;
+		if ( lpEdgeInRegion( job, e ) == false )
+		{
+			s->rho.data[k] = bond->rho; // past a region solve's region: as it was judged
+			continue;
+		}
 		lpVec3 force, moment;
 		lpEdgeForce( e, x, &force, &moment );
 		bond->force = lpMulSV( s->forceScale, force );
@@ -795,9 +821,10 @@ static void lpStressSlender( lpWorld* w, lpStressJob* job, const lpVec6* x )
 		const lpPiece* p = w->pieces.data + pi;
 		const lpMaterialDef* m = lpMaterial( w, p->material );
 		float lo, hi, w1, w2;
-		if ( p->depth >= w->def.maxDepth || p->bonds.count < 2 || lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 ) == false )
+		if ( lpInRegion( job, i ) == false || p->depth >= w->def.maxDepth || p->bonds.count < 2 ||
+			 lpSlenderExtents( w, p, &lo, &hi, &w1, &w2 ) == false )
 		{
-			continue; // not slender: the joints decide
+			continue; // not slender (the joints decide), or past a region solve's region
 		}
 		lpVec3 a = p->axis, t1, t2;
 		lpContactBasis( a, &t1, &t2 );
@@ -905,7 +932,10 @@ static int lpStressSnap( lpWorld* w, const lpStressJob* job, bool jointsHold, in
 	const lpStressSystem* s = job->system;
 	for ( int i = 0; i < s->nodes.count; ++i )
 	{
-		w->pieces.data[s->nodes.data[i]].slenderRho = 0.0f;
+		if ( lpInRegion( job, i ) )
+		{
+			w->pieces.data[s->nodes.data[i]].slenderRho = 0.0f;
+		}
 	}
 	int queued = 0;
 	for ( int k = 0; k < job->slender.count; ++k )
@@ -1086,9 +1116,113 @@ static void lpStressOracle( lpWorld* w, lpStressJob* job, const lpVec6* x )
 	lpSystemFree( &exact );
 }
 
+// A region solve's depths on what it solves (0: in the region): the fine system's, and on a reduced system its groups'
+// (a group is in the region with its members). Pieces solved again whole (a fine region at a restart) drop the residual
+// their last judgement accepted, so it is not left out of the new solve.
+static void lpStressFrontDepths( lpWorld* w, lpStressJob* job )
+{
+	lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	lpArray_Reserve( s->depth, n );
+	s->depth.count = n;
+	for ( int i = 0; i < n; ++i )
+	{
+		lpPiece* p = w->pieces.data + s->nodes.data[i];
+		s->depth.data[i] = p->frontDepth == 0 ? 0 : INT_MAX;
+		if ( p->frontDepth == 0 && job->clustered == false && job->continuing == false )
+		{
+			p->stressResidual = lp_vec6Zero;
+		}
+	}
+	if ( job->clustered )
+	{
+		lpStressReduced* red = w->bodies.data[job->body].reduced;
+		lpStressSystem* rs = &red->system;
+		lpArray_Reserve( rs->depth, rs->nodes.count );
+		rs->depth.count = rs->nodes.count;
+		for ( int g = 0; g < rs->nodes.count; ++g )
+		{
+			rs->depth.data[g] = INT_MAX;
+		}
+		for ( int i = 0; i < n; ++i )
+		{
+			if ( s->depth.data[i] == 0 )
+			{
+				rs->depth.data[red->partition.group.data[i]] = 0;
+			}
+		}
+	}
+}
+
+// A region solve converged: is what its change puts on the held nodes just past the region within their equilibrium
+// tolerance? Quiet, it is the whole structure's solve and is judged; otherwise the region grows. On the fine system the
+// held nodes' residual counts from the one their last judgement accepted; on a reduced system the correction's load is
+// already that difference, and K times the correction is all there is.
+static bool lpStressQuiet( lpWorld* w, lpStressJob* job )
+{
+	if ( job->clustered )
+	{
+		lpStressSystem* rs = &w->bodies.data[job->body].reduced->system;
+		int m = rs->nodes.count;
+		const lpVec6* y = rs->vectors.data;
+		lpVec6* q = rs->vectors.data + 5 * m; // free once solved
+		lpSystemApply( rs, y, q );
+		for ( int j = 0; j < rs->boundary.count; ++j )
+		{
+			int g = rs->boundary.data[j];
+			lpVec3 rf = lpSub( y[m + g].f, q[g].f );
+			lpVec3 rt = lpSub( y[m + g].t, q[g].t );
+			float limit = job->nodeTolerance * rs->nodeScale.data[g];
+			float torque = limit * rs->nodeArm.data[g];
+			if ( lpLengthSquared( rf ) > limit * limit || lpLengthSquared( rt ) > torque * torque )
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+	const lpStressSystem* s = job->system;
+	int n = s->nodes.count;
+	const lpVec6* x = s->vectors.data;
+	const lpVec6* f = x + n;
+	float inverse = 1.0f / s->forceScale;
+	for ( int j = 0; j < s->boundary.count; ++j )
+	{
+		int o = s->boundary.data[j];
+		lpVec6 kx = lp_vec6Zero;
+		for ( int m = s->incidentStart.data[o]; m < s->incidentStart.data[o + 1]; ++m )
+		{
+			const lpStressEdge* e = s->edges.data + s->incident.data[m];
+			lpVec3 force, moment;
+			lpEdgeForce( e, x, &force, &moment );
+			if ( e->a == o )
+			{
+				kx.f = lpSub( kx.f, force );
+				kx.t = lpSub( kx.t, lpAdd( lpCross( e->ra, force ), moment ) );
+			}
+			else
+			{
+				kx.f = lpAdd( kx.f, force );
+				kx.t = lpAdd( kx.t, lpAdd( lpCross( e->rb, force ), moment ) );
+			}
+		}
+		const lpVec6* accepted = &w->pieces.data[s->nodes.data[o]].stressResidual;
+		lpVec3 rf = lpMulSub( lpSub( f[o].f, kx.f ), inverse, accepted->f );
+		lpVec3 rt = lpMulSub( lpSub( f[o].t, kx.t ), inverse, accepted->t );
+		float limit = job->nodeTolerance * s->nodeScale.data[o];
+		float torque = limit * s->nodeArm.data[o];
+		if ( lpLengthSquared( rf ) > limit * limit || lpLengthSquared( rt ) > torque * torque )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 // Phase 2, one structure: build, solve, and keep the solution (in newtons of load) and the solve's state on the
 // pieces; converged, also the utilizations and the slender pieces' worst sections. A correction solved on the
-// reduced system moves each member with its group, on top of the solution it corrects.
+// reduced system moves each member with its group, on top of the solution it corrects. A region solve moves only its
+// region, and everything it writes is in the region or just past it.
 static void lpRunStressJob( int index, void* context )
 {
 	lpWorld* w = context;
@@ -1096,7 +1230,16 @@ static void lpRunStressJob( int index, void* context )
 	lpStressBuild( w, job );
 	lpStressSystem* s = job->system;
 	lpStressReduced* red = job->clustered ? w->bodies.data[job->body].reduced : NULL;
-	lpSystemSolve( red != NULL ? &red->system : s, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
+	lpStressSystem* solved = red != NULL ? &red->system : s;
+	if ( job->front )
+	{
+		lpStressFrontDepths( w, job );
+		lpSystemSolveFront( solved, 0, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
+	}
+	else
+	{
+		lpSystemSolve( solved, job->budget, job->tolerance, job->nodeTolerance, job->continuing, &job->solve );
+	}
 	int n = s->nodes.count;
 	lpVec6* x = s->vectors.data;
 	if ( red != NULL )
@@ -1106,20 +1249,29 @@ static void lpRunStressJob( int index, void* context )
 		lpPartitionProlong( &red->partition, red->nodeRef.data, red->system.vectors.data, n, moved );
 		x = moved;
 	}
+	job->notQuiet = false;
+	if ( job->front && job->solve.converged )
+	{
+		job->notQuiet = lpStressQuiet( w, job ) == false;
+		job->solve.converged = job->notQuiet == false;
+	}
 	// Kept on the pieces: a solution continues from here after a restart. A correction is kept only once it has
 	// converged: a partial one moves clusters rigidly out of balance, and a restart would chase that everywhere.
 	for ( int i = 0; i < n && ( red == NULL || job->solve.converged ); ++i )
 	{
-		lpPiece* piece = w->pieces.data + s->nodes.data[i];
-		piece->stressX.f = lpMulSV( s->forceScale, x[i].f );
-		piece->stressX.t = lpMulSV( s->forceScale, x[i].t );
+		if ( lpInRegion( job, i ) )
+		{
+			lpPiece* piece = w->pieces.data + s->nodes.data[i];
+			piece->stressX.f = lpMulSV( s->forceScale, x[i].f );
+			piece->stressX.t = lpMulSV( s->forceScale, x[i].t );
+		}
 	}
 	job->peak = 0.0f;
 	job->slender.count = 0;
 	job->dissolved = 0;
 	job->oracleWorst = -1.0f;
 	job->meterWorst = 0.0f;
-	if ( red != NULL && job->solve.converged && w->stressOracle )
+	if ( ( red != NULL || job->front ) && job->solve.converged && w->stressOracle )
 	{
 		lpStressOracle( w, job, x );
 	}
@@ -1134,15 +1286,33 @@ static void lpRunStressJob( int index, void* context )
 		lpStressUtilizations( w, job, x );
 		lpStressSlender( w, job, x );
 
-		// The residual it is accepted with, for the corrections after it
+		// The residual it is accepted with, for the corrections after it: in a region solve, the region's and that of the
+		// nodes just past it (elsewhere nothing changed)
 		lpVec6* kx = s->vectors.data + 5 * n; // q: free once solved
 		const lpVec6* f = s->vectors.data + n;
 		lpSystemApply( s, x, kx );
+		for ( int k = 0; job->front && k < s->edges.count; ++k )
+		{
+			const lpStressEdge* e = s->edges.data + k;
+			if ( e->a >= 0 && e->b >= 0 && lpEdgeInRegion( job, e ) )
+			{
+				s->depth.data[e->a] = lpMinInt( s->depth.data[e->a], 1 );
+				s->depth.data[e->b] = lpMinInt( s->depth.data[e->b], 1 );
+			}
+		}
 		for ( int i = 0; i < n; ++i )
 		{
+			if ( job->front && s->depth.data[i] > 1 )
+			{
+				continue;
+			}
 			lpVec6* residual = &w->pieces.data[s->nodes.data[i]].stressResidual;
 			residual->f = lpMulSV( s->forceScale, lpSub( f[i].f, kx[i].f ) );
 			residual->t = lpMulSV( s->forceScale, lpSub( f[i].t, kx[i].t ) );
+		}
+		for ( int i = 0; job->front && i < n; ++i )
+		{
+			s->depth.data[i] = s->depth.data[i] == 0 ? 0 : INT_MAX; // the region again, for the judgement
 		}
 	}
 }
@@ -1270,7 +1440,7 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	const lpStressSystem* s = job->system;
 	int n = s->nodes.count;
 	int edges = s->edges.count;
-	int solved = job->clustered ? body->reduced->system.edges.count : edges;
+	int solved = job->front ? job->frontEdges : ( job->clustered ? body->reduced->system.edges.count : edges );
 	w->stressWork += job->solve.iterations * solved + ( job->cached ? 0 : 2 * edges ); // a build and a first residual
 	w->stats.stressIterations += job->solve.iterations;
 	w->stats.stressSolves += 1;
@@ -1280,6 +1450,12 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	body->solveNodes = n;
 	body->solveEdges = edges;
 	body->solveClustered = job->clustered;
+	body->frontGrow = job->notQuiet;
+	for ( int i = 0; job->front && i < n; ++i )
+	{
+		// A region solve's region is kept while it solves, and grows from there
+		w->pieces.data[s->nodes.data[i]].inFront = s->depth.data[i] == 0 && job->solve.converged == false;
+	}
 
 	if ( job->oracleWorst >= 0.0f )
 	{
@@ -1295,7 +1471,7 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 		{
 			printf( "[lpf] tick %llu stress: body %d, %s solve against the exact one: worst joint utilization off by %.4f, "
 					"%d flipped, the meter read %.4f\n",
-					(unsigned long long)w->tick, job->body, "reduced", (double)job->oracleWorst, job->oracleFlips,
+					(unsigned long long)w->tick, job->body, job->clustered ? "reduced" : "region", (double)job->oracleWorst, job->oracleFlips,
 					(double)job->meterWorst );
 		}
 	}
@@ -1348,13 +1524,21 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 		body->auditing = false;
 	}
 
-	// Accepted: the pieces changed since the last judgement were its seeds
+	// Accepted: the pieces changed since the last judgement were its seeds (a region solve accepts its region, and the
+	// fixed pieces, whose changes reached it through what they hold); a reduced system's region awaits its audit
 	int seeds = 0;
 	for ( int i = 0; i < body->pieces.count; ++i )
 	{
-		lpPiece* p = w->pieces.data + body->pieces.data[i];
-		seeds += p->changed > p->accepted ? 1 : 0;
-		p->accepted = w->changeSerial;
+		int pi = body->pieces.data[i];
+		lpPiece* p = w->pieces.data + pi;
+		bool fixed = lpFixed( body, pi, p );
+		if ( job->front == false || fixed || ( p->solveSlot >= 0 && s->depth.data[p->solveSlot] == 0 ) )
+		{
+			seeds += p->changed > p->accepted ? 1 : 0;
+			p->accepted = w->changeSerial;
+			p->unaudited = job->front && fixed == false ? job->clustered : p->unaudited;
+			p->acceptedLoad = w->def.stressHopsPerTick > 0 ? p->stressLoad : p->acceptedLoad; // settling's judgements too
+		}
 	}
 	body->rejudge = false;
 
@@ -1362,7 +1546,10 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	w->scratchOverloads.count = 0;
 	for ( int k = 0; k < edges; ++k )
 	{
-		lpApplyStrain( w, job->xf, s->edges.data[k].bond, s->rho.data[k], &strained );
+		if ( lpEdgeInRegion( job, s->edges.data + k ) )
+		{
+			lpApplyStrain( w, job->xf, s->edges.data[k].bond, s->rho.data[k], &strained );
+		}
 	}
 	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;
@@ -1445,6 +1632,178 @@ static void lpStressSeed( lpWorld* w, lpBody* body )
 	{
 		body->clusterStamp += 1;
 	}
+}
+
+// A region solve's region this step (phase 1): the region of its solve in progress, then everything within `hops` bonds
+// of the pieces changed since its last judgement (at a restart; an audit adds the pieces a reduced judgement left
+// unaudited), then everything within `hops` of that region when it must grow (it converged, but what it puts on the
+// held nodes just past it is not within tolerance). Fixed pieces carry nothing across. On a reduced system a hop is a
+// step from group to group: a cluster comes in whole, at no cost (a breadth-first search on a deque). Region pieces get
+// frontDepth 0, the rest INT_MAX. Returns the edges the solve runs on: those with an end in the region (on a reduced
+// system, those between groups), and in *grew whether the region took in pieces its solve in progress did not hold.
+static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, bool grow, bool clustered, bool* grew )
+{
+	lpHashMarkStress( w, bodyIndex );
+	lpBody* body = w->bodies.data + bodyIndex;
+	int n = body->pieces.count;
+	bool search = restart || grow;
+	if ( search == false )
+	{
+		// The region stays what the last search found (a solve continues only on an unchanged structure): its depths are
+		// still on the pieces, and its edge count on the body
+		*grew = false;
+		return body->frontEdges;
+	}
+
+	// A reduced system's clusters, member by member (a counting sort by cluster)
+	bool index = search && clustered;
+	int clusters = 0;
+	for ( int i = 0; index && i < n; ++i )
+	{
+		clusters = lpMaxInt( clusters, w->pieces.data[body->pieces.data[i]].cluster );
+	}
+	int* start = index ? lpAlloc( sizeof( int ) * (size_t)( clusters + 2 ) ) : NULL;
+	int* members = index ? lpAlloc( sizeof( int ) * (size_t)( n > 0 ? n : 1 ) ) : NULL;
+	for ( int c = 0; index && c < clusters + 2; ++c )
+	{
+		start[c] = 0;
+	}
+	for ( int i = 0; index && i < n; ++i )
+	{
+		start[w->pieces.data[body->pieces.data[i]].cluster + 1] += 1;
+	}
+	for ( int c = 0; index && c <= clusters; ++c )
+	{
+		start[c + 1] += start[c];
+	}
+	for ( int i = 0; index && i < n; ++i )
+	{
+		int pi = body->pieces.data[i];
+		int c = w->pieces.data[pi].cluster;
+		members[start[c]++] = pi;
+	}
+	for ( int c = clusters; index && c > 0; --c )
+	{
+		start[c] = start[c - 1];
+	}
+	if ( index )
+	{
+		start[0] = 0;
+	}
+
+	// The deque holds (piece, depth); a cluster's members go to its front at their piece's depth
+	int capacity = 2 * n + 2;
+	int* dequePiece = search ? lpAlloc( sizeof( int ) * (size_t)capacity ) : NULL;
+	int* dequeDepth = search ? lpAlloc( sizeof( int ) * (size_t)capacity ) : NULL;
+	for ( int i = 0; i < n; ++i )
+	{
+		lpPiece* p = w->pieces.data + body->pieces.data[i];
+		p->inFront = p->inFront && body->solving; // a region is kept only while its solve is in progress
+		p->frontDepth = p->inFront ? 0 : INT_MAX;
+	}
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		if ( ( pass == 0 && restart == false ) || ( pass == 1 && grow == false ) )
+		{
+			continue;
+		}
+		w->stamp += 1;
+		int stamp = w->stamp;
+		int head = n + 1, tail = n + 1; // [head, tail)
+		for ( int i = 0; i < n; ++i )
+		{
+			int pi = body->pieces.data[i];
+			lpPiece* p = w->pieces.data + pi;
+			bool seed = p->changed > p->accepted || ( body->auditing && p->unaudited );
+			bool source = pass == 0 ? seed : p->frontDepth == 0;
+			if ( source && lpFixed( body, pi, p ) == false && p->mark != stamp )
+			{
+				p->mark = stamp;
+				dequePiece[tail] = pi;
+				dequeDepth[tail++] = 0;
+			}
+			for ( int k = 0; source && lpFixed( body, pi, p ) && k < p->bonds.count; ++k )
+			{
+				// A changed fixed piece moves nothing itself: what it holds starts the region
+				const lpBond* bond = w->bonds.data + p->bonds.data[k];
+				int other = bond->a == pi ? bond->b : bond->a;
+				lpPiece* o = w->pieces.data + other;
+				if ( o->mark != stamp && lpFixed( body, other, o ) == false )
+				{
+					o->mark = stamp;
+					dequePiece[tail] = other;
+					dequeDepth[tail++] = 0;
+				}
+			}
+		}
+		while ( head < tail )
+		{
+			int pi = dequePiece[head];
+			int depth = dequeDepth[head++];
+			lpPiece* p = w->pieces.data + pi;
+			p->frontDepth = 0;
+			for ( int k = index && p->cluster > 0 ? start[p->cluster] : 0; index && p->cluster > 0 && k < start[p->cluster + 1]; ++k )
+			{
+				lpPiece* o = w->pieces.data + members[k];
+				if ( o->mark != stamp )
+				{
+					o->mark = stamp;
+					dequePiece[--head] = members[k];
+					dequeDepth[head] = depth;
+				}
+			}
+			if ( depth == hops )
+			{
+				continue;
+			}
+			for ( int k = 0; k < p->bonds.count; ++k )
+			{
+				const lpBond* bond = w->bonds.data + p->bonds.data[k];
+				int other = bond->a == pi ? bond->b : bond->a;
+				lpPiece* o = w->pieces.data + other;
+				if ( o->mark != stamp && lpFixed( body, other, o ) == false )
+				{
+					o->mark = stamp;
+					dequePiece[tail] = other;
+					dequeDepth[tail++] = depth + 1;
+				}
+			}
+		}
+	}
+	if ( search )
+	{
+		lpFree( dequePiece );
+		lpFree( dequeDepth );
+	}
+
+	int edges = 0;
+	*grew = false;
+	for ( int i = 0; i < n; ++i )
+	{
+		int pi = body->pieces.data[i];
+		const lpPiece* p = w->pieces.data + pi;
+		if ( p->frontDepth != 0 )
+		{
+			continue;
+		}
+		*grew = *grew || p->inFront == false;
+		for ( int k = 0; k < p->bonds.count; ++k )
+		{
+			const lpBond* bond = w->bonds.data + p->bonds.data[k];
+			int other = bond->a == pi ? bond->b : bond->a;
+			const lpPiece* o = w->pieces.data + other;
+			bool inside = clustered && p->cluster != 0 && p->cluster == o->cluster; // within a group: no edge
+			bool once = lpFixed( body, other, o ) || o->frontDepth != 0 || other > pi;
+			edges += inside == false && once ? 1 : 0;
+		}
+	}
+	if ( index )
+	{
+		lpFree( start );
+		lpFree( members );
+	}
+	body->frontEdges = edges;
+	return edges;
 }
 
 // The bookkeeping of a check with no solve (lpStressRejudge)
@@ -1597,6 +1956,23 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		}
 		body->creaking = false;
 
+		// The speed of propagation: past settling, a structure's solve moves only a region that grows at most
+		// stressHopsPerTick bonds a step (on a reduced system, groups), and it is judged once the region's boundary is
+		// quiet. Its budget is in the region's edges. A region that took in new pieces restarts its solve, from where the
+		// solution is.
+		bool front = w->def.stressHopsPerTick > 0 && settle == false && body->solveStress == false;
+		int frontEdges = 0;
+		if ( front )
+		{
+			bool grew = false;
+			int hops = w->def.stressHopsPerTick;
+			frontEdges = lpMaxInt( lpStressFront( w, bodyIndex, hops, continuing == false, body->frontGrow, clustered, &grew ), 1 );
+			int frontRoom = ( lpMinInt( mine, w->def.maxStressWork - reserved ) - overhead ) / frontEdges;
+			budget = lpMinInt( lpMaxInt( frontRoom, budget ), w->def.maxStressIterations );
+			continuing = continuing && grew == false;
+			solvedEdges = frontEdges;
+		}
+
 		reserved += budget * solvedEdges + overhead;
 		if ( body->system == NULL )
 		{
@@ -1619,6 +1995,8 @@ static void lpRunStressChecks( lpWorld* w, bool settle )
 		job->continuing = continuing;
 		job->cached = cached;
 		job->clustered = clustered;
+		job->front = front;
+		job->frontEdges = frontEdges;
 		// Patience: after many steps without a judgement (restarts count too), the tolerances relax so it is judged
 		bool patient = body->stressSteps >= w->def.stressPatience;
 		job->tolerance = patient ? 1e-2 : 1e-3;

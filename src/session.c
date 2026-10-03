@@ -65,6 +65,7 @@ static const lpSessionField lp_defFields[] = {
 	LP_DEF_FIELD( maxStressWork, lp_fieldInt ),
 	LP_DEF_FIELD( maxStressStructureWork, lp_fieldInt ),
 	LP_DEF_FIELD( maxStressIterations, lp_fieldInt ),
+	LP_DEF_FIELD( stressHopsPerTick, lp_fieldInt ),
 	LP_DEF_FIELD( maxSettleIterations, lp_fieldInt ),
 	LP_DEF_FIELD( stressLargeNodes, lp_fieldInt ),
 	LP_DEF_FIELD( stressGlue, lp_fieldFloat ),

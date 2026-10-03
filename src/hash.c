@@ -251,6 +251,7 @@ static uint64_t lpHashStressHead( const lpWorld* w, int bi )
 	LP_FIELD( h, b->stepV );
 	LP_FIELD( h, b->stepOmega );
 	LP_FIELD( h, b->hitPoint );
+	h = b->frontGrow ? lpHashBool( h, true ) : h; // a region solve that grows next step
 	if ( b->system != NULL )
 	{
 		h = lpHashSystem( lpMix64( h ), b->system, b->solving ? ( b->solveClustered ? 2 : 1 ) : 0 );
@@ -279,10 +280,14 @@ static uint64_t lpHashStressChunk( const lpWorld* w, int bi, int chunk )
 		memcpy( state + 6, &p->stressLoad, sizeof( lpVec6 ) );
 		memcpy( state + 12, &p->stressResidual, sizeof( lpVec6 ) );
 		float slender[4] = { p->strain, p->slenderRho, p->slenderAt, p->slenderDepth };
-		int32_t solve[4] = { p->cluster, p->solveSlot, p->changed > p->accepted, 0 };
+		int32_t solve[4] = { p->cluster, p->solveSlot, p->changed > p->accepted, ( p->inFront ? 1 : 0 ) | ( p->unaudited ? 2 : 0 ) };
 		memcpy( state + 18, slender, sizeof( slender ) );
 		memcpy( state + 22, solve, sizeof( solve ) );
 		h = lpHashWords( h, state, sizeof( state ) );
+		if ( w->def.stressHopsPerTick > 0 )
+		{
+			h = lpHashWords( h, &p->acceptedLoad, sizeof( lpVec6 ) ); // the drift guard's (region solves)
+		}
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];

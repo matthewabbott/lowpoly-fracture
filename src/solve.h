@@ -51,6 +51,11 @@ typedef struct lpStressSystem
 	LP_ARRAY( float ) nodeScale;
 	LP_ARRAY( float ) nodeArm;
 	double loadNorm2; // > 0: tolerances are relative to this squared load instead of |f|^2 (a correction's system)
+	LP_ARRAY( int ) depth;		// front solves: each node's bonds from the front
+	LP_ARRAY( int ) activeNodes; // front solves: the nodes within the limit, and the edges between them
+	LP_ARRAY( int ) activeEdges;
+	LP_ARRAY( int ) boundary; // front solves: the nodes just past the region (held where they were)
+	int depthLimit;
 } lpStressSystem;
 
 // A partition of a system's nodes into groups that move rigidly. A group of one is its node; a bigger one is a rigid
@@ -106,6 +111,11 @@ typedef struct lpSolveState
 // continuing solve picks up r, p (in the system) and rz (in the state) where the last call left them; otherwise it
 // starts from x.
 void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeTolerance, bool continuing, lpSolveState* state );
+
+// A region solve: only the nodes within `limit` bonds of the front (depth 0) move; those past it are held where they
+// were. The caller judges it only once what the region's change puts on the held nodes is within tolerance.
+void lpSystemSolveFront( lpStressSystem* s, int limit, int budget, double tolerance, float nodeTolerance, bool continuing,
+						 lpSolveState* state );
 
 // Each node's scale for the equilibrium test from the current x and f: its own load plus the magnitude of the edge
 // forces on it (plus floor); arms are the caller's

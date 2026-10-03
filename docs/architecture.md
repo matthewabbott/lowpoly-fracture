@@ -197,6 +197,28 @@ tiers instead of popping them.
   - *The oracle:* tests set `lpWorld.stressOracle` to check every judged correction against an exact fine solve of
     the same change, with the worst joint error and the number of strain decisions that differ.
     `TestKeepLocalHit`, `TestKeepBreach`, `TestKeepHole` and `TestDriftSmallStructures` hold these to bounds.
+- **The speed of propagation** (`stressHopsPerTick`, 16; milestone 10): past settling, a structure's solve runs on a
+  **region**, not the whole structure, and the region grows at most that many bonds a step.
+  - *The region* (`lpStressFront`, phase 1): the region of the solve in progress, then everything within H bonds of
+    the pieces changed since the last judgement (at a restart), then everything within H of the region when it must
+    grow. Fixed pieces carry nothing across; a changed fixed piece seeds what it holds. On a reduced system a hop is a
+    step from group to group (a cluster comes in whole), so a clustered structure's cone is H groups a step.
+  - *The solve* (`lpSystemSolveFront`): conjugate gradient on the region's nodes and the edges with an end in it, the
+    nodes just past it held where they were. A region that holds the whole system runs the plain solver, step for
+    step the same. A region that takes in new pieces restarts the solve from where the solution is.
+  - *Quiet:* a converged region is judged only if what its change puts on the held nodes just past it is within their
+    equilibrium tolerance (`lpStressQuiet`; on the fine system counted from the residual their last judgement
+    accepted). Otherwise it grows next step. Quiet, it is the whole structure's solve within tolerance.
+  - *What it writes:* solutions, utilizations, strains and slender sections inside the region; residuals inside it and
+    on the held nodes just past it. Nothing else changes, so after d steps a change has reached at most H d bonds
+    (plus that boundary layer): `TestStressCone` checks the bound on a 60-block bridge, and that it is tight.
+  - *Audits* are region solves seeded by the pieces a reduced judgement left unaudited (`lpPiece.unaudited`).
+  - *The drift guard:* a load is compared both with the last sample and with the load the last judgement solved for
+    (`lpPiece.acceptedLoad`), so a load that creeps by less than the threshold at each look still seeds the region
+    when the structure solves again (`TestStressDriftGuard`).
+  - *Measured* (spike S1 and milestone 10's F1, perf-log): the keep's breach, hole and local hit decide on the same
+    steps with the same breaks; the oracle sees no more error. A removed support needs almost the whole structure
+    before the boundary is quiet: the quasi-static answer is global, and the speed only spreads it over steps.
 - `lpWorld_HashStress` hashes the solver's state (solutions, loads, utilizations, strains, solves in progress); a
   refactor of the solver must keep it equal (`tools/bench.ps1 -StrictSolver`), not only the simulation hash.
 - Fracture keeps only chunks on a structure: kept cells smaller than light debris fall, which keeps both the physics

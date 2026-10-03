@@ -852,3 +852,25 @@ hundreds of ticks. Where things pile and collapse (the pile, the tower, the town
 difference becomes a different outcome within a few seconds: the cone then grows at the speed of the debris and the
 bombardment, which aims from each world's own state. A repair has to come within a few ticks, while the difference
 is still one unit.
+
+## 2026-10-03 milestone 10, F1: the stress front (region solves, H = 16)
+
+What changed: S1's region solve, kept with clusters (a hop on a reduced system is a group), audits seeded by the
+pieces a reduced judgement left unaudited, and a drift guard (architecture, "The speed of propagation").
+- **Off, it is neutral:** with `stressHopsPerTick` 0 every bench hash, solver included, equals the previous commit's.
+- **On:** every suite passes. The keep's breach, hole and local hit decide on the same steps with the same breaks and
+  volumes as before. The oracle now also checks region solves: breach 13 solves, worst 0.009, 0 of 77k joints flipped;
+  hole 11, worst 0.284, 1 of 71k; local hit worst 0.131; small structures 130 solves, worst 0.135, 0 of 6.9k. The S5
+  and E1 contact sheets render byte for byte as before. `TestStressCone` (H = 4 on a 60-block bridge held at its
+  ends, a joint broken near one end): the farthest differing piece is exactly 4 d bonds away for d = 1 to 12.
+- **At 16 hops a step the speed rarely binds** on today's scenes: a keep in groups, and every house, is covered in
+  one step. What changes is the region's held boundary (solutions within tolerance, not identical), so outcomes
+  under fire diverge chaotically: town at bombardment periods 2 to 6 ends with 9% fewer to 6% more pieces than before,
+  in no direction.
+- **Stress time, interleaved A/B, 1 worker, best of 3:** keep/12 +2.7%, siege +7.3%, town/12 -1.2%, tower +20% of
+  0.08 ms (it judges more solves as it falls). The siege's cost is the region search: debris landing on the keep
+  restarts its solve almost every step, and each restart walks the keep's 8k pieces and their bonds (0.27 ms a
+  step, 1.6% of its 17 ms). Not done: a search over the cached system's compact graph instead of the pieces.
+- A region holding the whole system runs the plain solver (the same steps, without the index lists), and a solve
+  continuing on an unchanged region reuses its search: both are bit-identical, and saved most of the first measure's
+  +5% on keep/12.

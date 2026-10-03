@@ -355,6 +355,191 @@ void lpSystemSolve( lpStressSystem* s, int budget, double tolerance, float nodeT
 	state->converged = converged;
 }
 
+// K x over a region's edges (those with an end in it), into its nodes only: what lies past it stays where it was (its x
+// is held; its p, r, z and q are zero)
+static void lpApplyActive( const lpStressSystem* s, const lpVec6* x, lpVec6* y )
+{
+	const int* depth = s->depth.data;
+	int limit = s->depthLimit;
+	const int* nodes = s->activeNodes.data;
+	for ( int i = 0; i < s->activeNodes.count; ++i )
+	{
+		y[nodes[i]] = lp_vec6Zero;
+	}
+	for ( int j = 0; j < s->activeEdges.count; ++j )
+	{
+		const lpStressEdge* e = s->edges.data + s->activeEdges.data[j];
+		lpVec3 force, moment;
+		lpEdgeForce( e, x, &force, &moment );
+		if ( e->a >= 0 && depth[e->a] <= limit )
+		{
+			y[e->a].f = lpSub( y[e->a].f, force );
+			y[e->a].t = lpSub( y[e->a].t, lpAdd( lpCross( e->ra, force ), moment ) );
+		}
+		if ( e->b >= 0 && depth[e->b] <= limit )
+		{
+			y[e->b].f = lpAdd( y[e->b].f, force );
+			y[e->b].t = lpAdd( y[e->b].t, lpAdd( lpCross( e->rb, force ), moment ) );
+		}
+	}
+}
+
+static double lpDotActive( const lpStressSystem* s, const lpVec6* a, const lpVec6* b )
+{
+	double sum = 0.0;
+	for ( int j = 0; j < s->activeNodes.count; ++j )
+	{
+		int i = s->activeNodes.data[j];
+		sum += (double)lpDot( a[i].f, b[i].f ) + (double)lpDot( a[i].t, b[i].t );
+	}
+	return sum;
+}
+
+static bool lpActiveBalanced( const lpStressSystem* s, const lpVec6* r, float nodeTolerance )
+{
+	if ( s->nodeScale.count != s->nodes.count || s->nodeArm.count != s->nodes.count )
+	{
+		return true;
+	}
+	for ( int j = 0; j < s->activeNodes.count; ++j )
+	{
+		int i = s->activeNodes.data[j];
+		float limit = nodeTolerance * s->nodeScale.data[i];
+		float torque = limit * s->nodeArm.data[i];
+		if ( lpLengthSquared( r[i].f ) > limit * limit || lpLengthSquared( r[i].t ) > torque * torque )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void lpSystemSolveFront( lpStressSystem* s, int limit, int budget, double tolerance, float nodeTolerance, bool continuing,
+						 lpSolveState* state )
+{
+	int n = s->nodes.count;
+	const int* depth = s->depth.data;
+	lpVec6* x = s->vectors.data;
+	lpVec6* f = x + n;
+	lpVec6* r = x + 2 * n;
+	lpVec6* z = x + 3 * n;
+	lpVec6* p = x + 4 * n;
+	lpVec6* q = x + 5 * n;
+	const lpBlock6* d = s->blocks.data;
+
+	// The region, the edges with an end in it, and the nodes just past it (held): found when a solve starts, kept while
+	// it continues (a region that changes restarts it)
+	if ( continuing == false )
+	{
+		s->depthLimit = limit;
+		s->activeNodes.count = 0;
+		lpArray_Reserve( s->activeNodes, n );
+		for ( int i = 0; i < n; ++i )
+		{
+			if ( depth[i] <= limit )
+			{
+				s->activeNodes.data[s->activeNodes.count++] = i;
+			}
+		}
+		s->activeEdges.count = 0;
+		s->boundary.count = 0;
+		lpArray_Reserve( s->activeEdges, s->edges.count );
+		lpArray_Reserve( s->boundary, 2 * s->edges.count );
+		for ( int k = 0; k < s->edges.count; ++k )
+		{
+			const lpStressEdge* e = s->edges.data + k;
+			bool inA = e->a >= 0 && depth[e->a] <= limit;
+			bool inB = e->b >= 0 && depth[e->b] <= limit;
+			if ( inA || inB )
+			{
+				s->activeEdges.data[s->activeEdges.count++] = k;
+			}
+			if ( inA && e->b >= 0 && inB == false )
+			{
+				s->boundary.data[s->boundary.count++] = e->b;
+			}
+			if ( inB && e->a >= 0 && inA == false )
+			{
+				s->boundary.data[s->boundary.count++] = e->a;
+			}
+		}
+		for ( int j = 0; j < s->boundary.count; ++j )
+		{
+			int i = s->boundary.data[j];
+			r[i] = lp_vec6Zero;
+			z[i] = lp_vec6Zero;
+			p[i] = lp_vec6Zero;
+			q[i] = lp_vec6Zero;
+		}
+	}
+	const int* active = s->activeNodes.data;
+	int count = s->activeNodes.count;
+	if ( count == n )
+	{
+		// The whole system: the same steps in the same order as a plain solve, without the lists
+		lpSystemSolve( s, budget, tolerance, nodeTolerance, continuing, state );
+		return;
+	}
+
+	double rz = state->rz;
+	if ( continuing == false )
+	{
+		lpApplyActive( s, x, q );
+		for ( int j = 0; j < count; ++j )
+		{
+			int i = active[j];
+			r[i].f = lpSub( f[i].f, q[i].f );
+			r[i].t = lpSub( f[i].t, q[i].t );
+			z[i] = lpPrecondition( r[i], d + i );
+			p[i] = z[i];
+		}
+		rz = lpDotActive( s, r, z );
+	}
+	double bound = tolerance * tolerance * ( s->loadNorm2 > 0.0 ? s->loadNorm2 : lpDotActive( s, f, f ) );
+	bool converged = false;
+	int it = 0;
+	for ( ; it < budget; ++it )
+	{
+		if ( lpDotActive( s, r, r ) <= bound && lpActiveBalanced( s, r, nodeTolerance ) )
+		{
+			converged = true;
+			break;
+		}
+		lpApplyActive( s, p, q );
+		double pq = lpDotActive( s, p, q );
+		if ( ( pq > 0.0 ) == false )
+		{
+			break;
+		}
+		float alpha = (float)( rz / pq );
+		for ( int j = 0; j < count; ++j )
+		{
+			int i = active[j];
+			x[i].f = lpMulAdd( x[i].f, alpha, p[i].f );
+			x[i].t = lpMulAdd( x[i].t, alpha, p[i].t );
+			r[i].f = lpMulSub( r[i].f, alpha, q[i].f );
+			r[i].t = lpMulSub( r[i].t, alpha, q[i].t );
+			z[i] = lpPrecondition( r[i], d + i );
+		}
+		double rz2 = lpDotActive( s, r, z );
+		float beta = (float)( rz2 / rz );
+		rz = rz2;
+		for ( int j = 0; j < count; ++j )
+		{
+			int i = active[j];
+			p[i].f = lpMulAdd( z[i].f, beta, p[i].f );
+			p[i].t = lpMulAdd( z[i].t, beta, p[i].t );
+		}
+	}
+	if ( converged == false && lpDotActive( s, r, r ) <= bound && lpActiveBalanced( s, r, nodeTolerance ) )
+	{
+		converged = true;
+	}
+	state->rz = rz;
+	state->iterations = it;
+	state->converged = converged;
+}
+
 void lpSystemReduce( const lpStressSystem* fine, const lpVec3* nodeRef, const lpPartition* part, lpStressSystem* reduced )
 {
 	int groups = part->groupCount;
@@ -445,5 +630,9 @@ void lpSystemFree( lpStressSystem* s )
 	lpArray_Free( s->rho );
 	lpArray_Free( s->nodeScale );
 	lpArray_Free( s->nodeArm );
+	lpArray_Free( s->depth );
+	lpArray_Free( s->activeNodes );
+	lpArray_Free( s->activeEdges );
+	lpArray_Free( s->boundary );
 	s->built = false;
 }
