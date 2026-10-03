@@ -801,3 +801,54 @@ workers (C2, `lpf_bench` default rungs; legacy measured in S2 at 1 worker):
   4.9 ms step. The fallback if it matters: hash every few ticks (a desync is still caught, a few ticks later).
 - Behaviour unchanged: every non-timing bench stat equals C1b's, and `--check-hash` passes on every rung and script at
   1 and 8 workers.
+
+## 2026-10-03 milestone 10, E3: two worlds, an injected desync, repair by unit, cones
+
+`lpf_bench --twin` (bench/twin.c), 4 workers, 600 ticks, the nudge at tick 200; each world runs its own scene logic.
+Logs in `build/m10/e3`.
+
+**R3, repair by causal unit** (the barrage; a one-ulp nudge to the warm start of a crate resting on the ground):
+
+| repair | result | repairs | bytes |
+|---|---|---|---|
+| none | differs to the end (2 to 3 elements) | 0 | 0 |
+| motion | never reconverges | 400 | 1.0 M |
+| motion, sleep timers | never reconverges | 400 | 1.1 M |
+| motion, warm starts | in sync at once | 1 | 29.6 k |
+| motion, warm starts, sleep | in sync at once | 1 | 29.7 k |
+| the same, 4 ticks late | in sync by tick 206 | 3 | 89 k |
+| the same, 16 ticks late | never reconverges | 384 | 13 M |
+
+- **The red team's R3 is confirmed:** a repair that ships only visible state re-diverges every tick; the warm starts
+  must go with it. The sleep timers made no difference here.
+- **Late repairs fail:** 16 ticks on, the worlds hold different contacts (one touches where the other does not), and a
+  state-only repair cannot make or end contacts. Repair needs the host's image of the tick it was found and a
+  re-simulation (roadmap §10's plan for milestone 14), not a copy of now.
+- **Bytes:** the unit is large (the crate's unit holds what rests around it): 30 kB at once, mostly contact manifolds.
+- A one-ulp nudge to a moving crate's velocity (unit 37): unrepaired it differs to the end (2 elements); repaired with
+  motion alone it is in sync at once (53 bytes), and 4 or 16 ticks late it still reconverges (2 and 10 repairs, 0.7
+  and 1.7 kB). On the siege, the warm nudge was gone within its own step.
+
+**R13, detection without the physics engine's hidden state:** every nudge here showed outside the backend category in
+the same tick. One earlier run (a one-ulp nudge to the x of a crate at rest) showed only in the backend for 6 ticks
+and then healed: the backend category catches what the visible state shows late, or never.
+
+**Cones** (a one-ulp nudge to the first moving debris body; elements, units and the farthest differing body, at 10,
+100 and 399 ticks after):
+
+| rung | +10 | +100 | +399 |
+|---|---|---|---|
+| walls/12 | 2, 1, 0.9 m | 3, 2, 2.1 m | 5, 2, 4.9 m |
+| town/12 | 3, 1, 1.2 m | 3, 2, 5.7 m | 3,298, 992, 52 m |
+| pile/12 | 627, 10, 8.5 m | 1,620, 396, 25 m | 3,281, 1,033, 32 m |
+| tower/12 | 264, 6, 5.6 m | 1,142, 187, 20 m | 5,420, 1,473, 31 m |
+| ruins/12 | 2, 1, 0.5 m | 1, 1, 1.3 m | 145, 61, 21 m |
+| yard/12 | 6, 1, 2.5 m | 7, 2, 3.4 m | 6, 2, 3.5 m |
+| barrage, siege, track | 1 to 6, 1 | 1 to 7, 1 | 1 to 7, 1 to 2 |
+| mech/30 | 56, 1, 2.8 m | 73, 10, 10 m | 123, 21, 20 m |
+
+(Lumber stayed at 2 elements; keep/12's nudge healed within its step.) Most desyncs stay in one or two units for
+hundreds of ticks. Where things pile and collapse (the pile, the tower, the town's later bombardment) a one-ulp
+difference becomes a different outcome within a few seconds: the cone then grows at the speed of the debris and the
+bombardment, which aims from each world's own state. A repair has to come within a few ticks, while the difference
+is still one unit.
