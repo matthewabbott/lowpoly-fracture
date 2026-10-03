@@ -775,8 +775,10 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	}
 	const lpRig* r = w->rigs.data + rig;
 	s.alive = r->alive;
-	s.body = r->body;
-	s.bodyGeneration = r->body >= 0 ? w->bodies.data[r->body].generation : 0;
+	// The torso of this step, unless it died later in the step (fell out of the world, was destroyed)
+	bool torso = r->body >= 0 && w->bodies.data[r->body].alive && LP_PHYS_NULL( w->bodies.data[r->body].id ) == false;
+	s.body = torso ? r->body : -1;
+	s.bodyGeneration = torso ? w->bodies.data[r->body].generation : 0;
 	s.controller = (int)r->controller - 1;
 	s.limbCount = r->limbCount;
 	s.idle = r->idle;

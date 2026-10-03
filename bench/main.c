@@ -68,7 +68,7 @@ static const char* s_hashLog;
 // --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
 static const char* s_tickLog;
 
-// --script path: a replay script's events, applied before the bombardment each tick (scenes/script.h)
+// --script path: a replay script's commands, submitted before the scene's each tick (scenes/script.h)
 static lpScript s_script;
 
 // --dump tick:path (repeatable): the state after that tick's step as JSON (scenes/dump.h), from the first worker count's
@@ -133,13 +133,13 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	float* phys = calloc( (size_t)samples, sizeof( float ) );
 	float* update = calloc( (size_t)samples, sizeof( float ) );
 
-	lpScriptState replay = lpDefaultScriptState();
+	int next = 0;
 	for ( int tick = 0; tick < ticks; ++tick )
 	{
-		lpScriptPlay( world, &s_script, tick, &replay );
+		// Commands for this tick: the script's, then the scene's (the bombardment, and the drivers of what no script drives)
+		next = lpScriptPlay( world, &s_script, next );
 		lpSceneBombard( world, scene, tick, period );
-		// the track's cars drive laps, the mech patrols, but for what the script drives
-		lpSceneDrive( world, scene, tick, replay.playerVehicle, replay.playerRig );
+		lpSceneDrive( world, scene, tick );
 		uint64_t t0 = lpGetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
 		total[tick] = lpGetMilliseconds( t0 );

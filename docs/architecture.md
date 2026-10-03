@@ -292,9 +292,9 @@ tiers instead of popping them.
 - A parked chassis falls asleep (its forces never wake it); a changed control wakes it, and so does losing the ground
   under a wheel, which holds no Box3D contact to do it.
 - Controls (`lpWorld_SetVehicleControl`) are persistent simulation state and hashed; so are the wheels' steering,
-  suspension and contact state, only when vehicles exist. The sandbox turns keys into `drive` events recorded when the
-  controls change; scripted drivers (`lpSceneDrive`, the track's lap drivers) set controls from simulation state
-  every tick, and leave alone the vehicle a drive event last steered.
+  suspension and contact state, only when vehicles exist. The sandbox turns keys into control commands when the
+  controls change; scripted drivers (`lpSceneDrive`, the track's lap drivers) submit the scene's control commands from
+  simulation state every tick, and leave alone a vehicle a player's command drives.
 
 ## Rigs (`rig.c`, `gait.c`)
 
@@ -338,8 +338,8 @@ tiers instead of popping them.
 - Reaching (`lpWorld_SetLimbTarget`): a limb leaves the gait once the others keep the centre of mass by the margin
   (crawling, its belly does); until then the body leans. IK drives its foot at the point with a strike feedforward (8/s
   times each joint's error, capped by its servo), so a weak limb hits softer. It reports the piece its foot touches (a
-  contact of its tip within 0.35 m of the foot, something loose before something fixed), and `lpRigGrab` (scenes)
-  welds the claw to it.
+  contact of its tip within 0.35 m of the foot, something loose before something fixed), and a claw command
+  (`lp_commandClaw`) welds the claw to it, or lets go; the grip is kept on the limb.
 - The hexapod kit (`lpAddHexapod` in `scenes.c`): an armored torso (frame and belly skid, a reactor feeding power, a
   hydraulic reservoir with a pool of 100 and valves closing in 3 s, a computer feeding control, a deck), six sheet-metal
   legs (a hip block, a femur of two welded halves, a tibia with a welded rubber sole), every body `solveStress`; hinges

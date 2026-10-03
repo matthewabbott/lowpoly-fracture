@@ -11,6 +11,7 @@
 #include "box3d/collision.h"
 
 #include <float.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct lpPhysOrder
@@ -151,8 +152,17 @@ static bool lpPairFilterB3( b3ShapeId shapeA, b3ShapeId shapeB, void* context )
 	return p->pairFilter( lpShapeIndex( shapeA ), lpShapeIndex( shapeB ), p->context );
 }
 
+// Box3D's own assertion handler prints to stdout, which is lost when it breaks; ours says it on stderr first
+static int lpBox3dAssert( const char* condition, const char* fileName, int lineNumber )
+{
+	fprintf( stderr, "BOX3D ASSERTION: %s, %s, line %d\n", condition, fileName, lineNumber );
+	fflush( stderr );
+	return 1;
+}
+
 lpPhys* lpPhys_Create( const lpPhysDef* def )
 {
+	b3SetAssertFcn( lpBox3dAssert );
 	lpPhys* p = lpAlloc( sizeof( lpPhys ) );
 	memset( p, 0, sizeof( lpPhys ) );
 	b3WorldDef wd = b3DefaultWorldDef();

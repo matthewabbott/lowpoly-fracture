@@ -32,24 +32,21 @@
 namespace
 {
 
-// The tools are the replay scripts' (scenes/script.h), in their order
+// The tools are the replay scripts' (scenes/script.h), in their order, then the grab
 enum Tool
 {
-	ToolRifle = lp_scriptRifle,
-	ToolGrenade = lp_scriptGrenade,
-	ToolCannon = lp_scriptCannon,
-	ToolHammer = lp_scriptHammer,
-	ToolBall = lp_scriptBall,
-	ToolFlask = lp_scriptFlask,
-	ToolPull = lp_scriptPull,
-	ToolCount = lp_scriptToolCount
+	ToolRifle = lp_toolRifle,
+	ToolGrenade = lp_toolGrenade,
+	ToolCannon = lp_toolCannon,
+	ToolHammer = lp_toolHammer,
+	ToolBall = lp_toolBall,
+	ToolFlask = lp_toolFlask,
+	ToolPull = lp_toolCount,
+	ToolCount
 };
 
 const char* kToolNames[ToolCount] = { "Rifle", "Grenade", "Cannon blast", "Sledgehammer", "Cannonball", "Volatile flask",
 									  "Grab / pull" };
-
-// A sim input: applied at the start of its tick, before the step. Recorded and replayed as script lines.
-using Event = lpScriptEvent;
 
 lpVec3 ToLp( V3 v )
 {
@@ -73,9 +70,8 @@ struct Options
 	float renderScale = 1.0f;
 	bool vsync = true;
 	bool hideUi = false;
-	int inputDelay = 0; // ticks a walk or drive event waits before it applies: a feel test of lockstep's input delay
-	bool follow = false; // the camera chases the vehicle the drive events steer, or the rig the walk events walk (else the
-						 // scene's first rig)
+	int inputDelay = 0; // ticks every command of this player's waits before it applies: a feel test of lockstep's delay
+	bool follow = false; // the camera chases the vehicle or the rig this player's commands drive (else the scene's first rig)
 	bool haveCamera = false;
 	float camera[5] = {};
 	int width = 1600;
@@ -101,9 +97,9 @@ struct App
 	bool firing = false;
 	int fireCooldown = 0;
 
-	// what replaying changed: the vehicle and the rig the events steer (the scene's drivers leave them alone), the
-	// claw's grip
-	lpScriptState replay = lpDefaultScriptState();
+	// the script's next command to submit, and the number of this player's next live command (after any script's)
+	int scriptNext = 0;
+	uint32_t seq = 0x80000000u;
 	// driving: the vehicle the keys drive here
 	int driving = -1;
 	lpVehicleControl sent = {};
@@ -120,7 +116,6 @@ struct App
 	float grabDistance = 5.0f;
 
 	lpScript script = {};
-	std::vector<Event> live;
 	FILE* recordFile = nullptr;
 	FILE* hashFile = nullptr;
 
@@ -242,13 +237,12 @@ void LoadScene( int scene )
 	app.opt.scene = scene;
 	app.tick = 0;
 	app.accumulator = 0.0;
-	app.replay = lpDefaultScriptState();
+	app.scriptNext = 0;
 	app.driving = -1;
 	app.sent = {};
 	app.walking = -1;
 	app.walkSent = {};
 	app.striking = -1;
-	app.live.clear();
 	app.particles.clear();
 	Renderer_Reset();
 	SetSceneCamera( scene );
@@ -258,45 +252,77 @@ void LoadScript( const std::string& path )
 {
 	if ( lpScriptLoad( &app.script, path.c_str() ) )
 	{
-		printf( "script: %d events from %s\n", app.script.count, path.c_str() );
+		printf( "script: %d commands from %s\n", app.script.count, path.c_str() );
 	}
 }
 
-void ApplyEvent( const Event& e )
+// A command of this player's: it applies after the input delay (a recording writes what the world applied)
+void Submit( lpCommand c )
 {
-	lpScriptApply( app.world, &e, &app.replay );
+	c.tick = app.tick + app.opt.inputDelay;
+	c.peer = 0;
+	c.seq = app.seq++;
+	lpWorld_Submit( app.world, &c );
 }
 
-void RecordAndQueue( const Event& e )
+// The vehicle and the rig this player's commands drive (-1: none): the scene's drivers leave them alone
+int ControlledVehicle()
 {
-	app.live.push_back( e );
-	if ( app.recordFile != nullptr )
+	for ( int v = 0; v < lpWorld_GetVehicleCapacity( app.world ); ++v )
 	{
-		lpScriptWrite( app.recordFile, &e );
+		if ( lpWorld_GetVehicleState( app.world, v ).controller == 0 )
+		{
+			return v;
+		}
 	}
+	return -1;
 }
 
-// The keys drive `app.driving`: a drive event whenever the controls change
+int ControlledRig()
+{
+	for ( int r = 0; r < lpWorld_GetRigCapacity( app.world ); ++r )
+	{
+		if ( lpWorld_GetRigState( app.world, r ).controller == 0 )
+		{
+			return r;
+		}
+	}
+	return -1;
+}
+
+// The limb of the walked rig whose claw holds something (-1: none)
+int GripLimb()
+{
+	int limbs = app.walking >= 0 ? lpWorld_GetRigState( app.world, app.walking ).limbCount : 0;
+	for ( int k = 0; k < limbs; ++k )
+	{
+		if ( lpWorld_GetLimbState( app.world, app.walking, k ).grip >= 0 )
+		{
+			return k;
+		}
+	}
+	return -1;
+}
+
+// The keys drive `app.driving`: a control command whenever the controls change
 void QueueDrive( const lpVehicleControl& control )
 {
-	Event e = {};
-	e.tick = app.tick + app.opt.inputDelay;
-	e.kind = lp_scriptDrive;
-	e.index = app.driving;
-	e.control = control;
-	RecordAndQueue( e );
+	lpCommand c = {};
+	c.kind = lp_commandVehicleControl;
+	c.vehicleControl.vehicle = app.driving;
+	c.vehicleControl.control = control;
+	Submit( c );
 	app.sent = control;
 }
 
-// The keys walk `app.walking`: a walk event whenever the controls change
+// The keys walk `app.walking`: a control command whenever the controls change
 void QueueWalk( const lpRigControl& control )
 {
-	Event e = {};
-	e.tick = app.tick + app.opt.inputDelay;
-	e.kind = lp_scriptWalk;
-	e.index = app.walking;
-	e.walk = control;
-	RecordAndQueue( e );
+	lpCommand c = {};
+	c.kind = lp_commandRigControl;
+	c.rigControl.rig = app.walking;
+	c.rigControl.control = control;
+	Submit( c );
 	app.walkSent = control;
 }
 
@@ -338,14 +364,13 @@ void ToggleDriving()
 
 void QueueReach( int limb, bool active, V3 point )
 {
-	Event e = {};
-	e.tick = app.tick;
-	e.kind = lp_scriptReach;
-	e.index = app.walking;
-	e.limb = limb;
-	e.active = active;
-	e.origin = ToLp( point );
-	RecordAndQueue( e );
+	lpCommand c = {};
+	c.kind = lp_commandLimbTarget;
+	c.limbTarget.rig = app.walking;
+	c.limbTarget.limb = limb;
+	c.limbTarget.active = active;
+	c.limbTarget.point = ToLp( point );
+	Submit( c );
 }
 
 // F held: the walked rig strikes at what the crosshair is on, with the leg nearest it; let go, the leg steps back into
@@ -358,16 +383,17 @@ void StrikeKey( bool down )
 	}
 	int limb = -1;
 	V3 point = {};
+	int grip = GripLimb();
 	if ( down && Walk_Aim( app.world, app.walking, app.camPos, Forward(), &limb, &point ) )
 	{
-		if ( app.striking >= 0 && app.striking != limb && app.replay.grip < 0 )
+		if ( app.striking >= 0 && app.striking != limb && grip < 0 )
 		{
 			QueueReach( app.striking, false, V3{} );
 		}
-		app.striking = app.replay.grip >= 0 ? app.replay.gripLimb : limb;
+		app.striking = grip >= 0 ? grip : limb;
 		QueueReach( app.striking, true, point );
 	}
-	else if ( down == false && app.striking >= 0 && app.replay.grip < 0 )
+	else if ( down == false && app.striking >= 0 && grip < 0 )
 	{
 		QueueReach( app.striking, false, V3{} );
 		app.striking = -1;
@@ -381,15 +407,19 @@ void ClawKey()
 	{
 		return;
 	}
-	Event e = {};
-	e.tick = app.tick;
-	e.kind = lp_scriptGrab;
-	e.index = app.walking;
-	if ( app.replay.grip >= 0 )
+	lpCommand c = {};
+	c.kind = lp_commandClaw;
+	c.claw.rig = app.walking;
+	c.claw.maxForce = 40000.0f; // the hexapod's claw
+	c.claw.maxTorque = 15000.0f;
+	c.claw.strength = 5000.0f;
+	int grip = GripLimb();
+	if ( grip >= 0 )
 	{
-		e.limb = app.replay.gripLimb;
-		RecordAndQueue( e );
-		QueueReach( app.replay.gripLimb, false, V3{} );
+		c.claw.limb = grip;
+		c.claw.mode = lp_clawRelease;
+		Submit( c );
+		QueueReach( grip, false, V3{} );
 		app.striking = -1;
 		return;
 	}
@@ -398,20 +428,15 @@ void ClawKey()
 	{
 		return;
 	}
-	e.limb = app.striking;
-	RecordAndQueue( e );
+	c.claw.limb = app.striking;
+	c.claw.mode = lp_clawGrab;
+	Submit( c );
 	QueueReach( app.striking, true, V3{ (float)st.foot.x, (float)st.foot.y + 0.8f, (float)st.foot.z } );
 }
 
 void QueueFire()
 {
-	Event e = {};
-	e.tick = app.tick;
-	e.kind = app.tool;
-	e.origin = ToLp( app.camPos );
-	e.dir = ToLp( Forward() );
-	e.index = -1;
-	RecordAndQueue( e );
+	Submit( lpScriptToolCommand( app.tool, ToLp( app.camPos ), ToLp( Forward() ) ) );
 }
 
 // Start holding whatever loose piece is under the crosshair
@@ -424,7 +449,7 @@ void BeginGrab()
 	if ( hit.hit && hit.piece >= 0 )
 	{
 		app.grabPiece = hit.piece;
-		app.grabGeneration = lpWorld_GetPieceInfo( app.world, hit.piece ).generation;
+		app.grabGeneration = hit.pieceGeneration;
 		lpVec3 local = lpWorld_ToBodyFrame( app.world, hit.piece, hit.point );
 		app.grabLocal = { local.x, local.y, local.z };
 		V3 p = { (float)hit.point.x, (float)hit.point.y, (float)hit.point.z };
@@ -432,7 +457,7 @@ void BeginGrab()
 	}
 }
 
-// While held, one pull event per tick toward the point in front of the camera
+// While held, one pull command per tick toward the point in front of the camera
 void QueueGrab()
 {
 	if ( app.grabPiece < 0 )
@@ -446,44 +471,41 @@ void QueueGrab()
 		return;
 	}
 	V3 target = app.camPos + app.grabDistance * Forward();
-	Event e = {};
-	e.tick = app.tick;
-	e.kind = ToolPull;
-	e.origin = ToLp( target );
-	e.dir = ToLp( app.grabLocal );
-	e.index = app.grabPiece;
-	RecordAndQueue( e );
+	lpCommand c = {};
+	c.kind = lp_commandPull;
+	c.pull.piece = app.grabPiece;
+	c.pull.generation = app.grabGeneration;
+	c.pull.localPoint = ToLp( app.grabLocal );
+	c.pull.target = ToLp( target );
+	c.pull.maxAccel = 40.0f;
+	c.pull.maxMass = 400.0f;
+	Submit( c );
 }
 
 void StepSimulation()
 {
-	// Script and live events for this tick, in file order then input order
-	lpScriptPlay( app.world, &app.script, app.tick, &app.replay );
-	// Live events whose tick has come, in input order; delayed ones (--input-delay) wait
-	size_t waiting = 0;
-	for ( size_t i = 0; i < app.live.size(); ++i )
-	{
-		if ( app.live[i].tick <= app.tick )
-		{
-			ApplyEvent( app.live[i] );
-		}
-		else
-		{
-			app.live[waiting++] = app.live[i];
-		}
-	}
-	app.live.resize( waiting );
-
+	// Commands for this tick: the script's and the scene's (live ones were submitted as they came, for their tick)
+	app.scriptNext = lpScriptPlay( app.world, &app.script, app.scriptNext );
 	if ( app.opt.bombard > 0 )
 	{
 		lpSceneBombard( app.world, app.opt.scene, (int)app.tick, app.opt.bombard );
 	}
-	lpSceneDrive( app.world, app.opt.scene, (int)app.tick, app.replay.playerVehicle, app.replay.playerRig );
+	lpSceneDrive( app.world, app.opt.scene, (int)app.tick );
 
 	uint64_t t0 = lpGetTicks();
 	lpWorld_Step( app.world, 1.0f / 60.0f, 4 );
 	app.stepMs = lpGetMilliseconds( t0 );
 	app.last = lpWorld_GetStats( app.world );
+	if ( app.recordFile != nullptr )
+	{
+		// What the step applied, as it applied it (the scene's own commands are made again on replay)
+		int count = 0;
+		const lpCommand* applied = lpWorld_GetAppliedCommands( app.world, &count );
+		for ( int i = 0; i < count; ++i )
+		{
+			lpScriptWrite( app.recordFile, applied + i );
+		}
+	}
 
 	int count = 0;
 	const lpParticle* emitted = lpWorld_GetParticles( app.world, &count );
@@ -639,14 +661,16 @@ void UpdateParticles( float dt )
 
 void UpdateCamera( float dt )
 {
-	int chase = app.driving >= 0 ? app.driving : ( app.opt.follow ? app.replay.playerVehicle : -1 );
+	int controlledVehicle = ControlledVehicle();
+	int controlledRig = ControlledRig();
+	int chase = app.driving >= 0 ? app.driving : ( app.opt.follow ? controlledVehicle : -1 );
 	if ( chase >= 0 )
 	{
 		Drive_Camera( app.world, chase, dt, &app.camPos, &app.yaw, &app.pitch );
 		return; // the keys drive
 	}
-	// Following with no rig walked by events, the scene's first rig (the mech on patrol)
-	int followed = app.replay.playerRig >= 0 ? app.replay.playerRig : ( app.replay.playerVehicle < 0 && lpWorld_GetRigCapacity( app.world ) > 0 ? 0 : -1 );
+	// Following with no rig walked by commands, the scene's first rig (the mech on patrol)
+	int followed = controlledRig >= 0 ? controlledRig : ( controlledVehicle < 0 && lpWorld_GetRigCapacity( app.world ) > 0 ? 0 : -1 );
 	int walker = app.walking >= 0 ? app.walking : ( app.opt.follow ? followed : -1 );
 	if ( walker >= 0 )
 	{
@@ -703,7 +727,7 @@ void DrawUi()
 	ImGui::Text( "deferred jobs %d  demotions %d  ghost casts %d", app.last.deferredJobs, app.last.demotionsThisStep, app.last.ghostCasts );
 	ImGui::Text( "triangles %d  draws %d  pages %d  upload %d KB", r.triangles, r.drawCalls, r.pages, r.uploadKB );
 	ImGui::Text( "vehicles %.2f ms  wheel casts %d", app.last.vehicleMs, app.last.wheelCasts );
-	int shown = app.driving >= 0 ? app.driving : app.replay.playerVehicle;
+	int shown = app.driving >= 0 ? app.driving : ControlledVehicle();
 	if ( shown >= 0 )
 	{
 		char line[160];
@@ -712,11 +736,12 @@ void DrawUi()
 	}
 	if ( lpWorld_GetRigCapacity( app.world ) > 0 )
 	{
-		int walker = app.walking >= 0 ? app.walking : ( app.replay.playerRig >= 0 ? app.replay.playerRig : 0 );
+		int controlled = ControlledRig();
+		int walker = app.walking >= 0 ? app.walking : ( controlled >= 0 ? controlled : 0 );
 		char line[256];
 		Walk_Describe( app.world, walker, line, (int)sizeof( line ) );
 		ImGui::Text( "rigs %.2f ms  foot casts %d", app.last.rigMs, app.last.footCasts );
-		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, app.replay.grip >= 0 ? "  gripping" : "" );
+		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, GripLimb() >= 0 ? "  gripping" : "" );
 	}
 	ImGui::Text( "tick %lld", (long long)app.tick );
 	ImGui::Separator();
@@ -798,7 +823,7 @@ void Init()
 		app.recordFile = fopen( app.opt.record.c_str(), "w" );
 		if ( app.recordFile != nullptr )
 		{
-			fprintf( app.recordFile, "# tick tool origin(xyz) direction(xyz); scene %s\n", lpSceneName( app.opt.scene ) );
+			fprintf( app.recordFile, "# the commands applied (scenes/script.h); scene %s\n", lpSceneName( app.opt.scene ) );
 		}
 	}
 	if ( !app.opt.hashLog.empty() )

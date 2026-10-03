@@ -37,12 +37,15 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    (no dependence on callback order). Their state is in `lpWorld_Hash`.
 9. **Cosmetic state lives outside the simulation.** Dust particles are emitted by the core but simulated only by
    the app; they never feed back.
-10. **Inputs are events stamped with a tick.** The sandbox records tool use as text (`--record`), replays it
-   (`--script`) and applies it before the step of that tick. A held pull/grab is one event per tick.
-   Vehicle controls are persistent simulation state (hashed): a `drive` event sets them when they change, and they
-   hold until the next one. So are a rig's controls (`walk` events) and its limbs' targets (`reach` events); a `grab`
-   event welds a claw to what it touches, or lets go, from the state at its tick. Scripted drivers (`lpSceneDrive`: the
-   track's laps, the mech's patrol) set controls from simulation state only, every tick.
+10. **Inputs are commands stamped with a tick.** Everything from outside the simulation is an `lpCommand`
+   (`lpWorld_Submit`), stamped `(tick, peer, seq)` and applied as that tick's step begins, in `(peer, seq)` order,
+   whatever order it arrived in. A command names slots with their generations and is dropped if they went stale. Logic
+   that every machine runs from world state alone (the scene's drivers and bombardment) submits as `LP_PEER_SCENE`,
+   applied after the players; anything else that does not come from world state must be a command. A player's control,
+   limb or claw command takes a vehicle or rig over (the scene's drivers leave it) until that player releases it.
+   Controls, limb targets and a claw's grip are persistent simulation state. A held pull is one command per tick. The
+   sandbox and `lpf_bench --script` replay scripts of commands (`scenes/script.h`); recordings (`--record`) write the
+   commands each step applied, so they replay their own session.
 11. **Hash fields, not structs with padding.** A struct copy fills its padding with whatever was on the stack (pointers,
    under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
    ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).

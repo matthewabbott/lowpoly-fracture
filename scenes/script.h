@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: MIT
-// Replay scripts: tick-stamped inputs (the sandbox's tools, a vehicle's and a rig's controls) read from text and
-// applied to a world, so the sandbox, the benchmark and the tests replay the same session headless or not.
+// Replay scripts: tick-stamped commands (lpf.h, "commands") read from text and submitted to a world, so the sandbox,
+// the benchmark and the tests replay the same session headless or not. A recording is the commands a world applied,
+// written back as lines.
 //
-// One event per line, `#` starts a comment:
-//   tick tool ox oy oz dx dy dz [n]           tool: rifle grenade cannon hammer ball flask pull (dir normalised)
+// One command per line, `#` starts a comment. A line starts with its tick, or tick:peer (peer 0 otherwise); each peer's
+// commands are numbered in file order, and a script is sorted by tick as it loads.
+//   tick tool ox oy oz dx dy dz          tool: rifle grenade cannon hammer (an impact where the aim first hits), ball
+//                                        flask (thrown from there): the sandbox's tools, the aim normalised
+//   tick impact ox oy oz dx dy dz radius energy [impulse]   an impact of your own where the aim first hits (normalised)
+//   tick ray ox oy oz dx dy dz radius energy impulse explosion range   the same, exact: as recordings write it
+//   tick point px py pz dx dy dz radius energy impulse explosion       an impact at a point
+//   tick pull tx ty tz lx ly lz piece [generation [maxAccel maxMass]]  toward the target, the point lx..lz in the piece's
+//                                        body frame, this tick (a held grab is a pull per tick)
+//   tick spawn template px py pz qx qy qz qw vx vy vz wx wy wz
 //   tick drive vehicle throttle brake steer handbrake
 //   tick walk rig forward strafe turn crouch
-//   tick reach rig limb active x y z          a limb strikes at the point (active 1) or steps back into the gait (0)
-//   tick grab rig limb                        the claw grabs what it touches, or lets go of what it holds
-//   tick impact ox oy oz dx dy dz radius energy [impulse]   an impact of your own where the ray hits (dir normalised)
-// pull: origin is the target and dir the grabbed point in the body frame, n the piece.
-// Events apply at the start of their tick, before the step, in file order.
+//   tick reach rig limb active x y z     a limb strikes at the point (active 1) or steps back into the gait (0)
+//   tick grab rig limb                   the claw toggles: grabs what it touches, or lets go (the hexapod's grip)
+//   tick claw rig limb mode maxForce maxTorque strength   mode: 0 grab, 1 release, 2 toggle
+//   tick release vehicle|rig index       the peer lets go: the scene's drivers take it back
+// The tools are written back as the ray and spawn lines they stand for.
 
 #pragma once
 
@@ -22,77 +31,45 @@
 extern "C" {
 #endif
 
-typedef enum lpScriptKind
+typedef enum lpScriptTool
 {
-	lp_scriptRifle,
-	lp_scriptGrenade,
-	lp_scriptCannon,
-	lp_scriptHammer,
-	lp_scriptBall,
-	lp_scriptFlask,
-	lp_scriptPull,
-	lp_scriptToolCount,
-	lp_scriptDrive = lp_scriptToolCount,
-	lp_scriptWalk,
-	lp_scriptReach,
-	lp_scriptGrab,
-	lp_scriptImpact,
-} lpScriptKind;
-
-typedef struct lpScriptEvent
-{
-	int64_t tick;
-	int kind;		 // lpScriptKind
-	lpVec3 origin;	 // tools: where it is fired from; pull: the target; reach: the point
-	lpVec3 dir;		 // tools: the aim; pull: the grabbed point in the body frame
-	int index;		 // pull: the piece; drive: the vehicle; walk, reach, grab: the rig
-	int limb;		 // reach, grab
-	bool active;	 // reach: strike, or step back
-	lpVehicleControl control; // drive
-	lpRigControl walk;		  // walk
-	float radius;			  // impact: m
-	float energy;			  // impact: J
-	float impulse;			  // impact: N*s given to loose pieces
-} lpScriptEvent;
+	lp_toolRifle,
+	lp_toolGrenade,
+	lp_toolCannon,
+	lp_toolHammer,
+	lp_toolBall,
+	lp_toolFlask,
+	lp_toolCount
+} lpScriptTool;
 
 typedef struct lpScript
 {
-	lpScriptEvent* events;
+	lpCommand* commands;
 	int count;
 	int capacity;
+	uint32_t seq[LP_PEER_SCENE]; // the next number of each peer's commands
 } lpScript;
 
-// What replaying changes besides the world: the vehicle and the rig the events steer (the scene's drivers leave them
-// alone), the claw's grip (a weld made by a grab event), and the next event to apply
-typedef struct lpScriptState
-{
-	int playerVehicle;
-	int playerRig;
-	int grip;
-	uint32_t gripGeneration;
-	int gripLimb;
-	int next;
-} lpScriptState;
+// A tool fired from origin along dir (normalised here): an impact where the aim first hits, or the scene's flask or
+// ball thrown (lp_templateFlask, lp_templateBall). Tick, peer and seq are the caller's.
+lpCommand lpScriptToolCommand( int tool, lpVec3 origin, lpVec3 dir );
 
-lpScriptState lpDefaultScriptState( void );
-
-// Appends the event of one line (none for a comment or a blank line). Returns false if the line names an unknown
-// tool.
+// Appends the command of one line (none for a comment or a blank line). Returns false if the line names an unknown
+// command.
 bool lpScriptParseLine( lpScript* script, const char* line );
 
-// Appends a file's events. Returns false if it cannot be read.
+// Appends a file's commands, then sorts the script by tick (stable: each tick keeps file order). Returns false if it
+// cannot be read.
 bool lpScriptLoad( lpScript* script, const char* path );
 
 void lpScriptFree( lpScript* script );
 
-// One event as a script line (exact floats, %.9g), so a recording replays the session it came from
-void lpScriptWrite( FILE* file, const lpScriptEvent* event );
+// One command as a line (exact floats, %.9g), so a recording replays the session it came from. Writes nothing and
+// returns false for the scene's commands (its drivers make them again) and for kinds with no line.
+bool lpScriptWrite( FILE* file, const lpCommand* command );
 
-// Applies one event now. Deterministic: depends only on the event, the state and the world.
-void lpScriptApply( lpWorld* world, const lpScriptEvent* event, lpScriptState* state );
-
-// Applies the script's events up to and including `tick` not yet applied
-void lpScriptPlay( lpWorld* world, const lpScript* script, int64_t tick, lpScriptState* state );
+// Submits the script's commands from `next` on whose tick has come (lpWorld_GetTick); returns the next to submit
+int lpScriptPlay( lpWorld* world, const lpScript* script, int next );
 
 #ifdef __cplusplus
 }

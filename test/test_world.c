@@ -794,18 +794,8 @@ static int TestContraptionOnTime( void )
 	return 0;
 }
 
-static bool SameEvent( const lpScriptEvent* a, const lpScriptEvent* b )
-{
-	return a->tick == b->tick && a->kind == b->kind && a->origin.x == b->origin.x && a->origin.y == b->origin.y &&
-		   a->origin.z == b->origin.z && a->dir.x == b->dir.x && a->dir.y == b->dir.y && a->dir.z == b->dir.z &&
-		   a->index == b->index && a->limb == b->limb && a->active == b->active && a->control.throttle == b->control.throttle &&
-		   a->control.brake == b->control.brake && a->control.steer == b->control.steer &&
-		   a->control.handbrake == b->control.handbrake && a->walk.forward == b->walk.forward && a->walk.strafe == b->walk.strafe &&
-		   a->walk.turn == b->walk.turn && a->walk.crouch == b->walk.crouch && a->radius == b->radius &&
-		   a->energy == b->energy && a->impulse == b->impulse;
-}
-
-// A replay script read, written and read again gives the same events: a recording replays the session it came from
+// A replay script read, written and read again gives the same commands, bit for bit: a recording replays the session
+// it came from. The tools expand to the ray and spawn commands they stand for.
 static int TestScriptRoundTrip( void )
 {
 	const char* lines[] = {
@@ -818,7 +808,11 @@ static int TestScriptRoundTrip( void )
 		"50 reach 0 2 1 1.5 0.25 -3\n",
 		"60 grab 0 2\n",
 		"70 Grenade 0 0.333333343 1e-3 0 0 -1\n",
+		"74 claw 0 1 1 100 200 300\n",
 		"75 impact 0 2 8 0 -0.1 -1 0.25 40000 5\n",
+		"76:3 flask 0 2.2 8 0 -0.1 -1\n",
+		"77:3 point 1 2 3 0 -1 0 0.5 900 2 1\n",
+		"78:1 release vehicle 2\n",
 	};
 	lpScript a = { 0 };
 	for ( int i = 0; i < (int)( sizeof( lines ) / sizeof( lines[0] ) ); ++i )
@@ -826,31 +820,53 @@ static int TestScriptRoundTrip( void )
 		ENSURE( lpScriptParseLine( &a, lines[i] ) );
 	}
 	ENSURE( lpScriptParseLine( &a, "80 laser 0 0 0 0 0 1\n" ) == false );
-	ENSURE( a.count == 8 );
-	ENSURE( a.events[7].kind == lp_scriptImpact && a.events[7].energy == 40000.0f && a.events[7].impulse == 5.0f );
-	ENSURE( a.events[1].kind == lp_scriptPull && a.events[1].index == 7 );
-	ENSURE( a.events[6].kind == lp_scriptGrenade );
+	ENSURE( a.count == 12 );
+	ENSURE( a.commands[0].kind == lp_commandImpact && a.commands[0].impact.range == 250.0f && a.commands[0].impact.def.energy == 4000.0f );
+	ENSURE( a.commands[1].kind == lp_commandPull && a.commands[1].pull.piece == 7 && a.commands[1].pull.generation == LP_ANY_GENERATION );
+	ENSURE( a.commands[5].kind == lp_commandClaw && a.commands[5].claw.mode == lp_clawToggle );
+	ENSURE( a.commands[7].kind == lp_commandClaw && a.commands[7].seq == 7 && a.commands[8].seq == 8 );
+	ENSURE( a.commands[8].kind == lp_commandImpact && a.commands[8].impact.def.energy == 40000.0f && a.commands[8].impact.def.impulse == 5.0f );
+	ENSURE( a.commands[9].kind == lp_commandSpawn && a.commands[9].peer == 3 && a.commands[9].seq == 0 && a.commands[10].seq == 1 );
+	ENSURE( a.commands[10].impact.range == 0.0f && a.commands[10].impact.def.explosion );
+	ENSURE( a.commands[11].kind == lp_commandRelease && a.commands[11].release.vehicle == 2 && a.commands[11].release.rig == -1 );
 
-	FILE* f = fopen( "lpf_test_script.txt", "w+" ); // in the working directory: tmpfile() may want the drive's root
-	ENSURE( f != NULL );
-	for ( int i = 0; i < a.count; ++i )
-	{
-		lpScriptWrite( f, a.events + i );
-	}
-	rewind( f );
+	// Written, read back and written again: the same text (%.9g is exact, so the same fields)
+	const char* paths[2] = { "lpf_test_script_a.txt", "lpf_test_script_b.txt" }; // in the working directory
 	lpScript b = { 0 };
-	char line[256];
-	while ( fgets( line, sizeof( line ), f ) )
+	for ( int pass = 0; pass < 2; ++pass )
 	{
-		ENSURE( lpScriptParseLine( &b, line ) );
+		const lpScript* from = pass == 0 ? &a : &b;
+		FILE* f = fopen( paths[pass], "w" );
+		ENSURE( f != NULL );
+		for ( int i = 0; i < from->count; ++i )
+		{
+			ENSURE( lpScriptWrite( f, from->commands + i ) );
+		}
+		lpCommand scene = from->commands[0];
+		scene.peer = LP_PEER_SCENE;
+		ENSURE( lpScriptWrite( f, &scene ) == false ); // the scene's drivers make theirs again
+		fclose( f );
+		if ( pass == 0 )
+		{
+			ENSURE( lpScriptLoad( &b, paths[0] ) );
+		}
 	}
-	fclose( f );
-	remove( "lpf_test_script.txt" );
 	ENSURE( b.count == a.count );
-	for ( int i = 0; i < a.count; ++i )
+	char lineA[512], lineB[512];
+	FILE* fa = fopen( paths[0], "r" );
+	FILE* fb = fopen( paths[1], "r" );
+	ENSURE( fa != NULL && fb != NULL );
+	int count = 0;
+	while ( fgets( lineA, sizeof( lineA ), fa ) )
 	{
-		ENSURE( SameEvent( a.events + i, b.events + i ) );
+		ENSURE( fgets( lineB, sizeof( lineB ), fb ) != NULL && strcmp( lineA, lineB ) == 0 );
+		count += 1;
 	}
+	ENSURE( fgets( lineB, sizeof( lineB ), fb ) == NULL && count == a.count );
+	fclose( fa );
+	fclose( fb );
+	remove( paths[0] );
+	remove( paths[1] );
 	lpScriptFree( &a );
 	lpScriptFree( &b );
 	return 0;
@@ -878,10 +894,10 @@ static int TestScriptReplay( void )
 	{
 		Sim s = CreateSimWorkers( lp_sceneWall, run == 0 ? 1 : 8 );
 		int before = lpWorld_GetStats( s.world ).pieceCount;
-		lpScriptState state = lpDefaultScriptState();
+		int next = 0;
 		for ( int tick = 0; tick < 240; ++tick )
 		{
-			lpScriptPlay( s.world, &script, tick, &state );
+			next = lpScriptPlay( s.world, &script, next );
 			lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 			uint64_t h = lpWorld_Hash( s.world );
 			if ( run == 0 )
@@ -894,12 +910,12 @@ static int TestScriptReplay( void )
 				return 1;
 			}
 		}
-		ENSURE( state.next == script.count );
+		ENSURE( next == script.count );
 		pieces[run] = lpWorld_GetStats( s.world ).pieceCount - before;
 		ENSURE( lpWorld_Validate( s.world ) );
 		DestroySim( &s );
 	}
-	printf( "  %d events, %d pieces more\n", script.count, pieces[0] );
+	printf( "  %d commands, %d pieces more\n", script.count, pieces[0] );
 	ENSURE( pieces[0] > 20 );
 	lpScriptFree( &script );
 	return 0;

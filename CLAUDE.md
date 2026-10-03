@@ -17,7 +17,7 @@ a track only when a decision needs its detail.
 
 | path | what it is |
 |---|---|
-| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, stats, queries |
+| `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, commands, stats, queries |
 | `include/lpf/lpmath.h`, `src/lpmath.c` | vector maths (`lpVec3`, `lpQuat`, `lpTransform`, `lpPos`, ...), Box3D's own taken over with each operation kept; the trig is hand coded for determinism |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
@@ -38,13 +38,13 @@ a track only when a decision needs its detail.
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, budget ladder, filters |
-| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`, `lpRigGrab`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol); `lpBuildScene` settles their structures. `script.c`: the replay scripts (read, write, apply; the sandbox's tools live here), `dump.c`: a world's state as JSON |
+| `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol, the crane; the scene's commands); `lpBuildScene` settles their structures. `script.c`: the replay scripts (commands as text: read, write, submit; the sandbox's tools live here), `dump.c`: a world's state as JSON |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
 | `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md` |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them) |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
-| `scripts/` | replay scripts for the sandbox and `lpf_bench --script` (`tick tool origin dir [n]`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`, `tick impact origin dir radius energy [impulse]`) |
+| `scripts/` | replay scripts of commands for the sandbox and `lpf_bench --script` (`tick[:peer] tool origin dir`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`, `tick impact origin dir radius energy [impulse]`; the full list in `scenes/script.h`) |
 | `docs/` | goals (the north star, the kinds of game the engine serves, the feel), the outcome catalogue (`catalogue.md`: the contract, every outcome with its test or contact sheet in `catalogue/`), references (clips to aspire to; links only), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
 
 ## Commands (PowerShell; run from the repo root)

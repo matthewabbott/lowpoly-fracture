@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Replay scripts (see script.h): parsing, recording and applying tick-stamped inputs
+// Replay scripts (see script.h): commands read from text, written back, and submitted as their ticks come
 
 #include "script.h"
 
@@ -8,17 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* s_tokens[lp_scriptToolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask", "pull" };
-
-lpScriptState lpDefaultScriptState( void )
-{
-	lpScriptState s = { 0 };
-	s.playerVehicle = -1;
-	s.playerRig = -1;
-	s.grip = -1;
-	s.gripLimb = -1;
-	return s;
-}
+static const char* s_tools[lp_toolCount] = { "rifle", "grenade", "cannon", "hammer", "ball", "flask" };
 
 static bool SameWord( const char* a, const char* b )
 {
@@ -46,114 +36,245 @@ static lpVec3 Normalize( lpVec3 a )
 	return a;
 }
 
-static void Push( lpScript* script, const lpScriptEvent* e )
+lpCommand lpScriptToolCommand( int tool, lpVec3 origin, lpVec3 dir )
+{
+	lpCommand c = { 0 };
+	lpVec3 d = Normalize( dir );
+	if ( tool == lp_toolFlask || tool == lp_toolBall )
+	{
+		// Thrown from just ahead of the aim: the flask lobbed and spinning, the ball fired at 45 m/s
+		bool flask = tool == lp_toolFlask;
+		c.kind = lp_commandSpawn;
+		c.spawn.templateIndex = flask ? lp_templateFlask : lp_templateBall;
+		c.spawn.transform = lpTransform_identity;
+		c.spawn.transform.p = lpMulAdd( origin, flask ? 0.8f : 1.0f, d );
+		c.spawn.linearVelocity = flask ? lpAdd( lpMulSV( 16.0f, d ), ( lpVec3 ){ 0.0f, 2.5f, 0.0f } ) : lpMulSV( 45.0f, d );
+		c.spawn.angularVelocity = flask ? ( lpVec3 ){ 4.0f, 1.0f, 7.0f } : lpVec3_zero;
+		return c;
+	}
+	c.kind = lp_commandImpact;
+	c.impact.origin = origin;
+	c.impact.range = tool == lp_toolHammer ? 4.0f : 250.0f;
+	c.impact.def.direction = d;
+	switch ( tool )
+	{
+		case lp_toolRifle:
+			c.impact.def.radius = 0.35f;
+			c.impact.def.energy = 4000.0f;
+			c.impact.def.impulse = 20.0f;
+			break;
+		case lp_toolGrenade:
+			c.impact.def.radius = 1.4f;
+			c.impact.def.energy = 80000.0f;
+			c.impact.def.impulse = 12.0f;
+			c.impact.def.explosion = true;
+			break;
+		case lp_toolCannon:
+			c.impact.def.radius = 2.3f;
+			c.impact.def.energy = 350000.0f;
+			c.impact.def.impulse = 18.0f;
+			c.impact.def.explosion = true;
+			break;
+		default: // the hammer
+			c.impact.def.radius = 0.6f;
+			c.impact.def.energy = 14000.0f;
+			c.impact.def.impulse = 60.0f;
+			break;
+	}
+	return c;
+}
+
+static void Push( lpScript* script, lpCommand* c, long long tick, int peer )
 {
 	if ( script->count == script->capacity )
 	{
 		int capacity = script->capacity > 0 ? 2 * script->capacity : 64;
-		lpScriptEvent* events = (lpScriptEvent*)realloc( script->events, (size_t)capacity * sizeof( lpScriptEvent ) );
-		if ( events == NULL )
+		lpCommand* commands = (lpCommand*)realloc( script->commands, (size_t)capacity * sizeof( lpCommand ) );
+		if ( commands == NULL )
 		{
 			return;
 		}
-		script->events = events;
+		script->commands = commands;
 		script->capacity = capacity;
 	}
-	script->events[script->count++] = *e;
+	c->tick = tick;
+	c->peer = (uint8_t)peer;
+	c->seq = script->seq[peer]++;
+	script->commands[script->count++] = *c;
 }
 
 bool lpScriptParseLine( lpScript* script, const char* line )
 {
-	if ( line[0] == '#' || line[0] == '\n' || line[0] == '\r' || line[0] == 0 )
+	// The stamp: a tick, or tick:peer
+	char* end;
+	long long t = strtoll( line, &end, 10 );
+	if ( end == line )
 	{
-		return true;
+		return true; // a comment, a blank line
 	}
-	lpScriptEvent e = { 0 };
-	long long t = 0;
+	int peer = 0;
+	if ( *end == ':' )
+	{
+		char* after;
+		long p = strtol( end + 1, &after, 10 );
+		if ( after == end + 1 || p < 0 || p >= LP_PEER_SCENE )
+		{
+			fprintf( stderr, "script: bad peer in '%s'\n", line );
+			return false;
+		}
+		peer = (int)p;
+		end = after;
+	}
+	const char* rest = end;
 	char name[32] = { 0 };
-	e.index = -1;
-	int handbrake = 0;
-	int active = 0;
-	bool named = sscanf( line, "%lld %31s", &t, name ) == 2;
-	if ( named && SameWord( name, "walk" ) )
-	{
-		if ( sscanf( line, "%lld %31s %d %f %f %f %f", &t, name, &e.index, &e.walk.forward, &e.walk.strafe, &e.walk.turn,
-					 &e.walk.crouch ) == 7 )
-		{
-			e.tick = t;
-			e.kind = lp_scriptWalk;
-			Push( script, &e );
-		}
-		return true;
-	}
-	if ( named && SameWord( name, "reach" ) )
-	{
-		if ( sscanf( line, "%lld %31s %d %d %d %f %f %f", &t, name, &e.index, &e.limb, &active, &e.origin.x, &e.origin.y,
-					 &e.origin.z ) == 8 )
-		{
-			e.tick = t;
-			e.kind = lp_scriptReach;
-			e.active = active != 0;
-			Push( script, &e );
-		}
-		return true;
-	}
-	if ( named && SameWord( name, "grab" ) )
-	{
-		if ( sscanf( line, "%lld %31s %d %d", &t, name, &e.index, &e.limb ) == 4 )
-		{
-			e.tick = t;
-			e.kind = lp_scriptGrab;
-			Push( script, &e );
-		}
-		return true;
-	}
-	if ( named && SameWord( name, "impact" ) )
-	{
-		if ( sscanf( line, "%lld %31s %f %f %f %f %f %f %f %f %f", &t, name, &e.origin.x, &e.origin.y, &e.origin.z, &e.dir.x,
-					 &e.dir.y, &e.dir.z, &e.radius, &e.energy, &e.impulse ) >= 10 )
-		{
-			e.tick = t;
-			e.kind = lp_scriptImpact;
-			Push( script, &e );
-		}
-		return true;
-	}
-	if ( named && SameWord( name, "drive" ) )
-	{
-		if ( sscanf( line, "%lld %31s %d %f %f %f %d", &t, name, &e.index, &e.control.throttle, &e.control.brake,
-					 &e.control.steer, &handbrake ) == 7 )
-		{
-			e.tick = t;
-			e.kind = lp_scriptDrive;
-			e.control.handbrake = handbrake != 0;
-			Push( script, &e );
-		}
-		return true;
-	}
-	if ( sscanf( line, "%lld %31s %f %f %f %f %f %f %d", &t, name, &e.origin.x, &e.origin.y, &e.origin.z, &e.dir.x, &e.dir.y,
-				 &e.dir.z, &e.index ) < 8 )
+	if ( sscanf( rest, "%31s", name ) != 1 )
 	{
 		return true;
 	}
-	e.tick = t;
-	e.kind = -1;
-	for ( int k = 0; k < lp_scriptToolCount; ++k )
+
+	lpCommand c = { 0 };
+	int a = 0, b = 0, m = 0;
+	lpVec3 o = { 0 }, d = { 0 };
+	for ( int tool = 0; tool < lp_toolCount; ++tool )
 	{
-		if ( SameWord( name, s_tokens[k] ) )
+		if ( SameWord( name, s_tools[tool] ) )
 		{
-			e.kind = k;
+			if ( sscanf( rest, "%31s %f %f %f %f %f %f", name, &o.x, &o.y, &o.z, &d.x, &d.y, &d.z ) == 7 )
+			{
+				c = lpScriptToolCommand( tool, o, d );
+				Push( script, &c, t, peer );
+			}
+			return true;
 		}
 	}
-	if ( e.kind < 0 )
+	if ( SameWord( name, "impact" ) )
 	{
-		fprintf( stderr, "script: unknown tool '%s' (expected rifle, grenade, cannon, hammer, ball, flask, pull, drive, walk, reach, grab, impact)\n",
-				 name );
-		return false;
+		c.kind = lp_commandImpact;
+		c.impact.range = 250.0f;
+		lpImpactDef* def = &c.impact.def;
+		if ( sscanf( rest, "%31s %f %f %f %f %f %f %f %f %f", name, &o.x, &o.y, &o.z, &d.x, &d.y, &d.z, &def->radius,
+					 &def->energy, &def->impulse ) >= 9 )
+		{
+			c.impact.origin = o;
+			def->direction = Normalize( d );
+			Push( script, &c, t, peer );
+		}
+		return true;
 	}
-	e.index = e.kind == lp_scriptPull ? e.index : -1;
-	Push( script, &e );
-	return true;
+	if ( SameWord( name, "ray" ) || SameWord( name, "point" ) )
+	{
+		bool ray = SameWord( name, "ray" );
+		c.kind = lp_commandImpact;
+		lpImpactDef* def = &c.impact.def;
+		int fields = sscanf( rest, "%31s %f %f %f %f %f %f %f %f %f %d %f", name, &o.x, &o.y, &o.z, &def->direction.x,
+							 &def->direction.y, &def->direction.z, &def->radius, &def->energy, &def->impulse, &a, &c.impact.range );
+		if ( fields == ( ray ? 12 : 11 ) )
+		{
+			def->explosion = a != 0;
+			c.impact.origin = ray ? o : lpVec3_zero;
+			def->point = ray ? lpVec3_zero : o;
+			c.impact.range = ray ? c.impact.range : 0.0f;
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "pull" ) )
+	{
+		c.kind = lp_commandPull;
+		c.pull.generation = LP_ANY_GENERATION;
+		c.pull.maxAccel = 40.0f;
+		c.pull.maxMass = 400.0f;
+		lpCommandPull* pull = &c.pull;
+		if ( sscanf( rest, "%31s %f %f %f %f %f %f %d %u %f %f", name, &pull->target.x, &pull->target.y, &pull->target.z,
+					 &pull->localPoint.x, &pull->localPoint.y, &pull->localPoint.z, &pull->piece, &pull->generation,
+					 &pull->maxAccel, &pull->maxMass ) >= 8 )
+		{
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "spawn" ) )
+	{
+		c.kind = lp_commandSpawn;
+		lpCommandSpawn* s = &c.spawn;
+		if ( sscanf( rest, "%31s %d %f %f %f %f %f %f %f %f %f %f %f %f %f", name, &s->templateIndex, &s->transform.p.x,
+					 &s->transform.p.y, &s->transform.p.z, &s->transform.q.v.x, &s->transform.q.v.y, &s->transform.q.v.z,
+					 &s->transform.q.s, &s->linearVelocity.x, &s->linearVelocity.y, &s->linearVelocity.z, &s->angularVelocity.x,
+					 &s->angularVelocity.y, &s->angularVelocity.z ) == 15 )
+		{
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "drive" ) )
+	{
+		c.kind = lp_commandVehicleControl;
+		lpVehicleControl* v = &c.vehicleControl.control;
+		if ( sscanf( rest, "%31s %d %f %f %f %d", name, &c.vehicleControl.vehicle, &v->throttle, &v->brake, &v->steer, &a ) == 6 )
+		{
+			v->handbrake = a != 0;
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "walk" ) )
+	{
+		c.kind = lp_commandRigControl;
+		lpRigControl* r = &c.rigControl.control;
+		if ( sscanf( rest, "%31s %d %f %f %f %f", name, &c.rigControl.rig, &r->forward, &r->strafe, &r->turn, &r->crouch ) == 6 )
+		{
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "reach" ) )
+	{
+		c.kind = lp_commandLimbTarget;
+		lpCommandLimbTarget* r = &c.limbTarget;
+		if ( sscanf( rest, "%31s %d %d %d %f %f %f", name, &r->rig, &r->limb, &a, &r->point.x, &r->point.y, &r->point.z ) == 7 )
+		{
+			r->active = a != 0;
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "grab" ) || SameWord( name, "claw" ) )
+	{
+		c.kind = lp_commandClaw;
+		lpCommandClaw* k = &c.claw;
+		int fields = sscanf( rest, "%31s %d %d %d %f %f %f", name, &k->rig, &k->limb, &m, &k->maxForce, &k->maxTorque, &k->strength );
+		if ( SameWord( name, "grab" ) && fields >= 3 )
+		{
+			// The hexapod's claw
+			k->mode = lp_clawToggle;
+			k->maxForce = 40000.0f;
+			k->maxTorque = 15000.0f;
+			k->strength = 5000.0f;
+			Push( script, &c, t, peer );
+		}
+		else if ( fields == 7 )
+		{
+			k->mode = (uint8_t)m;
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	if ( SameWord( name, "release" ) )
+	{
+		char which[16] = { 0 };
+		c.kind = lp_commandRelease;
+		if ( sscanf( rest, "%31s %15s %d", name, which, &b ) == 3 )
+		{
+			c.release.vehicle = SameWord( which, "vehicle" ) ? b : -1;
+			c.release.rig = SameWord( which, "rig" ) ? b : -1;
+			Push( script, &c, t, peer );
+		}
+		return true;
+	}
+	fprintf( stderr, "script: unknown command '%s' (expected rifle, grenade, cannon, hammer, ball, flask, impact, ray, point, "
+					 "pull, spawn, drive, walk, reach, grab, claw, release)\n",
+			 name );
+	return false;
 }
 
 bool lpScriptLoad( lpScript* script, const char* path )
@@ -164,217 +285,126 @@ bool lpScriptLoad( lpScript* script, const char* path )
 		fprintf( stderr, "cannot open script %s\n", path );
 		return false;
 	}
-	char line[256];
+	char line[512];
 	while ( fgets( line, sizeof( line ), f ) )
 	{
 		lpScriptParseLine( script, line );
 	}
 	fclose( f );
+	// By tick, each tick in file order (scripts come nearly sorted: an insertion sort)
+	for ( int i = 1; i < script->count; ++i )
+	{
+		lpCommand c = script->commands[i];
+		int j = i;
+		while ( j > 0 && script->commands[j - 1].tick > c.tick )
+		{
+			script->commands[j] = script->commands[j - 1];
+			j -= 1;
+		}
+		script->commands[j] = c;
+	}
 	return true;
 }
 
 void lpScriptFree( lpScript* script )
 {
-	free( script->events );
-	script->events = NULL;
-	script->count = 0;
-	script->capacity = 0;
+	free( script->commands );
+	memset( script, 0, sizeof( *script ) );
 }
 
-void lpScriptWrite( FILE* file, const lpScriptEvent* e )
+bool lpScriptWrite( FILE* file, const lpCommand* c )
 {
-	switch ( e->kind )
+	bool written = c->peer != LP_PEER_SCENE &&
+				   ( c->kind == lp_commandImpact || c->kind == lp_commandPull || c->kind == lp_commandSpawn ||
+					 c->kind == lp_commandVehicleControl || c->kind == lp_commandRigControl || c->kind == lp_commandLimbTarget ||
+					 c->kind == lp_commandClaw || c->kind == lp_commandRelease );
+	if ( written == false )
 	{
-		case lp_scriptWalk:
-			fprintf( file, "%lld walk %d %.9g %.9g %.9g %.9g\n", (long long)e->tick, e->index, (double)e->walk.forward,
-					 (double)e->walk.strafe, (double)e->walk.turn, (double)e->walk.crouch );
-			break;
-		case lp_scriptReach:
-			fprintf( file, "%lld reach %d %d %d %.9g %.9g %.9g\n", (long long)e->tick, e->index, e->limb, e->active ? 1 : 0,
-					 (double)e->origin.x, (double)e->origin.y, (double)e->origin.z );
-			break;
-		case lp_scriptGrab:
-			fprintf( file, "%lld grab %d %d\n", (long long)e->tick, e->index, e->limb );
-			break;
-		case lp_scriptImpact:
-			fprintf( file, "%lld impact %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g\n", (long long)e->tick, (double)e->origin.x,
-					 (double)e->origin.y, (double)e->origin.z, (double)e->dir.x, (double)e->dir.y, (double)e->dir.z, (double)e->radius,
-					 (double)e->energy, (double)e->impulse );
-			break;
-		case lp_scriptDrive:
-			fprintf( file, "%lld drive %d %.9g %.9g %.9g %d\n", (long long)e->tick, e->index, (double)e->control.throttle,
-					 (double)e->control.brake, (double)e->control.steer, e->control.handbrake ? 1 : 0 );
-			break;
-		default:
-			fprintf( file, "%lld %s %.9g %.9g %.9g %.9g %.9g %.9g %d\n", (long long)e->tick, s_tokens[e->kind], (double)e->origin.x,
-					 (double)e->origin.y, (double)e->origin.z, (double)e->dir.x, (double)e->dir.y, (double)e->dir.z, e->index );
-			break;
+		return false;
 	}
-	fflush( file );
-}
-
-// A chunky hexagonal bottle with a neck, thrown: it goes off when it lands hard
-static void ThrowFlask( lpWorld* world, lpVec3 origin, lpVec3 dir )
-{
-	lpVec3 points[15];
-	for ( int i = 0; i < 6; ++i )
+	fprintf( file, "%lld", (long long)c->tick );
+	if ( c->peer != 0 )
 	{
-		lpCosSin cs = lpComputeCosSin( 1.0471976f * (float)i );
-		points[i] = ( lpVec3 ){ 0.09f * cs.cosine, -0.12f, 0.09f * cs.sine };
-		points[6 + i] = ( lpVec3 ){ 0.09f * cs.cosine, 0.06f, 0.09f * cs.sine };
+		fprintf( file, ":%d", c->peer );
 	}
-	points[12] = ( lpVec3 ){ 0.04f, 0.2f, 0.0f };
-	points[13] = ( lpVec3 ){ -0.03f, 0.2f, 0.035f };
-	points[14] = ( lpVec3 ){ -0.03f, 0.2f, -0.035f };
-	lpPartDef part = lpDefaultPartDef();
-	part.points = points;
-	part.pointCount = 15;
-	part.material = lp_glass;
-	part.color = 0x6FD68Au;
-	lpObjectDef def = lpDefaultObjectDef();
-	def.isStatic = false;
-	def.transform.p = lpMulAdd( origin, 0.8f, dir );
-	def.parts = &part;
-	def.partCount = 1;
-	def.linearVelocity = lpAdd( lpMulSV( 16.0f, dir ), ( lpVec3 ){ 0.0f, 2.5f, 0.0f } );
-	def.angularVelocity = ( lpVec3 ){ 4.0f, 1.0f, 7.0f };
-	def.detonator.triggerSpeed = 4.5f;
-	def.detonator.radius = 1.8f;
-	def.detonator.energy = 120000.0f;
-	def.detonator.speed = 12.0f;
-	lpCreateObject( world, &def );
-}
-
-// A metal cannonball, a chunky low-poly sphere of golden-spiral points, fired at 45 m/s
-static void FireBall( lpWorld* world, lpVec3 origin, lpVec3 dir )
-{
-	lpVec3 points[20];
-	for ( int i = 0; i < 20; ++i )
+	switch ( c->kind )
 	{
-		float y = 1.0f - 2.0f * ( (float)i + 0.5f ) / 20.0f;
-		float r = sqrtf( 1.0f - y * y );
-		float a = 2.39996323f * (float)i;
-		lpCosSin cs = lpComputeCosSin( a );
-		points[i] = ( lpVec3 ){ 0.3f * r * cs.cosine, 0.3f * y, 0.3f * r * cs.sine };
-	}
-	lpPartDef part = lpDefaultPartDef();
-	part.points = points;
-	part.pointCount = 20;
-	part.material = lp_metal;
-	part.color = 0x3A3D42u;
-	lpObjectDef def = lpDefaultObjectDef();
-	def.isStatic = false;
-	def.transform.p = lpMulAdd( origin, 1.0f, dir );
-	def.parts = &part;
-	def.partCount = 1;
-	def.linearVelocity = lpMulSV( 45.0f, dir );
-	lpCreateObject( world, &def );
-}
-
-void lpScriptApply( lpWorld* world, const lpScriptEvent* e, lpScriptState* state )
-{
-	// A tool's aim is normalised here, not on load, so a recorded event replays exactly as it applied live
-	lpVec3 dir = e->kind == lp_scriptPull ? e->dir : Normalize( e->dir );
-	switch ( e->kind )
-	{
-		case lp_scriptDrive:
-			lpWorld_SetVehicleControl( world, e->index, &e->control );
-			state->playerVehicle = e->index; // from now on the scene's drivers leave it to the events
-			return;
-		case lp_scriptWalk:
-			lpWorld_SetRigControl( world, e->index, &e->walk );
-			state->playerRig = e->index;
-			return;
-		case lp_scriptReach:
-			lpWorld_SetLimbTarget( world, e->index, e->limb, e->active, e->origin );
-			state->playerRig = e->index;
-			return;
-		case lp_scriptGrab:
+		case lp_commandImpact:
 		{
-			// Lets go of the grip it holds (if it has not broken), else grabs what the claw touches
-			lpLinkState held = { 0 };
-			if ( state->grip >= 0 )
+			const lpImpactDef* def = &c->impact.def;
+			lpVec3 at = c->impact.range > 0.0f ? c->impact.origin : def->point;
+			fprintf( file, " %s %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %d", c->impact.range > 0.0f ? "ray" : "point",
+					 (double)at.x, (double)at.y, (double)at.z, (double)def->direction.x, (double)def->direction.y,
+					 (double)def->direction.z, (double)def->radius, (double)def->energy, (double)def->impulse, def->explosion ? 1 : 0 );
+			if ( c->impact.range > 0.0f )
 			{
-				held = lpWorld_GetLinkState( world, state->grip );
+				fprintf( file, " %.9g", (double)c->impact.range );
 			}
-			if ( state->grip >= 0 && held.alive && held.generation == state->gripGeneration )
-			{
-				lpDestroyLink( world, state->grip );
-				state->grip = -1;
-			}
-			else
-			{
-				state->grip = lpRigGrab( world, e->index, e->limb );
-				state->gripGeneration = state->grip >= 0 ? lpWorld_GetLinkState( world, state->grip ).generation : 0;
-				state->gripLimb = e->limb;
-			}
-			state->playerRig = e->index;
-			return;
+			break;
 		}
-		case lp_scriptPull:
-			// origin = target, dir = grabbed point in the body frame
-			lpWorld_Pull( world, e->index, e->dir, e->origin, 40.0f, 400.0f );
-			return;
-		case lp_scriptFlask:
-			ThrowFlask( world, e->origin, dir );
-			return;
-		case lp_scriptBall:
-			FireBall( world, e->origin, dir );
-			return;
-		default:
+		case lp_commandPull:
+		{
+			const lpCommandPull* p = &c->pull;
+			fprintf( file, " pull %.9g %.9g %.9g %.9g %.9g %.9g %d %u %.9g %.9g", (double)p->target.x, (double)p->target.y,
+					 (double)p->target.z, (double)p->localPoint.x, (double)p->localPoint.y, (double)p->localPoint.z, p->piece,
+					 p->generation, (double)p->maxAccel, (double)p->maxMass );
+			break;
+		}
+		case lp_commandSpawn:
+		{
+			const lpCommandSpawn* s = &c->spawn;
+			fprintf( file, " spawn %d %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g", s->templateIndex,
+					 (double)s->transform.p.x, (double)s->transform.p.y, (double)s->transform.p.z, (double)s->transform.q.v.x,
+					 (double)s->transform.q.v.y, (double)s->transform.q.v.z, (double)s->transform.q.s, (double)s->linearVelocity.x,
+					 (double)s->linearVelocity.y, (double)s->linearVelocity.z, (double)s->angularVelocity.x,
+					 (double)s->angularVelocity.y, (double)s->angularVelocity.z );
+			break;
+		}
+		case lp_commandVehicleControl:
+		{
+			const lpVehicleControl* v = &c->vehicleControl.control;
+			fprintf( file, " drive %d %.9g %.9g %.9g %d", c->vehicleControl.vehicle, (double)v->throttle, (double)v->brake,
+					 (double)v->steer, v->handbrake ? 1 : 0 );
+			break;
+		}
+		case lp_commandRigControl:
+		{
+			const lpRigControl* r = &c->rigControl.control;
+			fprintf( file, " walk %d %.9g %.9g %.9g %.9g", c->rigControl.rig, (double)r->forward, (double)r->strafe,
+					 (double)r->turn, (double)r->crouch );
+			break;
+		}
+		case lp_commandLimbTarget:
+		{
+			const lpCommandLimbTarget* r = &c->limbTarget;
+			fprintf( file, " reach %d %d %d %.9g %.9g %.9g", r->rig, r->limb, r->active ? 1 : 0, (double)r->point.x,
+					 (double)r->point.y, (double)r->point.z );
+			break;
+		}
+		case lp_commandClaw:
+		{
+			const lpCommandClaw* k = &c->claw;
+			fprintf( file, " claw %d %d %d %.9g %.9g %.9g", k->rig, k->limb, k->mode, (double)k->maxForce, (double)k->maxTorque,
+					 (double)k->strength );
+			break;
+		}
+		default: // a release
+			fprintf( file, " release %s %d", c->release.vehicle >= 0 ? "vehicle" : "rig",
+					 c->release.vehicle >= 0 ? c->release.vehicle : c->release.rig );
 			break;
 	}
-
-	float range = e->kind == lp_scriptHammer ? 4.0f : 250.0f;
-	lpRayHit hit = lpWorld_CastRay( world, e->origin, lpMulSV( range, dir ) );
-	if ( hit.hit == false )
-	{
-		return;
-	}
-
-	lpImpactDef im = { 0 };
-	im.point = hit.point;
-	im.direction = dir;
-	switch ( e->kind )
-	{
-		case lp_scriptRifle:
-			im.radius = 0.35f;
-			im.energy = 4000.0f;
-			im.impulse = 20.0f;
-			break;
-		case lp_scriptGrenade:
-			im.radius = 1.4f;
-			im.energy = 80000.0f;
-			im.impulse = 12.0f;
-			im.explosion = true;
-			break;
-		case lp_scriptCannon:
-			im.radius = 2.3f;
-			im.energy = 350000.0f;
-			im.impulse = 18.0f;
-			im.explosion = true;
-			break;
-		case lp_scriptHammer:
-			im.radius = 0.6f;
-			im.energy = 14000.0f;
-			im.impulse = 60.0f;
-			break;
-		case lp_scriptImpact:
-			im.radius = e->radius;
-			im.energy = e->energy;
-			im.impulse = e->impulse;
-			break;
-		default:
-			return;
-	}
-	lpWorld_AddImpact( world, &im ); // dust comes from the core, in the colour of what broke
+	fprintf( file, "\n" );
+	fflush( file );
+	return true;
 }
 
-void lpScriptPlay( lpWorld* world, const lpScript* script, int64_t tick, lpScriptState* state )
+int lpScriptPlay( lpWorld* world, const lpScript* script, int next )
 {
-	while ( state->next < script->count && script->events[state->next].tick <= tick )
+	int64_t tick = (int64_t)lpWorld_GetTick( world );
+	while ( next < script->count && script->commands[next].tick <= tick )
 	{
-		lpScriptApply( world, &script->events[state->next], state );
-		state->next += 1;
+		lpWorld_Submit( world, script->commands + next ); // one whose tick has passed is refused
+		next += 1;
 	}
+	return next;
 }

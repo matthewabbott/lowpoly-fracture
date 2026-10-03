@@ -1386,20 +1386,41 @@ static int lpFindLink( const lpWorld* world, uint32_t userId )
 	return -1;
 }
 
+// One of the scene's own commands, for this tick (the world numbers them in the order they come)
+static void lpSceneSubmit( lpWorld* world, lpCommand* c )
+{
+	c->tick = (int64_t)lpWorld_GetTick( world );
+	c->peer = LP_PEER_SCENE;
+	lpWorld_Submit( world, c );
+}
+
+static void lpSceneLink( lpWorld* world, int kind, int link, float value )
+{
+	if ( link >= 0 )
+	{
+		lpCommand c = { 0 };
+		c.kind = (uint8_t)kind;
+		c.link.link = link;
+		c.link.generation = LP_ANY_GENERATION;
+		c.link.value = value;
+		lpSceneSubmit( world, &c );
+	}
+}
+
 // The track's crane swings its load back and forth over the infield and winches it up and down
 static void lpDriveCrane( lpWorld* world, int tick )
 {
 	int slew = lpFindLink( world, lp_linkSlew );
 	int luff = lpFindLink( world, lp_linkLuff );
 	int winch = lpFindLink( world, lp_linkWinch );
-	lpWorld_SetLinkTarget( world, slew, ( tick / 360 ) % 2 == 0 ? 1.2f : -1.2f );
-	lpWorld_SetLinkTarget( world, luff, 0.1f );
+	lpSceneLink( world, lp_commandLinkTarget, slew, ( tick / 360 ) % 2 == 0 ? 1.2f : -1.2f );
+	lpSceneLink( world, lp_commandLinkTarget, luff, 0.1f );
 	// The winch reels at 1 m/s: a rope shortened at once would fling its load up
 	float length = winch >= 0 ? lpWorld_GetLinkState( world, winch ).length : 0.0f;
 	float goal = ( tick / 240 ) % 2 == 0 ? 5.0f : 3.0f;
 	if ( winch >= 0 && length != goal )
 	{
-		lpWorld_SetRopeLength( world, winch, length + lpClampFloat( goal - length, -1.0f / 60.0f, 1.0f / 60.0f ) );
+		lpSceneLink( world, lp_commandRopeLength, winch, length + lpClampFloat( goal - length, -1.0f / 60.0f, 1.0f / 60.0f ) );
 	}
 }
 
@@ -1476,13 +1497,13 @@ static void lpAddTrack( lpWorld* world )
 }
 
 // Each car steers for a point a little ahead on the ring and holds the track speed
-static void lpDriveTrack( lpWorld* world, int skipVehicle )
+static void lpDriveTrack( lpWorld* world )
 {
 	int count = lpWorld_GetVehicleCapacity( world );
 	for ( int v = 0; v < count; ++v )
 	{
 		lpVehicleState s = lpWorld_GetVehicleState( world, v );
-		if ( v == skipVehicle || s.alive == false || s.body < 0 )
+		if ( s.controller >= 0 || s.alive == false || s.body < 0 )
 		{
 			continue;
 		}
@@ -1492,28 +1513,13 @@ static void lpDriveTrack( lpWorld* world, int skipVehicle )
 		float tz = target.z - (float)s.position.z;
 		// Signed angle from the car's heading to the target about +y: positive is to the left
 		float error = lpAtan2( s.forward.z * tx - s.forward.x * tz, s.forward.x * tx + s.forward.z * tz );
-		lpVehicleControl c = { 0 };
-		c.steer = lpClampFloat( -2.0f * error, -1.0f, 1.0f );
-		c.throttle = lpClampFloat( 0.5f * ( LP_TRACK_SPEED - s.speed ), -1.0f, 1.0f );
-		lpWorld_SetVehicleControl( world, v, &c );
+		lpCommand c = { 0 };
+		c.kind = lp_commandVehicleControl;
+		c.vehicleControl.vehicle = v;
+		c.vehicleControl.control.steer = lpClampFloat( -2.0f * error, -1.0f, 1.0f );
+		c.vehicleControl.control.throttle = lpClampFloat( 0.5f * ( LP_TRACK_SPEED - s.speed ), -1.0f, 1.0f );
+		lpSceneSubmit( world, &c );
 	}
-}
-
-int lpRigGrab( lpWorld* world, int rig, int limb )
-{
-	lpLimbState st = lpWorld_GetLimbState( world, rig, limb );
-	if ( st.reaching == false || st.touching < 0 || st.footBody < 0 )
-	{
-		return -1;
-	}
-	lpLinkDef grip = lpDefaultLinkDef( lp_linkWeld );
-	grip.bodyA = st.footBody;
-	grip.bodyB = lpWorld_GetPieceInfo( world, st.touching ).body;
-	grip.anchorA = st.foot;
-	grip.maxForce = 40000.0f; // a claw's grip
-	grip.maxTorque = 15000.0f;
-	grip.strength = 5000.0f;
-	return lpCreateLink( world, &grip );
 }
 
 // ---- the mech yard: a hexapod on patrol over rough ground ----
@@ -1640,12 +1646,12 @@ static void lpAddMechYard( lpWorld* world )
 }
 
 // Each walker steers for a point a little further round the patrol than the nearest point on it, slowing to turn
-static void lpDriveMech( lpWorld* world, int skipRig )
+static void lpDriveMech( lpWorld* world )
 {
 	for ( int ri = 0; ri < lpWorld_GetRigCapacity( world ); ++ri )
 	{
 		lpRigState s = lpWorld_GetRigState( world, ri );
-		if ( ri == skipRig || s.alive == false || s.body < 0 )
+		if ( s.controller >= 0 || s.alive == false || s.body < 0 )
 		{
 			continue;
 		}
@@ -1682,23 +1688,25 @@ static void lpDriveMech( lpWorld* world, int skipRig )
 		float tx = target.x - p.x, tz = target.z - p.z;
 		// Signed angle from the heading to the target about +y: positive is to the left
 		float error = lpAtan2( s.forward.z * tx - s.forward.x * tz, s.forward.x * tx + s.forward.z * tz );
-		lpRigControl c = { 0 };
-		c.turn = lpClampFloat( -1.5f * error, -1.0f, 1.0f );
-		c.forward = lpClampFloat( 1.0f - lpAbsFloat( error ), 0.2f, 1.0f );
-		lpWorld_SetRigControl( world, ri, &c );
+		lpCommand c = { 0 };
+		c.kind = lp_commandRigControl;
+		c.rigControl.rig = ri;
+		c.rigControl.control.turn = lpClampFloat( -1.5f * error, -1.0f, 1.0f );
+		c.rigControl.control.forward = lpClampFloat( 1.0f - lpAbsFloat( error ), 0.2f, 1.0f );
+		lpSceneSubmit( world, &c );
 	}
 }
 
-void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle, int skipRig )
+void lpSceneDrive( lpWorld* world, int scene, int tick )
 {
 	if ( scene == lp_sceneTrack )
 	{
-		lpDriveTrack( world, skipVehicle );
+		lpDriveTrack( world );
 		lpDriveCrane( world, tick );
 	}
 	else if ( scene == lp_sceneMech )
 	{
-		lpDriveMech( world, skipRig );
+		lpDriveMech( world );
 	}
 }
 
@@ -1740,8 +1748,59 @@ static void lpAddPile( lpWorld* world, lpVec3 center, int count, uint64_t seed )
 	}
 }
 
+// The tools' throwables, as templates: lp_templateFlask, then lp_templateBall
+static void lpAddToolTemplates( lpWorld* world )
+{
+	// A chunky hexagonal bottle with a neck: it goes off when it lands hard
+	lpVec3 points[20];
+	for ( int i = 0; i < 6; ++i )
+	{
+		lpCosSin cs = lpComputeCosSin( 1.0471976f * (float)i );
+		points[i] = (lpVec3){ 0.09f * cs.cosine, -0.12f, 0.09f * cs.sine };
+		points[6 + i] = (lpVec3){ 0.09f * cs.cosine, 0.06f, 0.09f * cs.sine };
+	}
+	points[12] = (lpVec3){ 0.04f, 0.2f, 0.0f };
+	points[13] = (lpVec3){ -0.03f, 0.2f, 0.035f };
+	points[14] = (lpVec3){ -0.03f, 0.2f, -0.035f };
+	lpPartDef part = lpDefaultPartDef();
+	part.points = points;
+	part.pointCount = 15;
+	part.material = lp_glass;
+	part.color = 0x6FD68Au;
+	lpObjectDef def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.parts = &part;
+	def.partCount = 1;
+	def.detonator.triggerSpeed = 4.5f;
+	def.detonator.radius = 1.8f;
+	def.detonator.energy = 120000.0f;
+	def.detonator.speed = 12.0f;
+	lpWorld_AddTemplate( world, &def );
+
+	// A metal cannonball, a chunky low-poly sphere of golden-spiral points
+	for ( int i = 0; i < 20; ++i )
+	{
+		float y = 1.0f - 2.0f * ( (float)i + 0.5f ) / 20.0f;
+		float r = sqrtf( 1.0f - y * y );
+		float a = 2.39996323f * (float)i;
+		lpCosSin cs = lpComputeCosSin( a );
+		points[i] = (lpVec3){ 0.3f * r * cs.cosine, 0.3f * y, 0.3f * r * cs.sine };
+	}
+	part = lpDefaultPartDef();
+	part.points = points;
+	part.pointCount = 20;
+	part.material = lp_metal;
+	part.color = 0x3A3D42u;
+	def = lpDefaultObjectDef();
+	def.isStatic = false;
+	def.parts = &part;
+	def.partCount = 1;
+	lpWorld_AddTemplate( world, &def );
+}
+
 void lpBuildScene( lpWorld* world, int scene )
 {
+	lpAddToolTemplates( world );
 	switch ( scene )
 	{
 		case lp_sceneWall:
@@ -1968,14 +2027,12 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 	}
 
 	lpVec3 dir = lpNormalize( lpSub( target, origin ) );
-	lpRayHit hit = lpWorld_CastRay( world, origin, lpMulSV( 60.0f, dir ) );
-	if ( hit.hit == false || hit.piece < 0 )
-	{
-		return false;
-	}
-
+	lpCommand c = { 0 };
+	c.kind = lp_commandImpact;
+	c.impact.origin = origin;
+	c.impact.range = 60.0f;
+	c.impact.piecesOnly = true;
 	lpImpactDef impact = { 0 };
-	impact.point = hit.point;
 	impact.direction = dir;
 	if ( shot % 4 == 3 && scene != lp_sceneMech ) // the mech's legs take grenades only
 	{
@@ -1990,6 +2047,7 @@ bool lpSceneBombard( lpWorld* world, int scene, int tick, int period )
 		impact.impulse = 12.0f;
 	}
 	impact.explosion = true;
-	lpWorld_AddImpact( world, &impact );
+	c.impact.def = impact;
+	lpSceneSubmit( world, &c );
 	return true;
 }

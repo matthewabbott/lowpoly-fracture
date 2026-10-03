@@ -709,7 +709,7 @@ static int TestRigPatrols( void )
 	int reached = 0, lapTick = -1;
 	for ( int t = 0; t < 4800 && reached < 4; ++t )
 	{
-		lpSceneDrive( s.world, lp_sceneMech, t, -1, -1 );
+		lpSceneDrive( s.world, lp_sceneMech, t );
 		Run( &s, 1 );
 		lpRigState st = lpWorld_GetRigState( s.world, 0 );
 		float dx = (float)st.position.x - corners[reached][0], dz = (float)st.position.z - corners[reached][1];
@@ -1076,7 +1076,21 @@ static int TestRigGrabs( void )
 	{
 		Run( &s, 1 );
 		st = lpWorld_GetLimbState( s.world, rig, 0 );
-		grip = st.touching >= 0 && lpWorld_GetPieceInfo( s.world, st.touching ).body == crate ? lpRigGrab( s.world, rig, 0 ) : -1;
+		if ( st.touching >= 0 && lpWorld_GetPieceInfo( s.world, st.touching ).body == crate )
+		{
+			lpCommand claw = { 0 };
+			claw.tick = (int64_t)lpWorld_GetTick( s.world );
+			claw.kind = lp_commandClaw;
+			claw.claw.rig = rig;
+			claw.claw.limb = 0;
+			claw.claw.mode = lp_clawGrab;
+			claw.claw.maxForce = 40000.0f;
+			claw.claw.maxTorque = 15000.0f;
+			claw.claw.strength = 5000.0f;
+			ENSURE( lpWorld_Submit( s.world, &claw ) );
+			Run( &s, 1 ); // it grabs as the step begins
+			grip = lpWorld_GetLimbState( s.world, rig, 0 ).grip;
+		}
 	}
 	lpWorldTransform xf;
 	lpWorld_GetBodyTransform( s.world, crate, &xf );

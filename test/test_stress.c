@@ -1286,13 +1286,13 @@ static int TestTowerFelled( void )
 	Sim s = CreateSimWorkers( lp_sceneTower, 1 );
 	lpScript script = { 0 };
 	ENSURE( LoadRepoScript( &script, "tower_topple.txt" ) );
-	lpScriptState state = lpDefaultScriptState();
+	int next = 0;
 	lpVec3 start = MaterialCentroid( s.world, lp_stone );
 	float fastest = 0.0f;
 	float restless = 0.0f;
 	for ( int tick = 0; tick < 900; ++tick )
 	{
-		lpScriptPlay( s.world, &script, tick, &state );
+		next = lpScriptPlay( s.world, &script, next );
 		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
 		float speed = MaxBodySpeed( s.world );
 		fastest = speed > fastest ? speed : fastest;

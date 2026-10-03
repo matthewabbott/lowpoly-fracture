@@ -39,15 +39,16 @@ car (WASD drives, S brakes then reverses, space is the handbrake, the camera cha
 Q/E step sideways, C crouches, F held strikes at the crosshair with the nearest leg, G grabs and lifts what its claw
 touches, G again lets go), and V again gets out.
 
-Automation (used by agents and CI): `--script file` replays tool events (see `scripts/`: walls, house flasks, tower
-collapse, tower topple, lumber, ruins, yard, keep, track, mech, mech arms, mech crawl; `tick drive vehicle throttle brake steer handbrake` sets a car's controls until the next such line,
-`tick walk rig forward strafe turn crouch` a mech's, `tick reach rig limb active x y z` sends a leg at a point or back into
-its gait, `tick grab rig limb` grabs or lets go, `tick impact ox oy oz dx dy dz radius energy [impulse]` is an impact of
-your own where the ray hits), `--record file` writes them,
+Automation (used by agents and CI): `--script file` replays a script of commands (`scenes/script.h`; see `scripts/`:
+walls, house flasks, tower collapse, tower topple, lumber, ruins, yard, keep, track, mech, mech arms, mech crawl): the
+tools by name (`tick rifle ox oy oz dx dy dz`), `tick drive vehicle throttle brake steer handbrake` sets a car's controls
+until the next such line, `tick walk rig forward strafe turn crouch` a mech's, `tick reach rig limb active x y z` sends a
+leg at a point or back into its gait, `tick grab rig limb` grabs or lets go, `tick impact ox oy oz dx dy dz radius energy
+[impulse]` is an impact of your own where the ray hits; `--record file` writes the commands each step applied,
 `--frames N` runs exactly N ticks and quits, `--screenshot out.png` saves the last frame (with `--screenshot-at f1,f2`,
 those frames, numbered), `--dump tick:out.json` writes the state after that tick as JSON, `--hash-log file` writes the
-per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera chases the car or mech the events steer), `--hide-ui`,
-`--vsync 0`, `--workers N`, `--input-delay N` (walk and drive events apply N ticks late: a feel test of lockstep),
+per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera chases the car or mech the commands drive), `--hide-ui`,
+`--vsync 0`, `--workers N`, `--input-delay N` (every command of the player applies N ticks late: a feel test of lockstep),
 `--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves. Headless,
 `lpf_bench --scene walls --script scripts/walls_demo.txt --period 0 --ticks 240 --hash-log out` replays the same events
 with the same hashes (the script player is `scenes/script.c`).

@@ -39,15 +39,23 @@ void lpBuildScene( lpWorld* world, int scene );
 // facing +z. Returns its body.
 int lpAddKeep( lpWorld* world, lpVec3 base, int floors );
 
-// Scripted bombardment for benchmarks and demos: at some ticks, casts a ray from a moving attacker into the scene
-// and queues a grenade (or every fourth time a cannon blast) where it hits. Deterministic for a deterministic world.
-// Returns true if an impact was queued this tick.
+// Scripted bombardment for benchmarks and demos: at some ticks, a grenade (or every fourth time a cannon blast) where
+// a ray from a moving attacker first hits a piece, submitted as the scene's command for this tick. Deterministic for a
+// deterministic world. Returns true if it fired this tick.
 bool lpSceneBombard( lpWorld* world, int scene, int tick, int period );
 
-// Scripted drivers for scenes with vehicles and rigs (the track's cars drive laps, the mech patrols its yard), for
-// benchmarks and demos: call every tick before the step. They read only simulation state, so they are deterministic.
-// skipVehicle and skipRig (-1: none) are left alone, for the player. Does nothing in scenes without either.
-void lpSceneDrive( lpWorld* world, int scene, int tick, int skipVehicle, int skipRig );
+// Scripted drivers for scenes with vehicles and rigs (the track's cars drive laps, the mech patrols its yard, the
+// crane swings), for benchmarks and demos: call every tick before the step. They read only simulation state and submit
+// the scene's commands (LP_PEER_SCENE), so they are deterministic, and they leave alone what a player drives. Does
+// nothing in scenes without either.
+void lpSceneDrive( lpWorld* world, int scene, int tick );
+
+// The objects the sandbox's tools throw, registered by lpBuildScene first, in this order (lp_commandSpawn)
+enum
+{
+	lp_templateFlask = 0, // a chunky glass bottle that goes off when it lands hard
+	lp_templateBall = 1,  // a metal cannonball
+};
 
 // The scenes' supply channels and part tags (the core never reads tags; these are the game's names)
 enum
@@ -114,10 +122,6 @@ enum
 {
 	lp_userContraptionVial = 0xF1A5,
 };
-
-// A grab: welds a reaching limb's foot (a claw) to the piece it touches (lpLimbState.touching). Returns the link, or -1
-// if it touches nothing. Destroy the link to let go; lose the claw and the load drops with it.
-int lpRigGrab( lpWorld* world, int rig, int limb );
 
 // The ground plane, for tests that build their own scene
 void lpAddGround( lpWorld* world, float halfSize );
