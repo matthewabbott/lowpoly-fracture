@@ -4,14 +4,14 @@
 
 #include <stdio.h>
 
-int Drive_Nearest( const lpWorld* world, V3 point, float reach )
+int Drive_Nearest( const lpWorld* world, V3 point, float reach, int peer )
 {
 	int best = -1;
 	float nearest = reach * reach;
 	for ( int v = 0; v < lpWorld_GetVehicleCapacity( world ); ++v )
 	{
 		lpVehicleState s = lpWorld_GetVehicleState( world, v );
-		if ( s.alive == false || s.body < 0 )
+		if ( s.alive == false || s.body < 0 || ( s.controller >= 0 && s.controller != peer ) ) // another player's
 		{
 			continue;
 		}
@@ -81,14 +81,14 @@ void Drive_Describe( const lpWorld* world, int vehicle, char* text, int size )
 
 // ---- rigs ----
 
-int Walk_Nearest( const lpWorld* world, V3 point, float reach, float* distance )
+int Walk_Nearest( const lpWorld* world, V3 point, float reach, int peer, float* distance )
 {
 	int best = -1;
 	float nearest = reach * reach;
 	for ( int r = 0; r < lpWorld_GetRigCapacity( world ); ++r )
 	{
 		lpRigState s = lpWorld_GetRigState( world, r );
-		if ( s.alive == false || s.body < 0 )
+		if ( s.alive == false || s.body < 0 || ( s.controller >= 0 && s.controller != peer ) ) // another player's
 		{
 			continue;
 		}

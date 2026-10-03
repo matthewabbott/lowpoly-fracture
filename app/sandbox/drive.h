@@ -12,8 +12,9 @@ struct DriveKeys
 	bool forward, back, left, right, handbrake;
 };
 
-// The vehicle whose body's centre of mass is nearest the point, within reach; -1 if none
-int Drive_Nearest( const lpWorld* world, V3 point, float reach );
+// The vehicle whose body's centre of mass is nearest the point, within reach, free or this peer's (another player's is
+// not); -1 if none
+int Drive_Nearest( const lpWorld* world, V3 point, float reach, int peer );
 
 // W drives; S brakes while rolling forward, then reverses; A and D steer; space pulls the handbrake
 lpVehicleControl Drive_Control( const lpWorld* world, int vehicle, const DriveKeys& keys );
@@ -34,8 +35,8 @@ struct WalkKeys
 	bool forward, back, left, right, strafeLeft, strafeRight, crouch;
 };
 
-// The rig whose torso is nearest the point, within reach; -1 if none
-int Walk_Nearest( const lpWorld* world, V3 point, float reach, float* distance );
+// The rig whose torso is nearest the point, within reach, free or this peer's; -1 if none
+int Walk_Nearest( const lpWorld* world, V3 point, float reach, int peer, float* distance );
 
 // W walks, S backs off at half speed, A and D turn, Q and E step sideways, C crouches
 lpRigControl Walk_Control( const WalkKeys& keys );

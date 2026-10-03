@@ -28,7 +28,7 @@ set(LPF_SANDBOX_FILES
 add_executable(sandbox ${LPF_SANDBOX_FILES})
 target_include_directories(sandbox PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(sandbox SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/extern/sokol)
-target_link_libraries(sandbox PRIVATE lpf lpf_scenes lpf_imgui d3d11 dxgi dxguid user32 gdi32 shell32 ole32)
+target_link_libraries(sandbox PRIVATE lpf lpf_scenes lpf_net lpf_imgui d3d11 dxgi dxguid user32 gdi32 shell32 ole32)
 target_compile_definitions(sandbox PRIVATE SOKOL_D3D11 NOMINMAX _CRT_SECURE_NO_WARNINGS)
 set_target_properties(sandbox PROPERTIES
 	CXX_STANDARD 20

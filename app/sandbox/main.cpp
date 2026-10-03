@@ -5,14 +5,20 @@
 // Automation:   sandbox --scene walls --script scripts/walls_demo.txt --frames 300 --screenshot shot.png --hash-log h.txt
 //               (--screenshot-at 60,120 saves shot_0060.png and shot_0120.png; --dump 120:state.json the state as JSON)
 //
+// Co-op:        sandbox --scene track --host 7777     and   sandbox --scene track --join 192.168.1.20:7777
+//               (lockstep, app/net: the host keeps the clock; each player's commands apply --input-delay ticks later,
+//               4 by default; V takes a free car or mech, or leaves it; a desync stops both and names what differs)
+//
 // The simulation runs at a fixed 60 Hz. With --frames it advances exactly one tick per rendered frame, so scripted
-// runs are independent of machine speed and their hash logs are comparable across runs.
+// runs are independent of machine speed and their hash logs are comparable across runs. In co-op, --frames N runs
+// until the host has sent N ticks and both have stepped them.
 
 #include "drive.h"
 #include "math3d.h"
 #include "renderer.h"
 
 #include "dump.h"
+#include "lockstep.h"
 #include "scenes.h"
 #include "script.h"
 
@@ -70,7 +76,11 @@ struct Options
 	float renderScale = 1.0f;
 	bool vsync = true;
 	bool hideUi = false;
-	int inputDelay = 0; // ticks every command of this player's waits before it applies: a feel test of lockstep's delay
+	int inputDelay = -1; // ticks every command of this player's waits before it applies (-1: 0 alone, 4 in co-op)
+	int hostPort = 0;	 // co-op: host on this port
+	std::string joinHost; // co-op: join this host
+	int joinPort = 7777;
+	int peers = 1; // co-op: the players to wait for (the host's)
 	bool follow = false; // the camera chases the vehicle or the rig this player's commands drive (else the scene's first rig)
 	bool haveCamera = false;
 	float camera[5] = {};
@@ -118,6 +128,12 @@ struct App
 	lpScript script = {};
 	FILE* recordFile = nullptr;
 	FILE* hashFile = nullptr;
+
+	// co-op (app/net): the session, its sockets, and this machine's peer (0: the host, or playing alone)
+	lpLockstep* lockstep = nullptr;
+	lpTcp* listener = nullptr;
+	std::vector<lpTcp*> links;
+	int peer = 0;
 
 	std::vector<Particle> particles;
 	std::vector<Particle> drawn; // particles plus rope segments, rebuilt each frame
@@ -256,9 +272,15 @@ void LoadScript( const std::string& path )
 	}
 }
 
-// A command of this player's: it applies after the input delay (a recording writes what the world applied)
+// A command of this player's: it applies after the input delay (a recording writes what the world applied). In
+// co-op it goes through the host, stamped there with this machine's peer.
 void Submit( lpCommand c )
 {
+	if ( app.lockstep != nullptr )
+	{
+		lpLockstep_Command( app.lockstep, &c );
+		return;
+	}
 	c.tick = app.tick + app.opt.inputDelay;
 	c.peer = 0;
 	c.seq = app.seq++;
@@ -270,7 +292,7 @@ int ControlledVehicle()
 {
 	for ( int v = 0; v < lpWorld_GetVehicleCapacity( app.world ); ++v )
 	{
-		if ( lpWorld_GetVehicleState( app.world, v ).controller == 0 )
+		if ( lpWorld_GetVehicleState( app.world, v ).controller == app.peer )
 		{
 			return v;
 		}
@@ -282,7 +304,7 @@ int ControlledRig()
 {
 	for ( int r = 0; r < lpWorld_GetRigCapacity( app.world ); ++r )
 	{
-		if ( lpWorld_GetRigState( app.world, r ).controller == 0 )
+		if ( lpWorld_GetRigState( app.world, r ).controller == app.peer )
 		{
 			return r;
 		}
@@ -348,8 +370,8 @@ void ToggleDriving()
 		return;
 	}
 	float rigDistance = 0.0f;
-	int rig = Walk_Nearest( app.world, app.camPos, 25.0f, &rigDistance );
-	int car = Drive_Nearest( app.world, app.camPos, rig >= 0 ? rigDistance : 25.0f );
+	int rig = Walk_Nearest( app.world, app.camPos, 25.0f, app.peer, &rigDistance ); // free, or this player's already
+	int car = Drive_Nearest( app.world, app.camPos, rig >= 0 ? rigDistance : 25.0f, app.peer );
 	if ( car >= 0 )
 	{
 		app.driving = car;
@@ -482,19 +504,92 @@ void QueueGrab()
 	Submit( c );
 }
 
-void StepSimulation()
+// Commands for this tick: the grab's, the script's (this player's) and the scene's (live ones were submitted as they
+// came). In co-op the player's go through the host, and the scene's are made here from this machine's world.
+void PreStep( int64_t tick )
 {
-	// Commands for this tick: the script's and the scene's (live ones were submitted as they came, for their tick)
-	app.scriptNext = lpScriptPlay( app.world, &app.script, app.scriptNext );
+	if ( app.firing && app.tool == ToolPull )
+	{
+		QueueGrab();
+	}
+	if ( app.lockstep != nullptr )
+	{
+		while ( app.scriptNext < app.script.count && app.script.commands[app.scriptNext].tick <= tick )
+		{
+			lpLockstep_Command( app.lockstep, app.script.commands + app.scriptNext );
+			app.scriptNext += 1;
+		}
+	}
+	else
+	{
+		app.scriptNext = lpScriptPlay( app.world, &app.script, app.scriptNext );
+	}
 	if ( app.opt.bombard > 0 )
 	{
-		lpSceneBombard( app.world, app.opt.scene, (int)app.tick, app.opt.bombard );
+		lpSceneBombard( app.world, app.opt.scene, (int)tick, app.opt.bombard );
 	}
-	lpSceneDrive( app.world, app.opt.scene, (int)app.tick );
+	lpSceneDrive( app.world, app.opt.scene, (int)tick );
+}
 
+void PostStep();
+
+void StepSimulation()
+{
+	PreStep( app.tick );
 	uint64_t t0 = lpGetTicks();
 	lpWorld_Step( app.world, 1.0f / 60.0f, 4 );
 	app.stepMs = lpGetMilliseconds( t0 );
+	PostStep();
+}
+
+void NetBefore( void* context, lpLockstep* lockstep, int64_t tick )
+{
+	(void)context;
+	(void)lockstep;
+	PreStep( tick );
+}
+
+// Co-op: the host closes up to `close` ticks (its clock), and every tick a packet has come for is stepped (a peer
+// catches up a few a frame). An automated host stops the session once it has sent and confirmed its frames.
+void NetStep( int close )
+{
+	if ( app.listener != nullptr )
+	{
+		lpTcp* c = lpTcp_Accept( app.listener );
+		if ( c != nullptr )
+		{
+			app.links.push_back( c );
+			lpLockstep_AddPeer( app.lockstep, lpTcp_Transport( c ) );
+		}
+	}
+	bool host = app.listener != nullptr;
+	if ( host && app.opt.frames > 0 && lpLockstep_GetClosed( app.lockstep ) >= app.opt.frames )
+	{
+		close = 0;
+	}
+	uint64_t t0 = lpGetTicks();
+	int steps = 0;
+	for ( int i = 0; i < ( host ? close : 8 ) || i == 0; ++i )
+	{
+		if ( lpLockstep_Pump( app.lockstep, NetBefore, nullptr, host ? ( close > 0 ? 1 : 0 ) : 0, 1 ) == 0 )
+		{
+			break;
+		}
+		PostStep();
+		app.fireCooldown -= 1;
+		steps += 1;
+	}
+	app.stepMs = steps > 0 ? lpGetMilliseconds( t0 ) / (float)steps : app.stepMs;
+	app.peer = lpLockstep_GetPeer( app.lockstep );
+	if ( host && app.opt.frames > 0 && lpLockstep_GetState( app.lockstep ) == lp_lockstepRunning && app.tick >= app.opt.frames &&
+		 lpLockstep_GetConfirmed( app.lockstep ) >= app.opt.frames - 1 )
+	{
+		lpLockstep_Stop( app.lockstep, "done" );
+	}
+}
+
+void PostStep()
+{
 	app.last = lpWorld_GetStats( app.world );
 	if ( app.recordFile != nullptr )
 	{
@@ -745,6 +840,26 @@ void DrawUi()
 		ImGui::Text( "%s%s%s", app.walking >= 0 ? "walking " : "", line, GripLimb() >= 0 ? "  gripping" : "" );
 	}
 	ImGui::Text( "tick %lld", (long long)app.tick );
+	if ( app.lockstep != nullptr )
+	{
+		lpLockstepState state = lpLockstep_GetState( app.lockstep );
+		bool host = app.listener != nullptr;
+		int64_t ahead = lpLockstep_GetClosed( app.lockstep ) - app.tick;
+		if ( state == lp_lockstepJoining )
+		{
+			ImGui::Text( host ? "co-op: waiting for %d player(s)" : "co-op: joining", app.opt.peers - lpLockstep_GetPeerCount( app.lockstep ) );
+		}
+		else if ( state == lp_lockstepRunning )
+		{
+			ImGui::Text( "co-op: %s%d, %d player(s), input delay %d, %lld tick(s) %s", host ? "host, peer " : "peer ", app.peer,
+						 host ? lpLockstep_GetPeerCount( app.lockstep ) + 1 : 0, app.opt.inputDelay, (long long)ahead,
+						 host ? "sent ahead" : "received ahead" );
+		}
+		else
+		{
+			ImGui::TextColored( ImVec4( 1.0f, 0.35f, 0.3f, 1.0f ), "co-op stopped: %s", lpLockstep_GetReport( app.lockstep ) );
+		}
+	}
 	ImGui::Separator();
 
 	for ( int t = 0; t < ToolCount; ++t )
@@ -757,7 +872,7 @@ void DrawUi()
 		}
 	}
 	ImGui::Separator();
-	for ( int sc = 0; sc < lp_sceneCount; ++sc )
+	for ( int sc = 0; sc < lp_sceneCount && app.lockstep == nullptr; ++sc ) // in co-op the session's scene stays
 	{
 		if ( sc > 0 )
 		{
@@ -768,10 +883,13 @@ void DrawUi()
 			LoadScene( sc );
 		}
 	}
-	ImGui::SliderFloat( "fragment scale", &app.opt.fragmentScale, 0.5f, 4.0f, "%.2f" );
-	ImGui::SliderInt( "debris cap", &app.opt.maxDebris, 100, 5000 );
-	ImGui::SliderInt( "bombard period", &app.opt.bombard, 0, 60 );
-	ImGui::Text( "(fragment scale / debris cap apply on reload: R)" );
+	if ( app.lockstep == nullptr )
+	{
+		ImGui::SliderFloat( "fragment scale", &app.opt.fragmentScale, 0.5f, 4.0f, "%.2f" );
+		ImGui::SliderInt( "debris cap", &app.opt.maxDebris, 100, 5000 );
+		ImGui::SliderInt( "bombard period", &app.opt.bombard, 0, 60 );
+		ImGui::Text( "(fragment scale / debris cap apply on reload: R)" );
+	}
 	ImGui::Separator();
 	ImGui::SliderFloat( "render scale", &app.rs.renderScale, 0.25f, 1.0f, "%.2f" );
 	ImGui::Checkbox( "shadows", &app.rs.shadows );
@@ -832,6 +950,36 @@ void Init()
 		app.hashFile = fopen( app.opt.hashLog.c_str(), "w" );
 	}
 	LoadScene( app.opt.scene );
+
+	// Co-op: host or join (the description must match the host's: scene, bombardment, settings, build)
+	bool coop = app.opt.hostPort > 0 || !app.opt.joinHost.empty();
+	app.opt.inputDelay = app.opt.inputDelay >= 0 ? app.opt.inputDelay : ( coop ? 4 : 0 );
+	if ( coop )
+	{
+		static char session[8192];
+		lpSceneDescribeSession( app.world, app.opt.scene, app.opt.bombard, 1.0f / 60.0f, 4, session, (int)sizeof( session ) );
+		lpLockstepDef def = { app.world, session, app.opt.inputDelay > 0 ? app.opt.inputDelay : 1, app.opt.peers, 1.0f / 60.0f, 4 };
+		if ( app.opt.hostPort > 0 )
+		{
+			app.listener = lpTcp_Listen( app.opt.hostPort );
+			app.lockstep = app.listener != nullptr ? lpLockstep_CreateHost( &def ) : nullptr;
+			printf( "co-op: hosting %s on port %d for %d player(s)\n", lpSceneName( app.opt.scene ), app.opt.hostPort, app.opt.peers );
+		}
+		else
+		{
+			lpTcp* host = lpTcp_Connect( app.opt.joinHost.c_str(), app.opt.joinPort, 10000 );
+			if ( host != nullptr )
+			{
+				app.links.push_back( host );
+				app.lockstep = lpLockstep_CreatePeer( &def, lpTcp_Transport( host ) );
+				printf( "co-op: joined %s:%d\n", app.opt.joinHost.c_str(), app.opt.joinPort );
+			}
+		}
+		if ( app.lockstep == nullptr )
+		{
+			printf( "co-op: no session; playing alone\n" );
+		}
+	}
 }
 
 void Frame()
@@ -876,7 +1024,7 @@ void Frame()
 		}
 	}
 
-	if ( !app.paused )
+	if ( !app.paused || app.lockstep != nullptr )
 	{
 		int steps;
 		if ( automated )
@@ -891,12 +1039,12 @@ void Frame()
 			app.accumulator -= (double)steps / 60.0;
 			app.accumulator = app.accumulator > 0.1 ? 0.1 : app.accumulator;
 		}
-		for ( int i = 0; i < steps; ++i )
+		if ( app.lockstep != nullptr )
 		{
-			if ( app.firing && app.tool == ToolPull )
-			{
-				QueueGrab();
-			}
+			NetStep( steps );
+		}
+		for ( int i = 0; i < steps && app.lockstep == nullptr; ++i )
+		{
 			StepSimulation();
 			app.fireCooldown -= 1;
 		}
@@ -933,7 +1081,19 @@ void Frame()
 	app.renderMs = lpGetMilliseconds( renderStart );
 
 	app.frame += 1;
-	bool last = automated && app.frame >= app.opt.frames;
+	bool last = automated && app.frame >= app.opt.frames && app.lockstep == nullptr;
+	if ( app.lockstep != nullptr && lpLockstep_GetState( app.lockstep ) > lp_lockstepRunning )
+	{
+		// Co-op: the session ended (the host's "done", a desync, a refusal): an automated run ends with it
+		static bool told = false;
+		if ( told == false )
+		{
+			printf( "co-op: %s\n", lpLockstep_GetReport( app.lockstep ) );
+			told = true;
+		}
+		last = last || automated;
+	}
+	last = last || ( automated && app.frame >= 20 * app.opt.frames + 600 ); // a session that never ends
 	bool listed = false;
 	for ( int at : app.opt.shotsAt )
 	{
@@ -1003,15 +1163,15 @@ void Event_( const sapp_event* ev )
 			{
 				app.tool = ev->key_code - SAPP_KEYCODE_1;
 			}
-			if ( ev->key_code == SAPP_KEYCODE_R )
+			if ( ev->key_code == SAPP_KEYCODE_R && app.lockstep == nullptr ) // the session's world and settings stay in co-op
 			{
 				LoadScene( app.opt.scene );
 			}
-			if ( ev->key_code == SAPP_KEYCODE_P )
+			if ( ev->key_code == SAPP_KEYCODE_P && app.lockstep == nullptr )
 			{
 				app.paused = !app.paused;
 			}
-			if ( ev->key_code == SAPP_KEYCODE_B )
+			if ( ev->key_code == SAPP_KEYCODE_B && app.lockstep == nullptr )
 			{
 				app.opt.bombard = app.opt.bombard > 0 ? 0 : 20;
 			}
@@ -1119,6 +1279,12 @@ void Cleanup()
 		fclose( app.hashFile );
 	}
 	lpScriptFree( &app.script );
+	lpLockstep_Destroy( app.lockstep );
+	for ( lpTcp* link : app.links )
+	{
+		lpTcp_Close( link );
+	}
+	lpTcp_Close( app.listener );
 	DestroyWorld();
 	Renderer_Shutdown();
 	simgui_shutdown();
@@ -1142,6 +1308,20 @@ int main( int argc, char** argv )
 			o.workers = atoi( v );
 		else if ( strcmp( a, "--input-delay" ) == 0 )
 			o.inputDelay = atoi( v ) < 0 ? 0 : atoi( v );
+		else if ( strcmp( a, "--host" ) == 0 )
+			o.hostPort = atoi( v );
+		else if ( strcmp( a, "--join" ) == 0 )
+		{
+			o.joinHost = v;
+			size_t colon = o.joinHost.rfind( ':' );
+			if ( colon != std::string::npos )
+			{
+				o.joinPort = atoi( o.joinHost.c_str() + colon + 1 );
+				o.joinHost.resize( colon );
+			}
+		}
+		else if ( strcmp( a, "--peers" ) == 0 )
+			o.peers = atoi( v );
 		else if ( strcmp( a, "--frames" ) == 0 )
 			o.frames = atoi( v );
 		else if ( strcmp( a, "--screenshot" ) == 0 )
@@ -1206,7 +1386,7 @@ int main( int argc, char** argv )
 					"               [--screenshot-at f1,f2,...] [--dump tick:path.json]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n"
-					"               [--input-delay ticks]\n" );
+					"               [--input-delay ticks] [--host port [--peers N] | --join host:port]\n" );
 			return 1;
 		}
 		if ( takes )
