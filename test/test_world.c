@@ -4,6 +4,7 @@
 #include "test_sim.h"
 
 #include "dump.h"
+#include "lockstep.h"
 #include "script.h"
 
 #include <stdlib.h>
@@ -1066,6 +1067,118 @@ static int TestCausalUnits( void )
 	return 0;
 }
 
+typedef struct PairMachine
+{
+	lpWorld* world;
+	bool fires;	 // its player fires the rifle at the wall now and then (its commands go through the host)
+	int applied; // commands its world applied: the scene's, and the peer's player's through the host
+} PairMachine;
+
+static void PairStep( void* context, lpLockstep* lockstep, int64_t tick )
+{
+	PairMachine* m = context;
+	m->applied += tick > 0 ? lpWorld_GetStats( m->world ).commandsApplied : 0; // the last step's
+	lpSceneBombard( m->world, lp_sceneWall, (int)tick, 12 );
+	if ( m->fires && tick % 20 == 0 )
+	{
+		lpCommand c = lpScriptToolCommand( lp_toolRifle, (lpVec3){ 2.0f * (float)( tick % 7 ) - 6.0f, 2.0f, 12.0f }, (lpVec3){ 0.0f, -0.05f, -1.0f } );
+		lpLockstep_Command( lockstep, &c );
+	}
+}
+
+// Runs a host and a peer of the bombarded walls over an in-memory link until the host has sent `ticks` ticks and both
+// have stepped them (or the session stops); the peer's world nudged at injectTick (-1: never). Returns the peer's body
+// nudged (-1: none).
+static int RunPair( int ticks, int injectTick, lpLockstep** hostOut, lpLockstep** peerOut, Sim* host, Sim* peer, lpMemoryLink** linkOut,
+					int* applied )
+{
+	*host = CreateSim( lp_sceneWall );
+	*peer = CreateSim( lp_sceneWall );
+	char sessionHost[4096], sessionPeer[4096];
+	lpSceneDescribeSession( host->world, lp_sceneWall, 12, 1.0f / 60.0f, 4, sessionHost, (int)sizeof( sessionHost ) );
+	lpSceneDescribeSession( peer->world, lp_sceneWall, 12, 1.0f / 60.0f, 4, sessionPeer, (int)sizeof( sessionPeer ) );
+	lpMemoryLink* link = lpMemoryLink_Create();
+	lpLockstepDef defHost = { host->world, sessionHost, 4, 1, 1.0f / 60.0f, 4 };
+	lpLockstepDef defPeer = { peer->world, sessionPeer, 4, 0, 1.0f / 60.0f, 4 };
+	lpLockstep* h = lpLockstep_CreateHost( &defHost );
+	lpLockstep* p = lpLockstep_CreatePeer( &defPeer, lpMemoryLink_End( link, 1 ) );
+	lpLockstep_AddPeer( h, lpMemoryLink_End( link, 0 ) );
+	PairMachine machineHost = { host->world, false, 0 }, machinePeer = { peer->world, true, 0 };
+	int nudged = -1;
+	for ( int round = 0; round < 20000; ++round )
+	{
+		bool sending = lpLockstep_GetClosed( h ) < ticks;
+		lpLockstep_Pump( h, PairStep, &machineHost, sending ? 1 : 0, 8 );
+		if ( (int)lpWorld_GetTick( peer->world ) == injectTick && nudged < 0 )
+		{
+			for ( int i = 0; i < lpWorld_GetBodyCapacity( peer->world ) && nudged < 0; ++i )
+			{
+				lpBodyInfo info = lpWorld_GetBodyInfo( peer->world, i );
+				lpVec3 v = info.linearVelocity;
+				nudged = info.alive && info.kind == lp_kindDebris && info.awake && v.x * v.x + v.y * v.y + v.z * v.z > 0.01f ? i : -1;
+			}
+			ENSURE( nudged >= 0 );
+			lpLab_NudgeVelocity( peer->world, nudged, 1 );
+		}
+		lpLockstep_Pump( p, PairStep, &machinePeer, 0, 8 );
+		bool stopped = lpLockstep_GetState( h ) != lp_lockstepRunning && lpLockstep_GetState( h ) != lp_lockstepJoining;
+		bool done = sending == false && (int64_t)lpWorld_GetTick( host->world ) == lpLockstep_GetClosed( h ) &&
+					lpWorld_GetTick( peer->world ) == lpWorld_GetTick( host->world );
+		if ( ( stopped && lpLockstep_GetState( p ) != lp_lockstepRunning ) || done )
+		{
+			break;
+		}
+	}
+	*hostOut = h;
+	*peerOut = p;
+	*linkOut = link;
+	applied[0] = machineHost.applied;
+	applied[1] = machinePeer.applied;
+	return nudged;
+}
+
+// Two machines in lockstep (app/net, over an in-memory link): the host keeps the clock, the peer's player fires at the
+// wall through it, and both bombard their own walls; after 240 ticks their states are one. A one-ulp nudge to a body
+// in the peer's world at tick 100 is found by the host, which follows the hash down over the link and names the body
+// and the tick, and stops both.
+static int TestLockstepPair( void )
+{
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim host, peer;
+		lpLockstep *h, *p;
+		lpMemoryLink* link;
+		int inject = run == 0 ? -1 : 100;
+		int applied[2];
+		int nudged = RunPair( 240, inject, &h, &p, &host, &peer, &link, applied );
+		if ( run == 0 )
+		{
+			uint64_t a = lpWorld_Hash( host.world ), b = lpWorld_Hash( peer.world );
+			printf( "  in sync: %llu ticks, %d commands applied on the host and %d on the peer (its rifle's among them); hashes %016llx and %016llx\n",
+					(unsigned long long)lpWorld_GetTick( host.world ), applied[0], applied[1], (unsigned long long)a, (unsigned long long)b );
+			ENSURE( lpLockstep_GetState( h ) == lp_lockstepRunning && lpLockstep_GetDesyncTick( h ) < 0 );
+			ENSURE( lpWorld_GetTick( host.world ) == 240 && lpWorld_GetTick( peer.world ) == 240 && a == b );
+			ENSURE( applied[0] >= 10 && applied[0] == applied[1] );
+		}
+		else
+		{
+			const char* report = lpLockstep_GetReport( h );
+			char named[64];
+			snprintf( named, sizeof( named ), "bodies element %d ", nudged );
+			printf( "  %s\n", report );
+			ENSURE( lpLockstep_GetState( h ) == lp_lockstepDesync && lpLockstep_GetDesyncTick( h ) == inject );
+			ENSURE( strstr( report, named ) != NULL );
+			ENSURE( lpLockstep_GetState( p ) == lp_lockstepDesync );
+		}
+		lpLockstep_Destroy( h );
+		lpLockstep_Destroy( p );
+		lpMemoryLink_Destroy( link );
+		DestroySim( &host );
+		DestroySim( &peer );
+	}
+	return 0;
+}
+
 // How far one step's queries reach: an impact asked for with a 10 m radius acts within maxImpactRadius, and a command's
 // ray finds a wall 200 m away but not one 300 m away (past maxRayRange), whatever range it asked for
 static int TestQueryBounds( void )
@@ -1450,6 +1563,7 @@ int WorldTest( void )
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestTwinWorlds, DETERMINISM );
 	RUN_TEST( TestDesyncNamed, DETERMINISM );
+	RUN_TEST( TestLockstepPair, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );
 	RUN_TEST( TestDeterminismSelfTest, DETERMINISM );
 	RUN_TEST( TestSessionHandshake, MECHANISM );

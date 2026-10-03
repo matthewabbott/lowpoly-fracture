@@ -4,10 +4,12 @@
 //   lpf_bench --scene town --workers 1,4,8 --ticks 600 --period 12 --json bench.json
 //   lpf_bench --scene keep --script scripts/keep_demo.txt --period 0 --ticks 420 --hash-log build/keep
 //   lpf_bench --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep   (twin.c)
+//   lpf_bench --scene town --ticks 300 --host 7777   and   lpf_bench --scene town --ticks 300 --join 127.0.0.1:7777   (pair.c)
 //
 // Also checks determinism: the final state hash must be the same for every worker count.
 
 #include "dump.h"
+#include "pair.h"
 #include "scenes.h"
 #include "script.h"
 #include "twin.h"
@@ -279,6 +281,10 @@ int main( int argc, char** argv )
 	float fragmentScale = 1.0f;
 	int maxDebris = 400;
 	const char* jsonPath = NULL;
+	lpPairDef pair = { 0 }; // --host / --join: a lockstep session (pair.c)
+	pair.peers = 1;
+	pair.delay = 4;
+	pair.injectTick = -1;
 	const char* twin = NULL; // --twin: two worlds and an injected desync (twin.c)
 	const char* repair = NULL;
 	const char* conePath = NULL;
@@ -351,6 +357,39 @@ int main( int argc, char** argv )
 			twin = v;
 			++i;
 		}
+		else if ( strcmp( a, "--host" ) == 0 )
+		{
+			pair.hostPort = atoi( v );
+			++i;
+		}
+		else if ( strcmp( a, "--join" ) == 0 )
+		{
+			static char host[256];
+			snprintf( host, sizeof( host ), "%s", v );
+			char* colon = strrchr( host, ':' );
+			pair.joinPort = colon != NULL ? atoi( colon + 1 ) : 7777;
+			if ( colon != NULL )
+			{
+				*colon = 0;
+			}
+			pair.joinHost = host;
+			++i;
+		}
+		else if ( strcmp( a, "--peers" ) == 0 )
+		{
+			pair.peers = atoi( v );
+			++i;
+		}
+		else if ( strcmp( a, "--input-delay" ) == 0 )
+		{
+			pair.delay = atoi( v );
+			++i;
+		}
+		else if ( strcmp( a, "--inject-desync" ) == 0 )
+		{
+			pair.injectTick = atoll( v );
+			++i;
+		}
 		else if ( strcmp( a, "--repair" ) == 0 )
 		{
 			repair = v;
@@ -394,7 +433,8 @@ int main( int argc, char** argv )
 			printf( "usage: lpf_bench [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers 1,4,8] [--ticks N]\n"
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
 					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json] [--check-hash]\n"
-					"                 [--session path] [--twin velocity|warm:tick[:ulps] [--repair motion,warm,sleep[@delay]] [--cone path]]\n" );
+					"                 [--session path] [--twin velocity|warm:tick[:ulps] [--repair motion,warm,sleep[@delay]] [--cone path]]\n"
+					"                 [--host port [--peers N] | --join host:port] [--input-delay N] [--inject-desync tick]\n" );
 			return 1;
 		}
 	}
@@ -402,6 +442,15 @@ int main( int argc, char** argv )
 	if ( twin != NULL )
 	{
 		return lpBenchTwin( scene, period, ticks, workers[0], &s_script, twin, repair, conePath );
+	}
+	if ( pair.hostPort > 0 || pair.joinHost != NULL )
+	{
+		pair.scene = scene;
+		pair.period = period;
+		pair.ticks = ticks;
+		pair.workers = workers[0];
+		pair.script = s_script.count > 0 ? &s_script : NULL;
+		return lpBenchLockstep( &pair );
 	}
 
 	printf( "scene %s, %d ticks at 60 Hz, a blast every %d ticks, fragment scale %.2f, debris cap %d\n",

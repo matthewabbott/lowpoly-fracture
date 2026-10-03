@@ -195,3 +195,4 @@ compilers.
 | D10 | Pools leaking | `TestPoolDeterminism` | 1 and 4 workers |
 | D11 | A rig standing, and walking and turning | `TestRigDeterminism`, `TestRigWalkDeterminism` | 1, 4 and 8 workers |
 | D12 | Two worlds side by side stay equal; a one-ulp desync injected into one is named (the body, its generation, its unit), and a repair of that unit stays repaired | `TestTwinWorlds`, `TestDesyncNamed` | every tick's hash; exact names |
+| D13 | Two machines in lockstep stay in sync with one's player's commands relayed by the host; a one-ulp desync injected into the peer is named by the host (the body and the first tick) and stops both | `TestLockstepPair` | 240 ticks, every tick's hash; exact names. Over localhost in CI (one Linux leg) |

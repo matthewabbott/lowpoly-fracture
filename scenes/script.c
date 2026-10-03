@@ -5,6 +5,7 @@
 
 #include "scenes.h"
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -312,20 +313,42 @@ void lpScriptFree( lpScript* script )
 	memset( script, 0, sizeof( *script ) );
 }
 
-bool lpScriptWrite( FILE* file, const lpCommand* c )
+typedef struct lpLine
 {
+	char* text;
+	int size;
+	int length; // needed, which may be more than fits
+} lpLine;
+
+static void lpLinePrint( lpLine* line, const char* format, ... )
+{
+	va_list args;
+	va_start( args, format );
+	int room = line->size - line->length;
+	int n = vsnprintf( room > 0 ? line->text + line->length : NULL, room > 0 ? (size_t)room : 0, format, args );
+	va_end( args );
+	line->length += n > 0 ? n : 0;
+}
+
+int lpScriptFormat( char* text, int size, const lpCommand* c )
+{
+	lpLine out = { text, size, 0 };
+	if ( size > 0 )
+	{
+		text[0] = 0;
+	}
 	bool written = c->peer != LP_PEER_SCENE &&
 				   ( c->kind == lp_commandImpact || c->kind == lp_commandPull || c->kind == lp_commandSpawn ||
 					 c->kind == lp_commandVehicleControl || c->kind == lp_commandRigControl || c->kind == lp_commandLimbTarget ||
 					 c->kind == lp_commandClaw || c->kind == lp_commandRelease );
 	if ( written == false )
 	{
-		return false;
+		return 0;
 	}
-	fprintf( file, "%lld", (long long)c->tick );
+	lpLinePrint( &out, "%lld", (long long)c->tick );
 	if ( c->peer != 0 )
 	{
-		fprintf( file, ":%d", c->peer );
+		lpLinePrint( &out, ":%d", c->peer );
 	}
 	switch ( c->kind )
 	{
@@ -333,19 +356,19 @@ bool lpScriptWrite( FILE* file, const lpCommand* c )
 		{
 			const lpImpactDef* def = &c->impact.def;
 			lpVec3 at = c->impact.range > 0.0f ? c->impact.origin : def->point;
-			fprintf( file, " %s %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %d", c->impact.range > 0.0f ? "ray" : "point",
+			lpLinePrint( &out, " %s %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %d", c->impact.range > 0.0f ? "ray" : "point",
 					 (double)at.x, (double)at.y, (double)at.z, (double)def->direction.x, (double)def->direction.y,
 					 (double)def->direction.z, (double)def->radius, (double)def->energy, (double)def->impulse, def->explosion ? 1 : 0 );
 			if ( c->impact.range > 0.0f )
 			{
-				fprintf( file, " %.9g", (double)c->impact.range );
+				lpLinePrint( &out, " %.9g", (double)c->impact.range );
 			}
 			break;
 		}
 		case lp_commandPull:
 		{
 			const lpCommandPull* p = &c->pull;
-			fprintf( file, " pull %.9g %.9g %.9g %.9g %.9g %.9g %d %u %.9g %.9g", (double)p->target.x, (double)p->target.y,
+			lpLinePrint( &out, " pull %.9g %.9g %.9g %.9g %.9g %.9g %d %u %.9g %.9g", (double)p->target.x, (double)p->target.y,
 					 (double)p->target.z, (double)p->localPoint.x, (double)p->localPoint.y, (double)p->localPoint.z, p->piece,
 					 p->generation, (double)p->maxAccel, (double)p->maxMass );
 			break;
@@ -353,7 +376,7 @@ bool lpScriptWrite( FILE* file, const lpCommand* c )
 		case lp_commandSpawn:
 		{
 			const lpCommandSpawn* s = &c->spawn;
-			fprintf( file, " spawn %d %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g", s->templateIndex,
+			lpLinePrint( &out, " spawn %d %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g", s->templateIndex,
 					 (double)s->transform.p.x, (double)s->transform.p.y, (double)s->transform.p.z, (double)s->transform.q.v.x,
 					 (double)s->transform.q.v.y, (double)s->transform.q.v.z, (double)s->transform.q.s, (double)s->linearVelocity.x,
 					 (double)s->linearVelocity.y, (double)s->linearVelocity.z, (double)s->angularVelocity.x,
@@ -363,37 +386,61 @@ bool lpScriptWrite( FILE* file, const lpCommand* c )
 		case lp_commandVehicleControl:
 		{
 			const lpVehicleControl* v = &c->vehicleControl.control;
-			fprintf( file, " drive %d %.9g %.9g %.9g %d", c->vehicleControl.vehicle, (double)v->throttle, (double)v->brake,
+			lpLinePrint( &out, " drive %d %.9g %.9g %.9g %d", c->vehicleControl.vehicle, (double)v->throttle, (double)v->brake,
 					 (double)v->steer, v->handbrake ? 1 : 0 );
 			break;
 		}
 		case lp_commandRigControl:
 		{
 			const lpRigControl* r = &c->rigControl.control;
-			fprintf( file, " walk %d %.9g %.9g %.9g %.9g", c->rigControl.rig, (double)r->forward, (double)r->strafe,
+			lpLinePrint( &out, " walk %d %.9g %.9g %.9g %.9g", c->rigControl.rig, (double)r->forward, (double)r->strafe,
 					 (double)r->turn, (double)r->crouch );
 			break;
 		}
 		case lp_commandLimbTarget:
 		{
 			const lpCommandLimbTarget* r = &c->limbTarget;
-			fprintf( file, " reach %d %d %d %.9g %.9g %.9g", r->rig, r->limb, r->active ? 1 : 0, (double)r->point.x,
+			lpLinePrint( &out, " reach %d %d %d %.9g %.9g %.9g", r->rig, r->limb, r->active ? 1 : 0, (double)r->point.x,
 					 (double)r->point.y, (double)r->point.z );
 			break;
 		}
 		case lp_commandClaw:
 		{
 			const lpCommandClaw* k = &c->claw;
-			fprintf( file, " claw %d %d %d %.9g %.9g %.9g", k->rig, k->limb, k->mode, (double)k->maxForce, (double)k->maxTorque,
+			lpLinePrint( &out, " claw %d %d %d %.9g %.9g %.9g", k->rig, k->limb, k->mode, (double)k->maxForce, (double)k->maxTorque,
 					 (double)k->strength );
 			break;
 		}
 		default: // a release
-			fprintf( file, " release %s %d", c->release.vehicle >= 0 ? "vehicle" : "rig",
+			lpLinePrint( &out, " release %s %d", c->release.vehicle >= 0 ? "vehicle" : "rig",
 					 c->release.vehicle >= 0 ? c->release.vehicle : c->release.rig );
 			break;
 	}
-	fprintf( file, "\n" );
+	return out.length;
+}
+
+bool lpScriptParseCommand( const char* line, lpCommand* command )
+{
+	lpScript script = { 0 };
+	bool parsed = lpScriptParseLine( &script, line ) && script.count == 1;
+	if ( parsed )
+	{
+		*command = script.commands[0];
+		command->seq = 0;
+	}
+	lpScriptFree( &script );
+	return parsed;
+}
+
+bool lpScriptWrite( FILE* file, const lpCommand* c )
+{
+	char line[512];
+	int length = lpScriptFormat( line, (int)sizeof( line ), c );
+	if ( length <= 0 || length >= (int)sizeof( line ) )
+	{
+		return false;
+	}
+	fprintf( file, "%s\n", line );
 	fflush( file );
 	return true;
 }

@@ -1,0 +1,10 @@
+# The lockstep network layer (outside the core): TCP and in-memory transports, the host's clock and the hash reports
+add_library(lpf_net STATIC net.c net.h lockstep.c lockstep.h)
+target_include_directories(lpf_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(lpf_net PUBLIC lpf lpf_scenes)
+if(WIN32)
+	target_link_libraries(lpf_net PRIVATE ws2_32)
+	target_compile_definitions(lpf_net PRIVATE _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS)
+endif()
+set_target_properties(lpf_net PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
+lpf_warnings(lpf_net)

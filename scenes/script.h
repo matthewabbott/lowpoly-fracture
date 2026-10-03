@@ -68,6 +68,13 @@ void lpScriptFree( lpScript* script );
 // returns false for the scene's commands (its drivers make them again) and for kinds with no line.
 bool lpScriptWrite( FILE* file, const lpCommand* command );
 
+// The same line into text (at most size bytes, NUL-terminated, no newline); returns its length, or 0 for a command
+// with no line. Commands travel between machines this way (app/net).
+int lpScriptFormat( char* text, int size, const lpCommand* command );
+
+// The command of one line (its seq is 0: the caller's to set); false for a comment, a blank or an unknown line
+bool lpScriptParseCommand( const char* line, lpCommand* command );
+
 // Submits the script's commands from `next` on whose tick has come (lpWorld_GetTick); returns the next to submit
 int lpScriptPlay( lpWorld* world, const lpScript* script, int next );
 

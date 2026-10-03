@@ -78,6 +78,7 @@ endfunction()
 
 add_subdirectory(src)
 add_subdirectory(scenes)
+add_subdirectory(app/net)
 
 if(LPF_TESTS)
 	enable_testing()

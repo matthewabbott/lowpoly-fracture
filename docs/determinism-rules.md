@@ -83,6 +83,11 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    substeps (`lpSceneDescribeSession`). A peer whose description differs is refused by the key that does
    (`lpSessionCompare`). Text carries floats as `%.9g` in the C locale: nothing calls `setlocale`, and the self-test
    checks that the C library prints and reads them back exactly.
+21. **In a session, only packets step the world** (`app/net/lockstep.h`). The host keeps the clock and puts every
+   player's commands into their tick's packet; every machine, the host too, applies a tick's commands only from its
+   packet, never its own directly, in `(peer, seq)` order whatever order they arrived in, and each machine runs the
+   scene's logic from its own world. Every peer reports its hash for every tick, and the host follows the first
+   difference down to the element over the wire.
 
 ## How it is checked
 
