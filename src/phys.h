@@ -127,9 +127,9 @@ bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body );
 // How long the body has been still enough to sleep, s (the engine's hidden state, for the state hash)
 float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body );
 // The engine's hidden contact state (warm starts, the feature ids matching them, recycling caches): adds one hash per
-// touching contact to the sums of both its bodies (by body index; bodyCount entries), so the sums do not depend on
-// the order contacts are kept in. awakeOnly: only the contacts of awake bodies.
-void lpPhys_HashContacts( lpPhys* p, bool awakeOnly, uint64_t* sums, int bodyCount );
+// touching contact to the sums of its non-static bodies (by body index; bodyCount entries), so the sums do not depend
+// on the order contacts are kept in, and a static body's never changes. only (NULL: every body): the bodies to sum for.
+void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint64_t* sums, int bodyCount );
 void lpPhys_SetAwake( lpPhys* p, lpPhysBody body, bool awake );
 void lpPhys_SetSleepThreshold( lpPhys* p, lpPhysBody body, float speed );
 float lpPhys_GetGravityScale( const lpPhys* p, lpPhysBody body );

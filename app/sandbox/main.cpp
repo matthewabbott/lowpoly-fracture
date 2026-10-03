@@ -531,7 +531,8 @@ void StepSimulation()
 	if ( app.hashFile != nullptr )
 	{
 		app.lastHash = lpWorld_Hash( app.world );
-		fprintf( app.hashFile, "%lld %016llx\n", (long long)app.tick, (unsigned long long)app.lastHash );
+		fprintf( app.hashFile, "%lld %016llx %016llx\n", (long long)app.tick, (unsigned long long)app.lastHash,
+				 (unsigned long long)lpWorld_HashStress( app.world ) );
 	}
 	for ( const auto& dump : app.opt.dumps )
 	{

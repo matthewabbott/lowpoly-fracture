@@ -1780,7 +1780,8 @@ void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStat
 		const b3Body* bodyA = b3Array_Get( world->bodies, shapeA->bodyId );
 		const b3Body* bodyB = b3Array_Get( world->bodies, shapeB->bodyId );
 		b3ContactState state = { contact->manifolds,		 contact->manifoldCount,		contact->cachedRotationA,
-								  contact->cachedRotationB, contact->cachedRelativePose, contact->flags };
+								  contact->cachedRotationB, contact->cachedRelativePose, contact->flags,
+								  bodyA->setIndex == b3_staticSet, bodyB->setIndex == b3_staticSet };
 		fcn( shapeA->userData, shapeB->userData, bodyA->userData, bodyB->userData, &state, context );
 	}
 }

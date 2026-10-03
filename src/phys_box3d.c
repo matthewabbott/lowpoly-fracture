@@ -344,14 +344,23 @@ float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body )
 
 typedef struct lpContactSums
 {
+	const uint8_t* only;
 	uint64_t* sums;
 	int bodyCount;
 } lpContactSums;
 
-// One touching contact's state, field by field (manifold points have padding), keyed by its two pieces
+// One touching contact's state, field by field (manifold points have padding), keyed by its two pieces, summed for its
+// non-static bodies
 static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
 {
 	lpContactSums* out = context;
+	int a = s->staticA ? -1 : (int)(intptr_t)bodyA - 1, b = s->staticB ? -1 : (int)(intptr_t)bodyB - 1;
+	bool wantA = a >= 0 && a < out->bodyCount && ( out->only == NULL || out->only[a] != 0 );
+	bool wantB = b >= 0 && b < out->bodyCount && ( out->only == NULL || out->only[b] != 0 );
+	if ( wantA == false && wantB == false )
+	{
+		return;
+	}
 	int32_t head[4] = { (int32_t)(intptr_t)shapeA, (int32_t)(intptr_t)shapeB, s->manifoldCount, (int32_t)s->flags };
 	uint64_t h = lpHashWords( LP_HASH_INIT, head, sizeof( head ) );
 	float cache[15] = { s->cachedRotationA.v.x, s->cachedRotationA.v.y, s->cachedRotationA.v.z, s->cachedRotationA.s,
@@ -378,21 +387,20 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 		}
 	}
 	h = lpMix64( h );
-	int a = (int)(intptr_t)bodyA - 1, b = (int)(intptr_t)bodyB - 1;
-	if ( a >= 0 && a < out->bodyCount )
+	if ( wantA )
 	{
 		out->sums[a] += h;
 	}
-	if ( b >= 0 && b < out->bodyCount )
+	if ( wantB )
 	{
 		out->sums[b] += h;
 	}
 }
 
-void lpPhys_HashContacts( lpPhys* p, bool awakeOnly, uint64_t* sums, int bodyCount )
+void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint64_t* sums, int bodyCount )
 {
-	lpContactSums out = { sums, bodyCount };
-	b3World_VisitContactState( p->world, awakeOnly, lpHashContactState, &out );
+	lpContactSums out = { only, sums, bodyCount };
+	b3World_VisitContactState( p->world, false, lpHashContactState, &out );
 }
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )

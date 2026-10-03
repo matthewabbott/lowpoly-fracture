@@ -1115,7 +1115,7 @@ lpStats lpWorld_GetStats( const lpWorld* w )
 	return w->stats;
 }
 
-uint64_t lpWorld_Hash( const lpWorld* w )
+uint64_t lpWorld_HashLegacy( const lpWorld* w )
 {
 	uint64_t h = LP_HASH_INIT;
 	h = lpHashBytes( h, &w->tick, sizeof( w->tick ) );
@@ -1204,7 +1204,7 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 	return lpHashLinks( w, h );
 }
 
-uint64_t lpWorld_HashStress( const lpWorld* w )
+uint64_t lpWorld_HashStressLegacy( const lpWorld* w )
 {
 	uint64_t h = LP_HASH_INIT;
 	for ( int i = 0; i < w->bodies.count; ++i )

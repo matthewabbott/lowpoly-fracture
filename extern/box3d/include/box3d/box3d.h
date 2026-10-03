@@ -72,6 +72,7 @@ typedef struct b3ContactState
 	b3Quat cachedRotationB;
 	b3Transform cachedRelativePose;
 	uint32_t flags;
+	bool staticA, staticB; // its bodies are static
 } b3ContactState;
 
 typedef void b3ContactStateFcn( void* shapeUserDataA, void* shapeUserDataB, void* bodyUserDataA, void* bodyUserDataB,

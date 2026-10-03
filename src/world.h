@@ -689,6 +689,8 @@ void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
 // Commands (command.c): the current tick's, as the step begins; templates freed with the world
 void lpApplyCommands( lpWorld* w );
+// The state hash (hash.c): every category's sum of element hashes, recomputed whole
+void lpHashCategories( const lpWorld* w, uint64_t sums[lp_hashCategoryCount] );
 void lpFreeTemplates( lpWorld* w );
 // A limb's claw (rig.c): grabs what its reaching foot touches, lets go, or toggles; returns the grip made (-1: none)
 int lpApplyClaw( lpWorld* w, int rig, int limb, int mode, float maxForce, float maxTorque, float strength );

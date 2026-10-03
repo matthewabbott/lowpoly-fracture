@@ -22,7 +22,8 @@
 
 - `physics_world.c`, `b3World_VisitContactState` (new, declared in `box3d.h`): one walk over the touching contacts,
   reporting what each carries into the next step (manifolds with their warm-start impulses and feature ids, the
-  recycling cache, flags) with its shapes' and bodies' user data, so the state hash (milestone 10) covers it.
+  recycling cache, flags, which bodies are static) with its shapes' and bodies' user data, so the state hash (milestone 10)
+  covers it.
   Reading the same through `b3Body_GetContactData` per body costs 0.5 to 2 ms at the bench peaks.
 - `body.c`, `b3Body_GetSleepTime` (new): the body's sleep timer, for the state hash.
 

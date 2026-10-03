@@ -691,7 +691,7 @@ static int TestTemplateSpawn( void )
 }
 
 // The physics engine's hidden contact state, hashed per body: two worlds stepped alike agree body by body, only bodies
-// with a touching contact have a sum, and the awake bodies' contacts are a part of all of them
+// with a touching contact have a sum, and summing for some bodies gives them what summing for all does
 static int TestContactHash( void )
 {
 	uint64_t* sums[2] = { NULL, NULL };
@@ -702,21 +702,27 @@ static int TestContactHash( void )
 		Run( &s, 40 );
 		counts[run] = s.world->bodies.count;
 		sums[run] = calloc( (size_t)counts[run], sizeof( uint64_t ) );
-		lpPhys_HashContacts( s.world->phys, false, sums[run], counts[run] );
+		lpPhys_HashContacts( s.world->phys, NULL, sums[run], counts[run] );
 		if ( run == 1 )
 		{
-			uint64_t* awake = calloc( (size_t)counts[run], sizeof( uint64_t ) );
-			lpPhys_HashContacts( s.world->phys, true, awake, counts[run] );
-			int touching = 0, awakeTouching = 0;
+			uint8_t* odd = calloc( (size_t)counts[run], 1 );
+			uint64_t* some = calloc( (size_t)counts[run], sizeof( uint64_t ) );
+			for ( int i = 0; i < counts[run]; ++i )
+			{
+				odd[i] = (uint8_t)( i & 1 );
+			}
+			lpPhys_HashContacts( s.world->phys, odd, some, counts[run] );
+			int touching = 0;
 			for ( int i = 0; i < counts[run]; ++i )
 			{
 				touching += sums[run][i] != 0 ? 1 : 0;
-				awakeTouching += awake[i] != 0 ? 1 : 0;
-				ENSURE( sums[run][i] != 0 || awake[i] == 0 );
+				ENSURE( some[i] == ( odd[i] ? sums[run][i] : 0 ) );
+				ENSURE( sums[run][i] == 0 || s.world->bodies.data[i].kind != lp_kindStructure ); // static: no sum
 			}
-			printf( "  %d bodies with touching contacts, %d of them awake\n", touching, awakeTouching );
-			ENSURE( touching > 10 && awakeTouching <= touching );
-			free( awake );
+			printf( "  %d bodies with touching contacts\n", touching );
+			ENSURE( touching > 10 );
+			free( odd );
+			free( some );
 		}
 		DestroySim( &s );
 	}

@@ -110,8 +110,9 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		hashLog = fopen( path, "w" );
 		if ( hashLog != NULL )
 		{
-			fprintf( hashLog, "load %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
-					 (unsigned long long)lpWorld_HashStress( world ) );
+			fprintf( hashLog, "load %016llx %016llx %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ), (unsigned long long)lpWorld_HashLegacy( world ),
+					 (unsigned long long)lpWorld_HashStressLegacy( world ) );
 		}
 	}
 
@@ -184,8 +185,9 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.over33 += total[tick] > 1000.0f / 30.0f ? 1 : 0;
 		if ( hashLog != NULL )
 		{
-			fprintf( hashLog, "%d %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
-					 (unsigned long long)lpWorld_HashStress( world ) );
+			fprintf( hashLog, "%d %016llx %016llx %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ), (unsigned long long)lpWorld_HashLegacy( world ),
+					 (unsigned long long)lpWorld_HashStressLegacy( world ) );
 		}
 		if ( tickLog != NULL )
 		{

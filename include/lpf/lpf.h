@@ -884,12 +884,33 @@ void lpWorld_Step( lpWorld* world, float timeStep, int subStepCount );
 // spending its first steps solving. lpBuildScene calls it. Returns the iterations spent (also in lpStats).
 int lpWorld_SettleStructures( lpWorld* world );
 
-// Hash of the full simulation state (bodies, pieces, bonds). Equal hashes after the same inputs prove determinism.
+// The state hash covers every element of the simulation, in categories. Each element is hashed on its own, seeded with
+// its slot and generation; a category is the sum of its elements; the hash mixes the categories.
+typedef enum lpHashCategory
+{
+	lp_hashWorld,	   // the world's counters and the queues one step leaves the next
+	lp_hashBodies,	   // a body: its motion, its pieces (their geometry's digests) and its bonds
+	lp_hashStress,	   // a structure's (or a moving body's) stress solve: solutions, loads, utilizations, solves in progress
+	lp_hashBackend,	   // the physics engine's own state of a body: sleep, contact warm starts and caches
+	lp_hashLinks,	   // a link, its motor and its loads
+	lp_hashVehicles,   // a vehicle
+	lp_hashWheels,	   // a wheel
+	lp_hashRigs,	   // a rig and its limbs
+	lp_hashPools,	   // a pool
+	lp_hashDetonators, // a detonator and its fuse
+	lp_hashCategoryCount
+} lpHashCategory;
+
+// Hash of the full simulation state. Equal hashes after the same inputs prove determinism.
 uint64_t lpWorld_Hash( const lpWorld* world );
 
-// Hash of the stress solver's state (solutions, loads, utilizations, strains, solves in progress). A change to the
-// solver that is meant to change nothing keeps it equal, not only lpWorld_Hash.
+// Hash of the stress solver's state (lp_hashStress). A change to the solver that is meant to change nothing keeps it
+// equal, not only lpWorld_Hash.
 uint64_t lpWorld_HashStress( const lpWorld* world );
+
+// The hashes before milestone 10's, kept for one commit to show the new one changed nothing it measures
+uint64_t lpWorld_HashLegacy( const lpWorld* world );
+uint64_t lpWorld_HashStressLegacy( const lpWorld* world );
 
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions) and the engine's own trig and cube
