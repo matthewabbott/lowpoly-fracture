@@ -25,6 +25,7 @@ add_library(lpf_core OBJECT
 	supply.c
 	tasks.c
 	tasks.h
+	units.c
 	wheel.c
 	world.c
 	world.h

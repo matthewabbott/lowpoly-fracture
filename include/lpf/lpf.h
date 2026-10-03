@@ -920,6 +920,21 @@ uint64_t lpWorld_HashElement( const lpWorld* world, int category, int slot ); //
 // named in message, if something changed that was not rehashed: a bug in the hash's change tracking.
 bool lpWorld_CheckHash( const lpWorld* world, char* message, int size );
 
+// Causal units: the groups of bodies whose members can affect each other within a tick. Bodies are joined through
+// touching contacts, links, a vehicle's wheels, a rig's limbs, the ground under a wheel or a planted foot, and pieces
+// that share a detonator or a pool; an anchored piece and frozen rubble join nothing (within a tick they take no load
+// and never move, so the ground does not make the world one unit). A unit holds its bodies' pieces, bonds and stress state. Casts that only read
+// what they hit, and the world-wide budgets, couple units unseen. For the two-world lab (repair, cones); computed on
+// demand, not cheap.
+//
+// Numbers each body slot's unit into units (capacity at least lpWorld_GetBodyCapacity; -1 for a free slot), counted
+// from 0 in the order of each unit's lowest slot. Returns the number of units, or -1 if capacity is too small.
+int lpWorld_GetUnits( lpWorld* world, int* units, int capacity );
+// The unit an element of the state hash belongs to (-1: the world category, or nothing in that slot)
+int lpWorld_GetElementUnit( const lpWorld* world, const int* units, int category, int slot );
+// Each unit's hash: the sum of its elements (count entries of sums)
+void lpWorld_HashUnits( const lpWorld* world, const int* units, int count, uint64_t* sums );
+
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions), the engine's own trig and cube
 // root, and floats printed as %.9g and read back (the text format of commands and sessions). Returns a hash that must

@@ -861,6 +861,116 @@ static int TestHashIncremental( void )
 	return 0;
 }
 
+// Causal units: bodies that touch (but not through an anchored piece), are linked, or share a detonator are in one
+// unit; the ground keeps the world from being one unit; the units' hashes and the world category add up to the whole
+static int TestCausalUnits( void )
+{
+	const int scenes[3] = { lp_sceneYard, lp_scenePile, lp_sceneTrack };
+	for ( int k = 0; k < 3; ++k )
+	{
+		Sim s = CreateSimWorkers( scenes[k], 1 );
+		lpWorld* w = s.world;
+		for ( int tick = 0; tick < 90; ++tick )
+		{
+			lpSceneBombard( w, scenes[k], tick, 30 );
+			lpSceneDrive( w, scenes[k], tick );
+			lpWorld_Step( w, 1.0f / 60.0f, 4 );
+		}
+		int capacity = lpWorld_GetBodyCapacity( w );
+		int* units = malloc( sizeof( int ) * (size_t)capacity );
+		ENSURE( units != NULL && lpWorld_GetUnits( w, units, capacity - 1 ) == -1 );
+		int count = lpWorld_GetUnits( w, units, capacity );
+		int* sizes = calloc( (size_t)( count > 0 ? count : 1 ), sizeof( int ) );
+		ENSURE( sizes != NULL );
+
+		// Numbered densely, in order of each unit's lowest slot; free slots in none
+		int alive = 0, seen = 0;
+		for ( int i = 0; i < capacity; ++i )
+		{
+			if ( w->bodies.data[i].alive == false )
+			{
+				ENSURE( units[i] == -1 );
+				continue;
+			}
+			alive += 1;
+			ENSURE( units[i] >= 0 && units[i] <= seen && units[i] < count );
+			seen += units[i] == seen ? 1 : 0;
+			sizes[units[i]] += 1;
+		}
+		ENSURE( seen == count );
+
+		// What joins does
+		int joins = 0;
+		for ( int i = 0; i < w->links.count; ++i )
+		{
+			const lpLink* l = w->links.data + i;
+			if ( l->alive && l->ends[0].piece >= 0 && l->ends[1].piece >= 0 )
+			{
+				ENSURE( units[w->pieces.data[l->ends[0].piece].body] == units[w->pieces.data[l->ends[1].piece].body] );
+				joins += 1;
+			}
+		}
+		for ( int i = 0; i < capacity; ++i )
+		{
+			const lpBody* b = w->bodies.data + i;
+			if ( b->alive == false || b->kind != lp_kindDebris || LP_PHYS_NULL( b->id ) )
+			{
+				continue;
+			}
+			const lpPhysContact* contacts;
+			int n = lpPhys_GetBodyContacts( w->phys, b->id, &contacts );
+			for ( int c = 0; c < n; ++c )
+			{
+				const lpPiece* other = contacts[c].other >= 0 ? w->pieces.data + contacts[c].other : NULL;
+				if ( other != NULL && other->anchored == false && w->bodies.data[other->body].kind != lp_kindRubble )
+				{
+					ENSURE( units[other->body] == units[i] );
+					joins += 1;
+				}
+			}
+		}
+
+		// The ground joins nothing: it is a unit of its own
+		int ground = -1, biggest = 0;
+		for ( int i = 0; i < w->pieces.count && ground < 0; ++i )
+		{
+			ground = w->pieces.data[i].body >= 0 && w->pieces.data[i].material == lp_ground ? w->pieces.data[i].body : -1;
+		}
+		for ( int u = 0; u < count; ++u )
+		{
+			biggest = sizes[u] > biggest ? sizes[u] : biggest;
+		}
+		ENSURE( ground >= 0 && sizes[units[ground]] == 1 && count > 1 );
+
+		// Every element is in one unit or none: the units' sums and the rest add up to the categories
+		uint64_t* sums = malloc( sizeof( uint64_t ) * (size_t)( count > 0 ? count : 1 ) );
+		ENSURE( sums != NULL );
+		lpWorld_HashUnits( w, units, count, sums );
+		uint64_t categories[lp_hashCategoryCount];
+		lpWorld_HashCategories( w, categories );
+		uint64_t whole = 0, parts = 0;
+		for ( int c = 0; c < lp_hashCategoryCount; ++c )
+		{
+			whole += categories[c];
+			for ( int i = 0; i < lpWorld_HashSlotCount( w, c ); ++i )
+			{
+				parts += lpWorld_GetElementUnit( w, units, c, i ) < 0 ? lpWorld_HashElement( w, c, i ) : 0;
+			}
+		}
+		for ( int u = 0; u < count; ++u )
+		{
+			parts += sums[u];
+		}
+		ENSURE( parts == whole );
+		printf( "  %-6s %4d bodies in %4d units (largest %3d), %d joins checked\n", lpSceneName( scenes[k] ), alive, count, biggest, joins );
+		free( sums );
+		free( sizes );
+		free( units );
+		DestroySim( &s );
+	}
+	return 0;
+}
+
 static int TestWorldTables( void )
 {
 	lpMaterialDef materials[lp_materialCount];
@@ -1198,6 +1308,7 @@ int WorldTest( void )
 	RUN_TEST( TestTemplateSpawn, MECHANISM );
 	RUN_TEST( TestContactHash, MECHANISM );
 	RUN_TEST( TestHashIncremental, MECHANISM );
+	RUN_TEST( TestCausalUnits, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );
