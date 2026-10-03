@@ -231,6 +231,7 @@ int lpCreateLink( lpWorld* w, const lpLinkDef* def )
 		if ( ends[k].piece >= 0 )
 		{
 			lpArray_Push( w->pieces.data[ends[k].piece].links, index );
+			lpHashMarkPiece( w, ends[k].piece );
 		}
 		else
 		{
@@ -270,6 +271,7 @@ int lpCreateWheelLink( lpWorld* w, int body, lpPos mount, float maxForce, float 
 	l->points[0] = mount;
 	l->points[1] = mount;
 	lpArray_Push( w->pieces.data[piece].links, index );
+	lpHashMarkPiece( w, piece );
 	w->linkCount += 1;
 	return index;
 }
@@ -334,6 +336,7 @@ static void lpReleaseLink( lpWorld* w, int index, bool broken )
 		{
 			lpPiece* p = w->pieces.data + l->ends[k].piece;
 			lpRemoveLinkFromPiece( p, index );
+			lpHashMarkPiece( w, l->ends[k].piece );
 			lpBody* b = w->bodies.data + p->body;
 			if ( b->alive && b->kind == lp_kindStructure )
 			{
@@ -430,6 +433,7 @@ void lpAttachLinks( lpWorld* w, const int* cellToPiece )
 		e->piece = child;
 		e->generation = w->pieces.data[child].generation;
 		lpArray_Push( w->pieces.data[child].links, move.link );
+		lpHashMarkPiece( w, child );
 	}
 	w->scratchLinkMoves.count = 0;
 }
@@ -622,6 +626,7 @@ void lpSyncLinks( lpWorld* w )
 			// No joint to rebuild. A mount left on a chip would be launched by its spring: the wheel tears off instead.
 			lpBody* mount = w->bodies.data + w->pieces.data[l->ends[0].piece].body;
 			mount->linkStamp = stamp;
+			lpHashMark( w, w->pieces.data[l->ends[0].piece].body );
 			if ( lpPhys_IsDynamic( w->phys, mount->id ) &&
 				 lpPhys_GetMass( w->phys, mount->id ) < w->wheels.data[l->wheel].def.tearRatio * w->wheels.data[l->wheel].sprungMass )
 			{
@@ -635,6 +640,7 @@ void lpSyncLinks( lpWorld* w )
 			if ( l->ends[k].piece >= 0 )
 			{
 				w->bodies.data[w->pieces.data[l->ends[k].piece].body].linkStamp = stamp;
+				lpHashMark( w, w->pieces.data[l->ends[k].piece].body );
 			}
 			bodies[k] = lpEndBody( w, l, k );
 		}
@@ -894,41 +900,6 @@ lpLinkState lpWorld_GetLinkState( const lpWorld* w, int link )
 int lpWorld_GetLinkCapacity( const lpWorld* w )
 {
 	return w->links.count;
-}
-
-uint64_t lpHashLinks( const lpWorld* w, uint64_t h )
-{
-	for ( int i = 0; i < w->links.count; ++i )
-	{
-		const lpLink* l = w->links.data + i;
-		if ( l->alive == false )
-		{
-			continue;
-		}
-		h = lpHashBytes( h, &i, sizeof( i ) );
-		h = lpHashBytes( h, &l->def.type, sizeof( l->def.type ) );
-		for ( int k = 0; k < 2; ++k )
-		{
-			h = lpHashBytes( h, &l->ends[k].piece, sizeof( int ) );
-			h = lpHashBytes( h, &l->ends[k].generation, sizeof( uint32_t ) );
-		}
-		h = lpHashBytes( h, &l->health, sizeof( float ) );
-		h = lpHashBytes( h, &l->strain, sizeof( float ) );
-		h = lpHashBytes( h, &l->utilization, sizeof( float ) );
-		if ( lpHasMotor( l ) ) // only motorised links: old hashes stay valid
-		{
-			h = lpHashBytes( h, &l->target, sizeof( float ) );
-			h = lpHashBytes( h, &l->targetRotation, sizeof( lpQuat ) );
-			h = lpHashBytes( h, &l->motorCap, sizeof( float ) );
-			if ( l->feed != 0.0f ) // only rigs set it: old hashes stay valid
-			{
-				h = lpHashBytes( h, &l->feed, sizeof( float ) );
-			}
-		}
-	}
-	h = w->vehicles.count > 0 ? lpHashVehicles( w, h ) : h; // only with vehicles: old hashes stay valid
-	h = w->rigs.count > 0 ? lpHashRigs( w, h ) : h;
-	return w->pools.count > 0 ? lpHashPools( w, h ) : h; // only with pools: old hashes stay valid
 }
 
 static bool lpLinkFail( const char* message, int a, int b )

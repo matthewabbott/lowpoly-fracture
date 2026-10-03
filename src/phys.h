@@ -124,12 +124,31 @@ void lpPhys_ApplyForce( lpPhys* p, lpPhysBody body, lpVec3 force, lpPos point, b
 void lpPhys_ApplyImpulse( lpPhys* p, lpPhysBody body, lpVec3 impulse, lpPos point, bool wake );
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body );
+// Its transform and velocities at once (cheaper than the three getters)
+void lpPhys_GetMotion( const lpPhys* p, lpPhysBody body, lpWorldTransform* transform, lpVec3* linear, lpVec3* angular );
 // How long the body has been still enough to sleep, s (the engine's hidden state, for the state hash)
 float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body );
 // The engine's hidden contact state (warm starts, the feature ids matching them, recycling caches): adds one hash per
-// touching contact to the sums of its non-static bodies (by body index; bodyCount entries), so the sums do not depend
-// on the order contacts are kept in, and a static body's never changes. only (NULL: every body): the bodies to sum for.
-void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint64_t* sums, int bodyCount );
+// touching contact of awake bodies (a sleeping body's contacts are as they were when it slept, hashed then) to the
+// sums of its non-static bodies (by body index; bodyCount entries), so the sums do not depend
+// on the order contacts are kept in, and a static body's never changes. only (NULL: every body): the bodies to sum for,
+// those with a bit of onlyBits set.
+void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint8_t onlyBits, uint64_t* sums, int bodyCount );
+// The bodies (by index) whose engine state a call changed since lpPhys_ClearTouched: velocities, forces, type, mass,
+// sleep, gravity, shapes or joints. With the step's moves, everything a step or a call can change; the incremental
+// state hash rehashes them.
+// The same contact hashes over a range of the engine's contact slots, one record per slot (bodies -1 where none),
+// so they can be made in parallel and added up after
+typedef struct lpPhysContactHash
+{
+	int a, b; // its bodies wanted (non-static, and in only), or -1
+	uint64_t hash;
+} lpPhysContactHash;
+int lpPhys_GetContactSlotCount( const lpPhys* p );
+void lpPhys_HashContactRange( const lpPhys* p, int begin, int end, const uint8_t* only, uint8_t onlyBits, int bodyCount,
+							  lpPhysContactHash* records );
+int lpPhys_GetTouched( const lpPhys* p, const int** bodies );
+void lpPhys_ClearTouched( lpPhys* p );
 void lpPhys_SetAwake( lpPhys* p, lpPhysBody body, bool awake );
 void lpPhys_SetSleepThreshold( lpPhys* p, lpPhysBody body, float speed );
 float lpPhys_GetGravityScale( const lpPhys* p, lpPhysBody body );

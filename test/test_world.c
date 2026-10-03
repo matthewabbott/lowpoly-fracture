@@ -702,7 +702,7 @@ static int TestContactHash( void )
 		Run( &s, 40 );
 		counts[run] = s.world->bodies.count;
 		sums[run] = calloc( (size_t)counts[run], sizeof( uint64_t ) );
-		lpPhys_HashContacts( s.world->phys, NULL, sums[run], counts[run] );
+		lpPhys_HashContacts( s.world->phys, NULL, 0, sums[run], counts[run] );
 		if ( run == 1 )
 		{
 			uint8_t* odd = calloc( (size_t)counts[run], 1 );
@@ -711,7 +711,7 @@ static int TestContactHash( void )
 			{
 				odd[i] = (uint8_t)( i & 1 );
 			}
-			lpPhys_HashContacts( s.world->phys, odd, some, counts[run] );
+			lpPhys_HashContacts( s.world->phys, odd, 1, some, counts[run] );
 			int touching = 0;
 			for ( int i = 0; i < counts[run]; ++i )
 			{
@@ -729,6 +729,49 @@ static int TestContactHash( void )
 	ENSURE( counts[0] == counts[1] && memcmp( sums[0], sums[1], sizeof( uint64_t ) * (size_t)counts[0] ) == 0 );
 	free( sums[0] );
 	free( sums[1] );
+	return 0;
+}
+
+// The state hash, kept incrementally, equals a full recompute every tick in scenes that fracture, collapse, drive, walk
+// and settle; and following it down (categories, buckets, elements) adds back up to it
+static int TestHashIncremental( void )
+{
+	const int scenes[7][2] = { { lp_sceneWall, 12 }, { lp_sceneTown, 3 },  { lp_sceneKeep, 4 },		   { lp_sceneTrack, 30 },
+							   { lp_sceneMech, 30 }, { lp_sceneYard, 12 }, { lp_sceneContraption, 0 } };
+	for ( int k = 0; k < 7; ++k )
+	{
+		Sim s = CreateSimWorkers( scenes[k][0], 4 );
+		char message[256];
+		for ( int tick = 0; tick < 240; ++tick )
+		{
+			lpSceneBombard( s.world, scenes[k][0], tick, scenes[k][1] );
+			lpSceneDrive( s.world, scenes[k][0], tick );
+			lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+			if ( lpWorld_CheckHash( s.world, message, (int)sizeof( message ) ) == false )
+			{
+				printf( "  %s: %s\n", lpSceneName( scenes[k][0] ), message );
+				return 1;
+			}
+		}
+		uint64_t sums[lp_hashCategoryCount];
+		lpWorld_HashCategories( s.world, sums );
+		for ( int c = 0; c < lp_hashCategoryCount; ++c )
+		{
+			uint64_t buckets = 0, elements = 0;
+			int slots = lpWorld_HashSlotCount( s.world, c );
+			for ( int b = 0; b * 64 < slots; ++b )
+			{
+				buckets += lpWorld_HashBucket( s.world, c, b );
+			}
+			for ( int i = 0; i < slots; ++i )
+			{
+				elements += lpWorld_HashElement( s.world, c, i );
+			}
+			ENSURE( buckets == sums[c] && elements == sums[c] );
+		}
+		printf( "  %-11s 240 ticks: kept hash equals the full one every tick\n", lpSceneName( scenes[k][0] ) );
+		DestroySim( &s );
+	}
 	return 0;
 }
 
@@ -1068,6 +1111,7 @@ int WorldTest( void )
 	RUN_TEST( TestCommandReferences, MECHANISM );
 	RUN_TEST( TestTemplateSpawn, MECHANISM );
 	RUN_TEST( TestContactHash, MECHANISM );
+	RUN_TEST( TestHashIncremental, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );

@@ -26,20 +26,22 @@ a track only when a decision needs its detail.
 | `src/facet.h/.c` | flat-shaded render meshes per piece, interior colours |
 | `src/tasks.h/.c` | thread pool with a blocking parallel-for (fracture jobs) |
 | `src/world.h` | internal layout of `lpWorld` and the core's shared internals, used by tests too |
-| `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, hash, validation |
+| `src/world.c` | materials table, world, objects, pieces, bodies, bonds, piece queries, stats, validation |
+| `src/command.c` | commands: the tick-stamped queue (`lpWorld_Submit`), applied in (peer, seq) order as the step begins; who controls a vehicle or rig; templates for spawns |
+| `src/hash.c` | the state hash: an element per body, piece, stress state, link, ...; categories as order-free sums, kept per slot and rehashed where marked; the descent API and `lpWorld_CheckHash` |
 | `src/impact.c` | impacts: choosing the pieces and integrating their fracture jobs, bond damage, detonators and fuses, blast forces, collision hits |
 | `src/split.c` | splitting bodies into components (tiered by volume); structures are queued for the stress check |
 | `src/solve.h/.c` | a structure's stress system and its math, world-free: beam kernel, K·x, block-Jacobi, conjugate gradient |
 | `src/stress.c` | the stress check per structure (and per moving body that asks for it: inertia relief): scheduling and budgets, loads, building systems (kept per body while solving), judging joints and slender pieces, strain, settling at load |
 | `src/link.c` | links: physics joints between objects that break under load or blasts and follow their pieces; motors (servos toward a target, capped by health and supply, jammed by damage) |
 | `src/wheel.c` | vehicles: wheels are links with no joint (a shape-cast suspension and an impulse solve for grip per chassis body), controls, wheels that come off |
-| `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, the rig's centre of mass and support margin, reaching and touching, a game's own walking (`lp_walkerNone`: foot targets and a pose), state, hash |
+| `src/rig.c` | rigs (walkers): limbs as chains of motorised hinges, the kinematic model from link frames and angles, IK, capability per limb, the rig's centre of mass and support margin, reaching and touching, a game's own walking (`lp_walkerNone`: foot targets and a pose), state |
 | `src/gait.c` | the built-in walker (`lpWalkRig`, tuned by `lpRigDef.gait`): desired pose, free gait with a balance check, swings and foothold casts, holds, crawling when maimed, strikes |
 | `src/supply.c` | supply channels: which pieces each channel's sources reach over carrier bonds and links (fuel to the engine, power to the wheels), recomputed when carriers change; pools (hydraulic fluid) and their leaks |
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol, the crane; the scene's commands); `lpBuildScene` settles their structures. `script.c`: the replay scripts (commands as text: read, write, submit; the sandbox's tools live here), `dump.c`: a world's state as JSON |
-| `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` |
+| `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` (`--check-hash`: the kept hash against a full one every tick) |
 | `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md` |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them) |

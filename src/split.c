@@ -24,6 +24,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 	{
 		return 0; // its pieces and bonds are as they were when there was nothing to split off
 	}
+	lpHashMark( w, bodyIndex ); // its split state changes, and it may lose pieces
 
 	// Flood fill over live bonds. Components are listed in the order of their first piece in the body list.
 	w->stamp += 1;
@@ -253,6 +254,7 @@ void lpUpdateDirtyBodies( lpWorld* w )
 	// lpUpdateBody may create bodies but never marks new ones dirty, so the list does not grow under the loop
 	for ( int i = 0; i < w->dirtyBodies.count; ++i )
 	{
+		lpHashMarkStress( w, w->dirtyBodies.data[i] ); // its stress check runs now
 		lpUpdateBody( w, w->dirtyBodies.data[i] );
 	}
 	w->dirtyBodies.count = 0;

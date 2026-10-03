@@ -82,7 +82,12 @@ void lpUpdateSupply( lpWorld* w )
 		int stamp = ++w->stamp; // marks the pieces found this channel
 		for ( int i = 0; i < count; ++i )
 		{
-			w->pieces.data[w->scratchCarriers.data[i]].supply[c] = 0;
+			int carrier = w->scratchCarriers.data[i];
+			if ( w->pieces.data[carrier].supply[c] != 0 )
+			{
+				lpHashMarkPiece( w, carrier ); // it may not be reached again
+			}
+			w->pieces.data[carrier].supply[c] = 0;
 		}
 		for ( int n = 0; n < count; ++n )
 		{
@@ -141,6 +146,10 @@ void lpUpdateSupply( lpWorld* w )
 			for ( int k = 0; k < tail; ++k )
 			{
 				lpPiece* p = w->pieces.data + queue[k];
+				if ( p->supply[c] != supply )
+				{
+					lpHashMarkPiece( w, queue[k] );
+				}
 				p->supply[c] = supply;
 				// A pool's reach is its lowest channel's group (the most a severed line can take from it)
 				uint8_t lowest = (uint8_t)( p->sources & ( ~p->sources + 1u ) );
@@ -211,18 +220,6 @@ float lpWorld_GetPiecePool( const lpWorld* w, int piece, float* leak )
 		*leak = pool->leak / pool->capacity;
 	}
 	return pool->level / pool->capacity;
-}
-
-uint64_t lpHashPools( const lpWorld* w, uint64_t h )
-{
-	for ( int i = 0; i < w->pools.count; ++i )
-	{
-		const lpPool* pool = w->pools.data + i;
-		float state[3] = { pool->level, pool->leak, pool->reach };
-		h = lpHashBytes( h, state, sizeof( state ) );
-		h = lpHashBytes( h, &pool->step, sizeof( pool->step ) );
-	}
-	return h;
 }
 
 float lpWorld_GetPieceSupply( const lpWorld* w, int piece, int channel )

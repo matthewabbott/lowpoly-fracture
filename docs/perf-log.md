@@ -757,3 +757,47 @@ and the collision calibration as definitions, a fuse; then the review's adjudica
   two binaries (town, walls, tower, keep over 4 bombardment periods, 1 worker) shows town +3%, walls 0%, tower +3%,
   keep -2%, all of it in the physics engine's own time, which none of these changes touch: noise. A best-of-3
   re-baseline taken straight after the ASan run read 4 to 21% slower everywhere (a hot machine), so it was not kept.
+
+## 2026-10-03 milestone 10, spike S1: the stress front
+
+Local branch `m10-spike-stress`, 1 worker, 600 ticks.
+- **The plan's design failed: a CG iteration cap as the speed.** Falling debris restarts a structure's solve almost every
+  tick, and a judgement needs 50 to 160 iterations (conditioning, not diameter): the felled tower's judgement stretched
+  over 110 ticks and it never toppled.
+- **What works: a region solve.** The region grows at most H bonds a tick; inside it CG runs to convergence, nodes past
+  it are held; it is judged when what the change puts on the held boundary is within tolerance (the step the dropped
+  patch of 2026-09-28 lacked).
+- **The oracle at H = 16:** breach worst error 0.008 with 0 of 95k joints flipped and the same 12 breaks; the cannon hole
+  0.012 and 0 flips; drift on small structures 0.108 and 0 of 5,147 flipped.
+- **Stress avg ms; judgements** (today, H 16, H 8): keep/12 2.99; 11, 3.53; 8, 3.53; 7. Siege 4.73; 3, 4.80; 0,
+  4.89; 0. Barrage 1.93; 904, 1.79; 940, 1.96; 931. Town/12 0.95; 559, 0.95; 551, 1.00; 546. Small structures are
+  unchanged within noise. At H = 4 the felled tower stands.
+- **A removed support needs almost the whole keep** before its boundary is quiet, at every H: the quasi-static solve is
+  global for any change to a load path, and the speed delays judgement by about diameter / H ticks.
+- **Decisions:** H = 16; clusters stay (the region is counted in groups on reduced systems); the iteration budget
+  stays a budget, not the clock.
+
+## 2026-10-03 milestone 10, spike S2 and commit C2: the cost of the hash
+
+The legacy hash was one byte-wise chain over every vertex. The new one hashes each element word-wise, keeps the body
+and piece categories, and rehashes only what was marked (bodies the physics engine moved, setters, about 40 write
+sites in the core), in parallel jobs; the physics engine's contact state is one walk of the awake contacts (a Box3D
+patch), split among the workers by slot range and added up in slot order. Hash ms per tick, avg / max, at 1 and 8
+workers (C2, `lpf_bench` default rungs; legacy measured in S2 at 1 worker):
+
+| rung | legacy | C2, 1 worker | C2, 8 workers | step avg, 1 worker |
+|---|---|---|---|---|
+| barrage (town/3) | 2.33 / 5.40 | 0.54 / 1.47 | 0.35 / 0.73 | 8.88 |
+| siege (keep/4) | 1.46 / 2.95 | 0.99 / 3.13 | 0.67 / 1.25 | 16.78 |
+| keep/12 | | 0.39 / 0.97 | 0.37 / 0.93 | 6.38 |
+| town/12 | 0.79 / 2.14 | 0.20 / 0.85 | 0.15 / 0.85 | 3.43 |
+| track, mech | | 0.02, 0.01 | 0.02, 0.01 | 0.15, 0.08 |
+
+- The new hash covers more than the legacy one: pieces' supply and links, the queues one step leaves the next, the
+  stress solver's state, and the physics engine's sleep timers and contact warm starts.
+- **The plan's gate (under 0.3 ms at the barrage peak on 1 worker) is missed:** 0.54 ms avg. What remains is the walk
+  of 4 to 7k awake contacts, and big structures whose stress state changes every tick while they solve (the keep's
+  4k pieces, rehashed in 256-piece parts). Both are already parallel; at 8 workers the barrage costs 0.35 ms, 7% of its
+  4.9 ms step. The fallback if it matters: hash every few ticks (a desync is still caught, a few ticks later).
+- Behaviour unchanged: every non-timing bench stat equals C1b's, and `--check-hash` passes on every rung and script at
+  1 and 8 workers.

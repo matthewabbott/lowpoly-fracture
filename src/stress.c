@@ -86,6 +86,7 @@ void lpTrackMovingBodies( lpWorld* w )
 		{
 			continue;
 		}
+		lpHashMarkStress( w, i );
 		b->stepPair = b->stepTick != 0 && b->stepTick == w->tick; // the record being kept is from the step before
 		b->stepV[0] = b->stepV[1];
 		b->stepOmega[0] = b->stepOmega[1];
@@ -1264,6 +1265,7 @@ static void lpFormClusters( lpWorld* w, const lpStressJob* job )
 // the slender pieces. Not converged: it keeps solving next step, and nothing is judged on an unconverged solution.
 static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 {
+	lpHashMarkStress( w, job->body );
 	lpBody* body = w->bodies.data + job->body;
 	const lpStressSystem* s = job->system;
 	int n = s->nodes.count;
@@ -1448,6 +1450,7 @@ static void lpStressSeed( lpWorld* w, lpBody* body )
 // The bookkeeping of a check with no solve (lpStressRejudge)
 static void lpStressRejudgeBody( lpWorld* w, int bodyIndex )
 {
+	lpHashMarkStress( w, bodyIndex );
 	lpBody* body = w->bodies.data + bodyIndex;
 	int creaks = 0, snapped = 0;
 	int broke = lpStressRejudge( w, bodyIndex, body->rejudge, &creaks, &snapped );
@@ -1728,6 +1731,7 @@ int lpWorld_SettleStructures( lpWorld* w )
 void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
+	lpHashMarkStress( w, bodyIndex );
 	b->reloadLoads = true; // a solve in progress restarts with them; one that had settled solves again if they changed
 	if ( b->provisional && b->auditing == false )
 	{

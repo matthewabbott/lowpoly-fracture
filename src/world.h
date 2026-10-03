@@ -533,6 +533,27 @@ typedef struct lpDeferredJob
 	bool snap; // a stress snap inside the piece: fracture only, no bond damage around it
 } lpDeferredJob;
 
+// The state hash kept current (hash.c): each body slot's element hashes in the three body categories (lp_hashBodies,
+// lp_hashStress, lp_hashBackend) and their sums, and the bodies marked as changed since (lpHashMark). Allocated with
+// the world, so a const world can bring it up to date.
+typedef struct lpHashCache
+{
+	bool valid;					   // the slots and sums are current, but for the marked bodies
+	LP_ARRAY( uint64_t ) slots;	   // three per body slot
+	LP_ARRAY( uint8_t ) marked;	   // per body slot: LP_HASH_BODY | LP_HASH_STRESS
+	LP_ARRAY( int ) changed;	   // the marked slots, in the order they were marked
+	LP_ARRAY( uint64_t ) contacts; // scratch: the contact sums of the changed bodies
+	LP_ARRAY( uint64_t ) fresh;	   // scratch: the changed bodies' new element hashes
+	LP_ARRAY( lpPhysContactHash ) records; // scratch: the contact walk's, one per contact slot
+	LP_ARRAY( uint64_t ) chunks;		   // scratch: a big structure's stress element, by parts
+	uint64_t sums[3];
+	// Pieces, likewise: a big structure that loses a few pieces rehashes those, not all of its thousands
+	LP_ARRAY( uint64_t ) pieceSlots;
+	LP_ARRAY( uint8_t ) pieceMarked;
+	LP_ARRAY( int ) pieceChanged;
+	uint64_t pieceSum;
+} lpHashCache;
+
 struct lpWorld
 {
 	lpWorldDef def; // def.materials and def.joints point at the world's own copies below
@@ -624,6 +645,7 @@ struct lpWorld
 	int freezesThisStep;
 	int fpRepairs; // control words put back on the calling thread (lpFpGuard), since the world was made
 	lpStats stats;
+	lpHashCache* hash;
 };
 
 // A point of a moving body's frame (body-frame coordinates) moves at its centre's velocity plus the spin's share
@@ -691,6 +713,9 @@ void lpApplyForces( lpWorld* w );
 void lpApplyCommands( lpWorld* w );
 // The state hash (hash.c): every category's sum of element hashes, recomputed whole
 void lpHashCategories( const lpWorld* w, uint64_t sums[lp_hashCategoryCount] );
+// The step's changes in the physics engine (its moves, and what calls changed) marked for the incremental hash
+void lpHashTakeChanges( lpWorld* w );
+void lpHashFree( lpWorld* w );
 void lpFreeTemplates( lpWorld* w );
 // A limb's claw (rig.c): grabs what its reaching foot touches, lets go, or toggles; returns the grip made (-1: none)
 int lpApplyClaw( lpWorld* w, int rig, int limb, int mode, float maxForce, float maxTorque, float strength );
@@ -714,7 +739,6 @@ void lpPollLinks( lpWorld* w, float timeStep );
 bool lpBodyLinked( const lpWorld* w, const lpBody* b );
 // Touching a linked body that moves (a crate in a cart): it must not freeze, or the assembly would jam on it
 bool lpTouchesLinked( lpWorld* w, const lpBody* b );
-uint64_t lpHashLinks( const lpWorld* w, uint64_t h );
 bool lpValidateLinks( const lpWorld* w );
 // A wheel's link: end 0 on the piece nearest the mount (within reach), end 1 on nothing, no joint. Returns -1 when no
 // piece of the body is near enough.
@@ -729,14 +753,12 @@ void lpStepVehicles( lpWorld* w, float timeStep );
 void lpReleaseWheel( lpWorld* w, int wheel, bool comesOff ); // its link is going
 // Wheels standing on a structure load it (stress.c): force on the ground at the contact, world
 void lpAddWheelLoads( lpWorld* w, int bodyIndex, lpWorldTransform xf );
-uint64_t lpHashVehicles( const lpWorld* w, uint64_t h );
 
 // supply (supply.c): recomputed once a step, after lpSyncLinks, when a carrier's connections changed
 void lpUpdateSupply( lpWorld* w );
 uint8_t lpSuppliedMask( const lpPiece* p );			  // channels fed at all here
 // Before the supply update: leaks drain their pools and close; a pool that crosses a sixteenth asks for an update
 void lpDrainPools( lpWorld* w, float timeStep );
-uint64_t lpHashPools( const lpWorld* w, uint64_t h );
 float lpSupplyOf( const lpPiece* p, uint8_t channels ); // the worst of those channels here, 0 to 1 (1 for none)
 static inline void lpCarriersChanged( lpWorld* w, uint8_t channels )
 {
@@ -773,7 +795,6 @@ lpVec3 lpRigWorldUp( const lpWorld* w, const lpRig* r, lpQuat torso ); // agains
 lpPos lpFootWorld( const lpWorld* w, const lpLimb* limb );
 // Joint speeds that move a limb's foot at `velocity` (torso frame): damped least squares on its Jacobian
 void lpLimbSpeeds( int joints, const lpVec3* axes, const lpVec3* origins, lpVec3 foot, lpVec3 velocity, float* out );
-uint64_t lpHashRigs( const lpWorld* w, uint64_t h );
 bool lpValidateRigs( const lpWorld* w );
 void lpFreeRigs( lpWorld* w );
 // A limb's kinematics in the torso frame (tests reach them too): the foot (in the tip's frame) of its first `joints`
@@ -794,9 +815,71 @@ int lpCheckStructures( lpWorld* w, bool settle );
 // the step's splits the dirty list is being walked, so there it waits with the structures to check again.
 void lpRequestStressCheck( lpWorld* w, int bodyIndex, bool duringSplits );
 // A piece's bonds, their health or its load changed (for the stress check's seeds)
+#define LP_HASH_BODY 1	// its body element (motion, pieces, bonds, loose state) and its physics engine element
+#define LP_HASH_STRESS 2 // its stress element
+
+// Part of a body's hashed state changed outside the physics engine: the next lpWorld_Hash rehashes it. The engine's
+// own changes are found from the step's moves and lpPhys_GetTouched.
+static inline void lpHashMarkParts( lpWorld* w, int body, uint8_t parts )
+{
+	lpHashCache* c = w->hash;
+	if ( c->valid == false || body < 0 )
+	{
+		return; // nothing is cached yet: the next hash computes every slot
+	}
+	if ( body >= c->marked.count )
+	{
+		int old = c->marked.count;
+		lpArray_Reserve( c->marked, body + 1 );
+		memset( c->marked.data + old, 0, (size_t)( body + 1 - old ) );
+		c->marked.count = body + 1;
+	}
+	if ( c->marked.data[body] == 0 )
+	{
+		lpArray_Push( c->changed, body );
+	}
+	c->marked.data[body] |= parts;
+}
+
+// A piece's hashed state changed: its body, its bonds or their health, its supply, its links
+static inline void lpHashMarkPiece( lpWorld* w, int piece )
+{
+	lpHashCache* c = w->hash;
+	if ( c->valid == false || piece < 0 )
+	{
+		return;
+	}
+	if ( piece >= c->pieceMarked.count )
+	{
+		int old = c->pieceMarked.count;
+		lpArray_Reserve( c->pieceMarked, piece + 1 );
+		memset( c->pieceMarked.data + old, 0, (size_t)( piece + 1 - old ) );
+		c->pieceMarked.count = piece + 1;
+	}
+	if ( c->pieceMarked.data[piece] == 0 )
+	{
+		c->pieceMarked.data[piece] = 1;
+		lpArray_Push( c->pieceChanged, piece );
+	}
+}
+
+// A body's hashed state changed: its pieces, bonds or flags, its loose state, or anything else
+static inline void lpHashMark( lpWorld* w, int body )
+{
+	lpHashMarkParts( w, body, LP_HASH_BODY | LP_HASH_STRESS );
+}
+
+// Only its stress state changed: a check asked for, a solve, a judgement
+static inline void lpHashMarkStress( lpWorld* w, int body )
+{
+	lpHashMarkParts( w, body, LP_HASH_STRESS );
+}
+
 static inline void lpTouchPiece( lpWorld* w, int piece )
 {
 	w->pieces.data[piece].changed = ++w->changeSerial;
+	lpHashMarkPiece( w, piece );
+	lpHashMark( w, w->pieces.data[piece].body );
 }
 void lpFreeStressSystem( lpBody* b );
 // After the physics step: moving bodies that solve their stress keep their velocities (lpBody.stepV)

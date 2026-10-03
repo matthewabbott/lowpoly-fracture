@@ -48,6 +48,7 @@ static int lpGridSlotOfCell( const lpWorld* w, int ix, int iz )
 
 static void lpGridInsert( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	int slot = lpGridSlotOfCell( w, lpGridCoord( (float)b->com.x ), lpGridCoord( (float)b->com.z ) );
 	b->gridSlot = slot;
@@ -62,6 +63,7 @@ static void lpGridInsert( lpWorld* w, int bodyIndex )
 
 void lpGridRemove( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( b->gridSlot < 0 )
 	{
@@ -178,6 +180,8 @@ int lpBeginGhost( lpWorld* w, lpWorldTransform xf, lpVec3 v, lpVec3 omega, float
 
 void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 {
+	lpHashMark( w, bodyIndex );
+	lpHashMarkPiece( w, pieceIndex );
 	lpBreakPieceLinks( w, pieceIndex ); // a loose piece has no physics body to hold a joint
 	lpPiece* p = w->pieces.data + pieceIndex;
 	lpBody* b = w->bodies.data + bodyIndex;
@@ -190,6 +194,7 @@ void lpAddLoosePiece( lpWorld* w, int bodyIndex, int pieceIndex )
 
 void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	b->localCenter = lpVolumeCenter( w, b );
 	b->q = xf.q;
@@ -200,6 +205,7 @@ void lpFinishLoose( lpWorld* w, int bodyIndex, lpWorldTransform xf )
 // Capture a physics body's motion, destroy the physics body, and keep the pieces as a loose body.
 static void lpMakeLoose( lpWorld* w, int bodyIndex, uint8_t kind )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
 	lpVec3 lc = lpVolumeCenter( w, b );
@@ -252,6 +258,7 @@ void lpConvertToGhost( lpWorld* w, int bodyIndex )
 
 void lpConvertToScrap( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( b->kind == lp_kindScrap || b->kind == lp_kindStructure )
 	{
@@ -281,6 +288,7 @@ static void lpRecreateShapes( lpWorld* w, int bodyIndex )
 
 void lpConvertToLight( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( ( b->kind != lp_kindDebris && b->kind != lp_kindRubble ) || b->tier == lp_tierLight )
 	{
@@ -297,6 +305,7 @@ void lpConvertToLight( lpWorld* w, int bodyIndex )
 
 void lpConvertToFull( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( b->kind == lp_kindStructure )
 	{
@@ -366,6 +375,7 @@ static bool lpStaticAccept( int piece, float fraction, void* context )
 // ghost downward instead, so it does not stick to them.
 static void lpLand( lpWorld* w, int bodyIndex )
 {
+	lpHashMark( w, bodyIndex );
 	lpBody* b = w->bodies.data + bodyIndex;
 	lpVec3 n = b->landNormal;
 	if ( n.y < 0.5f )
@@ -411,6 +421,10 @@ void lpStepGhosts( lpWorld* w, float timeStep )
 		if ( b->alive == false )
 		{
 			continue;
+		}
+		if ( b->kind == lp_kindGhost || ( b->kind == lp_kindScrap && b->sinkTicks > 0 ) )
+		{
+			lpHashMark( w, i ); // it flies, or sinks
 		}
 
 		if ( b->kind == lp_kindScrap )
@@ -517,6 +531,7 @@ void lpApplyLooseForce( lpWorld* w, const lpForce* force )
 			continue;
 		}
 		float f = 1.0f - d / force->radius;
+		lpHashMark( w, w->scratchLoose.data[k] );
 		lpLoosen( b );
 		if ( force->explosion )
 		{
@@ -590,6 +605,7 @@ void lpShove( lpWorld* w, float timeStep )
 			lpVec3 out = lpSub( lpToVec3( b->com ), moverCenter );
 			out.y = 0.0f;
 			out = lpNormalize( out );
+			lpHashMark( w, w->scratchLoose.data[k] );
 			lpLoosen( b );
 			b->v = lpAdd( lpMulSV( 1.1f, lpPhys_GetPointVelocity( w->phys, mover->id, b->com ) ), lpMulSV( 1.5f, out ) );
 			b->v.y += 1.0f;
@@ -607,6 +623,7 @@ void lpWorld_PromoteBody( lpWorld* w, int body )
 
 void lpWorld_SetGravityScale( lpWorld* w, int body, float scale )
 {
+	lpHashMark( w, body );
 	if ( body < 0 || body >= w->bodies.count || w->bodies.data[body].alive == false )
 	{
 		return;
@@ -684,6 +701,7 @@ void lpFreezeOrKill( lpWorld* w )
 		else if ( e->fellAsleep && w->def.freezeRubble && b->freezePending == false )
 		{
 			b->freezePending = true;
+			lpHashMark( w, bodyIndex );
 			lpArray_Push( w->freezeCandidates, bodyIndex );
 		}
 	}
@@ -702,6 +720,7 @@ void lpFreezeOrKill( lpWorld* w )
 		if ( lpPhys_IsAwake( w->phys, b->id ) || lpBodyLinked( w, b ) || lpTouchesLinked( w, b ) )
 		{
 			b->freezePending = false; // linked bodies and what rests on them sleep instead: frozen, they would jam
+			lpHashMark( w, bodyIndex );
 			continue;
 		}
 		uint64_t minAge = (uint64_t)( b->tier == lp_tierLight ? w->def.freezeAgeLight : w->def.freezeAgeFull );
@@ -896,6 +915,7 @@ void lpEnforceBudgets( lpWorld* w )
 			{
 				scrapPieces -= b->pieces.count;
 				b->sinkTicks = 20;
+				lpHashMark( w, e[i].body );
 			}
 		}
 	}

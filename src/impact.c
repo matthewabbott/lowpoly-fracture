@@ -595,6 +595,7 @@ static void lpDamageBonds( lpWorld* w, const lpImpactDef* impact, uint32_t seria
 				continue;
 			}
 			bond->lastImpact = serial;
+			lpHashMarkPiece( w, bond->a ); // the bond is hashed with its lower piece
 			float density = lpImpactDensity( impact, lpDistance( bond->centroid, local ) );
 			bond->health -= density;
 			if ( bond->health <= 0.0f )

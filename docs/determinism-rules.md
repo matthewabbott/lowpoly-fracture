@@ -71,6 +71,11 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 17. **NaN in simulation state is a bug.** It is asserted in the hash path in assert builds.
 18. **Game code that feeds the simulation follows these rules too.** The games' AI, scripts and logic either run on
    the host and send their results as commands, or keep to the rules above under a hash check in their own CI.
+19. **Whatever writes hashed state marks it.** The hash keeps each body's and piece's element and rehashes only what
+   was marked since (`src/hash.c`): code that changes a body's or piece's hashed fields calls `lpHashMark`,
+   `lpHashMarkStress` or `lpHashMarkPiece` (`lpTouchPiece` marks the piece and its body), and a new physics setter
+   records its body in the backend's touched list. A missed mark does not change the simulation, only the kept hash,
+   and `lpWorld_CheckHash` names the element that changed unmarked.
 
 ## How it is checked
 
@@ -81,7 +86,9 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
   every bench rung at 1 and 8 workers on Windows (MSVC, clang-cl, ARM64), Linux (gcc, clang, x64 and ARM64) and
   macOS (arm64, and x86_64 under Rosetta 2), plus the x64 binaries under box64 and Prism, diffed per tick against
   Windows MSVC; `lpf_test` on every native leg; a gcc ARM64 leg with contraction on as the positive control.
-- `lpf_bench`: final hash per worker count; the run fails (exit 2) if they differ.
+- `lpf_bench`: final hash per worker count; the run fails (exit 2) if they differ. `--check-hash` compares the kept
+  hash with a full recompute every tick and fails (exit 4) naming the element; `TestHashIncremental` does the same on
+  seven scenes.
 - `tools/check-determinism.ps1`: runs the real sandbox with a script at 1, 4 and 8 workers and diffs the per-tick
   hash logs.
 - Release and ASan (`RelWithDebInfo`) builds produce the same test hash.
@@ -94,9 +101,11 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
   ([research/m7-experiments.md](research/m7-experiments.md)) and checked by CI since. Untested: FEX, WebAssembly.
 - A desync check must hash the stress solver's state too (`lpWorld_HashStress`): flush-to-zero changed it while the
   world hash stayed equal for 600 ticks.
-- `lpWorld_Hash` covers body transforms and velocities, ghost and scrap state, piece geometry, bonds and links (and
-  gravity scales that are not 1, vehicles, rigs and pools: a world without them hashes as before). Rendering and particles are deliberately
-  excluded. `lpWorld_HashStress` covers the stress solver's state, which a solver refactor must also keep.
+- `lpWorld_Hash` covers the whole simulation state in eleven categories (`lpHashCategory`): the world's counters and
+  queues, bodies, pieces with their bonds, the stress solver's state, the physics engine's hidden state of each body
+  (sleep timers, contact warm starts), links, vehicles, wheels, rigs, pools and detonators. Rendering and particles
+  are deliberately excluded, and so are pending commands. `lpWorld_HashStress` is the stress category, which a solver
+  refactor must also keep; `lpWorld_HashCategories` and `lpWorld_HashElement` follow a mismatch down to the object.
 - Checked scenes: walls, house (flasks), tower (collapse), lumber, ruins (its demo and under
   bombardment), town under a barrage (`-Period 3`, many structures solving at once), the yard (its demo and
   under bombardment), the keep (`scripts/keep_demo.txt`, one 2000-piece structure), the track (its demo under

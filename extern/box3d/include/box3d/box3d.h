@@ -73,6 +73,7 @@ typedef struct b3ContactState
 	b3Transform cachedRelativePose;
 	uint32_t flags;
 	bool staticA, staticB; // its bodies are static
+	int slot;			   // its slot (b3World_VisitContactStateRange)
 } b3ContactState;
 
 typedef void b3ContactStateFcn( void* shapeUserDataA, void* shapeUserDataB, void* bodyUserDataA, void* bodyUserDataB,
@@ -80,6 +81,12 @@ typedef void b3ContactStateFcn( void* shapeUserDataA, void* shapeUserDataB, void
 
 /// lowpoly-fracture patch: every touching contact (only those of awake bodies if awakeOnly), once, in no particular order
 B3_API void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStateFcn* fcn, void* context );
+
+/// lowpoly-fracture patch: the same over contact slots [begin, end) of b3World_GetContactSlotCount, so the walk can be
+/// split among threads (read only)
+B3_API int b3World_GetContactSlotCount( b3WorldId worldId );
+B3_API void b3World_VisitContactStateRange( b3WorldId worldId, bool awakeOnly, int begin, int end, b3ContactStateFcn* fcn,
+											void* context );
 
 /// Get sensor events for the current time step. The event data is transient. Do not store a reference to this data.
 B3_API b3SensorEvents b3World_GetSensorEvents( b3WorldId worldId );
@@ -553,6 +560,9 @@ B3_API b3Quat b3Body_GetRotation( b3BodyId bodyId );
 
 /// Get the world transform of a body.
 B3_API b3WorldTransform b3Body_GetTransform( b3BodyId bodyId );
+
+/// lowpoly-fracture patch: the transform and both velocities in one lookup (the state hash reads every moving body)
+B3_API void b3Body_GetMotion( b3BodyId bodyId, b3WorldTransform* transform, b3Vec3* linearVelocity, b3Vec3* angularVelocity );
 
 /// Set the world transform of a body. This acts as a teleport and is fairly expensive.
 /// @note Generally you should create a body with the intended transform.

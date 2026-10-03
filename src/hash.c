@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // The state hash (lpWorld_Hash). Every element of the world is hashed on its own, seeded with its category, slot and
 // generation:
-// - a body with its pieces and bonds;
+// - a body: its kind, motion and which pieces;
+// - a piece, with the bonds it holds;
 // - a structure's (or a moving body's) stress state;
 // - the physics engine's state of a body (sleep, contact warm starts);
 // - a link; a vehicle; a wheel; a rig with its limbs; a pool; a detonator;
@@ -10,8 +11,17 @@
 // changed element is one subtraction and one addition. The root mixes the categories. Two machines that disagree
 // compare categories, then the elements under them, to name the object. Fields go in one by one: never a struct with
 // padding (determinism rule 11).
+//
+// Kept, not recomputed: the body and piece categories (the big ones) cache each slot's element hashes, and only the
+// slots marked since the last hash are hashed again (in parallel, then added up in slot order). Whatever writes hashed
+// state marks it (lpHashMark, lpHashMarkStress, lpHashMarkPiece; lpTouchPiece does both): the physics engine's moves and
+// the setters it saw are marked at step end. The other categories are small and hashed whole each time.
+// lpWorld_CheckHash recomputes everything and names an element that changed unmarked (lpf_bench --check-hash).
 
+#include "tasks.h"
 #include "world.h"
+
+#include <stdio.h>
 
 #define LP_FIELD( h, x ) ( h ) = lpHashWords( ( h ), &( x ), sizeof( x ) )
 
@@ -101,14 +111,14 @@ static uint64_t lpHashWorldElement( const lpWorld* w )
 	return lpMix64( h );
 }
 
-// ---- a body with its pieces and bonds ----
+// ---- a body: its kind, motion and which pieces ----
 
 static uint64_t lpHashBodyElement( const lpWorld* w, int bi )
 {
 	const lpBody* b = w->bodies.data + bi;
 	uint64_t h = lpElementSeed( lp_hashBodies, bi, b->generation );
 	int32_t head[7] = { b->kind, b->tier, b->pieces.count, (int32_t)b->topology, (int32_t)b->splitTopology, b->gridSlot, 0 };
-	uint8_t flags[4] = { b->dirty, b->freezePending, b->splitChecked, b->solveStress };
+	uint8_t flags[4] = { b->freezePending, b->splitChecked, b->solveStress, 0 }; // dirty: the world's list
 	float scalars[3] = { b->volume, b->gravityScale, b->inertiaRadius };
 	uint64_t ticks[2] = { b->createdTick, b->linkStamp };
 	h = lpHashWords( h, head, sizeof( head ) );
@@ -129,46 +139,59 @@ static uint64_t lpHashBodyElement( const lpWorld* w, int bi )
 	}
 	else
 	{
-		lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
-		lpVec3 v = lpPhys_GetLinearVelocity( w->phys, b->id );
-		lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, b->id );
+		lpWorldTransform xf;
+		lpVec3 v, omega;
+		lpPhys_GetMotion( w->phys, b->id, &xf, &v, &omega );
 		LP_ASSERT( lpIsValidVec3( xf.p ) && lpIsValidVec3( v ) && lpIsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
 		LP_FIELD( h, xf );
 		LP_FIELD( h, v );
 		LP_FIELD( h, omega );
 	}
-	for ( int i = 0; i < b->pieces.count; ++i )
+	h = lpHashWords( h, b->pieces.data, sizeof( int ) * (size_t)b->pieces.count ); // which, in order
+	return lpMix64( h );
+}
+
+// ---- a piece, with the bonds it holds (each bond with its lower piece) ----
+
+static uint64_t lpHashPieceElement( const lpWorld* w, int pi )
+{
+	const lpPiece* p = w->pieces.data + pi;
+	uint64_t h = lpElementSeed( lp_hashPieces, pi, p->generation );
+	// One call for the fixed fields: the body, the shape's digest, ids, channels, axis and anchor plane
+	uint32_t fixed[26];
+	memcpy( fixed, &p->shape->digest, 8 );
+	uint32_t ids[12] = { (uint32_t)p->body, (uint32_t)p->userId, p->part,	 p->tag,	 (uint32_t)p->detonator, (uint32_t)p->pool,
+						 p->material,		 p->joint,			 p->depth, p->anchored, (uint32_t)p->bonds.count, (uint32_t)p->links.count };
+	memcpy( fixed + 2, ids, sizeof( ids ) );
+	uint8_t channels[12] = { p->carries, p->sources, p->needs, 0 };
+	memcpy( channels + 4, p->supply, LP_CHANNELS );
+	memcpy( fixed + 14, channels, sizeof( channels ) );
+	float geometry[8] = { p->axis.x,			   p->axis.y,				p->axis.z,				 p->anchorPlane.normal.x,
+						  p->anchorPlane.normal.y, p->anchorPlane.normal.z, p->anchorPlane.offset, p->sourceShare };
+	memcpy( fixed + 17, geometry, sizeof( geometry ) );
+	fixed[25] = 0;
+	h = lpHashWords( h, fixed, sizeof( fixed ) );
+	h = lpHashWords( h, p->links.data, sizeof( int ) * (size_t)p->links.count );
+	h = lpHashWords( h, p->bonds.data, sizeof( int ) * (size_t)p->bonds.count );
+	for ( int k = 0; k < p->bonds.count; ++k )
 	{
-		int pi = b->pieces.data[i];
-		const lpPiece* p = w->pieces.data + pi;
-		uint64_t digest = p->shape->digest;
-		int32_t ids[12] = { pi,			(int32_t)p->generation, (int32_t)p->userId, p->part,	  p->tag,	   p->detonator,
-							p->pool,	p->material,			p->joint,			p->depth,	  p->anchored, p->bonds.count };
-		uint8_t channels[3 + LP_CHANNELS] = { p->carries, p->sources, p->needs };
-		memcpy( channels + 3, p->supply, LP_CHANNELS );
-		float geometry[8] = { p->axis.x,			   p->axis.y,				p->axis.z,				 p->anchorPlane.normal.x,
-							  p->anchorPlane.normal.y, p->anchorPlane.normal.z, p->anchorPlane.offset, p->sourceShare };
-		LP_FIELD( h, digest );
-		h = lpHashWords( h, ids, sizeof( ids ) );
-		h = lpHashWords( h, channels, sizeof( channels ) );
-		h = lpHashWords( h, geometry, sizeof( geometry ) );
-		h = lpHashWords( h, p->links.data, sizeof( int ) * (size_t)p->links.count );
-		h = lpHashWords( h, p->bonds.data, sizeof( int ) * (size_t)p->bonds.count );
-		for ( int k = 0; k < p->bonds.count; ++k )
+		const lpBond* bond = w->bonds.data + p->bonds.data[k];
+		if ( bond->a != pi )
 		{
-			const lpBond* bond = w->bonds.data + p->bonds.data[k];
-			if ( bond->a != pi )
-			{
-				continue; // each bond once, with its lower piece
-			}
-			int32_t ref[5] = { p->bonds.data[k], (int32_t)bond->generation, bond->b, bond->joint, (int32_t)bond->lastImpact };
-			float shape[11] = { bond->area,		  bond->health,		bond->strength, bond->centroid.x, bond->centroid.y, bond->centroid.z,
-								bond->normal.x, bond->normal.y, bond->normal.z, bond->h1,		  bond->h2 };
-			h = lpHashWords( h, ref, sizeof( ref ) );
-			h = lpHashWords( h, shape, sizeof( shape ) );
+			continue;
 		}
+		uint32_t packed[16] = { (uint32_t)p->bonds.data[k], bond->generation, (uint32_t)bond->b, bond->joint, bond->lastImpact };
+		float shape[11] = { bond->area,		  bond->health,		bond->strength, bond->centroid.x, bond->centroid.y, bond->centroid.z,
+							bond->normal.x, bond->normal.y, bond->normal.z, bond->h1,		  bond->h2 };
+		memcpy( packed + 5, shape, sizeof( shape ) );
+		h = lpHashWords( h, packed, sizeof( packed ) );
 	}
 	return lpMix64( h );
+}
+
+static uint64_t lpHashPieceSlot( const lpWorld* w, int pi )
+{
+	return w->pieces.data[pi].body >= 0 ? lpHashPieceElement( w, pi ) : 0;
 }
 
 // ---- a structure's (or a moving body's) stress state ----
@@ -184,17 +207,31 @@ static uint64_t lpHashSystem( uint64_t h, const lpStressSystem* s, int vectors )
 	h = lpHashWords( h, head, sizeof( head ) );
 	LP_FIELD( h, s->forceScale );
 	LP_FIELD( h, s->loadNorm2 );
-	// x, f, r and p (the solver's z and q are made again from them)
+	// A solve in progress continues from r and p (z and q are made again from them; f from the pieces' loads). Its x is
+	// the pieces' stressX, but for a correction through clusters (vectors 2), which keeps the x it corrects until judged.
 	int n = s->nodes.count;
 	if ( vectors > 0 && s->vectors.count >= 6 * n )
 	{
-		h = lpHashWords( h, s->vectors.data, sizeof( lpVec6 ) * (size_t)( 3 * n ) );
+		if ( vectors > 1 )
+		{
+			h = lpHashWords( h, s->vectors.data, sizeof( lpVec6 ) * (size_t)n );
+		}
+		h = lpHashWords( h, s->vectors.data + 2 * n, sizeof( lpVec6 ) * (size_t)n );
 		h = lpHashWords( h, s->vectors.data + 4 * n, sizeof( lpVec6 ) * (size_t)n );
 	}
 	return h;
 }
 
-static uint64_t lpHashStressElement( const lpWorld* w, int bi )
+#define LP_STRESS_CHUNK 256 // pieces per part of a stress element
+#define LP_STRESS_BIG 4		// parts from which a stress element is hashed in parallel
+
+static int lpStressChunks( const lpBody* b )
+{
+	return ( b->pieces.count + LP_STRESS_CHUNK - 1 ) / LP_STRESS_CHUNK;
+}
+
+// The body's own stress state: its flags, counters, relief, and the systems of a solve in progress
+static uint64_t lpHashStressHead( const lpWorld* w, int bi )
 {
 	const lpBody* b = w->bodies.data + bi;
 	uint64_t h = lpElementSeed( lp_hashStress, bi, b->generation );
@@ -216,25 +253,36 @@ static uint64_t lpHashStressElement( const lpWorld* w, int bi )
 	LP_FIELD( h, b->hitPoint );
 	if ( b->system != NULL )
 	{
-		h = lpHashSystem( lpMix64( h ), b->system, b->solving ? 1 : 0 );
+		h = lpHashSystem( lpMix64( h ), b->system, b->solving ? ( b->solveClustered ? 2 : 1 ) : 0 );
 	}
 	if ( b->reduced != NULL )
 	{
 		const lpStressReduced* red = b->reduced;
 		int32_t head[4] = { red->built, (int32_t)red->topology, (int32_t)red->clusterStamp, red->partition.groupCount };
 		h = lpHashWords( lpMix64( h ), head, sizeof( head ) );
-		h = lpHashSystem( h, &red->system, b->solving ? 1 : 0 );
+		h = lpHashSystem( h, &red->system, b->solving && b->solveClustered ? 2 : 0 );
 	}
-	for ( int i = 0; i < b->pieces.count; ++i )
+	return h;
+}
+
+// Its pieces' stress state, one part of them
+static uint64_t lpHashStressChunk( const lpWorld* w, int bi, int chunk )
+{
+	const lpBody* b = w->bodies.data + bi;
+	uint64_t h = lpMix64( (uint64_t)chunk + 1 );
+	int end = lpMinInt( ( chunk + 1 ) * LP_STRESS_CHUNK, b->pieces.count );
+	for ( int i = chunk * LP_STRESS_CHUNK; i < end; ++i )
 	{
 		const lpPiece* p = w->pieces.data + b->pieces.data[i];
-		LP_FIELD( h, p->stressX );
-		LP_FIELD( h, p->stressLoad );
-		LP_FIELD( h, p->stressResidual );
+		float state[26];
+		memcpy( state, &p->stressX, sizeof( lpVec6 ) );
+		memcpy( state + 6, &p->stressLoad, sizeof( lpVec6 ) );
+		memcpy( state + 12, &p->stressResidual, sizeof( lpVec6 ) );
 		float slender[4] = { p->strain, p->slenderRho, p->slenderAt, p->slenderDepth };
-		int32_t solve[3] = { p->cluster, p->solveSlot, p->changed > p->accepted };
-		h = lpHashWords( h, slender, sizeof( slender ) );
-		h = lpHashWords( h, solve, sizeof( solve ) );
+		int32_t solve[4] = { p->cluster, p->solveSlot, p->changed > p->accepted, 0 };
+		memcpy( state + 18, slender, sizeof( slender ) );
+		memcpy( state + 22, solve, sizeof( solve ) );
+		h = lpHashWords( h, state, sizeof( state ) );
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
@@ -245,7 +293,46 @@ static uint64_t lpHashStressElement( const lpWorld* w, int bi )
 			}
 		}
 	}
+	return h;
+}
+
+static uint64_t lpHashStressCombine( uint64_t head, const uint64_t* chunks, int count )
+{
+	uint64_t h = head;
+	for ( int c = 0; c < count; ++c )
+	{
+		h = lpMix64( h ^ chunks[c] );
+	}
 	return lpMix64( h );
+}
+
+static uint64_t lpHashStressElement( const lpWorld* w, int bi )
+{
+	uint64_t h = lpHashStressHead( w, bi );
+	int count = lpStressChunks( w->bodies.data + bi );
+	for ( int c = 0; c < count; ++c )
+	{
+		h = lpMix64( h ^ lpHashStressChunk( w, bi, c ) );
+	}
+	return lpMix64( h );
+}
+
+static bool lpBigStress( const lpBody* b )
+{
+	return lpStressChunks( b ) >= LP_STRESS_BIG;
+}
+
+typedef struct lpStressChunkJob
+{
+	const lpWorld* world;
+	int body;
+	uint64_t* chunks;
+} lpStressChunkJob;
+
+static void lpRunStressChunk( int chunk, void* context )
+{
+	const lpStressChunkJob* job = context;
+	job->chunks[chunk] = lpHashStressChunk( job->world, job->body, chunk );
 }
 
 // ---- the physics engine's state of a body: what its next step starts from besides the transform and velocities ----
@@ -395,7 +482,82 @@ static uint64_t lpHashDetonatorElement( const lpWorld* w, int i )
 	return lpMix64( h );
 }
 
-// ---- the whole ----
+// ---- the whole, kept current ----
+
+// A body slot's three element hashes (bodies, stress, backend; 0 where it has none)
+static void lpHashBodySlot( const lpWorld* w, int i, uint64_t contacts, uint64_t out[3] )
+{
+	const lpBody* b = w->bodies.data + i;
+	out[0] = 0;
+	out[1] = 0;
+	out[2] = 0;
+	if ( b->alive )
+	{
+		out[0] = lpHashBodyElement( w, i );
+		out[1] = lpHasStressState( b ) ? lpHashStressElement( w, i ) : 0;
+		out[2] = LP_PHYS_NULL( b->id ) ? 0 : lpHashBackendElement( w, i, contacts );
+	}
+}
+
+static const int lp_bodyCategories[3] = { lp_hashBodies, lp_hashStress, lp_hashBackend };
+
+static int lpBodyCategory( int category )
+{
+	return category == lp_hashBodies ? 0 : ( category == lp_hashStress ? 1 : ( category == lp_hashBackend ? 2 : -1 ) );
+}
+
+// An element of the categories that are hashed whole each time (0: nothing in that slot)
+static uint64_t lpHashSmallElement( const lpWorld* w, int category, int i )
+{
+	switch ( category )
+	{
+		case lp_hashWorld:
+			return i == 0 ? lpHashWorldElement( w ) : 0;
+		case lp_hashLinks:
+			return i < w->links.count && w->links.data[i].alive ? lpHashLinkElement( w, i ) : 0;
+		case lp_hashVehicles:
+			return i < w->vehicles.count ? lpHashVehicleElement( w, i ) : 0;
+		case lp_hashWheels:
+			return i < w->wheels.count && w->wheels.data[i].link >= 0 ? lpHashWheelElement( w, i ) : 0;
+		case lp_hashRigs:
+			return i < w->rigs.count ? lpHashRigElement( w, i ) : 0;
+		case lp_hashPools:
+			return i < w->pools.count ? lpHashPoolElement( w, i ) : 0;
+		case lp_hashDetonators:
+			return i < w->detonators.count ? lpHashDetonatorElement( w, i ) : 0;
+		default:
+			return 0;
+	}
+}
+
+int lpWorld_HashSlotCount( const lpWorld* w, int category )
+{
+	switch ( category )
+	{
+		case lp_hashWorld:
+			return 1;
+		case lp_hashBodies:
+		case lp_hashStress:
+		case lp_hashBackend:
+			return w->bodies.count;
+		case lp_hashPieces:
+			return w->pieces.count;
+		case lp_hashLinks:
+			return w->links.count;
+		case lp_hashVehicles:
+			return w->vehicles.count;
+		case lp_hashWheels:
+			return w->wheels.count;
+		case lp_hashRigs:
+			return w->rigs.count;
+		case lp_hashPools:
+			return w->pools.count;
+		case lp_hashDetonators:
+			return w->detonators.count;
+		default:
+			return 0;
+	}
+}
 
 void lpHashCategories( const lpWorld* w, uint64_t sums[lp_hashCategoryCount] )
 {
@@ -403,51 +565,364 @@ void lpHashCategories( const lpWorld* w, uint64_t sums[lp_hashCategoryCount] )
 	int bodies = w->bodies.count;
 	uint64_t* contacts = lpAlloc( sizeof( uint64_t ) * (size_t)( bodies > 0 ? bodies : 1 ) );
 	memset( contacts, 0, sizeof( uint64_t ) * (size_t)( bodies > 0 ? bodies : 1 ) );
-	lpPhys_HashContacts( w->phys, NULL, contacts, bodies );
-
-	sums[lp_hashWorld] = lpHashWorldElement( w );
+	lpPhys_HashContacts( w->phys, NULL, 0, contacts, bodies );
 	for ( int i = 0; i < bodies; ++i )
 	{
-		const lpBody* b = w->bodies.data + i;
-		if ( b->alive == false )
+		uint64_t slot[3];
+		lpHashBodySlot( w, i, contacts[i], slot );
+		for ( int k = 0; k < 3; ++k )
 		{
-			continue;
+			sums[lp_bodyCategories[k]] += slot[k];
 		}
-		sums[lp_hashBodies] += lpHashBodyElement( w, i );
-		sums[lp_hashStress] += lpHasStressState( b ) ? lpHashStressElement( w, i ) : 0;
-		sums[lp_hashBackend] += LP_PHYS_NULL( b->id ) ? 0 : lpHashBackendElement( w, i, contacts[i] );
 	}
 	lpFree( contacts );
-	for ( int i = 0; i < w->links.count; ++i )
+	for ( int i = 0; i < w->pieces.count; ++i )
 	{
-		sums[lp_hashLinks] += w->links.data[i].alive ? lpHashLinkElement( w, i ) : 0;
+		sums[lp_hashPieces] += lpHashPieceSlot( w, i );
 	}
-	for ( int i = 0; i < w->vehicles.count; ++i )
+	for ( int c = 0; c < lp_hashCategoryCount; ++c )
 	{
-		sums[lp_hashVehicles] += lpHashVehicleElement( w, i );
-	}
-	for ( int i = 0; i < w->wheels.count; ++i )
-	{
-		sums[lp_hashWheels] += w->wheels.data[i].link >= 0 ? lpHashWheelElement( w, i ) : 0;
-	}
-	for ( int i = 0; i < w->rigs.count; ++i )
-	{
-		sums[lp_hashRigs] += lpHashRigElement( w, i );
-	}
-	for ( int i = 0; i < w->pools.count; ++i )
-	{
-		sums[lp_hashPools] += lpHashPoolElement( w, i );
-	}
-	for ( int i = 0; i < w->detonators.count; ++i )
-	{
-		sums[lp_hashDetonators] += lpHashDetonatorElement( w, i );
+		for ( int i = 0; lpBodyCategory( c ) < 0 && c != lp_hashPieces && i < lpWorld_HashSlotCount( w, c ); ++i )
+		{
+			sums[c] += lpHashSmallElement( w, c, i );
+		}
 	}
 }
 
-uint64_t lpWorld_Hash( const lpWorld* w )
+#define LP_CONTACT_CHUNK 2048 // contact slots per job of the contact walk
+
+typedef struct lpContactJob
 {
-	uint64_t sums[lp_hashCategoryCount];
-	lpHashCategories( w, sums );
+	const lpWorld* world;
+	int slots;
+} lpContactJob;
+
+static void lpRunContactChunk( int chunk, void* context )
+{
+	const lpContactJob* job = context;
+	const lpHashCache* c = job->world->hash;
+	int begin = chunk * LP_CONTACT_CHUNK;
+	int end = lpMinInt( begin + LP_CONTACT_CHUNK, job->slots );
+	lpPhys_HashContactRange( job->world->phys, begin, end, c->marked.data, LP_HASH_BODY, job->world->bodies.count, c->records.data + begin );
+}
+
+// The changed bodies' new element hashes, a chunk of them per job (pure: each job writes only its slots)
+typedef struct lpRehash
+{
+	const lpWorld* world;
+	const int* changed;
+	int count;
+	uint64_t* fresh; // three per changed body
+} lpRehash;
+
+#define LP_REHASH_CHUNK 64
+
+static void lpRehashChunk( int chunk, void* context )
+{
+	const lpRehash* job = context;
+	const lpWorld* w = job->world;
+	const lpHashCache* c = w->hash;
+	int end = lpMinInt( ( chunk + 1 ) * LP_REHASH_CHUNK, job->count );
+	for ( int k = chunk * LP_REHASH_CHUNK; k < end; ++k )
+	{
+		int i = job->changed[k];
+		const lpBody* b = w->bodies.data + i;
+		uint8_t parts = c->marked.data[i];
+		uint64_t* out = job->fresh + 3 * k;
+		const uint64_t* old = c->slots.data + 3 * i;
+		out[0] = old[0];
+		out[1] = old[1];
+		out[2] = old[2];
+		if ( parts & LP_HASH_BODY )
+		{
+			out[0] = b->alive ? lpHashBodyElement( w, i ) : 0;
+			out[2] = b->alive && LP_PHYS_NULL( b->id ) == false ? lpHashBackendElement( w, i, c->contacts.data[i] ) : 0;
+		}
+		if ( parts & LP_HASH_STRESS )
+		{
+			bool big = b->alive && lpHasStressState( b ) && lpBigStress( b ); // hashed after, its parts in parallel
+			out[1] = b->alive && lpHasStressState( b ) ? ( big ? old[1] : lpHashStressElement( w, i ) ) : 0;
+		}
+	}
+}
+
+// The changed pieces' new element hashes, a chunk of them per job
+typedef struct lpPieceRehash
+{
+	const lpWorld* world;
+	uint64_t* fresh;
+} lpPieceRehash;
+
+static void lpRehashPieceChunk( int chunk, void* context )
+{
+	const lpPieceRehash* job = context;
+	const lpHashCache* c = job->world->hash;
+	int end = lpMinInt( ( chunk + 1 ) * LP_REHASH_CHUNK, c->pieceChanged.count );
+	for ( int k = chunk * LP_REHASH_CHUNK; k < end; ++k )
+	{
+		job->fresh[k] = lpHashPieceSlot( job->world, c->pieceChanged.data[k] );
+	}
+}
+
+static void lpHashFlushPieces( const lpWorld* w )
+{
+	lpHashCache* c = w->hash;
+	int n = w->pieces.count;
+	if ( c->pieceSlots.count < n )
+	{
+		int old = c->pieceSlots.count;
+		lpArray_Reserve( c->pieceSlots, n );
+		memset( c->pieceSlots.data + old, 0, sizeof( uint64_t ) * (size_t)( n - old ) );
+		c->pieceSlots.count = n;
+	}
+	if ( c->pieceMarked.count < n )
+	{
+		int old = c->pieceMarked.count;
+		lpArray_Reserve( c->pieceMarked, n );
+		memset( c->pieceMarked.data + old, 0, (size_t)( n - old ) );
+		c->pieceMarked.count = n;
+	}
+	int changes = c->pieceChanged.count;
+	lpArray_Reserve( c->fresh, changes > 0 ? changes : 1 );
+	lpPieceRehash job = { w, c->fresh.data };
+	int chunks = ( changes + LP_REHASH_CHUNK - 1 ) / LP_REHASH_CHUNK;
+	if ( chunks > 1 )
+	{
+		lpTaskPool_ParallelFor( w->tasks, chunks, lpRehashPieceChunk, &job );
+	}
+	else if ( chunks == 1 )
+	{
+		lpRehashPieceChunk( 0, &job );
+	}
+	for ( int k = 0; k < changes; ++k )
+	{
+		int i = c->pieceChanged.data[k];
+		c->pieceSum += c->fresh.data[k] - c->pieceSlots.data[i];
+		c->pieceSlots.data[i] = c->fresh.data[k];
+		c->pieceMarked.data[i] = 0;
+	}
+	c->pieceChanged.count = 0;
+}
+
+// Brings the cached body slots up to date: every one the first time, then only the bodies marked since. A const world
+// may: the cache is the world's, behind a pointer, and keeping it is not simulation state.
+static void lpHashFlush( const lpWorld* w )
+{
+	lpHashCache* c = w->hash;
+	int n = w->bodies.count;
+	if ( c->slots.count < 3 * n )
+	{
+		int old = c->slots.count;
+		lpArray_Reserve( c->slots, 3 * n );
+		memset( c->slots.data + old, 0, sizeof( uint64_t ) * (size_t)( 3 * n - old ) );
+		c->slots.count = 3 * n;
+	}
+	if ( c->marked.count < n )
+	{
+		int old = c->marked.count;
+		lpArray_Reserve( c->marked, n );
+		memset( c->marked.data + old, 0, (size_t)( n - old ) );
+		c->marked.count = n;
+	}
+	lpArray_Reserve( c->contacts, n > 0 ? n : 1 );
+	c->contacts.count = n;
+	if ( c->valid == false )
+	{
+		memset( c->contacts.data, 0, sizeof( uint64_t ) * (size_t)n );
+		lpPhys_HashContacts( w->phys, NULL, 0, c->contacts.data, n );
+		memset( c->sums, 0, sizeof( c->sums ) );
+		for ( int i = 0; i < n; ++i )
+		{
+			uint64_t* slot = c->slots.data + 3 * i;
+			lpHashBodySlot( w, i, c->contacts.data[i], slot );
+			c->sums[0] += slot[0];
+			c->sums[1] += slot[1];
+			c->sums[2] += slot[2];
+		}
+		memset( c->marked.data, 0, (size_t)n );
+		c->changed.count = 0;
+		lpPhys_ClearTouched( w->phys );
+		int pieces = w->pieces.count;
+		lpArray_Reserve( c->pieceSlots, pieces > 0 ? pieces : 1 );
+		lpArray_Reserve( c->pieceMarked, pieces > 0 ? pieces : 1 );
+		c->pieceSlots.count = pieces;
+		c->pieceMarked.count = pieces;
+		memset( c->pieceMarked.data, 0, (size_t)pieces );
+		c->pieceSum = 0;
+		for ( int i = 0; i < pieces; ++i )
+		{
+			c->pieceSlots.data[i] = lpHashPieceSlot( w, i );
+			c->pieceSum += c->pieceSlots.data[i];
+		}
+		c->pieceChanged.count = 0;
+		c->valid = true;
+		return;
+	}
+	lpHashFlushPieces( w );
+	// What calls changed in the engine since the last step (or flush)
+	const int* touched;
+	int count = lpPhys_GetTouched( w->phys, &touched );
+	for ( int k = 0; k < count; ++k )
+	{
+		lpHashMark( (lpWorld*)w, touched[k] );
+	}
+	lpPhys_ClearTouched( w->phys );
+	if ( c->changed.count == 0 )
+	{
+		lpHashFlushPieces( w );
+		return;
+	}
+	for ( int k = 0; k < c->changed.count; ++k )
+	{
+		c->contacts.data[c->changed.data[k]] = 0;
+	}
+	// Only the parts marked: a structure solving its stress rehashes its stress state, not its geometry
+	int slots = lpPhys_GetContactSlotCount( w->phys );
+	lpArray_Reserve( c->records, slots > 0 ? slots : 1 );
+	lpContactJob contactJob = { w, slots };
+	int contactChunks = ( slots + LP_CONTACT_CHUNK - 1 ) / LP_CONTACT_CHUNK;
+	if ( contactChunks > 1 )
+	{
+		lpTaskPool_ParallelFor( w->tasks, contactChunks, lpRunContactChunk, &contactJob );
+	}
+	else if ( contactChunks == 1 )
+	{
+		lpRunContactChunk( 0, &contactJob );
+	}
+	for ( int k = 0; k < slots; ++k ) // added up after, so the sums are the same whatever the split
+	{
+		const lpPhysContactHash* r = c->records.data + k;
+		if ( r->a >= 0 )
+		{
+			c->contacts.data[r->a] += r->hash;
+		}
+		if ( r->b >= 0 )
+		{
+			c->contacts.data[r->b] += r->hash;
+		}
+	}
+	int changes = c->changed.count;
+	lpArray_Reserve( c->fresh, 3 * changes );
+	lpRehash job = { w, c->changed.data, changes, c->fresh.data };
+	int chunks = ( changes + LP_REHASH_CHUNK - 1 ) / LP_REHASH_CHUNK;
+	if ( chunks > 1 )
+	{
+		lpTaskPool_ParallelFor( w->tasks, chunks, lpRehashChunk, &job );
+	}
+	else
+	{
+		lpRehashChunk( 0, &job );
+	}
+	// A big structure's stress element, its parts in parallel
+	for ( int k = 0; k < changes; ++k )
+	{
+		int i = c->changed.data[k];
+		const lpBody* b = w->bodies.data + i;
+		if ( ( c->marked.data[i] & LP_HASH_STRESS ) && b->alive && lpHasStressState( b ) && lpBigStress( b ) )
+		{
+			int parts = lpStressChunks( b );
+			lpArray_Reserve( c->chunks, parts );
+			lpStressChunkJob stressJob = { w, i, c->chunks.data };
+			lpTaskPool_ParallelFor( w->tasks, parts, lpRunStressChunk, &stressJob );
+			c->fresh.data[3 * k + 1] = lpHashStressCombine( lpHashStressHead( w, i ), c->chunks.data, parts );
+		}
+	}
+	for ( int k = 0; k < changes; ++k )
+	{
+		int i = c->changed.data[k];
+		uint64_t* slot = c->slots.data + 3 * i;
+		for ( int j = 0; j < 3; ++j )
+		{
+			c->sums[j] += c->fresh.data[3 * k + j] - slot[j];
+			slot[j] = c->fresh.data[3 * k + j];
+		}
+		c->marked.data[i] = 0;
+	}
+	c->changed.count = 0;
+}
+
+void lpHashTakeChanges( lpWorld* w )
+{
+	if ( w->hash->valid == false )
+	{
+		lpPhys_ClearTouched( w->phys );
+		return;
+	}
+	// Box3D reports a move for every body it moved or put to sleep
+	const lpPhysMove* moves;
+	int count = lpPhys_GetMoves( w->phys, &moves );
+	for ( int k = 0; k < count; ++k )
+	{
+		lpHashMark( w, moves[k].body );
+	}
+	const int* touched;
+	count = lpPhys_GetTouched( w->phys, &touched );
+	for ( int k = 0; k < count; ++k )
+	{
+		lpHashMark( w, touched[k] );
+	}
+	lpPhys_ClearTouched( w->phys );
+}
+
+void lpHashFree( lpWorld* w )
+{
+	lpArray_Free( w->hash->slots );
+	lpArray_Free( w->hash->marked );
+	lpArray_Free( w->hash->changed );
+	lpArray_Free( w->hash->contacts );
+	lpArray_Free( w->hash->fresh );
+	lpArray_Free( w->hash->records );
+	lpArray_Free( w->hash->chunks );
+	lpArray_Free( w->hash->pieceSlots );
+	lpArray_Free( w->hash->pieceMarked );
+	lpArray_Free( w->hash->pieceChanged );
+	lpFree( w->hash );
+	w->hash = NULL;
+}
+
+void lpWorld_HashCategories( const lpWorld* w, uint64_t sums[lp_hashCategoryCount] )
+{
+	lpHashFlush( w );
+	for ( int c = 0; c < lp_hashCategoryCount; ++c )
+	{
+		int k = lpBodyCategory( c );
+		sums[c] = k >= 0 ? w->hash->sums[k] : ( c == lp_hashPieces ? w->hash->pieceSum : 0 );
+		for ( int i = 0; k < 0 && c != lp_hashPieces && i < lpWorld_HashSlotCount( w, c ); ++i )
+		{
+			sums[c] += lpHashSmallElement( w, c, i );
+		}
+	}
+}
+
+uint64_t lpWorld_HashElement( const lpWorld* w, int category, int slot )
+{
+	int k = lpBodyCategory( category );
+	if ( category == lp_hashPieces )
+	{
+		lpHashFlush( w );
+		return slot >= 0 && slot < w->pieces.count ? w->hash->pieceSlots.data[slot] : 0;
+	}
+	if ( k < 0 )
+	{
+		return slot >= 0 ? lpHashSmallElement( w, category, slot ) : 0;
+	}
+	lpHashFlush( w );
+	return slot >= 0 && slot < w->bodies.count ? w->hash->slots.data[3 * slot + k] : 0;
+}
+
+uint64_t lpWorld_HashBucket( const lpWorld* w, int category, int bucket )
+{
+	uint64_t sum = 0;
+	int end = lpMinInt( 64 * bucket + 64, lpWorld_HashSlotCount( w, category ) );
+	for ( int i = 64 * bucket; i < end; ++i )
+	{
+		sum += lpWorld_HashElement( w, category, i );
+	}
+	return sum;
+}
+
+static uint64_t lpHashRoot( const uint64_t sums[lp_hashCategoryCount] )
+{
 	uint64_t h = LP_HASH_INIT;
 	for ( int c = 0; c < lp_hashCategoryCount; ++c )
 	{
@@ -456,9 +931,60 @@ uint64_t lpWorld_Hash( const lpWorld* w )
 	return h;
 }
 
-uint64_t lpWorld_HashStress( const lpWorld* w )
+uint64_t lpWorld_Hash( const lpWorld* w )
 {
 	uint64_t sums[lp_hashCategoryCount];
-	lpHashCategories( w, sums );
-	return lpMix64( sums[lp_hashStress] );
+	lpWorld_HashCategories( w, sums );
+	return lpHashRoot( sums );
+}
+
+uint64_t lpWorld_HashStress( const lpWorld* w )
+{
+	lpHashFlush( w );
+	return lpMix64( w->hash->sums[1] );
+}
+
+bool lpWorld_CheckHash( const lpWorld* w, char* message, int size )
+{
+	static const char* names[lp_hashCategoryCount] = { "world", "bodies", "pieces", "stress", "backend", "links", "vehicles", "wheels", "rigs", "pools", "detonators" };
+	uint64_t kept[lp_hashCategoryCount], full[lp_hashCategoryCount];
+	lpWorld_HashCategories( w, kept );
+	lpHashCategories( w, full );
+	if ( memcmp( kept, full, sizeof( kept ) ) == 0 )
+	{
+		return true;
+	}
+	// Name the first body slot whose kept hash is not what it hashes to now (only the body categories are kept)
+	uint64_t* contacts = lpAlloc( sizeof( uint64_t ) * (size_t)( w->bodies.count > 0 ? w->bodies.count : 1 ) );
+	memset( contacts, 0, sizeof( uint64_t ) * (size_t)( w->bodies.count > 0 ? w->bodies.count : 1 ) );
+	lpPhys_HashContacts( w->phys, NULL, 0, contacts, w->bodies.count );
+	snprintf( message, (size_t)size, "a category differs, no body or piece slot does" );
+	for ( int i = 0; i < w->pieces.count; ++i )
+	{
+		if ( lpHashPieceSlot( w, i ) != w->hash->pieceSlots.data[i] )
+		{
+			snprintf( message, (size_t)size, "tick %llu: pieces element %d (generation %u, body %d) changed unmarked",
+					  (unsigned long long)w->tick, i, w->pieces.data[i].generation, w->pieces.data[i].body );
+			lpFree( contacts );
+			return false;
+		}
+	}
+	for ( int i = 0; i < w->bodies.count; ++i )
+	{
+		uint64_t now[3];
+		lpHashBodySlot( w, i, contacts[i], now );
+		for ( int k = 0; k < 3; ++k )
+		{
+			if ( now[k] != w->hash->slots.data[3 * i + k] )
+			{
+				const lpBody* b = w->bodies.data + i;
+				snprintf( message, (size_t)size, "tick %llu: %s element %d (generation %u, kind %d, tier %d, alive %d) changed unmarked",
+						  (unsigned long long)w->tick, names[lp_bodyCategories[k]], i, b->generation, b->kind, b->tier, b->alive );
+				lpFree( contacts );
+				return false;
+			}
+		}
+	}
+	lpFree( contacts );
+	return false;
 }

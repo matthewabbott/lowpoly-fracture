@@ -42,6 +42,7 @@ struct lpPhys
 	LP_ARRAY( uint64_t ) keys;
 	LP_ARRAY( uint64_t ) keyScratch;
 	LP_ARRAY( int ) pieces;
+	LP_ARRAY( int ) touched; // bodies a call changed (lpPhys_GetTouched)
 };
 
 // ---- crossing the boundary ----
@@ -160,6 +161,27 @@ static int lpBox3dAssert( const char* condition, const char* fileName, int lineN
 	return 1;
 }
 
+// A call changed the body's engine state: noted for the incremental hash
+static void lpTouch( lpPhys* p, b3BodyId id )
+{
+	intptr_t data = (intptr_t)b3Body_GetUserData( id );
+	if ( data > 0 )
+	{
+		lpArray_Push( p->touched, (int)( data - 1 ) );
+	}
+}
+
+int lpPhys_GetTouched( const lpPhys* p, const int** bodies )
+{
+	*bodies = p->touched.data;
+	return p->touched.count;
+}
+
+void lpPhys_ClearTouched( lpPhys* p )
+{
+	p->touched.count = 0;
+}
+
 lpPhys* lpPhys_Create( const lpPhysDef* def )
 {
 	b3SetAssertFcn( lpBox3dAssert );
@@ -192,6 +214,7 @@ void lpPhys_Destroy( lpPhys* p )
 	lpArray_Free( p->keys );
 	lpArray_Free( p->keyScratch );
 	lpArray_Free( p->pieces );
+	lpArray_Free( p->touched );
 	lpFree( p );
 }
 
@@ -259,6 +282,7 @@ bool lpPhys_IsDynamic( const lpPhys* p, lpPhysBody body )
 void lpPhys_SetDynamic( lpPhys* p, lpPhysBody body, bool dynamic )
 {
 	b3Body_SetType( lpB3Body( body ), dynamic ? b3_dynamicBody : b3_staticBody );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 lpWorldTransform lpPhys_GetTransform( const lpPhys* p, lpPhysBody body )
@@ -294,11 +318,13 @@ lpVec3 lpPhys_GetPointVelocity( const lpPhys* p, lpPhysBody body, lpPos point )
 void lpPhys_SetLinearVelocity( lpPhys* p, lpPhysBody body, lpVec3 v )
 {
 	b3Body_SetLinearVelocity( lpB3Body( body ), lpB3Vec( v ) );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 void lpPhys_SetAngularVelocity( lpPhys* p, lpPhysBody body, lpVec3 omega )
 {
 	b3Body_SetAngularVelocity( lpB3Body( body ), lpB3Vec( omega ) );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 float lpPhys_GetMass( const lpPhys* p, lpPhysBody body )
@@ -315,6 +341,7 @@ void lpPhys_UpdateMass( lpPhys* p, lpPhysBody body, float inertiaRadius )
 {
 	b3BodyId id = lpB3Body( body );
 	b3Body_ApplyMassFromShapes( id );
+	lpTouch( p, id );
 	if ( inertiaRadius > 0.0f )
 	{
 		b3MassData md = b3Body_GetMassData( id );
@@ -329,11 +356,24 @@ void lpPhys_UpdateMass( lpPhys* p, lpPhysBody body, float inertiaRadius )
 void lpPhys_ApplyForce( lpPhys* p, lpPhysBody body, lpVec3 force, lpPos point, bool wake )
 {
 	b3Body_ApplyForce( lpB3Body( body ), lpB3Vec( force ), lpB3Vec( point ), wake );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 void lpPhys_ApplyImpulse( lpPhys* p, lpPhysBody body, lpVec3 impulse, lpPos point, bool wake )
 {
 	b3Body_ApplyLinearImpulse( lpB3Body( body ), lpB3Vec( impulse ), lpB3Vec( point ), wake );
+	lpTouch( p, lpB3Body( body ) );
+}
+
+void lpPhys_GetMotion( const lpPhys* p, lpPhysBody body, lpWorldTransform* transform, lpVec3* linear, lpVec3* angular )
+{
+	(void)p;
+	b3WorldTransform xf;
+	b3Vec3 v, w;
+	b3Body_GetMotion( lpB3Body( body ), &xf, &v, &w );
+	*transform = lpTransformOf( xf );
+	*linear = lpVec( v );
+	*angular = lpVec( w );
 }
 
 float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body )
@@ -345,18 +385,21 @@ float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body )
 typedef struct lpContactSums
 {
 	const uint8_t* only;
-	uint64_t* sums;
+	uint8_t onlyBits;
+	uint64_t* sums;		   // added into (lpPhys_HashContacts), or
+	lpPhysContactHash* out; // one record per slot (lpPhys_HashContactRange), from slot `base`
+	int base;
 	int bodyCount;
 } lpContactSums;
 
-// One touching contact's state, field by field (manifold points have padding), keyed by its two pieces, summed for its
+// One touching contact's state, field by field (manifold points have padding), keyed by its two pieces, for its
 // non-static bodies
 static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
 {
 	lpContactSums* out = context;
 	int a = s->staticA ? -1 : (int)(intptr_t)bodyA - 1, b = s->staticB ? -1 : (int)(intptr_t)bodyB - 1;
-	bool wantA = a >= 0 && a < out->bodyCount && ( out->only == NULL || out->only[a] != 0 );
-	bool wantB = b >= 0 && b < out->bodyCount && ( out->only == NULL || out->only[b] != 0 );
+	bool wantA = a >= 0 && a < out->bodyCount && ( out->only == NULL || ( out->only[a] & out->onlyBits ) != 0 );
+	bool wantB = b >= 0 && b < out->bodyCount && ( out->only == NULL || ( out->only[b] & out->onlyBits ) != 0 );
 	if ( wantA == false && wantB == false )
 	{
 		return;
@@ -371,22 +414,35 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 	for ( int m = 0; m < s->manifoldCount; ++m )
 	{
 		const b3Manifold* manifold = s->manifolds + m;
-		float impulses[11] = { manifold->normal.x,			manifold->normal.y,			 manifold->normal.z,
-							   manifold->twistImpulse,		manifold->frictionImpulse.x, manifold->frictionImpulse.y,
-							   manifold->frictionImpulse.z, manifold->rollingImpulse.x,	 manifold->rollingImpulse.y,
-							   manifold->rollingImpulse.z,	(float)manifold->pointCount };
-		h = lpHashWords( h, impulses, sizeof( impulses ) );
+		// What carries into the next step: the impulses, and the feature ids that match them up again (the geometry is
+		// found anew each step)
+		uint32_t packed[8 + 4 * B3_MAX_MANIFOLD_POINTS];
+		float impulses[7] = { manifold->twistImpulse,		 manifold->frictionImpulse.x, manifold->frictionImpulse.y,
+							  manifold->frictionImpulse.z, manifold->rollingImpulse.x,	manifold->rollingImpulse.y,
+							  manifold->rollingImpulse.z };
+		memcpy( packed, impulses, sizeof( impulses ) );
+		packed[7] = (uint32_t)manifold->pointCount;
+		int words = 8;
 		for ( int k = 0; k < manifold->pointCount; ++k )
 		{
 			const b3ManifoldPoint* mp = manifold->points + k;
-			float point[10] = { mp->anchorA.x,		mp->anchorA.y,	  mp->anchorA.z,		 mp->anchorB.x, mp->anchorB.y,
-								mp->anchorB.z,		mp->normalImpulse, mp->totalNormalImpulse, mp->separation, mp->baseSeparation };
-			uint32_t feature[2] = { mp->featureId, mp->persisted ? 1u : 0u };
-			h = lpHashWords( h, point, sizeof( point ) );
-			h = lpHashWords( h, feature, sizeof( feature ) );
+			memcpy( packed + words, &mp->normalImpulse, 4 );
+			memcpy( packed + words + 1, &mp->totalNormalImpulse, 4 );
+			packed[words + 2] = mp->featureId;
+			packed[words + 3] = mp->persisted ? 1u : 0u;
+			words += 4;
 		}
+		h = lpHashWords( h, packed, sizeof( uint32_t ) * (size_t)words );
 	}
 	h = lpMix64( h );
+	if ( out->out != NULL )
+	{
+		lpPhysContactHash* r = out->out + ( s->slot - out->base );
+		r->a = wantA ? a : -1;
+		r->b = wantB ? b : -1;
+		r->hash = h;
+		return;
+	}
 	if ( wantA )
 	{
 		out->sums[a] += h;
@@ -397,10 +453,26 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 	}
 }
 
-void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint64_t* sums, int bodyCount )
+void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint8_t onlyBits, uint64_t* sums, int bodyCount )
 {
-	lpContactSums out = { only, sums, bodyCount };
-	b3World_VisitContactState( p->world, false, lpHashContactState, &out );
+	lpContactSums out = { only, onlyBits, sums, NULL, 0, bodyCount };
+	b3World_VisitContactState( p->world, true, lpHashContactState, &out );
+}
+
+int lpPhys_GetContactSlotCount( const lpPhys* p )
+{
+	return b3World_GetContactSlotCount( p->world );
+}
+
+void lpPhys_HashContactRange( const lpPhys* p, int begin, int end, const uint8_t* only, uint8_t onlyBits, int bodyCount,
+							  lpPhysContactHash* records )
+{
+	for ( int i = begin; i < end; ++i )
+	{
+		records[i - begin] = (lpPhysContactHash){ -1, -1, 0 };
+	}
+	lpContactSums out = { only, onlyBits, NULL, records, begin, bodyCount };
+	b3World_VisitContactStateRange( p->world, true, begin, end, lpHashContactState, &out );
 }
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
@@ -411,11 +483,13 @@ bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
 void lpPhys_SetAwake( lpPhys* p, lpPhysBody body, bool awake )
 {
 	b3Body_SetAwake( lpB3Body( body ), awake );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 void lpPhys_SetSleepThreshold( lpPhys* p, lpPhysBody body, float speed )
 {
 	b3Body_SetSleepThreshold( lpB3Body( body ), speed );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 float lpPhys_GetGravityScale( const lpPhys* p, lpPhysBody body )
@@ -426,6 +500,7 @@ float lpPhys_GetGravityScale( const lpPhys* p, lpPhysBody body )
 void lpPhys_SetGravityScale( lpPhys* p, lpPhysBody body, float scale )
 {
 	b3Body_SetGravityScale( lpB3Body( body ), scale );
+	lpTouch( p, lpB3Body( body ) );
 }
 
 lpAABB lpPhys_GetBounds( const lpPhys* p, lpPhysBody body )
@@ -539,11 +614,13 @@ lpPhysShape lpPhys_CreateHullShape( lpPhys* p, lpPhysBody body, const lpPhysShap
 	sd.filter.maskBits = def->filter.mask;
 	sd.enableHitEvents = def->hitEvents;
 	sd.enableCustomFiltering = def->customFilter;
+	lpTouch( p, lpB3Body( body ) );
 	return lpPhysShapeOf( b3CreateHullShape( lpB3Body( body ), &sd, (const b3HullData*)hull ) );
 }
 
 void lpPhys_DestroyShape( lpPhys* p, lpPhysShape shape )
 {
+	lpTouch( p, b3Shape_GetBody( lpB3Shape( shape ) ) );
 	b3DestroyShape( lpB3Shape( shape ), false );
 }
 
@@ -564,6 +641,8 @@ lpPhysJoint lpPhys_CreateJoint( lpPhys* p, const lpPhysJointDef* def )
 	b3JointDef base = b3DefaultWeldJointDef().base; // the common part is the same for every type
 	base.bodyIdA = lpB3Body( def->bodyA );
 	base.bodyIdB = lpB3Body( def->bodyB );
+	lpTouch( p, base.bodyIdA );
+	lpTouch( p, base.bodyIdB );
 	base.localFrameA = lpB3Transform( def->frameA );
 	base.localFrameB = lpB3Transform( def->frameB );
 	base.collideConnected = def->collideConnected;
@@ -623,6 +702,8 @@ lpPhysJoint lpPhys_CreateJoint( lpPhys* p, const lpPhysJointDef* def )
 
 void lpPhys_DestroyJoint( lpPhys* p, lpPhysJoint joint, bool wakeBodies )
 {
+	lpTouch( p, b3Joint_GetBodyA( lpB3Joint( joint ) ) );
+	lpTouch( p, b3Joint_GetBodyB( lpB3Joint( joint ) ) );
 	b3DestroyJoint( lpB3Joint( joint ), wakeBodies );
 }
 
@@ -640,6 +721,8 @@ void lpPhys_GetJointBodies( const lpPhys* p, lpPhysJoint joint, lpPhysBody* a, l
 void lpPhys_WakeJoint( lpPhys* p, lpPhysJoint joint )
 {
 	b3Joint_WakeBodies( lpB3Joint( joint ) );
+	lpTouch( p, b3Joint_GetBodyA( lpB3Joint( joint ) ) );
+	lpTouch( p, b3Joint_GetBodyB( lpB3Joint( joint ) ) );
 }
 
 void lpPhys_GetJointLoad( const lpPhys* p, lpPhysJoint joint, lpVec3* force, lpVec3* torque )

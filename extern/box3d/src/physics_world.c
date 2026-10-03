@@ -1760,14 +1760,27 @@ b3BodyEvents b3World_GetBodyEvents( b3WorldId worldId )
 	return events;
 }
 
+int b3World_GetContactSlotCount( b3WorldId worldId )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	return world != NULL ? world->contacts.count : 0;
+}
+
 void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStateFcn* fcn, void* context )
+{
+	b3World_VisitContactStateRange( worldId, awakeOnly, 0, b3World_GetContactSlotCount( worldId ), fcn, context );
+}
+
+void b3World_VisitContactStateRange( b3WorldId worldId, bool awakeOnly, int begin, int end, b3ContactStateFcn* fcn,
+									 void* context )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
 	if ( world == NULL )
 	{
 		return;
 	}
-	for ( int i = 0; i < world->contacts.count; ++i )
+	end = end < world->contacts.count ? end : world->contacts.count;
+	for ( int i = begin; i < end; ++i )
 	{
 		const b3Contact* contact = world->contacts.data + i;
 		if ( contact->setIndex == B3_NULL_INDEX || ( contact->flags & b3_contactTouchingFlag ) == 0 ||
@@ -1781,7 +1794,7 @@ void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStat
 		const b3Body* bodyB = b3Array_Get( world->bodies, shapeB->bodyId );
 		b3ContactState state = { contact->manifolds,		 contact->manifoldCount,		contact->cachedRotationA,
 								  contact->cachedRotationB, contact->cachedRelativePose, contact->flags,
-								  bodyA->setIndex == b3_staticSet, bodyB->setIndex == b3_staticSet };
+								  bodyA->setIndex == b3_staticSet, bodyB->setIndex == b3_staticSet, i };
 		fcn( shapeA->userData, shapeB->userData, bodyA->userData, bodyB->userData, &state, context );
 	}
 }

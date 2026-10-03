@@ -300,6 +300,8 @@ int lpAllocPiece( lpWorld* w )
 
 void lpFreePieceSlot( lpWorld* w, int index )
 {
+	lpHashMark( w, w->pieces.data[index].body );
+	lpHashMarkPiece( w, index );
 	lpBreakPieceLinks( w, index );
 	lpPiece* p = w->pieces.data + index;
 	lpCarriersChanged( w, p->carries );
@@ -369,6 +371,7 @@ int lpAllocBody( lpWorld* w )
 	b->gridNext = -1;
 	b->landIn = -1;
 	b->stressPin = -1;
+	lpHashMark( w, index );
 	return index;
 }
 
@@ -405,12 +408,15 @@ lpWorld* lpCreateWorld( const lpWorldDef* def )
 	pd.context = w;
 	w->phys = lpPhys_Create( &pd );
 	w->tasks = lpTaskPool_Create( def->workerCount );
+	w->hash = lpAlloc( sizeof( lpHashCache ) );
+	memset( w->hash, 0, sizeof( lpHashCache ) );
 	lpGridInit( w );
 	return w;
 }
 
 void lpDestroyWorld( lpWorld* w )
 {
+	lpHashFree( w );
 	lpPhys_Destroy( w->phys ); // every body, shape and joint with it
 	for ( int i = 0; i < w->bodies.count; ++i )
 	{
@@ -550,6 +556,8 @@ bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 	lpBody* b = w->bodies.data + bodyIndex;
 	p->body = bodyIndex;
 	p->cluster = 0; // clusters are its old structure's
+	lpHashMark( w, bodyIndex );
+	lpHashMarkPiece( w, pieceIndex );
 	lpArray_Push( b->pieces, pieceIndex );
 	b->volume += p->shape->volume;
 	b->topology += 1;
@@ -559,6 +567,7 @@ bool lpAttachPiece( lpWorld* w, int pieceIndex, int bodyIndex )
 void lpDetachPieceShape( lpWorld* w, int pieceIndex )
 {
 	lpPiece* p = w->pieces.data + pieceIndex;
+	lpHashMark( w, p->body );
 	if ( LP_PHYS_NULL( p->shapeId ) == false )
 	{
 		lpPhys_DestroyShape( w->phys, p->shapeId );
@@ -709,6 +718,7 @@ void lpDestroyBody( lpWorld* w, int bodyIndex, bool emitDust )
 {
 	lpBody* b = w->bodies.data + bodyIndex;
 	LP_ASSERT( b->alive );
+	lpHashMark( w, bodyIndex );
 	bool loose = b->kind == lp_kindGhost || b->kind == lp_kindScrap;
 	lpWorldTransform xf = lpGetTransform( w, b );
 
@@ -770,6 +780,7 @@ int lpCreateBodyInternal( lpWorld* w, lpWorldTransform xf, bool dynamic, uint8_t
 
 void lpMarkDirty( lpWorld* w, int bodyIndex )
 {
+	lpHashMarkStress( w, bodyIndex ); // dirty bodies are the world element's
 	lpBody* b = w->bodies.data + bodyIndex;
 	if ( b->dirty == false )
 	{
@@ -1113,145 +1124,6 @@ void lpWakeRubble( lpWorld* w, int bodyIndex )
 lpStats lpWorld_GetStats( const lpWorld* w )
 {
 	return w->stats;
-}
-
-uint64_t lpWorld_HashLegacy( const lpWorld* w )
-{
-	uint64_t h = LP_HASH_INIT;
-	h = lpHashBytes( h, &w->tick, sizeof( w->tick ) );
-	for ( int i = 0; i < w->bodies.count; ++i )
-	{
-		const lpBody* b = w->bodies.data + i;
-		if ( b->alive == false )
-		{
-			continue;
-		}
-		h = lpHashBytes( h, &i, sizeof( i ) );
-		h = lpHashBytes( h, &b->kind, sizeof( b->kind ) );
-		h = lpHashBytes( h, &b->tier, sizeof( b->tier ) );
-		h = lpHashBytes( h, &b->pieces.count, sizeof( int ) );
-		h = lpHashBytes( h, b->pieces.data, sizeof( int ) * (size_t)b->pieces.count );
-		if ( b->gravityScale != 1.0f )
-		{
-			h = lpHashBytes( h, &b->gravityScale, sizeof( b->gravityScale ) ); // only when set: old hashes stay valid
-		}
-		if ( b->inertiaRadius != 0.0f )
-		{
-			h = lpHashBytes( h, &b->inertiaRadius, sizeof( b->inertiaRadius ) );
-		}
-		if ( b->kind == lp_kindGhost || b->kind == lp_kindScrap )
-		{
-			h = lpHashBytes( h, &b->com, sizeof( b->com ) );
-			h = lpHashBytes( h, &b->q, sizeof( b->q ) );
-			h = lpHashBytes( h, &b->v, sizeof( b->v ) );
-			h = lpHashBytes( h, &b->omega, sizeof( b->omega ) );
-			// the landing plan and the sinking decide where and when it stops
-			h = lpHashBytes( h, &b->planTicks, sizeof( b->planTicks ) );
-			h = lpHashBytes( h, &b->landIn, sizeof( b->landIn ) );
-			h = lpHashBytes( h, &b->landPoint, sizeof( b->landPoint ) );
-			h = lpHashBytes( h, &b->landNormal, sizeof( b->landNormal ) );
-			h = lpHashBytes( h, &b->sinkTicks, sizeof( b->sinkTicks ) );
-			continue;
-		}
-		lpWorldTransform xf = lpPhys_GetTransform( w->phys, b->id );
-		lpVec3 v = lpPhys_GetLinearVelocity( w->phys, b->id );
-		lpVec3 omega = lpPhys_GetAngularVelocity( w->phys, b->id );
-		LP_ASSERT( lpIsValidVec3( xf.p ) && lpIsValidVec3( v ) && lpIsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
-		h = lpHashBytes( h, &xf, sizeof( xf ) );
-		h = lpHashBytes( h, &v, sizeof( v ) );
-		h = lpHashBytes( h, &omega, sizeof( omega ) );
-	}
-	for ( int i = 0; i < w->pieces.count; ++i )
-	{
-		const lpPiece* p = w->pieces.data + i;
-		if ( p->body < 0 )
-		{
-			continue;
-		}
-		h = lpHashBytes( h, &p->body, sizeof( p->body ) );
-		h = lpHashBytes( h, &p->shape->volume, sizeof( float ) );
-		h = lpHashBytes( h, &p->shape->centroid, sizeof( lpVec3 ) );
-		h = lpHashBytes( h, p->shape->vertices, sizeof( lpVec3 ) * (size_t)p->shape->vertexCount );
-		h = lpHashBytes( h, p->bonds.data, sizeof( int ) * (size_t)p->bonds.count );
-		if ( ( p->carries | p->needs ) != 0 )
-		{
-			uint8_t masks[3] = { p->carries, p->sources, p->needs }; // only when set: old hashes stay valid
-			h = lpHashBytes( h, masks, sizeof( masks ) );
-			h = lpHashBytes( h, &p->sourceShare, sizeof( float ) );
-			h = lpHashBytes( h, p->supply, sizeof( p->supply ) );
-		}
-	}
-	for ( int i = 0; i < w->bonds.count; ++i )
-	{
-		const lpBond* bond = w->bonds.data + i;
-		if ( bond->alive )
-		{
-			h = lpHashBytes( h, &bond->a, sizeof( int ) );
-			h = lpHashBytes( h, &bond->b, sizeof( int ) );
-			h = lpHashBytes( h, &bond->health, sizeof( float ) );
-		}
-	}
-	for ( int i = 0; i < w->detonators.count; ++i )
-	{
-		const lpDetonator* d = w->detonators.data + i;
-		uint8_t armed = d->armed ? 1 : 0;
-		h = lpHashBytes( h, &armed, sizeof( armed ) );
-		if ( d->lit ) // a fuse burning (an unlit one hashes as before)
-		{
-			h = lpHashBytes( h, &d->fuse, sizeof( d->fuse ) );
-		}
-	}
-	return lpHashLinks( w, h );
-}
-
-uint64_t lpWorld_HashStressLegacy( const lpWorld* w )
-{
-	uint64_t h = LP_HASH_INIT;
-	for ( int i = 0; i < w->bodies.count; ++i )
-	{
-		const lpBody* b = w->bodies.data + i;
-		if ( b->alive == false || b->kind != lp_kindStructure )
-		{
-			continue;
-		}
-		bool flags[4] = { b->solving, b->creaking, b->unsettled, b->strainedLastCheck };
-		h = lpHashBytes( h, &i, sizeof( i ) );
-		h = lpHashBytes( h, flags, sizeof( flags ) );
-		h = lpHashBytes( h, &b->stressSteps, sizeof( b->stressSteps ) );
-		if ( b->solving )
-		{
-			h = lpHashBytes( h, &b->solveRz, sizeof( b->solveRz ) );
-		}
-		// A solve in progress continues from its system's residual and search direction
-		const lpStressSystem* s = b->system;
-		if ( b->solving && s != NULL && s->built )
-		{
-			int n = s->nodes.count;
-			h = lpHashBytes( h, s->vectors.data + 2 * n, sizeof( lpVec6 ) * (size_t)n );
-			h = lpHashBytes( h, s->vectors.data + 4 * n, sizeof( lpVec6 ) * (size_t)n );
-		}
-	}
-	for ( int i = 0; i < w->pieces.count; ++i )
-	{
-		const lpPiece* p = w->pieces.data + i;
-		if ( p->body < 0 )
-		{
-			continue;
-		}
-		h = lpHashBytes( h, &p->stressX, sizeof( lpVec6 ) );
-		h = lpHashBytes( h, &p->stressLoad, sizeof( lpVec6 ) );
-		h = lpHashBytes( h, &p->strain, sizeof( float ) );
-	}
-	for ( int i = 0; i < w->bonds.count; ++i )
-	{
-		const lpBond* bond = w->bonds.data + i;
-		if ( bond->alive )
-		{
-			h = lpHashBytes( h, &bond->rho, sizeof( float ) );
-			h = lpHashBytes( h, &bond->strain, sizeof( float ) );
-		}
-	}
-	return h;
 }
 
 // ---- queries ----

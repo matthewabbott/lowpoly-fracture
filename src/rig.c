@@ -872,67 +872,7 @@ int lpApplyClaw( lpWorld* w, int rig, int limb, int mode, float maxForce, float 
 	return l->grip;
 }
 
-// ---- hash, validation ----
-
-uint64_t lpHashRigs( const lpWorld* w, uint64_t h )
-{
-	for ( int ri = 0; ri < w->rigs.count; ++ri )
-	{
-		const lpRig* r = w->rigs.data + ri;
-		// Field by field: no struct padding in the hash
-		float control[4] = { r->control.forward, r->control.strafe, r->control.turn, r->control.crouch };
-		float pose[4] = { r->desired.q.v.x, r->desired.q.v.y, r->desired.q.v.z, r->desired.q.s };
-		uint8_t flags[4] = { r->alive ? 1 : 0, r->idle ? 1 : 0, r->crawling ? 1 : 0, r->stuck ? 1 : 0 };
-		h = lpHashBytes( h, control, sizeof( control ) );
-		h = lpHashBytes( h, &r->desired.p, sizeof( r->desired.p ) );
-		h = lpHashBytes( h, pose, sizeof( pose ) );
-		h = lpHashBytes( h, flags, sizeof( flags ) );
-		h = lpHashBytes( h, &r->calm, sizeof( r->calm ) );
-		int counters[2] = { r->stall, r->ableSeen };
-		h = lpHashBytes( h, counters, sizeof( counters ) );
-		h = lpHashBytes( h, &r->body, sizeof( r->body ) );
-		for ( int i = 0; i < r->limbCount; ++i )
-		{
-			const lpLimb* limb = r->limbs + i;
-			int ints[4] = { limb->joints, limb->tipBody, limb->groundPiece, limb->tipJoints };
-			uint32_t tip[2] = { limb->tipGeneration, limb->tipTopology };
-			uint8_t limbFlags[9] = { limb->attached ? 1 : 0, limb->able ? 1 : 0,	   limb->planted ? 1 : 0,
-									 limb->swinging ? 1 : 0, limb->castLate ? 1 : 0, limb->grounded ? 1 : 0,
-									 limb->arrived ? 1 : 0,	 limb->reachWanted ? 1 : 0,	   limb->reaching ? 1 : 0 };
-			h = lpHashBytes( h, ints, sizeof( ints ) );
-			h = lpHashBytes( h, tip, sizeof( tip ) );
-			h = lpHashBytes( h, limbFlags, sizeof( limbFlags ) );
-			h = lpHashBytes( h, &limb->depth, sizeof( limb->depth ) ); // gates able and the stand height
-			h = lpHashBytes( h, &limb->neutral, sizeof( limb->neutral ) );
-			h = lpHashBytes( h, &limb->foot, sizeof( limb->foot ) );
-			h = lpHashBytes( h, limb->q, sizeof( limb->q ) );
-			h = lpHashBytes( h, &limb->swingClock, sizeof( limb->swingClock ) );
-			h = lpHashBytes( h, &limb->liftoff, sizeof( limb->liftoff ) );
-			h = lpHashBytes( h, &limb->landing, sizeof( limb->landing ) );
-			h = lpHashBytes( h, &limb->hold, sizeof( limb->hold ) );
-			h = lpHashBytes( h, &limb->holdClock, sizeof( limb->holdClock ) );
-			h = lpHashBytes( h, &limb->reachPoint, sizeof( limb->reachPoint ) );
-			h = lpHashBytes( h, &limb->touching, sizeof( limb->touching ) );
-		}
-		// A rig the game walks: its pose's motion and its feet's targets (a walked rig's hash is as it was)
-		if ( r->def.walker == lp_walkerNone )
-		{
-			uint8_t posed = r->posed ? 1 : 0;
-			h = lpHashBytes( h, &posed, 1 );
-			h = lpHashBytes( h, &r->poseLinear, sizeof( r->poseLinear ) );
-			h = lpHashBytes( h, &r->poseAngular, sizeof( r->poseAngular ) );
-			for ( int i = 0; i < r->limbCount; ++i )
-			{
-				const lpFootTarget* t = &r->limbs[i].target;
-				uint8_t active = t->active ? 1 : 0;
-				h = lpHashBytes( h, &active, 1 );
-				h = lpHashBytes( h, &t->point, sizeof( t->point ) );
-				h = lpHashBytes( h, &t->velocity, sizeof( t->velocity ) );
-			}
-		}
-	}
-	return h;
-}
+// ---- validation ----
 
 bool lpValidateRigs( const lpWorld* w )
 {

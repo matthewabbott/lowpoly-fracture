@@ -826,35 +826,7 @@ lpWheelState lpWorld_GetWheelState( const lpWorld* w, int link )
 	return s;
 }
 
-// ---- hash, validation ----
-
-uint64_t lpHashVehicles( const lpWorld* w, uint64_t h )
-{
-	for ( int i = 0; i < w->vehicles.count; ++i )
-	{
-		const lpVehicle* v = w->vehicles.data + i;
-		// Field by field: the struct has padding after the bool, which a copy fills with whatever was on the stack
-		float control[3] = { v->control.throttle, v->control.brake, v->control.steer };
-		uint8_t handbrake = v->control.handbrake ? 1 : 0;
-		h = lpHashBytes( h, control, sizeof( control ) );
-		h = lpHashBytes( h, &handbrake, sizeof( handbrake ) );
-		h = lpHashBytes( h, v->links, sizeof( int ) * (size_t)v->wheelCount );
-	}
-	for ( int i = 0; i < w->wheels.count; ++i )
-	{
-		const lpWheel* wh = w->wheels.data + i;
-		if ( wh->link < 0 )
-		{
-			continue;
-		}
-		float state[5] = { wh->steer, wh->length, wh->spin, wh->spinSpeed, wh->load }; // spin: a lost wheel takes its orientation
-		bool flags[3] = { wh->grounded, wh->atStop, wh->sliding };
-		h = lpHashBytes( h, state, sizeof( state ) );
-		h = lpHashBytes( h, flags, sizeof( flags ) );
-		h = lpHashBytes( h, &wh->groundPiece, sizeof( int ) );
-	}
-	return h;
-}
+// ---- validation ----
 
 static bool lpWheelFail( const char* message, int a, int b )
 {

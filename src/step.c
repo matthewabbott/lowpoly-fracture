@@ -276,6 +276,7 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	lpBurnFuses( w, timeStep );
 	lpFreezeOrKill( w );
 	lpEnforceBudgets( w );
+	lpHashTakeChanges( w ); // what the physics engine did and was told: rehashed by the next lpWorld_Hash
 
 	// Counters
 	w->stats.structureBodies = 0;

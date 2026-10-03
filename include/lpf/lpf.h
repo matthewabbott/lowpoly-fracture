@@ -889,7 +889,8 @@ int lpWorld_SettleStructures( lpWorld* world );
 typedef enum lpHashCategory
 {
 	lp_hashWorld,	   // the world's counters and the queues one step leaves the next
-	lp_hashBodies,	   // a body: its motion, its pieces (their geometry's digests) and its bonds
+	lp_hashBodies,	   // a body: its kind, motion and pieces (in order)
+	lp_hashPieces,	   // a piece: its geometry's digest, ids, supply, links, and the bonds it holds (with its higher neighbours)
 	lp_hashStress,	   // a structure's (or a moving body's) stress solve: solutions, loads, utilizations, solves in progress
 	lp_hashBackend,	   // the physics engine's own state of a body: sleep, contact warm starts and caches
 	lp_hashLinks,	   // a link, its motor and its loads
@@ -908,9 +909,16 @@ uint64_t lpWorld_Hash( const lpWorld* world );
 // equal, not only lpWorld_Hash.
 uint64_t lpWorld_HashStress( const lpWorld* world );
 
-// The hashes before milestone 10's, kept for one commit to show the new one changed nothing it measures
-uint64_t lpWorld_HashLegacy( const lpWorld* world );
-uint64_t lpWorld_HashStressLegacy( const lpWorld* world );
+// Following a mismatch down. Two machines whose hashes differ compare their categories' sums, then the buckets of
+// the category that differs (bucket k sums its elements in slots 64k to 64k+63), then that bucket's elements, to name
+// the slot. The hash is kept up to date incrementally: these and lpWorld_Hash rehash only what changed since.
+void lpWorld_HashCategories( const lpWorld* world, uint64_t sums[lp_hashCategoryCount] );
+int lpWorld_HashSlotCount( const lpWorld* world, int category ); // the world category has one slot
+uint64_t lpWorld_HashBucket( const lpWorld* world, int category, int bucket );
+uint64_t lpWorld_HashElement( const lpWorld* world, int category, int slot ); // 0: nothing in that slot
+// The incremental hash against a full recompute (slow: for tests and lpf_bench --check-hash). False, with the element
+// named in message, if something changed that was not rehashed: a bug in the hash's change tracking.
+bool lpWorld_CheckHash( const lpWorld* world, char* message, int size );
 
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions) and the engine's own trig and cube

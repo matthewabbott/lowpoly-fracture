@@ -56,6 +56,8 @@ typedef struct Result
 	int maxContacts, maxAwakeContacts, maxShapes;
 	double sumAwakeContacts;
 	int over16, over33; // ticks over a 60 Hz and a 30 Hz frame: the spikes a lockstep peer must absorb
+	double sumHash, maxHash; // the state hash each tick, kept incrementally (what a lockstep peer computes)
+	bool hashBroken;		  // --check-hash found the incremental hash off a full recompute
 } Result;
 
 // Stress budgets from --stress-work (0: the world's defaults)
@@ -64,6 +66,9 @@ static int s_stressWork, s_stressStructureWork;
 // --hash-log path: every tick's hashes go to path.w<workers>.txt (cross-platform checks diff them for the first
 // differing tick)
 static const char* s_hashLog;
+
+// --check-hash: every tick, the incremental state hash against a full recompute (slow); exit 4 if they differ
+static bool s_checkHash;
 
 // --tick-log path: every tick's step, fracture, physics and stress times go to path.w<workers>.txt (spikes over time)
 static const char* s_tickLog;
@@ -110,9 +115,8 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		hashLog = fopen( path, "w" );
 		if ( hashLog != NULL )
 		{
-			fprintf( hashLog, "load %016llx %016llx %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
-					 (unsigned long long)lpWorld_HashStress( world ), (unsigned long long)lpWorld_HashLegacy( world ),
-					 (unsigned long long)lpWorld_HashStressLegacy( world ) );
+			fprintf( hashLog, "load %016llx %016llx\n", (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ) );
 		}
 	}
 
@@ -158,6 +162,20 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.sumVoronoiCpu += st.voronoiCpuMs;
 		r.sumStress += st.stressMs;
 		r.maxStress = st.stressMs > r.maxStress ? st.stressMs : r.maxStress;
+		uint64_t hashTicks = lpGetTicks();
+		lpWorld_Hash( world );
+		double hashMs = lpGetMilliseconds( hashTicks );
+		r.sumHash += hashMs;
+		r.maxHash = hashMs > r.maxHash ? hashMs : r.maxHash;
+		if ( s_checkHash && r.hashBroken == false )
+		{
+			char message[256];
+			r.hashBroken = lpWorld_CheckHash( world, message, (int)sizeof( message ) ) == false;
+			if ( r.hashBroken )
+			{
+				fprintf( stderr, "hash check: %s\n", message );
+			}
+		}
 		r.stressIterations += st.stressIterations;
 		r.stressBreaks += st.stressBreaks;
 		r.stressSolves += st.stressSolves;
@@ -185,9 +203,8 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.over33 += total[tick] > 1000.0f / 30.0f ? 1 : 0;
 		if ( hashLog != NULL )
 		{
-			fprintf( hashLog, "%d %016llx %016llx %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
-					 (unsigned long long)lpWorld_HashStress( world ), (unsigned long long)lpWorld_HashLegacy( world ),
-					 (unsigned long long)lpWorld_HashStressLegacy( world ) );
+			fprintf( hashLog, "%d %016llx %016llx\n", tick, (unsigned long long)lpWorld_Hash( world ),
+					 (unsigned long long)lpWorld_HashStress( world ) );
 		}
 		if ( tickLog != NULL )
 		{
@@ -294,6 +311,11 @@ int main( int argc, char** argv )
 			jsonPath = v;
 			++i;
 		}
+		else if ( strcmp( a, "--check-hash" ) == 0 )
+		{
+			s_checkHash = true;
+			continue;
+		}
 		else if ( strcmp( a, "--hash-log" ) == 0 )
 		{
 			s_hashLog = v;
@@ -362,6 +384,8 @@ int main( int argc, char** argv )
 				r.stressJudged, r.stressJudged > 0 ? (double)r.stressSolves / (double)r.stressJudged : 0.0, r.stressReduced,
 				r.stressAudits, r.stressWaiting,
 				(unsigned long long)r.solverHash );
+		printf( "        hash: avg %.3f ms, max %.3f ms (kept incrementally)%s\n", r.sumHash / (double)( ticks > 0 ? ticks : 1 ),
+				r.maxHash, r.hashBroken ? "; CHECK FAILED" : "" );
 		printf( "        load: %.1f ms for %d pieces and %d bonds, settling %.1f ms of it (%d iterations)\n", (double)r.loadMs,
 				r.pieces, r.bonds, (double)r.settleMs, r.settleIterations );
 	}
@@ -386,13 +410,15 @@ int main( int argc, char** argv )
 						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, \"stressJudged\": %d, "
 						 "\"stressReduced\": %d, \"stressAudits\": %d, "
 						 "\"stressWaits\": %d, \"loadMs\": %.1f, \"settleMs\": %.1f, \"settleIterations\": %d, \"pieces\": %d, "
-						 "\"bonds\": %d, \"over16ms\": %d, \"over33ms\": %d, \"hash\": \"%016llx\", \"solverHash\": \"%016llx\"}%s\n",
+						 "\"bonds\": %d, \"over16ms\": %d, \"over33ms\": %d, \"hashAvgMs\": %.4f, \"hashMaxMs\": %.4f, \"hash\": \"%016llx\", "
+						 "\"solverHash\": \"%016llx\"}%s\n",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
 						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
 						 r.stressSolves, r.stressJudged, r.stressReduced, r.stressAudits, r.stressWaiting, (double)r.loadMs,
 						 (double)r.settleMs, r.settleIterations, r.pieces, r.bonds, r.over16, r.over33,
+						 r.sumHash / (double)( ticks > 0 ? ticks : 1 ), r.maxHash,
 						 (unsigned long long)r.hash, (unsigned long long)r.solverHash, w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );
@@ -400,5 +426,10 @@ int main( int argc, char** argv )
 		}
 	}
 	lpScriptFree( &s_script );
-	return deterministic ? 0 : 2;
+	bool hashBroken = false;
+	for ( int w = 0; w < workerCount; ++w )
+	{
+		hashBroken = hashBroken || results[w].hashBroken;
+	}
+	return deterministic == false ? 2 : ( hashBroken ? 4 : 0 );
 }

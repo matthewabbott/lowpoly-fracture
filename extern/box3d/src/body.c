@@ -1161,6 +1161,16 @@ void b3Body_SetTransform( b3BodyId bodyId, b3Pos position, b3Quat rotation )
 	}
 }
 
+void b3Body_GetMotion( b3BodyId bodyId, b3WorldTransform* transform, b3Vec3* linearVelocity, b3Vec3* angularVelocity )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	*transform = b3GetBodyTransformQuick( world, body );
+	b3BodyState* state = b3GetBodyState( world, body );
+	*linearVelocity = state != NULL ? state->linearVelocity : b3Vec3_zero;
+	*angularVelocity = state != NULL ? state->angularVelocity : b3Vec3_zero;
+}
+
 b3Vec3 b3Body_GetLinearVelocity( b3BodyId bodyId )
 {
 	b3World* world = b3GetWorld( bodyId.world0 );
