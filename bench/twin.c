@@ -18,9 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char* lp_categoryNames[lp_hashCategoryCount] = { "world", "bodies", "pieces", "stress",	 "backend",	  "links",
-															  "vehicles", "wheels", "rigs", "pools", "detonators" };
-
 // The body an element is about (-1: none, or not a body's)
 static int ElementBody( const lpWorld* world, int category, int slot )
 {
@@ -184,7 +181,7 @@ int lpBenchTwin( int scene, int period, int ticks, int workers, const lpScript* 
 			detected = tick;
 			const lpLabDiff* first = diffs;
 			printf( "  tick %d: detected (%d ticks after), %d elements differ; first %s %d (generation %u), in unit %d of %d\n",
-					tick, tick - injectTick, count, lp_categoryNames[first->category], first->slot, first->generation,
+					tick, tick - injectTick, count, lpHashCategoryName( first->category ), first->slot, first->generation,
 					lpWorld_GetElementUnit( a, units, first->category, first->slot ), unitCount );
 		}
 		if ( differVisible && visible < 0 )

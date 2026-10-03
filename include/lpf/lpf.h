@@ -915,7 +915,11 @@ typedef enum lpHashCategory
 	lp_hashCategoryCount
 } lpHashCategory;
 
-// Hash of the full simulation state. Equal hashes after the same inputs prove determinism.
+const char* lpHashCategoryName( int category ); // "bodies", "stress", ...
+
+// Hash of the full simulation state: every element above, and the physics engine's state that carries into the next
+// step (sleep timers, contact and joint warm starts, sleeping ones too). Not hashed: caches rebuilt from hashed state
+// (a structure's stress system, its region's lists, the engine's islands and broadphase), which a restore rebuilds.
 uint64_t lpWorld_Hash( const lpWorld* world );
 
 // Hash of the stress solver's state (lp_hashStress). A change to the solver that is meant to change nothing keeps it

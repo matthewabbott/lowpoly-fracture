@@ -1220,6 +1220,81 @@ b3Vec3 b3Joint_GetConstraintTorque( b3JointId jointId )
 	return b3GetJointConstraintTorque( world, joint );
 }
 
+// lowpoly-fracture patch (b3Joint_GetImpulses)
+static void b3PutImpulse( float* impulses, int capacity, int* n, float f )
+{
+	if ( *n < capacity )
+	{
+		impulses[*n] = f;
+	}
+	*n += 1;
+}
+#define B3_PUT1( f ) b3PutImpulse( impulses, capacity, &n, ( f ) )
+#define B3_PUT2( v ) B3_PUT1( ( v ).x ), B3_PUT1( ( v ).y )
+#define B3_PUT3( v ) B3_PUT1( ( v ).x ), B3_PUT1( ( v ).y ), B3_PUT1( ( v ).z )
+
+int b3Joint_GetImpulses( b3JointId jointId, float* impulses, int capacity )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	b3Joint* joint = b3GetJointFullId( world, jointId );
+	b3JointSim* s = b3GetJointSim( world, joint );
+	int n = 0;
+	switch ( s->type )
+	{
+		case b3_distanceJoint:
+		{
+			const b3DistanceJoint* j = &s->distanceJoint;
+			B3_PUT1( j->impulse ), B3_PUT1( j->lowerImpulse ), B3_PUT1( j->upperImpulse ), B3_PUT1( j->motorImpulse );
+			break;
+		}
+		case b3_motorJoint:
+		{
+			const b3MotorJoint* j = &s->motorJoint;
+			B3_PUT3( j->linearVelocityImpulse ), B3_PUT3( j->angularVelocityImpulse ), B3_PUT3( j->linearSpringImpulse );
+			B3_PUT3( j->angularSpringImpulse );
+			break;
+		}
+		case b3_parallelJoint:
+			B3_PUT2( s->parallelJoint.perpImpulse );
+			break;
+		case b3_prismaticJoint:
+		{
+			const b3PrismaticJoint* j = &s->prismaticJoint;
+			B3_PUT2( j->perpImpulse ), B3_PUT3( j->angularImpulse ), B3_PUT1( j->springImpulse ), B3_PUT1( j->motorImpulse );
+			B3_PUT1( j->lowerImpulse ), B3_PUT1( j->upperImpulse );
+			break;
+		}
+		case b3_revoluteJoint:
+		{
+			const b3RevoluteJoint* j = &s->revoluteJoint;
+			B3_PUT3( j->linearImpulse ), B3_PUT2( j->perpImpulse ), B3_PUT1( j->springImpulse ), B3_PUT1( j->motorImpulse );
+			B3_PUT1( j->lowerImpulse ), B3_PUT1( j->upperImpulse );
+			break;
+		}
+		case b3_sphericalJoint:
+		{
+			const b3SphericalJoint* j = &s->sphericalJoint;
+			B3_PUT3( j->linearImpulse ), B3_PUT3( j->springImpulse ), B3_PUT3( j->motorImpulse );
+			B3_PUT1( j->lowerTwistImpulse ), B3_PUT1( j->upperTwistImpulse ), B3_PUT1( j->swingImpulse );
+			break;
+		}
+		case b3_weldJoint:
+			B3_PUT3( s->weldJoint.linearImpulse ), B3_PUT3( s->weldJoint.angularImpulse );
+			break;
+		case b3_wheelJoint:
+		{
+			const b3WheelJoint* j = &s->wheelJoint;
+			B3_PUT2( j->linearImpulse ), B3_PUT2( j->angularImpulse ), B3_PUT1( j->spinImpulse );
+			B3_PUT1( j->suspensionSpringImpulse ), B3_PUT1( j->lowerSuspensionImpulse ), B3_PUT1( j->upperSuspensionImpulse );
+			B3_PUT1( j->steeringSpringImpulse ), B3_PUT1( j->lowerSteeringImpulse ), B3_PUT1( j->upperSteeringImpulse );
+			break;
+		}
+		default:
+			break;
+	}
+	return n;
+}
+
 float b3Joint_GetLinearSeparation( b3JointId jointId )
 {
 	b3World* world = b3GetWorld( jointId.world0 );

@@ -1571,7 +1571,7 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 			seeds += p->changed > p->accepted ? 1 : 0;
 			p->accepted = w->changeSerial;
 			p->unaudited = job->front && fixed == false ? job->clustered : p->unaudited;
-			p->acceptedLoad = w->def.stressHopsPerTick > 0 ? p->stressLoad : p->acceptedLoad; // settling's judgements too
+			p->acceptedLoad = p->stressLoad; // what this judgement solved for: the drift guard compares with it
 		}
 	}
 	body->rejudge = false;

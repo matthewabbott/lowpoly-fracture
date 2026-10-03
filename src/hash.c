@@ -261,7 +261,7 @@ static uint64_t lpHashStressHead( const lpWorld* w, int bi )
 	LP_FIELD( h, b->stepV );
 	LP_FIELD( h, b->stepOmega );
 	LP_FIELD( h, b->hitPoint );
-	h = b->frontGrow ? lpHashBool( h, true ) : h; // a region solve that grows next step
+	h = lpHashBool( h, b->frontGrow ); // a region solve that grows next step
 	if ( b->system != NULL )
 	{
 		h = lpHashSystem( lpMix64( h ), b->system, b->solving ? ( b->solveClustered ? 2 : 1 ) : 0 );
@@ -294,10 +294,7 @@ static uint64_t lpHashStressChunk( const lpWorld* w, int bi, int chunk )
 		memcpy( state + 18, slender, sizeof( slender ) );
 		memcpy( state + 22, solve, sizeof( solve ) );
 		h = lpHashWords( h, state, sizeof( state ) );
-		if ( w->def.stressHopsPerTick > 0 )
-		{
-			h = lpHashWords( h, &p->acceptedLoad, sizeof( lpVec6 ) ); // the drift guard's (region solves)
-		}
+		h = lpHashWords( h, &p->acceptedLoad, sizeof( lpVec6 ) ); // the drift guard's (region solves)
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
@@ -396,6 +393,13 @@ static uint64_t lpHashLinkElement( const lpWorld* w, int li )
 	LP_FIELD( h, l->stressTorque );
 	LP_FIELD( h, l->recheckTick );
 	LP_FIELD( h, l->lastImpact );
+	if ( LP_PHYS_NULL( l->joint ) == false )
+	{
+		// The physics engine's warm start for the joint: what its next solve starts from
+		float impulses[LP_JOINT_IMPULSES];
+		int count = lpPhys_GetJointImpulses( w->phys, l->joint, impulses, LP_JOINT_IMPULSES );
+		h = lpHashWords( h, impulses, sizeof( float ) * (size_t)lpMinInt( count, LP_JOINT_IMPULSES ) );
+	}
 	return lpMix64( h );
 }
 
@@ -483,10 +487,7 @@ static uint64_t lpHashPoolElement( const lpWorld* w, int i )
 	float state[8] = { p->capacity, p->level, p->leak, p->seal, p->reach, p->found, p->leakRate, p->pressure };
 	h = lpHashWords( h, state, sizeof( state ) );
 	LP_FIELD( h, p->step );
-	if ( w->def.supplyHopsPerTick > 0 )
-	{
-		LP_FIELD( h, p->source ); // where its leak's wave arrives
-	}
+	LP_FIELD( h, p->source ); // where its leak's wave arrives
 	return lpMix64( h );
 }
 
@@ -788,7 +789,6 @@ static void lpHashFlush( const lpWorld* w )
 	lpPhys_ClearTouched( w->phys );
 	if ( c->changed.count == 0 )
 	{
-		lpHashFlushPieces( w );
 		return;
 	}
 	for ( int k = 0; k < c->changed.count; ++k )
@@ -963,9 +963,15 @@ uint64_t lpWorld_HashStress( const lpWorld* w )
 	return lpMix64( w->hash->sums[1] );
 }
 
+const char* lpHashCategoryName( int category )
+{
+	static const char* names[lp_hashCategoryCount] = { "world", "bodies",	  "pieces", "stress", "backend",   "links",
+													   "vehicles", "wheels", "rigs",	  "pools",  "detonators" };
+	return category >= 0 && category < lp_hashCategoryCount ? names[category] : "?";
+}
+
 bool lpWorld_CheckHash( const lpWorld* w, char* message, int size )
 {
-	static const char* names[lp_hashCategoryCount] = { "world", "bodies", "pieces", "stress", "backend", "links", "vehicles", "wheels", "rigs", "pools", "detonators" };
 	uint64_t kept[lp_hashCategoryCount], full[lp_hashCategoryCount];
 	lpWorld_HashCategories( w, kept );
 	lpHashCategories( w, full );
@@ -973,7 +979,8 @@ bool lpWorld_CheckHash( const lpWorld* w, char* message, int size )
 	{
 		return true;
 	}
-	// Name the first body slot whose kept hash is not what it hashes to now (only the body categories are kept)
+	// Name the first piece or body slot whose kept hash is not what it hashes to now (the small categories are hashed
+	// whole each time, so they cannot go stale)
 	uint64_t* contacts = lpAlloc( sizeof( uint64_t ) * (size_t)( w->bodies.count > 0 ? w->bodies.count : 1 ) );
 	memset( contacts, 0, sizeof( uint64_t ) * (size_t)( w->bodies.count > 0 ? w->bodies.count : 1 ) );
 	lpPhys_HashContacts( w->phys, NULL, 0, contacts, w->bodies.count );
@@ -998,7 +1005,7 @@ bool lpWorld_CheckHash( const lpWorld* w, char* message, int size )
 			{
 				const lpBody* b = w->bodies.data + i;
 				snprintf( message, (size_t)size, "tick %llu: %s element %d (generation %u, kind %d, tier %d, alive %d) changed unmarked",
-						  (unsigned long long)w->tick, names[lp_bodyCategories[k]], i, b->generation, b->kind, b->tier, b->alive );
+						  (unsigned long long)w->tick, lpHashCategoryName( lp_bodyCategories[k] ), i, b->generation, b->kind, b->tier, b->alive );
 				lpFree( contacts );
 				return false;
 			}

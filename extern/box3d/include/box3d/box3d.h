@@ -1159,6 +1159,10 @@ B3_API bool b3Joint_IsAwake( b3JointId jointId );
 /// Get the current constraint force for this joint
 B3_API b3Vec3 b3Joint_GetConstraintForce( b3JointId jointId );
 
+/// lowpoly-fracture patch: the impulses the joint's next solve starts from (its warm start: point, limit, motor and
+/// spring impulses, by joint type), up to capacity of them; returns how many it has (at most 24), for a state hash
+B3_API int b3Joint_GetImpulses( b3JointId jointId, float* impulses, int capacity );
+
 /// Get the current constraint torque for this joint
 B3_API b3Vec3 b3Joint_GetConstraintTorque( b3JointId jointId );
 

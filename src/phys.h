@@ -134,21 +134,18 @@ void lpPhys_SetTransform( lpPhys* p, lpPhysBody body, lpWorldTransform transform
 void lpPhys_SetSleepTime( lpPhys* p, lpPhysBody body, float seconds );
 // Nudges the first manifold point's normal impulse (its warm start) of a touching contact of the body by ulps; false
 // if it has none
-bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps );
+bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps, int* other ); // other: the contact's other body (-1: static)
 // Copies the manifolds (impulses, feature ids) and recycling caches of every touching contact in src with a body whose
 // bit is set in bodies (by body index, bodyCount of them) to the contact of dst between the same two shapes, where it
 // has the same manifold count; returns the bytes of what carries over (the fields the state hash covers). A contact
 // one world has and the other lacks stays so: a state-only repair cannot make or end contacts.
 int lpPhys_CopyContacts( lpPhys* dst, const lpPhys* src, const uint8_t* bodies, int bodyCount );
 // The engine's hidden contact state (warm starts, the feature ids matching them, recycling caches): adds one hash per
-// touching contact of awake bodies (a sleeping body's contacts are as they were when it slept, hashed then) to the
-// sums of its non-static bodies (by body index; bodyCount entries), so the sums do not depend
-// on the order contacts are kept in, and a static body's never changes. only (NULL: every body): the bodies to sum for,
-// those with a bit of onlyBits set.
+// touching contact, sleeping ones too (they wake with their warm starts), to the sums of its non-static bodies (by body
+// index; bodyCount entries), so the sums do not depend on the order contacts are kept in, and a static body's never
+// changes. only (NULL: every body): the bodies to sum for, those with a bit of onlyBits set; the others' contacts are
+// skipped before they are hashed, so a walk for a few marked bodies costs little more than the walk.
 void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint8_t onlyBits, uint64_t* sums, int bodyCount );
-// The bodies (by index) whose engine state a call changed since lpPhys_ClearTouched: velocities, forces, type, mass,
-// sleep, gravity, shapes or joints. With the step's moves, everything a step or a call can change; the incremental
-// state hash rehashes them.
 // The same contact hashes over a range of the engine's contact slots, one record per slot (bodies -1 where none),
 // so they can be made in parallel and added up after
 typedef struct lpPhysContactHash
@@ -159,6 +156,9 @@ typedef struct lpPhysContactHash
 int lpPhys_GetContactSlotCount( const lpPhys* p );
 void lpPhys_HashContactRange( const lpPhys* p, int begin, int end, const uint8_t* only, uint8_t onlyBits, int bodyCount,
 							  lpPhysContactHash* records );
+// The bodies (by index) whose engine state a call changed since lpPhys_ClearTouched: velocities, forces, type, mass,
+// sleep, gravity, shapes or joints. With the step's moves, everything a step or a call can change; the incremental
+// state hash rehashes them.
 int lpPhys_GetTouched( const lpPhys* p, const int** bodies );
 void lpPhys_ClearTouched( lpPhys* p );
 void lpPhys_SetAwake( lpPhys* p, lpPhysBody body, bool awake );
@@ -238,6 +238,10 @@ void lpPhys_WakeJoint( lpPhys* p, lpPhysJoint joint );
 // The force and torque the joint applied on body B at the last step (world frame)
 void lpPhys_GetJointLoad( const lpPhys* p, lpPhysJoint joint, lpVec3* force, lpVec3* torque );
 float lpPhys_GetJointSeparation( const lpPhys* p, lpPhysJoint joint ); // linear error, m
+// The impulses its next solve starts from (the engine's hidden state, for the state hash): up to capacity, returns how
+// many there are (at most LP_JOINT_IMPULSES)
+#define LP_JOINT_IMPULSES 24
+int lpPhys_GetJointImpulses( const lpPhys* p, lpPhysJoint joint, float* impulses, int capacity );
 float lpPhys_GetHingeAngle( const lpPhys* p, lpPhysJoint joint );
 void lpPhys_SetHingeMotor( lpPhys* p, lpPhysJoint joint, float speed );
 void lpPhys_SetBallMotor( lpPhys* p, lpPhysJoint joint, lpVec3 omega );

@@ -402,6 +402,7 @@ typedef struct lpNudge
 	int body;
 	int ulps;
 	bool done;
+	int other; // the contact's other body (-1: static)
 } lpNudge;
 
 static void lpNudgeContact( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
@@ -422,12 +423,14 @@ static void lpNudgeContact( void* shapeA, void* shapeB, void* bodyA, void* bodyB
 	b3ContactState state = *s;
 	state.manifolds = manifolds;
 	nudge->done = b3World_RestoreContactState( nudge->world, s->slot, &state );
+	nudge->other = a == nudge->body ? ( s->staticB ? -1 : b ) : ( s->staticA ? -1 : a );
 }
 
-bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps )
+bool lpPhys_NudgeContact( lpPhys* p, int body, int ulps, int* other )
 {
-	lpNudge nudge = { p->world, body, ulps, false };
+	lpNudge nudge = { p->world, body, ulps, false, -1 };
 	b3World_VisitContactState( p->world, false, lpNudgeContact, &nudge );
+	*other = nudge.other;
 	return nudge.done;
 }
 
@@ -584,7 +587,7 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 void lpPhys_HashContacts( lpPhys* p, const uint8_t* only, uint8_t onlyBits, uint64_t* sums, int bodyCount )
 {
 	lpContactSums out = { only, onlyBits, sums, NULL, 0, bodyCount };
-	b3World_VisitContactState( p->world, true, lpHashContactState, &out );
+	b3World_VisitContactState( p->world, false, lpHashContactState, &out );
 }
 
 int lpPhys_GetContactSlotCount( const lpPhys* p )
@@ -600,7 +603,7 @@ void lpPhys_HashContactRange( const lpPhys* p, int begin, int end, const uint8_t
 		records[i - begin] = (lpPhysContactHash){ -1, -1, 0 };
 	}
 	lpContactSums out = { only, onlyBits, NULL, records, begin, bodyCount };
-	b3World_VisitContactStateRange( p->world, true, begin, end, lpHashContactState, &out );
+	b3World_VisitContactStateRange( p->world, false, begin, end, lpHashContactState, &out );
 }
 
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
@@ -857,6 +860,12 @@ void lpPhys_GetJointLoad( const lpPhys* p, lpPhysJoint joint, lpVec3* force, lpV
 {
 	*force = lpVec( b3Joint_GetConstraintForce( lpB3Joint( joint ) ) );
 	*torque = lpVec( b3Joint_GetConstraintTorque( lpB3Joint( joint ) ) );
+}
+
+int lpPhys_GetJointImpulses( const lpPhys* p, lpPhysJoint joint, float* impulses, int capacity )
+{
+	(void)p;
+	return b3Joint_GetImpulses( lpB3Joint( joint ), impulses, capacity );
 }
 
 float lpPhys_GetJointSeparation( const lpPhys* p, lpPhysJoint joint )

@@ -11,9 +11,6 @@
 
 #define LP_HISTORY 4096 // ticks of hashes kept, by tick modulo this
 
-static const char* lp_categoryNames[lp_hashCategoryCount] = { "world", "bodies", "pieces", "stress", "backend",   "links",
-															  "vehicles", "wheels", "rigs",  "pools",   "detonators" };
-
 typedef struct lpLockPeer
 {
 	lpTransport transport;
@@ -284,7 +281,7 @@ static void lpNameElement( lpLockstep* ls, int category, int slot )
 	char report[512];
 	snprintf( report, sizeof( report ), "desync: first at tick %lld (peer %d); at tick %llu the %s element %d differs%s",
 			  (long long)ls->desyncTick, ls->peers[ls->desyncPeer]->peer, (unsigned long long)lpWorld_GetTick( ls->world ),
-			  lp_categoryNames[category], slot, what );
+			  lpHashCategoryName( category ), slot, what );
 	lpStop( ls, lp_lockstepDesync, report );
 	lpBroadcast( ls, "stop desync" );
 }

@@ -36,11 +36,13 @@ void lpLab_NudgeVelocity( lpWorld* w, int body, int ulps )
 
 bool lpLab_NudgeWarmStart( lpWorld* w, int body, int ulps )
 {
-	if ( lpPhys_NudgeContact( w->phys, body, ulps ) == false )
+	int other = -1;
+	if ( lpPhys_NudgeContact( w->phys, body, ulps, &other ) == false )
 	{
 		return false;
 	}
 	lpHashMark( w, body );
+	lpHashMark( w, other ); // the contact is in both moving bodies' hashes
 	return true;
 }
 

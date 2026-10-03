@@ -28,6 +28,9 @@
   `b3World_VisitContactStateRange` and `b3World_GetContactSlotCount` split the walk among threads.
 - `body.c`, `b3Body_GetSleepTime` (new): the body's sleep timer, for the state hash. `b3Body_SetSleepTime` (new) sets
   it, for the two-world lab's repair (src/lab.c).
+- `joint.c`, `b3Joint_GetImpulses` (new): the impulses a joint's next solve starts from (point, limit, motor and
+  spring impulses, by joint type), for the state hash: a joint's warm start carries into the next step like a
+  contact's.
 - `physics_world.c`, `b3World_RestoreContactState` (new): writes a touching contact's manifolds and recycling caches
   back, by its slot, for the same lab (a repair that copies warm starts, and the injected warm-start desync).
 - `body.c`, `b3Body_GetMotion` (new): the transform and both velocities in one lookup instead of three, for the state
