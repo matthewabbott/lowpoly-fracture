@@ -336,6 +336,65 @@ void lpPhys_ApplyImpulse( lpPhys* p, lpPhysBody body, lpVec3 impulse, lpPos poin
 	b3Body_ApplyLinearImpulse( lpB3Body( body ), lpB3Vec( impulse ), lpB3Vec( point ), wake );
 }
 
+float lpPhys_GetSleepTime( const lpPhys* p, lpPhysBody body )
+{
+	(void)p;
+	return b3Body_GetSleepTime( lpB3Body( body ) );
+}
+
+typedef struct lpContactSums
+{
+	uint64_t* sums;
+	int bodyCount;
+} lpContactSums;
+
+// One touching contact's state, field by field (manifold points have padding), keyed by its two pieces
+static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* bodyB, const b3ContactState* s, void* context )
+{
+	lpContactSums* out = context;
+	int32_t head[4] = { (int32_t)(intptr_t)shapeA, (int32_t)(intptr_t)shapeB, s->manifoldCount, (int32_t)s->flags };
+	uint64_t h = lpHashWords( LP_HASH_INIT, head, sizeof( head ) );
+	float cache[15] = { s->cachedRotationA.v.x, s->cachedRotationA.v.y, s->cachedRotationA.v.z, s->cachedRotationA.s,
+						s->cachedRotationB.v.x, s->cachedRotationB.v.y, s->cachedRotationB.v.z, s->cachedRotationB.s,
+						s->cachedRelativePose.p.x, s->cachedRelativePose.p.y, s->cachedRelativePose.p.z, s->cachedRelativePose.q.v.x,
+						s->cachedRelativePose.q.v.y, s->cachedRelativePose.q.v.z, s->cachedRelativePose.q.s };
+	h = lpHashWords( h, cache, sizeof( cache ) );
+	for ( int m = 0; m < s->manifoldCount; ++m )
+	{
+		const b3Manifold* manifold = s->manifolds + m;
+		float impulses[11] = { manifold->normal.x,			manifold->normal.y,			 manifold->normal.z,
+							   manifold->twistImpulse,		manifold->frictionImpulse.x, manifold->frictionImpulse.y,
+							   manifold->frictionImpulse.z, manifold->rollingImpulse.x,	 manifold->rollingImpulse.y,
+							   manifold->rollingImpulse.z,	(float)manifold->pointCount };
+		h = lpHashWords( h, impulses, sizeof( impulses ) );
+		for ( int k = 0; k < manifold->pointCount; ++k )
+		{
+			const b3ManifoldPoint* mp = manifold->points + k;
+			float point[10] = { mp->anchorA.x,		mp->anchorA.y,	  mp->anchorA.z,		 mp->anchorB.x, mp->anchorB.y,
+								mp->anchorB.z,		mp->normalImpulse, mp->totalNormalImpulse, mp->separation, mp->baseSeparation };
+			uint32_t feature[2] = { mp->featureId, mp->persisted ? 1u : 0u };
+			h = lpHashWords( h, point, sizeof( point ) );
+			h = lpHashWords( h, feature, sizeof( feature ) );
+		}
+	}
+	h = lpMix64( h );
+	int a = (int)(intptr_t)bodyA - 1, b = (int)(intptr_t)bodyB - 1;
+	if ( a >= 0 && a < out->bodyCount )
+	{
+		out->sums[a] += h;
+	}
+	if ( b >= 0 && b < out->bodyCount )
+	{
+		out->sums[b] += h;
+	}
+}
+
+void lpPhys_HashContacts( lpPhys* p, bool awakeOnly, uint64_t* sums, int bodyCount )
+{
+	lpContactSums out = { sums, bodyCount };
+	b3World_VisitContactState( p->world, awakeOnly, lpHashContactState, &out );
+}
+
 bool lpPhys_IsAwake( const lpPhys* p, lpPhysBody body )
 {
 	return b3Body_IsAwake( lpB3Body( body ) );

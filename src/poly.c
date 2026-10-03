@@ -560,6 +560,25 @@ bool lpPoly_IsValid( const lpPoly* poly, float tolerance )
 	return volume > 0.0f;
 }
 
+// The geometry's digest, field by field (faces have padding to keep out)
+static uint64_t lpShapeDigest( const lpShape* shape )
+{
+	int counts[3] = { shape->vertexCount, shape->faceCount, shape->indexCount };
+	uint64_t h = lpHashWords( LP_HASH_INIT, counts, sizeof( counts ) );
+	h = lpHashWords( h, shape->vertices, sizeof( lpVec3 ) * (size_t)shape->vertexCount );
+	for ( int i = 0; i < shape->faceCount; ++i )
+	{
+		const lpFace* f = shape->faces + i;
+		float plane[4] = { f->plane.normal.x, f->plane.normal.y, f->plane.normal.z, f->plane.offset };
+		int32_t loop[4] = { f->first, f->count, f->material, f->tag };
+		h = lpHashWords( h, plane, sizeof( plane ) );
+		h = lpHashWords( h, loop, sizeof( loop ) );
+	}
+	h = lpHashWords( h, shape->indices, (size_t)shape->indexCount );
+	float mass[4] = { shape->volume, shape->centroid.x, shape->centroid.y, shape->centroid.z };
+	return lpMix64( lpHashWords( h, mass, sizeof( mass ) ) );
+}
+
 lpShape* lpShape_Create( const lpPoly* poly )
 {
 	float volume;
@@ -591,6 +610,7 @@ lpShape* lpShape_Create( const lpPoly* poly )
 	shape->centroid = centroid;
 	shape->volume = volume;
 	shape->radius = sqrtf( lpPoly_MaxDistanceSquared( poly, centroid ) );
+	shape->digest = lpShapeDigest( shape );
 	return shape;
 }
 
@@ -623,6 +643,7 @@ void lpShape_Translate( lpShape* shape, lpVec3 translation )
 	shape->bounds.lowerBound = lpAdd( shape->bounds.lowerBound, translation );
 	shape->bounds.upperBound = lpAdd( shape->bounds.upperBound, translation );
 	shape->centroid = lpAdd( shape->centroid, translation );
+	shape->digest = lpShapeDigest( shape );
 }
 
 bool lpShape_HasFaceOnPlane( const lpShape* shape, lpPlane plane, float tolerance )

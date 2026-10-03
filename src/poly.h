@@ -91,6 +91,7 @@ typedef struct lpShape
 	lpVec3 centroid;
 	float volume;
 	float radius; // max distance from centroid to a vertex
+	uint64_t digest; // of its geometry (vertices, faces, indices, volume, centroid), for the state hash
 } lpShape;
 
 // Returns NULL for a degenerate polyhedron (non-positive volume).

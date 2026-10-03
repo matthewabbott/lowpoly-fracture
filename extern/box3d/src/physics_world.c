@@ -1760,6 +1760,31 @@ b3BodyEvents b3World_GetBodyEvents( b3WorldId worldId )
 	return events;
 }
 
+void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStateFcn* fcn, void* context )
+{
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return;
+	}
+	for ( int i = 0; i < world->contacts.count; ++i )
+	{
+		const b3Contact* contact = world->contacts.data + i;
+		if ( contact->setIndex == B3_NULL_INDEX || ( contact->flags & b3_contactTouchingFlag ) == 0 ||
+			 ( awakeOnly && contact->setIndex != b3_awakeSet ) )
+		{
+			continue;
+		}
+		const b3Shape* shapeA = b3Array_Get( world->shapes, contact->shapeIdA );
+		const b3Shape* shapeB = b3Array_Get( world->shapes, contact->shapeIdB );
+		const b3Body* bodyA = b3Array_Get( world->bodies, shapeA->bodyId );
+		const b3Body* bodyB = b3Array_Get( world->bodies, shapeB->bodyId );
+		b3ContactState state = { contact->manifolds,		 contact->manifoldCount,		contact->cachedRotationA,
+								  contact->cachedRotationB, contact->cachedRelativePose, contact->flags };
+		fcn( shapeA->userData, shapeB->userData, bodyA->userData, bodyB->userData, &state, context );
+	}
+}
+
 b3SensorEvents b3World_GetSensorEvents( b3WorldId worldId )
 {
 	b3World* world = b3GetUnlockedWorldFromId( worldId );

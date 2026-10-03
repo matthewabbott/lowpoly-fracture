@@ -2115,6 +2115,13 @@ float b3Body_GetSleepThreshold( b3BodyId bodyId )
 	return body->sleepThreshold;
 }
 
+float b3Body_GetSleepTime( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	return body->sleepTime;
+}
+
 void b3Body_SetSafetyFactor( b3BodyId bodyId, float safetyFactor )
 {
 	B3_ASSERT( b3IsValidFloat( safetyFactor ) && safetyFactor >= 0.0f );

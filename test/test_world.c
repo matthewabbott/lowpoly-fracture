@@ -690,6 +690,42 @@ static int TestTemplateSpawn( void )
 	return 0;
 }
 
+// The physics engine's hidden contact state, hashed per body: two worlds stepped alike agree body by body, only bodies
+// with a touching contact have a sum, and the awake bodies' contacts are a part of all of them
+static int TestContactHash( void )
+{
+	uint64_t* sums[2] = { NULL, NULL };
+	int counts[2] = { 0 };
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSimWorkers( lp_scenePile, run == 0 ? 1 : 4 );
+		Run( &s, 40 );
+		counts[run] = s.world->bodies.count;
+		sums[run] = calloc( (size_t)counts[run], sizeof( uint64_t ) );
+		lpPhys_HashContacts( s.world->phys, false, sums[run], counts[run] );
+		if ( run == 1 )
+		{
+			uint64_t* awake = calloc( (size_t)counts[run], sizeof( uint64_t ) );
+			lpPhys_HashContacts( s.world->phys, true, awake, counts[run] );
+			int touching = 0, awakeTouching = 0;
+			for ( int i = 0; i < counts[run]; ++i )
+			{
+				touching += sums[run][i] != 0 ? 1 : 0;
+				awakeTouching += awake[i] != 0 ? 1 : 0;
+				ENSURE( sums[run][i] != 0 || awake[i] == 0 );
+			}
+			printf( "  %d bodies with touching contacts, %d of them awake\n", touching, awakeTouching );
+			ENSURE( touching > 10 && awakeTouching <= touching );
+			free( awake );
+		}
+		DestroySim( &s );
+	}
+	ENSURE( counts[0] == counts[1] && memcmp( sums[0], sums[1], sizeof( uint64_t ) * (size_t)counts[0] ) == 0 );
+	free( sums[0] );
+	free( sums[1] );
+	return 0;
+}
+
 static int TestWorldTables( void )
 {
 	lpMaterialDef materials[lp_materialCount];
@@ -1025,6 +1061,7 @@ int WorldTest( void )
 	RUN_TEST( TestCommandOrder, MECHANISM );
 	RUN_TEST( TestCommandReferences, MECHANISM );
 	RUN_TEST( TestTemplateSpawn, MECHANISM );
+	RUN_TEST( TestContactHash, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );

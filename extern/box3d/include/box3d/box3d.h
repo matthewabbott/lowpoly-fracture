@@ -62,6 +62,24 @@ B3_API b3AABB b3World_GetBounds( b3WorldId worldId );
 /// Get the body events for the current time step. The event data is transient. Do not store a reference to this data.
 B3_API b3BodyEvents b3World_GetBodyEvents( b3WorldId worldId );
 
+/// lowpoly-fracture patch: what a touching contact carries into the next step (its manifolds' warm-start impulses and
+/// the feature ids that match them, its recycling cache, its flags), for a state hash
+typedef struct b3ContactState
+{
+	const b3Manifold* manifolds;
+	int manifoldCount;
+	b3Quat cachedRotationA;
+	b3Quat cachedRotationB;
+	b3Transform cachedRelativePose;
+	uint32_t flags;
+} b3ContactState;
+
+typedef void b3ContactStateFcn( void* shapeUserDataA, void* shapeUserDataB, void* bodyUserDataA, void* bodyUserDataB,
+								const b3ContactState* state, void* context );
+
+/// lowpoly-fracture patch: every touching contact (only those of awake bodies if awakeOnly), once, in no particular order
+B3_API void b3World_VisitContactState( b3WorldId worldId, bool awakeOnly, b3ContactStateFcn* fcn, void* context );
+
 /// Get sensor events for the current time step. The event data is transient. Do not store a reference to this data.
 B3_API b3SensorEvents b3World_GetSensorEvents( b3WorldId worldId );
 
@@ -700,6 +718,9 @@ B3_API void b3Body_SetSleepThreshold( b3BodyId bodyId, float sleepThreshold );
 
 /// Get the sleep threshold, usually in meters per second.
 B3_API float b3Body_GetSleepThreshold( b3BodyId bodyId );
+
+/// lowpoly-fracture patch: how long the body has been still enough to sleep (seconds), for a state hash
+B3_API float b3Body_GetSleepTime( b3BodyId bodyId );
 
 /// Set the continuous collision safety factor. Smaller is safer but can lead to hitching. Recommended range [0.01, 0.5]. Non-dimensional.
 B3_API void b3Body_SetSafetyFactor( b3BodyId bodyId, float safetyFactor );

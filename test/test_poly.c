@@ -138,9 +138,29 @@ static int TestContactArea( void )
 	return 0;
 }
 
+// A shape's digest is its geometry's: two shapes of one polyhedron agree, a translated one does not, and a different
+// polyhedron does not
+static int TestShapeDigest( void )
+{
+	lpPoly a, b;
+	lpPoly_MakeBox( &a, (lpVec3){ 0.5f, 0.25f, 0.75f }, lpTransform_identity, 0 );
+	lpPoly_MakeBox( &b, (lpVec3){ 0.5f, 0.25f, 0.7f }, lpTransform_identity, 0 );
+	lpShape* s1 = lpShape_Create( &a );
+	lpShape* s2 = lpShape_Create( &a );
+	lpShape* s3 = lpShape_Create( &b );
+	ENSURE( s1->digest == s2->digest && s1->digest != s3->digest );
+	lpShape_Translate( s2, (lpVec3){ 0.0f, 1.0f, 0.0f } );
+	ENSURE( s1->digest != s2->digest );
+	lpShape_Destroy( s1 );
+	lpShape_Destroy( s2 );
+	lpShape_Destroy( s3 );
+	return 0;
+}
+
 int PolyTest( void )
 {
 	RUN_TEST( TestBox, MECHANISM );
+	RUN_TEST( TestShapeDigest, MECHANISM );
 	RUN_TEST( TestClipBox, MECHANISM );
 	RUN_TEST( TestClipFuzz, MECHANISM );
 	RUN_TEST( TestContactArea, MECHANISM );

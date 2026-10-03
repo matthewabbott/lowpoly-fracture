@@ -158,3 +158,26 @@ static inline uint64_t lpHashBytes( uint64_t h, const void* data, size_t size )
 }
 
 #define LP_HASH_INIT 0xCBF29CE484222325ull
+
+// Mixes raw bytes into a 64-bit hash eight at a time: much cheaper than lpHashBytes, for state hashes whose result is
+// mixed again (lpMix64) before it is combined. Feed it fields or packed arrays, never structs with padding (rule 11).
+static inline uint64_t lpHashWords( uint64_t h, const void* data, size_t size )
+{
+	const uint8_t* p = (const uint8_t*)data;
+	size_t i = 0;
+	for ( ; i + 8 <= size; i += 8 )
+	{
+		uint64_t word;
+		memcpy( &word, p + i, 8 );
+		h = ( h ^ word ) * 0x100000001B3ull;
+		h ^= h >> 29;
+	}
+	if ( i < size )
+	{
+		uint64_t word = 0;
+		memcpy( &word, p + i, size - i );
+		h = ( h ^ word ) * 0x100000001B3ull;
+		h ^= h >> 29;
+	}
+	return h;
+}
