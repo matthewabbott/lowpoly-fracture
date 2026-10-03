@@ -1431,6 +1431,36 @@ static void lpFormClusters( lpWorld* w, const lpStressJob* job )
 	}
 }
 
+// Phase 3, a region solve still in progress: every joint over its limit outside the region strains on, as if the
+// structure were settled (the joints and slender pieces lpStressRejudge would strain), so a change far away does not
+// pause it; inside the region they wait for the judgement
+static void lpStressCreakOutside( lpWorld* w, const lpStressJob* job )
+{
+	lpBody* body = w->bodies.data + job->body;
+	const lpStressSystem* s = job->system;
+	int strained = 0, snapped = 0;
+	w->scratchOverloads.count = 0;
+	for ( int k = 0; k < s->edges.count; ++k )
+	{
+		int bi = s->edges.data[k].bond;
+		if ( lpEdgeInRegion( job, s->edges.data + k ) == false && w->bonds.data[bi].rho > 1.0f )
+		{
+			lpApplyStrain( w, job->xf, bi, w->bonds.data[bi].rho, &strained );
+		}
+	}
+	int broken = lpBreakOverloads( w, job->xf );
+	for ( int i = 0; i < s->nodes.count && broken == 0; ++i )
+	{
+		if ( lpInRegion( job, i ) == false )
+		{
+			int slender = 0;
+			snapped += lpStrainSlender( w, job->xf, s->nodes.data[i], &strained, &slender );
+		}
+	}
+	w->stats.stressBreaks += broken;
+	body->strainedLastCheck = strained > 0;
+}
+
 // Phase 3, one structure: judge its solution. Converged: strain at every overloaded joint and the worst break, then
 // the slender pieces. Not converged: it keeps solving next step, and nothing is judged on an unconverged solution.
 static void lpStressJudge( lpWorld* w, const lpStressJob* job )
@@ -1498,6 +1528,10 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 				lpStressDust( w, job->xf, bond, bi, 1 ); // joints that were straining keep creaking while it solves
 			}
 		}
+		if ( job->front && body->strainedLastCheck )
+		{
+			lpStressCreakOutside( w, job );
+		}
 		lpArray_Push( w->stressAgain, job->body );
 		return;
 	}
@@ -1546,10 +1580,7 @@ static void lpStressJudge( lpWorld* w, const lpStressJob* job )
 	w->scratchOverloads.count = 0;
 	for ( int k = 0; k < edges; ++k )
 	{
-		if ( lpEdgeInRegion( job, s->edges.data + k ) )
-		{
-			lpApplyStrain( w, job->xf, s->edges.data[k].bond, s->rho.data[k], &strained );
-		}
+		lpApplyStrain( w, job->xf, s->edges.data[k].bond, s->rho.data[k], &strained ); // past a region: as last judged
 	}
 	int broken = lpBreakOverloads( w, job->xf );
 	int slender = 0;

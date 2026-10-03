@@ -1525,6 +1525,67 @@ static int TestStressDriftGuard( void )
 	return 0;
 }
 
+// Joints creak each on their own: one over its limit keeps straining while a change far away is solved (a region
+// solve growing across a bridge for many steps), instead of waiting for that solve's judgement
+static int TestCreakDuringFarSolve( void )
+{
+	lpWorldDef def = lpDefaultWorldDef();
+	def.stressHopsPerTick = 4;
+	Sim s = CreateSimDef( def, -1 );
+	int bridge = AddLongWall( &s, 60, 2, true );
+	Run( &s, 10 );
+	lpBody* body = s.world->bodies.data + bridge;
+
+	// A top joint near the right end, weakened until it reads 1.1 of its limit: it creaks
+	int left = -1, creaking = -1;
+	for ( int i = 0; i < body->pieces.count; ++i )
+	{
+		int pi = body->pieces.data[i];
+		const lpPiece* p = s.world->pieces.data + pi;
+		left = p->shape->centroid.y > 0.5f && p->shape->centroid.x > -14.5f && p->shape->centroid.x < -14.0f ? pi : left;
+		for ( int k = 0; k < p->bonds.count && creaking < 0; ++k )
+		{
+			const lpBond* bond = s.world->bonds.data + p->bonds.data[k];
+			const lpVec3 c = s.world->pieces.data[bond->a == pi ? bond->b : bond->a].shape->centroid;
+			bool top = p->shape->centroid.y > 0.5f && c.y > 0.5f;
+			creaking = top && p->shape->centroid.x > 12.0f && c.x > p->shape->centroid.x && bond->rho > 0.0f ? p->bonds.data[k] : -1;
+		}
+	}
+	ENSURE( left >= 0 && creaking >= 0 );
+	lpBond* joint = s.world->bonds.data + creaking;
+	joint->health *= joint->rho / 1.1f;
+	body->rejudge = true;
+	lpMarkDirty( s.world, bridge );
+	Run( &s, 1 );
+	ENSURE( joint->rho > 1.05f && joint->rho < 1.15f && joint->strain > 0.0f && body->creaking );
+
+	// A joint near the left end breaks: the bridge bends anew, and the region takes many steps to cross it
+	const lpPiece* p = s.world->pieces.data + left;
+	int broken = -1;
+	for ( int k = 0; k < p->bonds.count; ++k )
+	{
+		const lpBond* bond = s.world->bonds.data + p->bonds.data[k];
+		const lpVec3 c = s.world->pieces.data[bond->a == left ? bond->b : bond->a].shape->centroid;
+		broken = c.y > 0.5f && c.x > p->shape->centroid.x ? p->bonds.data[k] : broken;
+	}
+	ENSURE( broken >= 0 );
+	lpBreakBond( s.world, broken );
+	lpMarkDirty( s.world, bridge );
+	int solving = 0;
+	for ( int tick = 0; tick < 6; ++tick )
+	{
+		float before = joint->strain;
+		Run( &s, 1 );
+		ENSURE( body->solving ); // still crossing the bridge
+		ENSURE( joint->alive == false || joint->strain > before );
+		solving += 1;
+	}
+	printf( "  a joint at 1.1 of its limit kept straining through %d steps of a solve far away: strain %.2f\n", solving,
+			(double)joint->strain );
+	DestroySim( &s );
+	return 0;
+}
+
 int StressTest( void )
 {
 	RUN_TEST( TestSolveSystem, MECHANISM );
@@ -1549,6 +1610,7 @@ int StressTest( void )
 	RUN_TEST( TestKeepAudit, MECHANISM );
 	RUN_TEST( TestStressCone, MECHANISM );
 	RUN_TEST( TestStressDriftGuard, MECHANISM );
+	RUN_TEST( TestCreakDuringFarSolve, MECHANISM );
 	RUN_TEST( TestReliefBalances, MECHANISM );
 	RUN_TEST( TestReliefFreeFall, OUTCOME );
 	RUN_TEST( TestReliefMatchesSupported, MECHANISM );

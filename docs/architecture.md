@@ -212,6 +212,10 @@ tiers instead of popping them.
   - *What it writes:* solutions, utilizations, strains and slender sections inside the region; residuals inside it and
     on the held nodes just past it. Nothing else changes, so after d steps a change has reached at most H d bonds
     (plus that boundary layer): `TestStressCone` checks the bound on a 60-block bridge, and that it is tight.
+  - *Creaking is per joint:* while a region solves, every joint over its limit outside the region strains on each step
+    (with breaks and slender pieces, as a settled structure's creaking does), so a change far away does not pause it
+    (`TestCreakDuringFarSolve`); inside the region joints wait for the judgement, and a judgement strains every
+    overloaded joint again.
   - *Audits* are region solves seeded by the pieces a reduced judgement left unaudited (`lpPiece.unaudited`).
   - *The drift guard:* a load is compared both with the last sample and with the load the last judgement solved for
     (`lpPiece.acceptedLoad`), so a load that creeps by less than the threshold at each look still seeds the region
