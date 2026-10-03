@@ -458,6 +458,7 @@ typedef struct lpVehicleState
 {
 	bool alive;
 	int body;		// the body holding most of its attached wheels (-1: none left)
+	uint32_t bodyGeneration;
 	int wheelCount; // as created
 	int attached;	// wheels still on
 	int grounded;
@@ -488,6 +489,7 @@ typedef struct lpWheelState
 	float load;			  // N on the ground
 	float slip;			  // sideways sliding speed at the contact, m/s
 	int groundPiece;	  // -1 in the air (or on ground that is not a piece)
+	uint32_t groundGeneration;
 	lpPos contactPoint;
 } lpWheelState;
 
@@ -626,6 +628,7 @@ typedef struct lpRigState
 {
 	bool alive;
 	int body;		// the torso (-1: no limb left on anything)
+	uint32_t bodyGeneration;
 	int limbCount;	// as created
 	int attached;	// limbs whose first link is still on the torso
 	int able;		// of those, the ones that can stand and step
@@ -657,6 +660,7 @@ typedef struct lpLimbState
 	int footBody;	// the body its foot is on (-1: detached)
 	bool reaching;	// out of the gait, reaching for its target
 	int touching;	// reaching: the piece its foot touches (-1: none), for a grab
+	uint32_t footBodyGeneration, touchingGeneration;
 } lpLimbState;
 
 lpLimbState lpWorld_GetLimbState( const lpWorld* world, int rig, int limb );
@@ -804,6 +808,7 @@ typedef struct lpRayHit
 	int piece;
 	int body;
 	int link; // a rope was hit first (piece and body are -1 then); -1 otherwise
+	uint32_t pieceGeneration, bodyGeneration, linkGeneration; // of the slots hit, for naming them in a command
 	bool hit;
 } lpRayHit;
 
@@ -850,6 +855,7 @@ lpBodyInfo lpWorld_GetBodyInfo( const lpWorld* world, int body );
 typedef struct lpBondInfo
 {
 	bool alive;
+	uint32_t generation; // of its slot (bonds are reused)
 	int pieceA, pieceB; // pieceA < pieceB
 	int joint;			// lpJointId
 	float area;			// m^2

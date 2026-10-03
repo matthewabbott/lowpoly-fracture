@@ -72,10 +72,12 @@ lpVehicleDef lpDefaultVehicleDef( void )
 static int lpAllocWheel( lpWorld* w )
 {
 	int index;
+	uint32_t generation = 0;
 	if ( w->freeWheel != -1 )
 	{
 		index = w->freeWheel;
 		w->freeWheel = w->wheels.data[index].nextFree;
+		generation = w->wheels.data[index].generation + 1;
 	}
 	else
 	{
@@ -85,6 +87,7 @@ static int lpAllocWheel( lpWorld* w )
 	}
 	lpWheel* wh = w->wheels.data + index;
 	memset( wh, 0, sizeof( lpWheel ) );
+	wh->generation = generation;
 	wh->link = -1;
 	wh->nextFree = -1;
 	wh->groundPiece = -1;
@@ -769,6 +772,7 @@ lpVehicleState lpWorld_GetVehicleState( const lpWorld* w, int vehicle )
 	}
 	if ( s.body >= 0 )
 	{
+		s.bodyGeneration = w->bodies.data[s.body].generation;
 		lpPhysBody id = w->bodies.data[s.body].id;
 		lpQuat q = lpPhys_GetTransform( w->phys, id ).q;
 		s.forward = lpRotateVector( q, v->forward );
@@ -815,6 +819,7 @@ lpWheelState lpWorld_GetWheelState( const lpWorld* w, int link )
 	s.load = wh->load;
 	s.slip = wh->slip;
 	s.groundPiece = wh->grounded ? wh->groundPiece : -1;
+	s.groundGeneration = wh->grounded ? wh->groundGeneration : 0;
 	s.contactPoint = wh->contactPoint;
 	return s;
 }

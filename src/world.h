@@ -169,6 +169,7 @@ typedef struct lpWheel
 	lpVec3 groundVelocity;
 	float massN, massF, massS;
 	float lambdaN, lambdaF, lambdaS;
+	uint32_t generation; // of the slot: bumped when it is reused
 	int nextFree;
 } lpWheel;
 
@@ -339,6 +340,7 @@ typedef struct lpBond
 	lpVec3 moment;
 	uint8_t joint;		// lpJointId (never auto): solid between cells of one part
 	uint32_t lastImpact; // serial of the last impact that damaged it (deferred fractures must not damage twice)
+	uint32_t generation; // of the slot: bumped when it is reused
 	int nextFree;
 	bool alive;
 } lpBond;
@@ -469,6 +471,7 @@ typedef struct lpPendingBlast
 typedef struct lpPull
 {
 	int piece;
+	uint32_t generation; // of the piece when asked: a piece that fractured first hands its slot on
 	lpVec3 localPoint;
 	lpPos target;
 	float maxAccel;

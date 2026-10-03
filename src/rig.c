@@ -774,6 +774,7 @@ lpRigState lpWorld_GetRigState( const lpWorld* w, int rig )
 	const lpRig* r = w->rigs.data + rig;
 	s.alive = r->alive;
 	s.body = r->body;
+	s.bodyGeneration = r->body >= 0 ? w->bodies.data[r->body].generation : 0;
 	s.limbCount = r->limbCount;
 	s.idle = r->idle;
 	s.crawling = r->crawling;
@@ -821,9 +822,11 @@ lpLimbState lpWorld_GetLimbState( const lpWorld* w, int rig, int limb )
 	s.depth = l->depth;
 	s.reaching = l->reaching;
 	s.touching = l->touching;
+	s.touchingGeneration = l->touching >= 0 ? w->pieces.data[l->touching].generation : 0;
 	if ( l->tipBody >= 0 && w->bodies.data[l->tipBody].alive )
 	{
 		s.footBody = l->tipBody;
+		s.footBodyGeneration = w->bodies.data[l->tipBody].generation;
 		s.foot = lpFootWorld( w, l );
 	}
 	return s;

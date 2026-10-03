@@ -324,6 +324,7 @@ static int lpAllocBond( lpWorld* w )
 	{
 		index = w->freeBond;
 		w->freeBond = w->bonds.data[index].nextFree;
+		w->bonds.data[index].generation += 1;
 	}
 	else
 	{
@@ -1319,6 +1320,8 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 		{
 			hit.piece = result.piece;
 			hit.body = w->pieces.data[hit.piece].body;
+			hit.pieceGeneration = w->pieces.data[hit.piece].generation;
+			hit.bodyGeneration = hit.body >= 0 ? w->bodies.data[hit.body].generation : 0;
 		}
 	}
 
@@ -1342,6 +1345,9 @@ lpRayHit lpWorld_CastRay( const lpWorld* w, lpPos origin, lpVec3 translation )
 			hit.piece = -1;
 			hit.body = -1;
 			hit.link = i;
+			hit.pieceGeneration = 0;
+			hit.bodyGeneration = 0;
+			hit.linkGeneration = l->generation;
 		}
 	}
 	return hit;
@@ -1435,6 +1441,7 @@ lpBondInfo lpWorld_GetBondInfo( const lpWorld* w, int bond )
 	// Both pieces are on one body: the bond's geometry is in its frame
 	lpWorldTransform xf = lpGetTransform( w, w->bodies.data + w->pieces.data[d->a].body );
 	info.alive = true;
+	info.generation = d->generation;
 	info.pieceA = d->a;
 	info.pieceB = d->b;
 	info.joint = d->joint;

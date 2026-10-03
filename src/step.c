@@ -87,7 +87,8 @@ static void lpDestroyDetonated( lpWorld* w, int bodyIndex, int detonator )
 
 void lpWorld_Pull( lpWorld* w, int piece, lpVec3 localPoint, lpPos target, float maxAccel, float maxMass )
 {
-	lpPull pull = { piece, localPoint, target, maxAccel, maxMass };
+	uint32_t generation = piece >= 0 && piece < w->pieces.count ? w->pieces.data[piece].generation : 0;
+	lpPull pull = { piece, generation, localPoint, target, maxAccel, maxMass };
 	lpArray_Push( w->pulls, pull );
 }
 
@@ -117,7 +118,8 @@ static void lpApplyPulls( lpWorld* w )
 	for ( int i = 0; i < w->pulls.count; ++i )
 	{
 		lpPull pull = w->pulls.data[i];
-		if ( pull.piece < 0 || pull.piece >= w->pieces.count || w->pieces.data[pull.piece].body < 0 )
+		if ( pull.piece < 0 || pull.piece >= w->pieces.count || w->pieces.data[pull.piece].generation != pull.generation ||
+			 w->pieces.data[pull.piece].body < 0 )
 		{
 			continue;
 		}

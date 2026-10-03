@@ -471,6 +471,54 @@ static int GlassPieces( const lpWorld* w )
 	return count;
 }
 
+// A pulled piece that fractures in the same step hands its slot to one of its cells: the pull named the piece, so it
+// must not land on the cell. With the pull and without it, the world comes out the same.
+static int TestPullSkipsReusedSlot( void )
+{
+	uint64_t hashes[2] = { 0 };
+	for ( int run = 0; run < 2; ++run )
+	{
+		Sim s = CreateSimWorkers( lp_scenePile, 1 );
+		Run( &s, 5 );
+
+		// The biggest loose crate or rock of the heap, struck hard where it is and pulled in the same step
+		int piece = -1;
+		float biggest = 0.0f;
+		for ( int i = 0; i < s.world->pieces.count; ++i )
+		{
+			const lpPiece* p = s.world->pieces.data + i;
+			int kind = p->body >= 0 ? s.world->bodies.data[p->body].kind : -1;
+			if ( ( kind == lp_kindDebris || kind == lp_kindRubble ) && p->shape->volume > biggest )
+			{
+				biggest = p->shape->volume;
+				piece = i;
+			}
+		}
+		ENSURE( piece >= 0 );
+		uint32_t generation = s.world->pieces.data[piece].generation;
+		lpPos at = lpWorld_ToWorldFrame( s.world, piece, s.world->pieces.data[piece].shape->centroid );
+		lpImpactDef blow = { 0 };
+		blow.point = at;
+		blow.direction = (lpVec3){ 0.0f, -1.0f, 0.0f };
+		blow.radius = 0.6f;
+		blow.energy = 60000.0f;
+		lpWorld_AddImpact( s.world, &blow );
+		if ( run == 0 )
+		{
+			lpWorld_Pull( s.world, piece, s.world->pieces.data[piece].shape->centroid, lpOffsetPos( at, (lpVec3){ 0.0f, 3.0f, 0.0f } ),
+						  40.0f, 400.0f );
+		}
+		Run( &s, 1 );
+		ENSURE( s.world->pieces.data[piece].generation != generation ); // it fractured, and its slot went to a cell
+		ENSURE( s.world->pieces.data[piece].body >= 0 );
+		Run( &s, 10 );
+		hashes[run] = lpWorld_Hash( s.world );
+		DestroySim( &s );
+	}
+	ENSURE( hashes[0] == hashes[1] );
+	return 0;
+}
+
 static int TestWorldTables( void )
 {
 	lpMaterialDef materials[lp_materialCount];
@@ -786,6 +834,7 @@ int WorldTest( void )
 	RUN_TEST( TestDetonator, OUTCOME );
 	RUN_TEST( TestDetonatorIndexReuse, MECHANISM );
 	RUN_TEST( TestPull, OUTCOME );
+	RUN_TEST( TestPullSkipsReusedSlot, MECHANISM );
 	RUN_TEST( TestWallDamage, OUTCOME );
 	RUN_TEST( TestDeterminism, DETERMINISM );
 	RUN_TEST( TestFpGuard, DETERMINISM );
