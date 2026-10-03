@@ -26,7 +26,7 @@ Order (one at a time):
 7. Deep research: destruction engine architecture (done), closed by determinism hardening
 8. The physics seam
 9. The outcome catalogue, the engine surface and a seams-first review (done)
-10. Commands, hashes and the first co-op
+10. Commands, hashes and the first co-op (done)
 11. Integer groundwork
 11b. Cutting and chopping
 12. The integer core with its CPU twin
@@ -573,6 +573,64 @@ The multiplayer primitive's first half (L1a in the research), and two machines p
 
 Exit: two processes stay in sync on a scripted session; an injected desync is named.
 
+**Done (2026-10-03).** The plan's owner choices: build the speed of propagation now; repair by causal unit in the lab
+only (real repair waits for the snapshot, milestone 14); co-op headless and in the sandbox.
+- **Commands** (`src/command.c`): every input is an `lpCommand`, applied as its tick's step begins in `(peer, seq)`
+  order; the scene's drivers and bombardment submit as `LP_PEER_SCENE`; the claw is a command; spawns use templates;
+  a stale reference is dropped and counted. Scripts, the sandbox and the bench all submit; recordings write what the
+  world applied. Global keys were deferred to milestone 12: under full lockstep an index with its generation names an
+  object on every machine.
+- **The state hash** (`src/hash.c`): eleven categories, each the wrapping sum of per-element hashes seeded with slot
+  and generation, covering what the old one missed (the queues carried across ticks, the stress solver's state, Box3D's
+  warm starts and sleep timers). It is kept per slot and rehashed where marked (determinism rule 19); `--check-hash`
+  and `TestHashIncremental` hold it to a full recompute. Cost at the barrage: 0.54 ms on 1 worker, 0.35 on 8 (the old
+  one 2.3); the plan's 0.3 ms gate on 1 worker was missed (perf-log).
+- **Sessions** (`src/session.c`): every simulation setting, a digest per material, joint and template, the self-test
+  (now also printing and reading floats back) and the hash, as lines; a peer is refused by the key that differs.
+- **Causal units** (`src/units.c`) and **the two-world lab** (`src/lab.c`, `lpf_bench --twin`, contract D12). E3's
+  verdicts (perf-log): a repair must ship the warm starts with the motion, and come within a few ticks (16 ticks late,
+  the worlds hold different contacts and a state-only copy cannot catch up), so real repair is the host's image of the
+  tick plus a re-simulation; most desyncs stay in one or two units for hundreds of ticks, but piles and collapses turn
+  one ulp into a different outcome within seconds.
+- **The speed of propagation:** stress region solves growing `stressHopsPerTick` (16) bonds a step, clusters kept (spike
+  S1: an iteration cap was the wrong clock; the region grows when its held boundary is not quiet); creaking per joint;
+  the supply wave (`supplyHopsPerTick`, 16); caps on impact radius and ray range. `TestStressCone` and
+  `TestSupplyCone` show the bound and that it is tight. At 16 the speed rarely binds on today's scenes (a keep in
+  groups is covered in one step); it changes outcomes under fire only chaotically. A removed support still needs the
+  whole structure before it is judged: the quasi-static answer is global, and the speed spreads it over steps.
+- **The first co-op** (`app/net`, outside the core): TCP lines, the session handshake, the host's clock (it closes T
+  once everyone has stepped T - delay), one packet a tick, a hash report a tick, and a mismatch followed down over the
+  wire (contract D13; a CI leg runs a pair in sync and one with an injected desync). Its first run found a real
+  nondeterminism (the stress solver's vectors were hashed uninitialized past a region). The sandbox plays it:
+  `--host` / `--join`, V takes a free car or mech, and two windows' hash logs match.
+- **The simplicity pass:** Fable and GPT-5.6 Sol (the Codex reviewer), read-only, on the milestone's diff. Neither
+  found a broken outcome; both found state the hash missed and edges of the lockstep protocol.
+
+  **Taken**, each checked with the catalogue, `--check-hash` and the strict bench:
+  - **The hash takes the engine's joint warm starts** (Sol: a Box3D patch, `b3Joint_GetImpulses`) **and sleeping
+    contacts** (both: they wake with their warm starts). The simulation is unchanged, the hashes change.
+  - **The stress region is the hashed `inFront`** (both): the per-piece depth and the body's edge count, carried
+    outside the hash, are gone; the solver's lists are a documented cache, checked in assert builds.
+  - **One supply wave per pool and tick** (both): two leaks due together tied in the sort, which C libraries break
+    differently.
+  - **The lockstep codec** (both): a command travels as its script line and the sender applies what it reads back
+    (the host applied its own structs, and kinds with no line broke the packets' framing); ray lines carry
+    `piecesOnly`. **Its edges** (Sol, Fable): a peer refused or gone before its welcome no longer leaves the host
+    waiting, a late joiner is refused as `late`, a half line no longer hides a closed connection, a command for a tick
+    already sent stops the session with a report.
+  - **Another player's command of a vehicle or rig someone controls is dropped** (Fable: the documented rule).
+  - **The lab's own header** (both): units and the lab moved from `lpf.h` to `include/lpf/lplab.h`;
+    `lpWorld_HashUnits` deleted. Also the lab's nudge marks both bodies of the contact (Sol), one table of the
+    categories' names, `lpBondOther`, the hash's conditionals for the speeds being off, stale comments (Fable).
+
+  **Not taken:**
+  - **Rebuilding the solver's region lists every step a solve continues** (Sol): a pass over every node and edge per
+    step; they are a cache of the hashed region, and assert builds check that they agree.
+  - **One routine for the hash's two full walks** (Fable): the check's full recompute shares the element functions but
+    deliberately not the cache's filling.
+  - **One breadth-first search for units, the stress region and the supply wave** (Fable weighed it and advised
+    against it): different graphs, neighbour rules and outputs.
+
 ## 11. Integer groundwork
 
 Fail fast before the integer core is built.
@@ -634,6 +692,10 @@ with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels
 design:
 - it can step a chosen set of causal units in isolation (repair and scoped rollback re-simulate only those);
 - it keeps a short ring buffer of each changed unit's state for the last few ticks, written incrementally.
+- Global keys for runtime objects (deferred from milestone 10): an index with its generation names an object only while
+  every machine steps every unit; stepping units in isolation needs keys that do not depend on allocation order.
+- The world-wide budgets that couple units unseen today (milestone 10's E3): fracture jobs per step, the stress share,
+  the debris ranks and freezes, the free lists. A unit stepped alone must not read them, or they must become per unit.
 
 And from milestone 8 (the lag verdict and the simplicity pass), for a backend that runs on the GPU:
 - the servos and the tyres run inside the step, as the core's own constraints (a motor with a position target, a

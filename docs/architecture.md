@@ -18,7 +18,9 @@ the surviving bonds splits the body; components without an anchored piece become
 hold it, so undermined structures crack, hinge and topple where they are weak. Objects can be joined by **links**
 (Box3D welds, hinges, ball joints, ropes) that break under load or blasts and outlive the pieces they hang on. New fragments are sorted into cheap **debris tiers** by volume (below), resting debris freezes
 into static **rubble** that wakes when something knocks it, and budgets move the oldest, smallest bodies down the
-tiers instead of popping them.
+tiers instead of popping them. Every input is a tick-stamped **command** applied as its step begins, and a **state
+hash** kept per element covers everything, so machines in lockstep can check each other every tick and name what
+differs.
 
 ## Debris tiers (`debris.c`)
 
@@ -406,6 +408,23 @@ What one input can change in a step is bounded, so repair, rollback and zones ca
   flat leaves, thin glass shards that flash in the sun. The sandbox draws ropes the same way, as short knotted
   segments that sag when slack. Wheels are no pieces: the renderer keeps a 12-sided tyre mesh per live wheel link in
   128 slots reserved at the start of the piece and body maps, posed each frame from `lpWorld_GetWheelState`.
+
+## Lockstep co-op (`app/net`, outside the core)
+
+- Every machine steps the same world on the same commands (milestone 7's choice: lockstep, the host keeps the clock).
+  `lockstep.c` is the protocol over a line transport (`net.c`: TCP, or in memory for tests).
+- A peer sends its session's description (`lpSceneDescribeSession`); the host compares it with its own and refuses
+  it by the key that differs.
+- The host closes tick T once every machine has stepped T - delay, by which time every player's commands for T (stamped
+  `delay` ticks ahead, sent as script lines) have arrived, and sends them as one packet. Every machine, the host too,
+  steps only on packets; each makes the scene's own commands from its own world. A command is applied as its line
+  reads back, on the machine that sent it too, so a field the line does not carry cannot split them; a kind with no
+  line is refused when given.
+- Peers report their root hash every tick. The first that differs stops the clock; once all have stepped what was
+  sent, the host follows the hash down over the wire (categories, buckets, elements) and names the element and the
+  first tick.
+- Runners: `lpf_bench --host` / `--join` (`bench/pair.c`) and the sandbox's co-op; `TestLockstepPair` in memory. Not
+  yet: catch-up for a late joiner, host migration, the snapshot (milestones 14 and 16).
 
 ## Extension points already in the API
 

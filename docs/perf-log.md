@@ -874,3 +874,25 @@ pieces a reduced judgement left unaudited, and a drift guard (architecture, "The
 - A region holding the whole system runs the plain solver (the same steps, without the index lists), and a solve
   continuing on an unchanged region reuses its search: both are bit-identical, and saved most of the first measure's
   +5% on keep/12.
+
+## 2026-10-03 milestone 10, F3 to G2 and the close
+
+- **F3, creaking per joint:** outcomes change where creaking joints meet solves (town, lumber, keep, barrage, siege),
+  in no direction; no cost worth measuring (a walk over the solving structure's joints only while it had strained
+  ones).
+- **F4, the supply wave:** with the setting at 0 every hash is unchanged; at 16 only the mech's (its pools carry a
+  source in the hash). The arrivals are a search from the change sites at each supply update, which are rare.
+- **F5, query caps:** past every tool and blast in the scenes, so every hash is unchanged.
+- **E3's cones again, with the speeds in place** (`build/m10/e3f`): the same picture as before. Desyncs in walls,
+  lumber, yard, track, the barrage and the siege stay at 1 to 9 elements in 1 or 2 units for 400 ticks; the pile and
+  the tower turn one ulp into thousands of differing elements within a few seconds. Town/12 happened to stay at 5
+  elements this time (3,298 before): which body the nudge hits decides it.
+- **The lockstep pair:** its first run over TCP found that the stress solver's vectors were hashed uninitialized past a
+  region (two processes agreed on every body and piece, not on the stress state). Cleared when a system is sized; the
+  values were never read, so behaviour was unchanged.
+- **The review's hash changes** (joint warm starts, sleeping contacts): every non-timing bench stat unchanged; the
+  hashes change, and the baseline takes them with its timings kept (the machine had run for hours).
+- **The core's size** (`tools/size.ps1`): 146.5k tokens at milestone 9's close, 178.4k before the simplicity pass,
+  179.0k after it (the review added the joint state and the lockstep's edges, and moved the lab out of `lpf.h`). The
+  growth is the milestone's purpose: commands, the hash, sessions, units, the lab, the stress front and the supply
+  wave; the network layer lives outside the core.

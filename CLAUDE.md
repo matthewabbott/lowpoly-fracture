@@ -18,6 +18,7 @@ a track only when a decision needs its detail.
 | path | what it is |
 |---|---|
 | `include/lpf/lpf.h` | the whole public API: materials, world and object defs, links, vehicles, rigs, impacts, pulls, commands, stats, queries |
+| `include/lpf/lplab.h` | the two-world lab for experiments, never a game: causal units, injected desyncs, the hash followed down between two worlds, repair by unit |
 | `include/lpf/lpmath.h`, `src/lpmath.c` | vector maths (`lpVec3`, `lpQuat`, `lpTransform`, `lpPos`, ...), Box3D's own taken over with each operation kept; the trig is hand coded for determinism |
 | `src/core.h/.c` | asserts, growable arrays (`LP_ARRAY`), PCG32 random, `lpMix64`, `lpCbrt`, `lpFloatToInt`, a radix sort, the timer (`lpGetTicks`), the floating-point guard (`lpFpGuard`) and the determinism self-test |
 | `src/poly.h/.c` | convex polyhedron (`lpPoly`), plane clipping, mass, `lpShape` (compact immutable copy) |
@@ -65,6 +66,9 @@ build/msvc-release/bin/lpf_bench.exe --scene mech --script scripts/mech_arms.txt
 pwsh tools/bench.ps1 -Repeat 3                  # perf ladder vs bench/baseline.json; exit 3 if a sim hash changed
 pwsh tools/bench.ps1 -StrictSolver              # also exit 3 if a stress solver hash changed (solver refactors)
 build/msvc-release/bin/lpf_bench.exe --scene pile --workers 1,8
+build/msvc-release/bin/lpf_bench.exe --scene town --period 3 --ticks 300 --check-hash   # the kept hash against a full one
+build/msvc-release/bin/lpf_bench.exe --scene town --ticks 300 --host 7777   # then, in a second shell: --join 127.0.0.1:7777
+build/msvc-release/bin/lpf_bench.exe --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep
 build/msvc-release/bin/sandbox.exe --scene lumber --script scripts/lumber_demo.txt --frames 120 --screenshot build/shots/x.png --hide-ui
 ```
 
