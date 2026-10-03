@@ -61,7 +61,7 @@ static int lpCarrierNeighbour( const lpWorld* w, int pi, int k )
 	if ( k < p->bonds.count )
 	{
 		const lpBond* bond = w->bonds.data + p->bonds.data[k];
-		other = bond->a == pi ? bond->b : bond->a;
+		other = lpBondOther( bond, pi );
 	}
 	else
 	{
@@ -332,7 +332,7 @@ void lpUpdateSupply( lpWorld* w )
 				for ( int k = 0; k < p->bonds.count; ++k )
 				{
 					const lpBond* bond = w->bonds.data + p->bonds.data[k];
-					int other = bond->a == pi ? bond->b : bond->a;
+					int other = lpBondOther( bond, pi );
 					lpPiece* q = w->pieces.data + other;
 					if ( ( q->carries & bit ) && q->mark != stamp )
 					{

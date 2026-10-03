@@ -13,6 +13,7 @@
 #include "pair.h"
 
 #include "lockstep.h"
+#include "lpf/lplab.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -63,7 +63,7 @@ static int lpSplitBody( lpWorld* w, int bodyIndex )
 			for ( int k = 0; k < p->bonds.count; ++k )
 			{
 				lpBond* bond = w->bonds.data + p->bonds.data[k];
-				int other = bond->a == pi ? bond->b : bond->a;
+				int other = lpBondOther( bond, pi );
 				if ( w->pieces.data[other].mark != stamp )
 				{
 					w->pieces.data[other].mark = stamp;

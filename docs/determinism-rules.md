@@ -42,7 +42,8 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    whatever order it arrived in. A command names slots with their generations and is dropped if they went stale. Logic
    that every machine runs from world state alone (the scene's drivers and bombardment) submits as `LP_PEER_SCENE`,
    applied after the players; anything else that does not come from world state must be a command. A player's control,
-   limb or claw command takes a vehicle or rig over (the scene's drivers leave it) until that player releases it.
+   limb or claw command takes a free vehicle or rig over (the scene's drivers leave it) until that player releases it;
+   another player's are dropped meanwhile.
    Controls, limb targets and a claw's grip are persistent simulation state. A held pull is one command per tick. The
    sandbox and `lpf_bench --script` replay scripts of commands (`scenes/script.h`); recordings (`--record`) write the
    commands each step applied, so they replay their own session.

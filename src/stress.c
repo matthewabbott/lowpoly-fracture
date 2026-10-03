@@ -1650,7 +1650,7 @@ static void lpStressSeed( lpWorld* w, lpBody* body )
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
-			int other = bond->a == pi ? bond->b : bond->a;
+			int other = lpBondOther( bond, pi );
 			if ( w->pieces.data[other].mark != stamp )
 			{
 				w->pieces.data[other].mark = stamp;
@@ -1751,7 +1751,7 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 			{
 				// A changed fixed piece moves nothing itself: what it holds starts the region
 				const lpBond* bond = w->bonds.data + p->bonds.data[k];
-				int other = bond->a == pi ? bond->b : bond->a;
+				int other = lpBondOther( bond, pi );
 				lpPiece* o = w->pieces.data + other;
 				if ( o->mark != stamp && lpFixed( body, other, o ) == false )
 				{
@@ -1785,7 +1785,7 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 			for ( int k = 0; k < p->bonds.count; ++k )
 			{
 				const lpBond* bond = w->bonds.data + p->bonds.data[k];
-				int other = bond->a == pi ? bond->b : bond->a;
+				int other = lpBondOther( bond, pi );
 				lpPiece* o = w->pieces.data + other;
 				if ( o->mark != stamp && lpFixed( body, other, o ) == false )
 				{
@@ -1814,7 +1814,7 @@ static int lpStressFront( lpWorld* w, int bodyIndex, int hops, bool restart, boo
 		for ( int k = 0; k < p->bonds.count; ++k )
 		{
 			const lpBond* bond = w->bonds.data + p->bonds.data[k];
-			int other = bond->a == pi ? bond->b : bond->a;
+			int other = lpBondOther( bond, pi );
 			const lpPiece* o = w->pieces.data + other;
 			bool inside = clustered && p->cluster != 0 && p->cluster == o->cluster; // within a group: no edge
 			bool once = lpFixed( body, other, o ) || o->inFront == false || other > pi;

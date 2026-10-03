@@ -8,7 +8,8 @@
 //   tick tool ox oy oz dx dy dz          tool: rifle grenade cannon hammer (an impact where the aim first hits), ball
 //                                        flask (thrown from there): the sandbox's tools, the aim normalised
 //   tick impact ox oy oz dx dy dz radius energy [impulse]   an impact of your own where the aim first hits (normalised)
-//   tick ray ox oy oz dx dy dz radius energy impulse explosion range   the same, exact: as recordings write it
+//   tick ray ox oy oz dx dy dz radius energy impulse explosion range [piecesOnly]   the same, exact: as recordings
+//                                        write it (piecesOnly 1: a ray that first hits a rope or a wheel does nothing)
 //   tick point px py pz dx dy dz radius energy impulse explosion       an impact at a point
 //   tick pull tx ty tz lx ly lz piece [generation [maxAccel maxMass]]  toward the target, the point lx..lz in the piece's
 //                                        body frame, this tick (a held grab is a pull per tick)

@@ -167,11 +167,13 @@ bool lpScriptParseLine( lpScript* script, const char* line )
 		bool ray = SameWord( name, "ray" );
 		c.kind = lp_commandImpact;
 		lpImpactDef* def = &c.impact.def;
-		int fields = sscanf( rest, "%31s %f %f %f %f %f %f %f %f %f %d %f", name, &o.x, &o.y, &o.z, &def->direction.x,
-							 &def->direction.y, &def->direction.z, &def->radius, &def->energy, &def->impulse, &a, &c.impact.range );
-		if ( fields == ( ray ? 12 : 11 ) )
+		int only = 0;
+		int fields = sscanf( rest, "%31s %f %f %f %f %f %f %f %f %f %d %f %d", name, &o.x, &o.y, &o.z, &def->direction.x,
+							 &def->direction.y, &def->direction.z, &def->radius, &def->energy, &def->impulse, &a, &c.impact.range, &only );
+		if ( fields == ( ray ? 12 : 11 ) || ( ray && fields == 13 ) )
 		{
 			def->explosion = a != 0;
+			c.impact.piecesOnly = ray && only != 0;
 			c.impact.origin = ray ? o : lpVec3_zero;
 			def->point = ray ? lpVec3_zero : o;
 			c.impact.range = ray ? c.impact.range : 0.0f;
@@ -361,7 +363,7 @@ int lpScriptFormat( char* text, int size, const lpCommand* c )
 					 (double)def->direction.z, (double)def->radius, (double)def->energy, (double)def->impulse, def->explosion ? 1 : 0 );
 			if ( c->impact.range > 0.0f )
 			{
-				lpLinePrint( &out, " %.9g", (double)c->impact.range );
+				lpLinePrint( &out, c->impact.piecesOnly ? " %.9g 1" : " %.9g", (double)c->impact.range );
 			}
 			break;
 		}

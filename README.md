@@ -50,8 +50,9 @@ those frames, numbered), `--dump tick:out.json` writes the state after that tick
 per-tick state hash, `--camera x,y,z,yawDeg,pitchDeg`, `--follow` (the camera chases the car or mech the commands drive), `--hide-ui`,
 `--vsync 0`, `--workers N`, `--input-delay N` (every command of the player applies N ticks late: a feel test of lockstep),
 `--render-scale 0.5` (chunky retro pixels). Set `LPF_DEBUG=1` to log impacts and stress solves. Headless,
-`lpf_bench --scene walls --script scripts/walls_demo.txt --period 0 --ticks 240 --hash-log out` replays the same events
-with the same hashes (the script player is `scenes/script.c`).
+`lpf_bench --scene walls --script scripts/walls_demo.txt --period 0 --ticks 240 --hash-log out` replays the same commands
+with the same hashes (the script player is `scenes/script.c`). Two players: `sandbox --host 7777` and
+`sandbox --join <host>:7777` (lockstep through `app/net`; V takes a free car or mech).
 
 ## License
 

@@ -6,6 +6,8 @@
 
 #include "world.h"
 
+#include "lpf/lplab.h"
+
 #include <math.h>
 #include <string.h>
 

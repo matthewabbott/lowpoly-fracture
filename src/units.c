@@ -16,6 +16,8 @@
 
 #include "world.h"
 
+#include "lpf/lplab.h"
+
 static int lpFind( int* parent, int i )
 {
 	while ( parent[i] != i )
@@ -238,24 +240,4 @@ int lpWorld_GetElementUnit( const lpWorld* w, const int* units, int category, in
 			break; // the world's own counters and queues are in no unit
 	}
 	return body >= 0 && body < w->bodies.count ? units[body] : -1;
-}
-
-void lpWorld_HashUnits( const lpWorld* w, const int* units, int count, uint64_t* sums )
-{
-	for ( int u = 0; u < count; ++u )
-	{
-		sums[u] = 0;
-	}
-	for ( int c = 0; c < lp_hashCategoryCount; ++c )
-	{
-		int slots = lpWorld_HashSlotCount( w, c );
-		for ( int i = 0; i < slots; ++i )
-		{
-			int unit = lpWorld_GetElementUnit( w, units, c, i );
-			if ( unit >= 0 && unit < count )
-			{
-				sums[unit] += lpWorld_HashElement( w, c, i );
-			}
-		}
-	}
 }

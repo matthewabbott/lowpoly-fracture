@@ -16,6 +16,7 @@ typedef struct lpLockPeer
 	lpTransport transport;
 	int peer; // its peer id once welcome (0: not yet)
 	bool welcome;
+	bool gone; // refused, or left before it was welcome: a replacement may join
 	int64_t stepped; // the last tick it reported a hash for (-1: none)
 	uint64_t hashes[LP_HISTORY];
 	char* session; // its description, as it arrives
@@ -222,18 +223,31 @@ void lpLockstep_Command( lpLockstep* ls, const lpCommand* command )
 	lpCommand c = *command;
 	c.tick = (int64_t)lpWorld_GetTick( ls->world ) + ls->delay;
 	c.peer = (uint8_t)ls->peer;
-	c.seq = ls->seq++;
+	// It travels as its script line, so every machine, this one too, applies exactly what that line reads back as; a
+	// kind with no line cannot travel and is refused here
+	char line[512];
+	int length = lpScriptFormat( line, (int)sizeof( line ), &c );
+	lpCommand parsed;
+	if ( length <= 0 || length >= (int)sizeof( line ) || lpScriptParseCommand( line, &parsed ) == false )
+	{
+		fprintf( stderr, "lockstep: a command of kind %d has no script line to travel as; it is not sent\n", (int)c.kind );
+		return;
+	}
+	parsed.seq = ls->seq++;
 	if ( ls->host )
 	{
-		lpPush( &ls->pending, &c );
+		lpPush( &ls->pending, &parsed );
 	}
 	else
 	{
-		lpSendCommand( &ls->link, &c );
+		lpSendCommand( &ls->link, &parsed );
 	}
 }
 
 // ---- the host ----
+
+int lpLockstep_GetPeerCount( const lpLockstep* ls );
+int64_t lpLockstep_GetConfirmed( const lpLockstep* ls );
 
 static void lpBroadcast( lpLockstep* ls, const char* line )
 {
@@ -370,21 +384,19 @@ static void lpHostRead( lpLockstep* ls, int index )
 		else if ( strcmp( line, "end" ) == 0 && p->welcome == false )
 		{
 			char key[128];
-			if ( lpSessionCompare( ls->session, p->session != NULL ? p->session : "", key, (int)sizeof( key ) ) == false )
+			bool late = ls->state != lp_lockstepJoining; // no catch-up yet: a session that started takes no one
+			if ( late || lpSessionCompare( ls->session, p->session != NULL ? p->session : "", key, (int)sizeof( key ) ) == false )
 			{
 				char refuse[160];
-				snprintf( refuse, sizeof( refuse ), "refuse %s", key );
+				snprintf( refuse, sizeof( refuse ), "refuse %s", late ? "late" : key );
 				t->send( t->context, refuse );
-				fprintf( stderr, "lockstep: a peer refused: its '%s' differs\n", key );
-				continue;
+				fprintf( stderr, "lockstep: a peer refused: %s '%s'\n", late ? "the session has started:" : "its setting differs:",
+						 late ? "late" : key );
+				p->gone = true;
+				return;
 			}
-			int welcomed = 0;
-			for ( int i = 0; i < ls->peerCount; ++i )
-			{
-				welcomed += ls->peers[i]->welcome ? 1 : 0;
-			}
+			p->peer = lpLockstep_GetPeerCount( ls ) + 1;
 			p->welcome = true;
-			p->peer = welcomed + 1;
 			char welcome[64];
 			snprintf( welcome, sizeof( welcome ), "welcome %d %d", p->peer, ls->delay );
 			t->send( t->context, welcome );
@@ -392,10 +404,17 @@ static void lpHostRead( lpLockstep* ls, int index )
 		else if ( p->welcome && lpReadCommand( line, &c ) )
 		{
 			c.peer = (uint8_t)p->peer; // a peer speaks for itself only
-			if ( c.tick >= ls->closed )
+			if ( c.tick < ls->closed )
 			{
-				lpPush( &ls->pending, &c );
+				// Its tick was sent already: the pacing makes this impossible, and applying it nowhere would split the
+				// machines, so the session stops and says so
+				char report[128];
+				snprintf( report, sizeof( report ), "peer %d sent a command for tick %lld, already sent", p->peer, (long long)c.tick );
+				lpStop( ls, lp_lockstepStopped, report );
+				lpBroadcast( ls, "stop a late command" );
+				return;
 			}
+			lpPush( &ls->pending, &c );
 		}
 		else if ( p->welcome && strncmp( line, "hash ", 5 ) == 0 )
 		{
@@ -411,7 +430,11 @@ static void lpHostRead( lpLockstep* ls, int index )
 			lpDescend( ls, line );
 		}
 	}
-	if ( t->closed( t->context ) && ls->state == lp_lockstepRunning )
+	if ( t->closed( t->context ) && p->welcome == false )
+	{
+		p->gone = true; // it left before it was welcome: wait for another
+	}
+	else if ( t->closed( t->context ) && ( ls->state == lp_lockstepRunning || ls->state == lp_lockstepJoining ) )
 	{
 		char report[64];
 		snprintf( report, sizeof( report ), "peer %d left", p->peer );
@@ -610,31 +633,20 @@ int lpLockstep_Pump( lpLockstep* ls, lpLockstepStepFcn* before, void* context, i
 
 	for ( int i = 0; i < ls->peerCount; ++i )
 	{
-		lpHostRead( ls, i );
+		if ( ls->peers[i]->gone == false )
+		{
+			lpHostRead( ls, i );
+		}
 	}
-	int welcome = 0;
-	for ( int i = 0; i < ls->peerCount; ++i )
-	{
-		welcome += ls->peers[i]->welcome ? 1 : 0;
-	}
-	if ( ls->state == lp_lockstepJoining && welcome >= ls->expected )
+	if ( ls->state == lp_lockstepJoining && lpLockstep_GetPeerCount( ls ) >= ls->expected )
 	{
 		ls->state = lp_lockstepRunning;
 	}
 
 	// Close what every machine has stepped far enough for: its commands for the tick are all here
-	int64_t now = (int64_t)lpWorld_GetTick( ls->world );
 	for ( int closing = 0; ls->state == lp_lockstepRunning && ls->descent == 0 && closing < maxClose; ++closing )
 	{
-		int64_t frontier = now - 1;
-		for ( int i = 0; i < ls->peerCount; ++i )
-		{
-			if ( ls->peers[i]->welcome && ls->peers[i]->stepped < frontier )
-			{
-				frontier = ls->peers[i]->stepped;
-			}
-		}
-		if ( ls->closed > frontier + ls->delay )
+		if ( ls->closed > lpLockstep_GetConfirmed( ls ) + ls->delay )
 		{
 			break;
 		}

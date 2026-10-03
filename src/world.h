@@ -786,6 +786,12 @@ uint8_t lpSuppliedMask( const lpPiece* p );			  // channels fed at all here
 void lpDrainPools( lpWorld* w, float timeStep );
 float lpSupplyOf( const lpPiece* p, uint8_t channels ); // the worst of those channels here, 0 to 1 (1 for none)
 // Carriers' connections changed at pieces a and b (-1: none): supply is updated, and its changes travel from there
+// The piece across a bond from piece
+static inline int lpBondOther( const lpBond* bond, int piece )
+{
+	return bond->a == piece ? bond->b : bond->a;
+}
+
 static inline void lpCarriersChanged( lpWorld* w, uint8_t channels, int a, int b )
 {
 	w->supplyDirty = w->supplyDirty || channels != 0;

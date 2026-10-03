@@ -120,6 +120,10 @@ static bool lpTakeControl( uint8_t* controller, uint8_t peer )
 	{
 		return *controller == 0;
 	}
+	if ( *controller != 0 && *controller != peer + 1 )
+	{
+		return false; // another player's, until they release it
+	}
 	*controller = (uint8_t)( peer + 1 );
 	return true;
 }

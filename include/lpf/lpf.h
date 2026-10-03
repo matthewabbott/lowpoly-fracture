@@ -700,7 +700,8 @@ typedef struct lpImpactDef
 	bool explosion;
 } lpImpactDef;
 
-// Queued; applied at the start of the next step, in call order.
+// Queued, in call order, for the next step's impacts (an impact command calls this as its step begins, so it acts in
+// that step)
 void lpWorld_AddImpact( lpWorld* world, const lpImpactDef* impact );
 
 // Make a body full physics again (a thrown or launched piece). Ghost and scrap bodies get a Box3D body back.
@@ -727,7 +728,7 @@ void lpWorld_Pull( lpWorld* world, int piece, lpVec3 localPoint, lpPos target, f
 //
 // A command names a slot and its generation (LP_ANY_GENERATION: whatever holds the slot when it is applied). One whose
 // reference went stale is dropped, and so is a scene's control of a vehicle or rig a player drives: a player's control,
-// limb or claw command takes it over until that player releases it.
+// limb or claw command takes a free one over until that player releases it, and another player's is dropped meanwhile.
 
 #define LP_PEER_SCENE 255
 #define LP_ANY_GENERATION 0xFFFFFFFFu
@@ -937,54 +938,7 @@ uint64_t lpWorld_HashElement( const lpWorld* world, int category, int slot ); //
 // named in message, if something changed that was not rehashed: a bug in the hash's change tracking.
 bool lpWorld_CheckHash( const lpWorld* world, char* message, int size );
 
-// Causal units: the groups of bodies whose members can affect each other within a tick. Bodies are joined through
-// touching contacts, links, a vehicle's wheels, a rig's limbs, the ground under a wheel or a planted foot, and pieces
-// that share a detonator or a pool; an anchored piece and frozen rubble join nothing (within a tick they take no load
-// and never move, so the ground does not make the world one unit). A unit holds its bodies' pieces, bonds and stress state. Casts that only read
-// what they hit, and the world-wide budgets, couple units unseen. For the two-world lab (repair, cones); computed on
-// demand, not cheap.
-//
-// Numbers each body slot's unit into units (capacity at least lpWorld_GetBodyCapacity; -1 for a free slot), counted
-// from 0 in the order of each unit's lowest slot. Returns the number of units, or -1 if capacity is too small.
-int lpWorld_GetUnits( lpWorld* world, int* units, int capacity );
-// The unit an element of the state hash belongs to (-1: the world category, or nothing in that slot)
-int lpWorld_GetElementUnit( const lpWorld* world, const int* units, int category, int slot );
-// Each unit's hash: the sum of its elements (count entries of sums)
-void lpWorld_HashUnits( const lpWorld* world, const int* units, int count, uint64_t* sums );
-
-// ---- the two-world lab ----
-//
-// Experiments with two worlds stepped on the same inputs (lpf_bench --twin, the tests): a desync injected on purpose,
-// found by following the state hash down, and repaired by copying one world's state into the other, unit by unit.
-// Never in a game.
-
-// Nudges the largest component of a body's linear velocity by ulps units in the last place
-void lpLab_NudgeVelocity( lpWorld* world, int body, int ulps );
-// Nudges the warm start of a touching contact of the body by ulps (the physics engine's hidden state); false if it
-// touches nothing
-bool lpLab_NudgeWarmStart( lpWorld* world, int body, int ulps );
-
-typedef struct lpLabDiff
-{
-	int category; // lpHashCategory
-	int slot;
-	uint32_t generation; // of the body, piece or link in a's slot (0 in other categories)
-} lpLabDiff;
-
-// The elements whose hashes differ between two worlds, in (category, slot) order, found as a host and a peer would:
-// categories, then 64-slot buckets, then elements. Writes up to capacity; returns how many differ.
-int lpLab_Diff( const lpWorld* a, const lpWorld* b, lpLabDiff* out, int capacity );
-
-typedef enum lpLabRepair
-{
-	lp_labMotion = 1,	  // transforms and velocities (a ghost's or scrap's own motion and landing plan)
-	lp_labWarmStarts = 2, // the contacts' manifolds: impulses and the feature ids that match them up
-	lp_labSleep = 4,	  // sleep timers
-} lpLabRepair;
-
-// Copies a unit (lpWorld_GetUnits' numbering, in src) from src to dst: the parts asked for (lpLabRepair). State only:
-// both worlds must hold the same bodies with the same pieces there. Returns the bytes a host would have sent.
-int lpLab_RepairUnit( lpWorld* dst, const lpWorld* src, const int* units, int unit, int parts );
+// Causal units and the two-world lab (repair, cones): include/lpf/lplab.h, for experiments only.
 
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions), the engine's own trig and cube

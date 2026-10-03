@@ -5,6 +5,7 @@
 
 #include "dump.h"
 #include "lockstep.h"
+#include "lpf/lplab.h"
 #include "script.h"
 
 #include <stdlib.h>
@@ -779,17 +780,24 @@ static int TestCommandReferences( void )
 	Run( &s, 1 );
 	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 && lpWorld_GetVehicleState( s.world, 0 ).control.throttle == 0.75f );
 
+	// Another player cannot take it while peer 0 drives it
+	lpCommand other = DriveCommand( 4, 1, 0, -1.0f );
+	ENSURE( lpWorld_Submit( s.world, &other ) );
+	Run( &s, 1 );
+	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 && lpWorld_GetVehicleState( s.world, 0 ).controller == 0 );
+	ENSURE( lpWorld_GetVehicleState( s.world, 0 ).control.throttle == 0.75f );
+
 	lpCommand release = { 0 };
-	release.tick = 5;
+	release.tick = 6;
 	release.peer = 1; // not the one driving it
 	release.kind = lp_commandRelease;
 	release.release.vehicle = 0;
 	release.release.rig = -1;
 	ENSURE( lpWorld_Submit( s.world, &release ) );
 	release.peer = 0;
-	release.tick = 6;
+	release.tick = 7;
 	ENSURE( lpWorld_Submit( s.world, &release ) );
-	lpCommand sceneAfter = DriveCommand( 7, LP_PEER_SCENE, 2, -0.5f );
+	lpCommand sceneAfter = DriveCommand( 8, LP_PEER_SCENE, 2, -0.5f );
 	ENSURE( lpWorld_Submit( s.world, &sceneAfter ) );
 	Run( &s, 2 );
 	ENSURE( lpWorld_GetStats( s.world ).commandsDropped == 1 ); // peer 1's release
@@ -1041,7 +1049,21 @@ static int TestCausalUnits( void )
 		// Every element is in one unit or none: the units' sums and the rest add up to the categories
 		uint64_t* sums = malloc( sizeof( uint64_t ) * (size_t)( count > 0 ? count : 1 ) );
 		ENSURE( sums != NULL );
-		lpWorld_HashUnits( w, units, count, sums );
+		for ( int u = 0; u < count; ++u )
+		{
+			sums[u] = 0;
+		}
+		for ( int c = 0; c < lp_hashCategoryCount; ++c )
+		{
+			for ( int i = 0; i < lpWorld_HashSlotCount( w, c ); ++i )
+			{
+				int unit = lpWorld_GetElementUnit( w, units, c, i );
+				if ( unit >= 0 )
+				{
+					sums[unit] += lpWorld_HashElement( w, c, i );
+				}
+			}
+		}
 		uint64_t categories[lp_hashCategoryCount];
 		lpWorld_HashCategories( w, categories );
 		uint64_t whole = 0, parts = 0;
@@ -1157,6 +1179,7 @@ static int TestLockstepPair( void )
 			printf( "  in sync: %llu ticks, %d commands applied on the host and %d on the peer (its rifle's among them); hashes %016llx and %016llx\n",
 					(unsigned long long)lpWorld_GetTick( host.world ), applied[0], applied[1], (unsigned long long)a, (unsigned long long)b );
 			ENSURE( lpLockstep_GetState( h ) == lp_lockstepRunning && lpLockstep_GetDesyncTick( h ) < 0 );
+			ENSURE( lpLockstep_GetPeer( h ) == 0 && lpLockstep_GetPeer( p ) == 1 );
 			ENSURE( lpWorld_GetTick( host.world ) == 240 && lpWorld_GetTick( peer.world ) == 240 && a == b );
 			ENSURE( applied[0] >= 10 && applied[0] == applied[1] );
 		}

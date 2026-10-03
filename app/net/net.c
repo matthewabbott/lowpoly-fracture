@@ -284,7 +284,7 @@ static const char* lpTcpReceive( void* context )
 static bool lpTcpClosed( void* context )
 {
 	const lpTcp* t = context;
-	return t->closed && t->in.count == 0;
+	return t->closed; // what is left is at most half a line: nothing more will come
 }
 
 lpTransport lpTcp_Transport( lpTcp* connection )

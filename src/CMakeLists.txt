@@ -32,6 +32,7 @@ add_library(lpf_core OBJECT
 	world.h
 	../include/lpf/lpf.h
 	../include/lpf/lpmath.h
+	../include/lpf/lplab.h
 )
 
 target_include_directories(lpf_core
