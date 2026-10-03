@@ -166,6 +166,7 @@ static void lpSupplyArrivals( lpWorld* w, int* offset )
 	lpFree( queue );
 }
 
+// A total order: one carrier wave per (piece, channel) and one pool wave per (pool, tick), so no two waves tie
 static int lpCompareWave( const void* x, const void* y )
 {
 	const lpSupplyWave* a = x;
@@ -394,8 +395,22 @@ void lpUpdateSupply( lpWorld* w )
 			int arrives = waves && pool->source >= 0 ? offset[pool->source] : 0;
 			if ( arrives > 0 )
 			{
+				// One wave per pool and tick (a later update's leak joins it), so the waves' order is total and the
+				// leaks add up in the order they were found
 				lpSupplyWave wave = { w->tick + (uint64_t)arrives, -1, 0, i, leak, 0, 0 };
-				lpArray_Push( w->supplyWaves, wave );
+				int same = -1;
+				for ( int k = 0; k < w->supplyWaves.count && same < 0; ++k )
+				{
+					same = w->supplyWaves.data[k].pool == i && w->supplyWaves.data[k].tick == wave.tick ? k : -1;
+				}
+				if ( same >= 0 )
+				{
+					w->supplyWaves.data[same].leak += leak;
+				}
+				else
+				{
+					lpArray_Push( w->supplyWaves, wave );
+				}
 			}
 			else
 			{
