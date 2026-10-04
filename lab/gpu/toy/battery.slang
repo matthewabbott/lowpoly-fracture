@@ -25,6 +25,9 @@
 #define H_QMUL 13
 #define H_ROTATE 14
 #define H_POS 15
+#define H_UNIT 16
+#define H_DELTA 17
+#define H_FRAME 18
 
 [shader( "compute" )]
 [numthreads( 64, 1, 1 )]
@@ -161,6 +164,86 @@ void battery( uint3 tid : SV_DispatchThreadID )
 #endif
 		o.u0 = uint( gx.x ) ^ ( uint( gy.x ) << 7 ) ^ ( uint( gz.x ) << 14 );
 		o.u1 = uint( gx.y ) ^ ( uint( gy.y ) << 7 ) ^ ( uint( gz.y ) << 14 );
+	}
+	else if ( h == H_UNIT )
+	{
+		// the narrowphase's normalisation (any format in V4) and length
+		V3 u = unit3( v3( v.a, v.b, v.c ) );
+		o.r0 = u.x;
+		o.r1 = u.y;
+		o.r2 = u.z;
+		o.r3 = len3( v3( v.d, v.e, v.f ) );
+	}
+	else if ( h == H_DELTA )
+	{
+		// b - a for two positions (V4: words from the inputs, some beyond the +-127 m range)
+		Pos3 pa;
+		Pos3 pb;
+#if defined( DIALECT_V4 )
+		pa.xlo = uint( v.a );
+		pa.xhi = v.b >> 24;
+		pa.ylo = uint( v.c );
+		pa.yhi = v.b >> 20;
+		pa.zlo = uint( v.e );
+		pa.zhi = -( v.b >> 22 );
+		pb.xlo = uint( v.b );
+		pb.xhi = pa.xhi + ( v.d >> 25 );
+		pb.ylo = uint( v.d );
+		pb.yhi = pa.yhi + ( v.f >> 24 );
+		pb.zlo = uint( v.f );
+		pb.zhi = pa.zhi + ( v.a >> 26 );
+#else
+		pa.x = v.a;
+		pa.y = v.b;
+		pa.z = v.c;
+		pb.x = v.a + v.d;
+		pb.y = v.b + v.e;
+		pb.z = v.c + v.f;
+#endif
+		V3 d = posDelta( pa, pb );
+		o.r0 = d.x;
+		o.r1 = d.y;
+		o.r2 = d.z;
+	}
+	else if ( h == H_FRAME )
+	{
+		// B in A's frame and back: qA = (a, b, c, d) unit, qB = (b, -a, d, -c); positions from e and f (Q8.24)
+		BodyPose pa;
+		BodyPose pb;
+		pa.q = q4( v.a, v.b, v.c, v.d );
+		pb.q = q4( v.b, -v.a, v.d, -v.c );
+#if defined( DIALECT_V4 )
+		pa.p.xlo = uint( v.e ) << 8u;
+		pa.p.xhi = v.e >> 24;
+		pa.p.ylo = uint( v.f ) << 8u;
+		pa.p.yhi = v.f >> 24;
+		pa.p.zlo = uint( v.e ) << 8u;
+		pa.p.zhi = v.e >> 24;
+		pb.p.xlo = uint( v.f ) << 8u;
+		pb.p.xhi = v.f >> 24;
+		pb.p.ylo = uint( v.e ) << 8u;
+		pb.p.yhi = v.e >> 24;
+		pb.p.zlo = uint( -v.f ) << 8u;
+		pb.p.zhi = ( -v.f ) >> 24;
+#else
+		pa.p.x = v.e;
+		pa.p.y = v.f;
+		pa.p.z = v.e;
+		pb.p.x = v.f;
+		pb.p.y = v.e;
+		pb.p.z = -v.f;
+#endif
+		Frame f = frameBtoA( pa, pb, one );
+		Frame g = invFrame( f );
+		V3 x = toFrame( f, v3( v.e, v.f, -v.e ) );
+		V3 y = toFrame( g, x );
+		o.r0 = y.x;
+		o.r1 = y.y;
+		o.r2 = y.z;
+		o.r3 = x.x;
+		H2 hh = hashT( hashT( hashT( hashT( hashStart( 0u, 0u ), x.y ), x.z ), f.R.r1.z ), g.p.x );
+		o.u0 = hh.a;
+		o.u1 = hh.b;
 	}
 	batOut[i] = o;
 }

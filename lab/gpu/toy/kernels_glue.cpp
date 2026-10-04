@@ -9,8 +9,9 @@ static GlobalParams_0 g_base;
 #define TWIN_MAX_THREADS 64
 static uint32_t g_counters[TWIN_MAX_THREADS][4];
 
-// The buffers, in kernels.slang's binding order 0..10 (hulls, hullPoints, hullFaces, hullEdges, bodyState, bodyPose,
-// bodyMass, aabbs, lists, params, hashes) with their element counts
+// The buffers, in kernels.slang's binding order 0..10 then 12..17 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
+// bodyPose, bodyMass, aabbs, lists, params, hashes; pairs, manifolds, prevManifolds, satAxes, narrowDiag,
+// manifoldHashes: TOY_BUFFERS entries, the counters' slot 11 unused) with their element counts
 extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 {
 	g_base.hulls_0.data = (Hull_0*)bufs[0];
@@ -35,6 +36,18 @@ extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 	g_base.params_0.count = counts[9];
 	g_base.hashes_0.data = (Hash2_0*)bufs[10];
 	g_base.hashes_0.count = counts[10];
+	g_base.pairs_0.data = (Pair_0*)bufs[12];
+	g_base.pairs_0.count = counts[12];
+	g_base.manifolds_0.data = (Manifold_0*)bufs[13];
+	g_base.manifolds_0.count = counts[13];
+	g_base.prevManifolds_0.data = (Manifold_0*)bufs[14];
+	g_base.prevManifolds_0.count = counts[14];
+	g_base.satAxes_0.data = (SatAxis_0*)bufs[15];
+	g_base.satAxes_0.count = counts[15];
+	g_base.narrowDiags_0.data = (NarrowDiag_0*)bufs[16];
+	g_base.narrowDiags_0.count = counts[16];
+	g_base.manifoldHashes_0.data = (Hash2_0*)bufs[17];
+	g_base.manifoldHashes_0.count = counts[17];
 }
 
 extern "C" const char* toy_twin_info( void )
@@ -43,7 +56,7 @@ extern "C" const char* toy_twin_info( void )
 }
 
 // sizes of the twin's structs, against the C layout: Hull, HullFace, BodyState, BodyPose, BodyMass, Aabb, Params,
-// Hash2, V3
+// Hash2, V3, Pair, Manifold, SatAxis, NarrowDiag
 extern "C" size_t toy_sizeof( int which )
 {
 	switch ( which )
@@ -57,6 +70,10 @@ extern "C" size_t toy_sizeof( int which )
 		case 6: return sizeof( Params_0 );
 		case 7: return sizeof( Hash2_0 );
 		case 8: return sizeof( V3_0 );
+		case 9: return sizeof( Pair_0 );
+		case 10: return sizeof( Manifold_0 );
+		case 11: return sizeof( SatAxis_0 );
+		case 12: return sizeof( NarrowDiag_0 );
 		default: return 0;
 	}
 }
@@ -79,7 +96,8 @@ extern "C" void toy_reset_saturations( void )
 	}
 }
 
-// entry: 0 prepareBodies, 1 integrateVelocities, 2 integratePositions, 3 finalizeBodies, 4 wakeBodies, 5 hashElements
+// entry: 0 prepareBodies, 1 integrateVelocities, 2 integratePositions, 3 finalizeBodies, 4 wakeBodies, 5 hashElements,
+// 6 narrowSat, 7 narrowClip, 8 copyManifolds, 9 hashManifolds
 extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux, uint32_t g0, uint32_t g1, int thread )
 {
 	GlobalParams_0 gp = g_base;
@@ -105,5 +123,9 @@ extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux
 		case 3: finalizeBodies( &vi, nullptr, &gp ); break;
 		case 4: wakeBodies( &vi, nullptr, &gp ); break;
 		case 5: hashElements( &vi, nullptr, &gp ); break;
+		case 6: narrowSat( &vi, nullptr, &gp ); break;
+		case 7: narrowClip( &vi, nullptr, &gp ); break;
+		case 8: copyManifolds( &vi, nullptr, &gp ); break;
+		case 9: hashManifolds( &vi, nullptr, &gp ); break;
 	}
 }

@@ -51,10 +51,14 @@ enum
 	H_QMUL,
 	H_ROTATE,
 	H_POS,
+	H_UNIT,
+	H_DELTA,
+	H_FRAME,
 	H_COUNT
 };
-static const char* g_names[H_COUNT] = { "mul", "sum2/dif2", "sum3", "rescale", "select", "snap", "recip", "rsqrt",
-										"divClamp", "lpDivQ31", "clz", "atan2", "quatNormalize", "quatMul", "rotate", "pos/grid" };
+static const char* g_names[H_COUNT] = { "mul",	  "sum2/dif2", "sum3",	   "rescale",	   "select",  "snap",	"recip",
+										"rsqrt",  "divClamp",  "lpDivQ31", "clz",		   "atan2",	  "quatNormalize",
+										"quatMul", "rotate",   "pos/grid", "unit3/len3", "posDelta", "frame" };
 
 static FILE* g_log;
 
@@ -392,6 +396,56 @@ static void gen_vec( int h, BatIn* v, Pcg* r )
 			v->e = q_value( r );
 			v->f = q_bounded( r, 1 << 30 );
 			break;
+		case H_UNIT:
+		{
+			// any integer vector: zero ones, one component, full range, tiny ones
+			uint32_t c = pcg_next( r ) % 6u;
+			v->a = q_value( r );
+			v->b = q_value( r );
+			v->c = q_value( r );
+			v->d = q_value( r );
+			v->e = q_value( r );
+			v->f = q_value( r );
+			if ( c == 1 )
+			{
+				v->b = 0;
+				v->c = 0;
+			}
+			else if ( c == 2 )
+			{
+				v->a = 0;
+				v->b = 0;
+				v->c = 0;
+			}
+			else if ( c == 3 )
+			{
+				v->a = v->a >> 24;
+				v->b = v->b >> 24;
+				v->c = v->c >> 24;
+			}
+			break;
+		}
+		case H_DELTA:
+			v->a = (int32_t)pcg_next( r );
+			v->b = (int32_t)pcg_next( r );
+			v->c = (int32_t)pcg_next( r );
+			v->d = (int32_t)pcg_next( r );
+			v->e = (int32_t)pcg_next( r );
+			v->f = (int32_t)pcg_next( r );
+			break;
+		case H_FRAME:
+		{
+			pcg_unit_quat( r, q );
+			double e = pcg_range( r, -20.0, 20.0 );
+			double f = pcg_range( r, -20.0, 20.0 );
+			v->a = q_of( q[0], S_Q );
+			v->b = q_of( q[1], S_Q );
+			v->c = q_of( q[2], S_Q );
+			v->d = q_of( q[3], S_Q );
+			v->e = q_of( e, S_R );
+			v->f = q_of( f, S_R );
+			break;
+		}
 #else
 		case H_MUL:
 		case H_SUM2:
@@ -456,6 +510,57 @@ static void gen_vec( int h, BatIn* v, Pcg* r )
 			pcg_unit_quat( r, q );
 			double e = h == H_QMUL ? pcg_range( r, -0.7, 0.7 ) : pcg_range( r, -30.0, 30.0 );
 			double f = h == H_QMUL ? pcg_range( r, -0.7, 0.7 ) : pcg_range( r, -30.0, 30.0 );
+			v->a = (T)q[0];
+			v->b = (T)q[1];
+			v->c = (T)q[2];
+			v->d = (T)q[3];
+			v->e = (T)e;
+			v->f = (T)f;
+			break;
+		}
+		case H_UNIT:
+		{
+			uint32_t c = pcg_next( r ) % 4u;
+			v->a = (T)fd_value( r );
+			v->b = (T)fd_value( r );
+			v->c = (T)fd_value( r );
+			v->d = (T)fd_value( r );
+			v->e = (T)fd_value( r );
+			v->f = (T)fd_value( r );
+			if ( c == 1 )
+			{
+				v->b = 0;
+				v->c = 0;
+			}
+			else if ( c == 2 )
+			{
+				v->a = 0;
+				v->b = 0;
+				v->c = 0;
+			}
+			break;
+		}
+		case H_DELTA:
+		{
+			double a = pcg_range( r, -1e4, 1e4 );
+			double b = pcg_range( r, -1e4, 1e4 );
+			double c = pcg_range( r, -1e4, 1e4 );
+			double d = pcg_range( r, -64.0, 64.0 );
+			double e = pcg_range( r, -64.0, 64.0 );
+			double f = pcg_range( r, -64.0, 64.0 );
+			v->a = (T)a;
+			v->b = (T)b;
+			v->c = (T)c;
+			v->d = (T)d;
+			v->e = (T)e;
+			v->f = (T)f;
+			break;
+		}
+		case H_FRAME:
+		{
+			pcg_unit_quat( r, q );
+			double e = pcg_range( r, -20.0, 20.0 );
+			double f = pcg_range( r, -20.0, 20.0 );
 			v->a = (T)q[0];
 			v->b = (T)q[1];
 			v->c = (T)q[2];
@@ -687,8 +792,20 @@ static double snapd( double x )
 
 static void accuracy( const Battery* b, const BatOut* o )
 {
-	double recip = 0.0, rsq = 0.0, at = 0.0, qn = 0.0, dc = 0.0;
-	int nr = 0, ns = 0, na = 0, nq = 0, nd = 0;
+	double recip = 0.0, rsq = 0.0, at = 0.0, qn = 0.0, dc = 0.0, un = 0.0;
+	int nr = 0, ns = 0, na = 0, nq = 0, nd = 0, nu = 0;
+	for ( int i = b->start[H_UNIT]; i < b->start[H_UNIT + 1]; ++i )
+	{
+		double x = val( o[i].r0, S_Q ), y = val( o[i].r1, S_Q ), z = val( o[i].r2, S_Q );
+		double l = sqrt( x * x + y * y + z * z );
+		if ( l == 0.0 )
+		{
+			continue;
+		}
+		double e = fabs( l - 1.0 );
+		un = e > un ? e : un;
+		++nu;
+	}
 	for ( int i = b->start[H_RECIP]; i < b->start[H_RECIP + 1]; ++i )
 	{
 		double d = val( b->in[i].a, b->in[i].sh ), got = val( o[i].r0, b->in[i].k );
@@ -780,6 +897,7 @@ static void accuracy( const Battery* b, const BatOut* o )
 		 "rel",
 #endif
 		 dc, nd );
+	say( "accuracy (twin): |unit3| - 1 max %.3g (%d)\n", un, nu );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

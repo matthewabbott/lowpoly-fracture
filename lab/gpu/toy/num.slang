@@ -92,29 +92,23 @@ float rsqrtPos( float x )
 	return y;
 }
 
+// Every reciprocal and square root below takes an input made safe before the test that discards it (d == 0 ? 1 : d),
+// so a compiler that evaluates it ahead of the select (clang 18 on aarch64 does, for D's division) raises no flag.
 T rsqrtT( T x, int sx, int sy )
 {
-	T r = 0.0f;
-	if ( x > 0.0f )
-	{
-		r = rsqrtPos( x );
-	}
-	return snap( r );
+	T xs = x > 0.0f ? x : 1.0f;
+	T r = rsqrtPos( xs );
+	return snap( x > 0.0f ? r : 0.0f );
 }
 
 // 1/d (0 for d == 0); formats ignored
 T recipT( T d, int sd, int sr )
 {
-	T r = 0.0f;
-	if ( d > 0.0f )
-	{
-		r = recipPos( d );
-	}
-	else if ( d < 0.0f )
-	{
-		r = -recipPos( -d );
-	}
-	return snap( r );
+	T ad = d < 0.0f ? -d : d;
+	T as = ad > 0.0f ? ad : 1.0f;
+	T r = recipPos( as );
+	r = d < 0.0f ? -r : r;
+	return snap( ad > 0.0f ? r : 0.0f );
 }
 
 // n / d clamped to [-lim, lim]: n times the software reciprocal; |n| >= lim |d| (d == 0 among them) gives +-lim, n == 0
@@ -123,6 +117,7 @@ T divClamp( T n, T d, int k, T lim )
 {
 	T an = n < 0.0f ? -n : n;
 	T ad = d < 0.0f ? -d : d;
+	T as = ad > 0.0f ? ad : 1.0f;
 	bool neg = ( n < 0.0f ) != ( d < 0.0f );
 	T q = 0.0f;
 	if ( an == 0.0f )
@@ -135,14 +130,14 @@ T divClamp( T n, T d, int k, T lim )
 	}
 	else
 	{
-		q = an * recipPos( ad );
+		q = an * recipPos( as );
 	}
 	q = neg ? -q : q;
 	return snap( q );
 }
 
 // mn / mx for 0 <= mn <= mx, mx > 0 (atan2's ratio)
-T ratio01( T mn, T mx ) { return snap( mn * recipPos( mx ) ); }
+T ratio01( T mn, T mx ) { return snap( mn * recipPos( mx > 0.0f ? mx : 1.0f ) ); }
 
 // =====================================================================================================================
 // D: double (twin only)
@@ -158,30 +153,27 @@ T dif2( T a, T b, T c, T d, int sh ) { return a * b - c * d; }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return a * b + c * d + e * f; }
 T rescale( T x, int sh ) { return x; }
 
+// Every division and square root divides by (or roots) an input made safe before the test that discards it (d == 0 ?
+// 1 : d): clang 18 on aarch64 evaluated 1 / d ahead of the select, and the sentinel saw divide-by-zero.
 T rsqrtT( T x, int sx, int sy )
 {
-	T r = 0.0l;
-	if ( x > 0.0l )
-	{
-		r = 1.0l / sqrt( x );
-	}
-	return r;
+	T xs = x > 0.0l ? x : 1.0l;
+	T r = 1.0l / sqrt( xs );
+	return x > 0.0l ? r : 0.0l;
 }
 
 T recipT( T d, int sd, int sr )
 {
-	T r = 0.0l;
-	if ( d != 0.0l )
-	{
-		r = 1.0l / d;
-	}
-	return r;
+	T ds = d != 0.0l ? d : 1.0l;
+	T r = 1.0l / ds;
+	return d != 0.0l ? r : 0.0l;
 }
 
 T divClamp( T n, T d, int k, T lim )
 {
 	T an = n < 0.0l ? -n : n;
 	T ad = d < 0.0l ? -d : d;
+	T as = ad > 0.0l ? ad : 1.0l;
 	bool neg = ( n < 0.0l ) != ( d < 0.0l );
 	T q = 0.0l;
 	if ( an == 0.0l )
@@ -194,12 +186,12 @@ T divClamp( T n, T d, int k, T lim )
 	}
 	else
 	{
-		q = an / ad;
+		q = an / as;
 	}
 	return snap( neg ? -q : q );
 }
 
-T ratio01( T mn, T mx ) { return mn / mx; }
+T ratio01( T mn, T mx ) { return mn / ( mx > 0.0l ? mx : 1.0l ); }
 
 // =====================================================================================================================
 // V4: block-scaled int32
@@ -622,6 +614,34 @@ Pos3 posAdd( Pos3 p, V3 d )
 // floor( p 2^10 ) from the two words
 int gridOf( uint lo, int hi ) { return int( uint( hi ) << uint( S_G ) ) | int( lo >> uint( S_P - S_G ) ); }
 
+// b - a for one coordinate, in Q8.24: the two words' difference rounded half up (+128 at bit 7, with the carry);
+// beyond +-127 m it saturates and counts
+int posDeltaWord( uint alo, int ahi, uint blo, int bhi )
+{
+	uint lo = blo - alo;
+	int hi = bhi - ahi - ( blo < alo ? 1 : 0 );
+	uint lr = lo + 128u;
+	hi = hi + ( lr < lo ? 1 : 0 );
+	int r = 0;
+	if ( hi > 127 || hi < -127 )
+	{
+		countSaturation();
+		r = hi > 0 ? 2147483647 : -2147483647;
+	}
+	else
+	{
+		r = int( ( uint( hi ) << 24u ) | ( lr >> 8u ) );
+	}
+	return r;
+}
+
+// b - a in Q8.24 (the narrowphase's relative position)
+V3 posDelta( Pos3 a, Pos3 b )
+{
+	return v3( posDeltaWord( a.xlo, a.xhi, b.xlo, b.xhi ), posDeltaWord( a.ylo, a.yhi, b.ylo, b.yhi ),
+			   posDeltaWord( a.zlo, a.zhi, b.zlo, b.zhi ) );
+}
+
 // The cells [floor(p + lo), floor(p + hi)] of p + [lo, hi] (offsets Q8.24), conservatively: floor(p) + floor(lo) and
 // floor(p) + floor(hi) + 1
 int2 gridSpan( uint plo, int phi, T lo, T hi )
@@ -663,7 +683,116 @@ int2 gridSpanX( Pos3 p, T lo, T hi ) { return gridSpan( p.x, lo, hi ); }
 int2 gridSpanY( Pos3 p, T lo, T hi ) { return gridSpan( p.y, lo, hi ); }
 int2 gridSpanZ( Pos3 p, T lo, T hi ) { return gridSpan( p.z, lo, hi ); }
 
+// b - a (Box3D's (float)( B.p.x - A.p.x ) in F)
+V3 posDelta( Pos3 a, Pos3 b ) { return snap3( v3( b.x - a.x, b.y - a.y, b.z - a.z ) ); }
+
 #endif
+
+// =====================================================================================================================
+// The narrowphase's frames and unit vectors
+// =====================================================================================================================
+
+Q4 quatConj( Q4 q ) { return q4( -q.x, -q.y, -q.z, q.s ); }
+
+M3 snapM3( M3 m )
+{
+	M3 r;
+	r.r0 = snap3( m.r0 );
+	r.r1 = snap3( m.r1 );
+	r.r2 = snap3( m.r2 );
+	return r;
+}
+
+// R^T (exact: the entries move)
+M3 transposeM3( M3 m )
+{
+	M3 r;
+	r.r0 = v3( m.r0.x, m.r1.x, m.r2.x );
+	r.r1 = v3( m.r0.y, m.r1.y, m.r2.y );
+	r.r2 = v3( m.r0.z, m.r1.z, m.r2.z );
+	return r;
+}
+
+// R^T a; a keeps its format
+V3 mulM3TV( M3 m, V3 a )
+{
+	return v3( sum3( m.r0.x, a.x, m.r1.x, a.y, m.r2.x, a.z, S_Q ), sum3( m.r0.y, a.x, m.r1.y, a.y, m.r2.y, a.z, S_Q ),
+			   sum3( m.r0.z, a.x, m.r1.z, a.y, m.r2.z, a.z, S_Q ) );
+}
+
+#if defined( DIALECT_V4 )
+// a / |a| in Q1.30 for an integer vector in any format (the format cancels); zero for a zero vector. The largest
+// component is shifted into [2^28, 2^29) (exactly; rounded when it has 30 or 31 bits), so |a'|^2 / 2^30 lies in
+// [1/16, 3/4] and its rsqrt in [1.15, 4] (Q3.28): 30 bits at any length.
+V3 unit3( V3 a )
+{
+	int ax = a.x < 0 ? -a.x : a.x;
+	int ay = a.y < 0 ? -a.y : a.y;
+	int az = a.z < 0 ? -a.z : a.z;
+	int m = ax > ay ? ax : ay;
+	m = az > m ? az : m;
+	V3 r = zero3();
+	if ( m > 0 )
+	{
+		int s = clz( uint( m ) ) - 3; // m << s has its top bit at 28
+		V3 b = a;
+		if ( s > 0 )
+		{
+			b = v3( int( uint( a.x ) << uint( s ) ), int( uint( a.y ) << uint( s ) ), int( uint( a.z ) << uint( s ) ) );
+		}
+		else if ( s < 0 )
+		{
+			b = v3( rescale( a.x, -s ), rescale( a.y, -s ), rescale( a.z, -s ) );
+		}
+		T x = dot3( b, b, 30 );
+		T y = rsqrtQ( x, 30, 28 );
+		r = v3( M( b.x, y, 28 ), M( b.y, y, 28 ), M( b.z, y, 28 ) );
+	}
+	return r;
+}
+#else
+// a / |a| through the software rsqrt; zero for a zero vector (Box3D's b3Normalize gives zero below FLT_EPSILON)
+V3 unit3( V3 a )
+{
+	T x = snap( dot3( a, a, 0 ) );
+	T y = rsqrtT( x, 0, 0 );
+	return snap3( mulSV( y, a, 0 ) );
+}
+#endif
+
+// |a| in a's format
+T len3( V3 a ) { return snap( dot3( a, unit3( a ), S_Q ) ); }
+
+// A change of frame x -> R x + p: B's local frame into A's (frameBtoA), or back (invFrame)
+struct Frame
+{
+	M3 R; // Q1.30
+	V3 p; // Q8.24
+};
+
+V3 toFrame( Frame f, V3 x ) { return snap3( add3( mulM3V( f.R, x ), f.p ) ); }
+V3 rotFrame( Frame f, V3 x ) { return snap3( mulM3V( f.R, x ) ); }
+V3 unrotFrame( Frame f, V3 x ) { return snap3( mulM3TV( f.R, x ) ); }
+
+// b3InvMulWorldTransforms: B in A's frame, q = qA* qB and p = qA* (pB - pA), as a matrix
+Frame frameBtoA( BodyPose a, BodyPose b, T one )
+{
+	Q4 q = quatMul( quatConj( a.q ), b.q );
+	Frame f;
+	f.R = snapM3( matrixFromQuat( q4( snap( q.x ), snap( q.y ), snap( q.z ), snap( q.s ) ), one ) );
+	f.p = snap3( invRotate( a.q, posDelta( a.p, b.p ) ) );
+	return f;
+}
+
+// The inverse frame: R^T and -R^T p
+Frame invFrame( Frame f )
+{
+	Frame g;
+	g.R = transposeM3( f.R );
+	V3 t = unrotFrame( f, f.p );
+	g.p = snap3( v3( -t.x, -t.y, -t.z ) );
+	return g;
+}
 
 // =====================================================================================================================
 // Hashing: two 32-bit murmur3 lanes make one 64-bit element hash (no 64-bit integer in the kernels)

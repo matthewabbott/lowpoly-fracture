@@ -59,4 +59,12 @@ const char* scene_names( void );
 // returned in `center`. Returns 0 when the hull exceeds the limits, has an edge shorter than minEdge, or is degenerate.
 int scene_hull_from_planes( SceneHull* h, const double ( *n )[3], const double* d, int planeCount, double minEdge, double center[3] );
 
+// A box of half extents hx, hy, hz
+void scene_box_hull( SceneHull* h, double hx, double hy, double hz );
+
+// A box cut by one to three random planes through its inside (each keeps the side holding the box's centre), drawn
+// again until the hull fits the limits and has no edge under 2 cm; returns the number of redraws
+struct Pcg;
+int scene_chunk_hull( SceneHull* h, struct Pcg* r, double hx, double hy, double hz );
+
 #endif

@@ -1,7 +1,9 @@
-// toy.c: the toy's twin driver (DESIGN.md "Pipeline per tick", step 2). Builds a scene (double), quantises it into the
-// dialect, and runs N ticks: the GPU stages as the kernels' C++ twin on a thread pool (E11's), the CPU stages between
-// them (stages.c), a per-tick hash (the bodies' element hashes summed order-free, and the stages' decisions), the
-// floating-point sentinel after every dispatch. Built once per dialect (toy_F, toy_V4, toy_D).
+// toy.c: the toy's twin driver (DESIGN.md "Pipeline per tick", steps 2 and 3). Builds a scene (double), quantises it
+// into the dialect, and runs N ticks: the GPU stages as the kernels' C++ twin on a thread pool (E11's), the CPU stages
+// between them (stages.c, with last tick's touching pairs from the manifolds), the narrowphase over the active pairs
+// (manifolds ping-ponged, an inactive pair's carried), a per-tick hash (the bodies' and the manifolds' element hashes
+// summed order-free per category, and the stages' decisions), the floating-point sentinel after every dispatch. Built
+// once per dialect (toy_F, toy_V4, toy_D).
 //
 //   toy_F --scene pile200 --ticks 600 --threads 1,8 [--seed S] [--gravity G] [--sleep 0|1] [--push BODY,VX,VY,VZ]
 //         [--pos-out FILE] [--pos-ref FILE] [--log FILE] [--quiet]
@@ -40,6 +42,7 @@
 #define DIALECT_NAME "D"
 #endif
 
+#define TOY_BUFFERS 18 // kernels.slang's bindings 0..17 (11, the counters, is the glue's)
 void toy_bind( void* const* bufs, const size_t* counts );
 const char* toy_twin_info( void );
 size_t toy_sizeof( int which );
@@ -55,10 +58,14 @@ enum
 	E_FINAL,
 	E_WAKE,
 	E_HASH,
+	E_NSAT,
+	E_NCLIP,
+	E_NCOPY,
+	E_MHASH,
 	E_COUNT
 };
 static const char* g_entryNames[E_COUNT] = { "prepareBodies", "integrateVelocities", "integratePositions", "finalizeBodies", "wakeBodies",
-											 "hashElements" };
+											 "hashElements",  "narrowSat",			 "narrowClip",		   "copyManifolds",	 "hashManifolds" };
 
 static FILE* g_log;
 static int g_quiet;
@@ -227,9 +234,10 @@ static int pool_dispatch( const Dispatch* d )
 
 typedef struct TickRecord
 {
-	uint64_t bodies; // the bodies' element hashes, summed
-	uint64_t stages; // the CPU stages' decisions
-	int awake, pairs, active, colours, overflow, islands, largest, slept, woken;
+	uint64_t bodies;	// the bodies' element hashes, summed
+	uint64_t manifolds; // the manifolds' element hashes, summed
+	uint64_t stages;	// the CPU stages' decisions
+	int awake, pairs, active, colours, overflow, islands, largest, slept, woken, touching, points;
 } TickRecord;
 
 typedef struct RunResult
@@ -305,18 +313,38 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 	memcpy( mass, init->mass, (size_t)n * sizeof( BodyMass ) );
 	Aabb* aabbs = (Aabb*)calloc( (size_t)n, sizeof( Aabb ) );
 	Hash2* hashes = (Hash2*)calloc( (size_t)n, sizeof( Hash2 ) );
-	// the list buffer: [prepare (last tick's awake)] [awake] [woken] [all]
-	uint32_t* lists = (uint32_t*)calloc( (size_t)( 4 * n ), sizeof( uint32_t ) );
+	// the list buffer: [prepare (last tick's awake)] [awake] [woken] [all] then, per pair, [active] [inactive] [all]
+	int pcap = 256;
+	uint32_t* lists = (uint32_t*)calloc( (size_t)( 4 * n + 3 * pcap ), sizeof( uint32_t ) );
 	uint32_t L_PREP = 0, L_AWAKE = (uint32_t)n, L_WOKEN = (uint32_t)( 2 * n ), L_ALL = (uint32_t)( 3 * n );
 	for ( int i = 0; i < n; ++i )
 	{
 		lists[L_ALL + i] = (uint32_t)i;
 	}
+	// per pair: the manifolds (ping-ponged: tick t writes mf[t & 1] and reads last tick's mf[(t & 1) ^ 1] by prevIndex),
+	// the SAT records, the manifold hashes; last tick's touching flags for the stages
+	Manifold* mf[2];
+	mf[0] = (Manifold*)calloc( (size_t)pcap, sizeof( Manifold ) );
+	mf[1] = (Manifold*)calloc( (size_t)pcap, sizeof( Manifold ) );
+	SatAxis* sat = (SatAxis*)calloc( (size_t)pcap, sizeof( SatAxis ) );
+	Hash2* mhashes = (Hash2*)calloc( (size_t)pcap, sizeof( Hash2 ) );
+	uint8_t* prevTouching = (uint8_t*)calloc( (size_t)pcap, 1 );
+	NarrowDiag diagDummy; // Params.narrowDiag is 0: never written
+	memset( &diagDummy, 0, sizeof( diagDummy ) );
 	Params params = init->params;
-	void* bufs[11] = { init->hulls, init->points, init->faces, init->edges, state, pose, mass, aabbs, lists, &params, hashes };
-	size_t counts[11] = { (size_t)init->hullCount, (size_t)init->pointCount, (size_t)init->faceCount, (size_t)init->edgeCount, (size_t)n, (size_t)n,
-						  (size_t)n, (size_t)n, (size_t)( 4 * n ), 1, (size_t)n };
-	toy_bind( bufs, counts );
+	{
+		// the bodies' buffers for the first prepare; every tick binds them all again after the stages (pairs move)
+		void* bufs[TOY_BUFFERS] = { init->hulls, init->points, init->faces, init->edges, state, pose, mass, aabbs, lists, &params, hashes };
+		size_t counts[TOY_BUFFERS] = { (size_t)init->hullCount, (size_t)init->pointCount, (size_t)init->faceCount, (size_t)init->edgeCount,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)( 4 * n + 3 * pcap ),
+									   1,
+									   (size_t)n };
+		toy_bind( bufs, counts );
+	}
 	toy_reset_saturations();
 
 	uint8_t* isStatic = (uint8_t*)malloc( (size_t)n );
@@ -350,12 +378,65 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 		int nd = 0;
 		push_dispatch( list, &nd, E_PREPARE, L_PREP, prepCount );
 		run_list( list, nd, t, &r );
-		// CPU: broadphase, merge, wake, islands and sleep, colouring
+		// CPU: last tick's touching pairs (their manifolds' point counts), broadphase, merge, wake, islands and sleep,
+		// colouring
 		for ( int i = 0; i < n; ++i )
 		{
 			sleepTicks[i] = state[i].sleepTicks;
 		}
-		stages_tick( &st, aabbs, sleepTicks, NULL, params.sleepTicks, params.enableSleep );
+		Manifold* prevMf = mf[( t & 1 ) ^ 1];
+		for ( int k = 0; k < st.prevCount; ++k )
+		{
+			prevTouching[k] = (uint8_t)( prevMf[k].pointCount > 0 );
+		}
+		stages_tick( &st, aabbs, sleepTicks, prevTouching, params.sleepTicks, params.enableSleep );
+		if ( st.pairCount > pcap )
+		{
+			while ( pcap < st.pairCount )
+			{
+				pcap *= 2;
+			}
+			mf[0] = (Manifold*)realloc( mf[0], (size_t)pcap * sizeof( Manifold ) );
+			mf[1] = (Manifold*)realloc( mf[1], (size_t)pcap * sizeof( Manifold ) );
+			prevMf = mf[( t & 1 ) ^ 1];
+			sat = (SatAxis*)realloc( sat, (size_t)pcap * sizeof( SatAxis ) );
+			mhashes = (Hash2*)realloc( mhashes, (size_t)pcap * sizeof( Hash2 ) );
+			prevTouching = (uint8_t*)realloc( prevTouching, (size_t)pcap );
+			lists = (uint32_t*)realloc( lists, (size_t)( 4 * n + 3 * pcap ) * sizeof( uint32_t ) );
+		}
+		uint32_t L_APAIR = (uint32_t)( 4 * n ), L_IPAIR = L_APAIR + (uint32_t)pcap, L_PAIRS = L_IPAIR + (uint32_t)pcap;
+		uint32_t activeCount = 0, inactiveCount = 0;
+		for ( int k = 0; k < st.pairCount; ++k )
+		{
+			if ( st.active[k] )
+			{
+				lists[L_APAIR + activeCount++] = (uint32_t)k;
+			}
+			else
+			{
+				lists[L_IPAIR + inactiveCount++] = (uint32_t)k;
+			}
+			lists[L_PAIRS + k] = (uint32_t)k;
+		}
+		Manifold* curMf = mf[t & 1];
+		void* bufs[TOY_BUFFERS] = { init->hulls, init->points, init->faces, init->edges, state, pose, mass, aabbs, lists, &params, hashes,
+									NULL,		 st.pairs,	   curMf,		 prevMf,	   sat,	  &diagDummy, mhashes };
+		size_t counts[TOY_BUFFERS] = { (size_t)init->hullCount, (size_t)init->pointCount, (size_t)init->faceCount, (size_t)init->edgeCount,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)n,
+									   (size_t)( 4 * n + 3 * pcap ),
+									   1,
+									   (size_t)n,
+									   0,
+									   (size_t)st.pairCount,
+									   (size_t)pcap,
+									   (size_t)pcap,
+									   (size_t)pcap,
+									   1,
+									   (size_t)pcap };
+		toy_bind( bufs, counts );
 		if ( getenv( "TOY_DUMP_AABBS" ) != NULL && atoi( getenv( "TOY_DUMP_AABBS" ) ) == t && threads == 1 )
 		{
 			for ( int i = 0; i < n; ++i )
@@ -366,9 +447,13 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 		}
 		memcpy( lists + L_AWAKE, st.awake, (size_t)st.awakeCount * sizeof( uint32_t ) );
 		memcpy( lists + L_WOKEN, st.woken, (size_t)st.wokenCount * sizeof( uint32_t ) );
-		// GPU: wake, the substeps, finalize, hash
+		// GPU: wake; the narrowphase over the active pairs (an inactive pair's manifold carried); the substeps, finalize,
+		// the hashes
 		nd = 0;
 		push_dispatch( list, &nd, E_WAKE, L_WOKEN, (uint32_t)st.wokenCount );
+		push_dispatch( list, &nd, E_NSAT, L_APAIR, activeCount );
+		push_dispatch( list, &nd, E_NCLIP, L_APAIR, activeCount );
+		push_dispatch( list, &nd, E_NCOPY, L_IPAIR, inactiveCount );
 		for ( int sub = 0; sub < params.substeps; ++sub )
 		{
 			push_dispatch( list, &nd, E_INTVEL, L_AWAKE, (uint32_t)st.awakeCount );
@@ -376,6 +461,7 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 		}
 		push_dispatch( list, &nd, E_FINAL, L_AWAKE, (uint32_t)st.awakeCount );
 		push_dispatch( list, &nd, E_HASH, L_ALL, (uint32_t)n );
+		push_dispatch( list, &nd, E_MHASH, L_PAIRS, (uint32_t)st.pairCount );
 		run_list( list, nd, t, &r );
 		total += vku_now_ms() - t0;
 
@@ -386,6 +472,14 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 			sum += (uint64_t)hashes[i].lo | ( (uint64_t)hashes[i].hi << 32 );
 		}
 		rec->bodies = sum;
+		sum = 0;
+		for ( int k = 0; k < st.pairCount; ++k )
+		{
+			sum += (uint64_t)mhashes[k].lo | ( (uint64_t)mhashes[k].hi << 32 );
+			rec->touching += curMf[k].pointCount > 0;
+			rec->points += curMf[k].pointCount;
+		}
+		rec->manifolds = sum;
 		rec->stages = stages_hash( &st );
 		rec->awake = st.awakeCount;
 		rec->pairs = st.pairCount;
@@ -417,6 +511,11 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 	free( aabbs );
 	free( hashes );
 	free( lists );
+	free( mf[0] );
+	free( mf[1] );
+	free( sat );
+	free( mhashes );
+	free( prevTouching );
 	return r;
 }
 
@@ -582,12 +681,14 @@ int main( int argc, char** argv )
 	}
 	say( "; gravity %g, sleep %s%s\n", settings.gravity, settings.enableSleep ? "on" : "off", pushBody >= 0 ? ", one body pushed" : "" );
 	say( "twin: %s\n", toy_twin_info() );
-	size_t cs[9] = { sizeof( Hull ), sizeof( HullFace ), sizeof( BodyState ), sizeof( BodyPose ), sizeof( BodyMass ), sizeof( Aabb ),
-					 sizeof( Params ), sizeof( Hash2 ), sizeof( V3 ) };
-	static const char* csn[9] = { "Hull", "HullFace", "BodyState", "BodyPose", "BodyMass", "Aabb", "Params", "Hash2", "V3" };
+	size_t cs[13] = { sizeof( Hull ),  sizeof( HullFace ), sizeof( BodyState ), sizeof( BodyPose ), sizeof( BodyMass ),
+					  sizeof( Aabb ),  sizeof( Params ),   sizeof( Hash2 ),		sizeof( V3 ),		sizeof( Pair ),
+					  sizeof( Manifold ), sizeof( SatAxis ), sizeof( NarrowDiag ) };
+	static const char* csn[13] = { "Hull", "HullFace", "BodyState", "BodyPose", "BodyMass", "Aabb", "Params",
+								   "Hash2", "V3",		"Pair",		 "Manifold", "SatAxis", "NarrowDiag" };
 	int layoutBad = 0;
 	say( "layout sizes C/twin:" );
-	for ( int i = 0; i < 9; ++i )
+	for ( int i = 0; i < 13; ++i )
 	{
 		say( " %s %zu/%zu", csn[i], cs[i], toy_sizeof( i ) );
 		layoutBad |= cs[i] != toy_sizeof( i );
@@ -608,20 +709,23 @@ int main( int argc, char** argv )
 	RunResult* r0 = runs;
 
 	// per-tick hashes: every tick to 120, then every 60th
-	say( "tick  bodies-hash       stages-hash       awake pairs active colours(ovf) islands(largest) slept woken\n" );
+	say( "tick  bodies-hash       manifolds-hash    stages-hash       awake pairs active touching points colours(ovf) "
+		 "islands(largest) slept woken\n" );
 	for ( int t = 1; t <= ticks; ++t )
 	{
 		if ( t <= 120 || t % 60 == 0 || t == ticks )
 		{
 			const TickRecord* k = r0->ticks + t;
-			say( "%4d  %016llx  %016llx  %5d %5d %6d %4d(%d) %6d(%d) %5d %5d\n", t, (unsigned long long)k->bodies, (unsigned long long)k->stages,
-				 k->awake, k->pairs, k->active, k->colours, k->overflow, k->islands, k->largest, k->slept, k->woken );
+			say( "%4d  %016llx  %016llx  %016llx  %5d %5d %6d %8d %6d %4d(%d) %6d(%d) %5d %5d\n", t, (unsigned long long)k->bodies,
+				 (unsigned long long)k->manifolds, (unsigned long long)k->stages, k->awake, k->pairs, k->active, k->touching, k->points, k->colours,
+				 k->overflow, k->islands, k->largest, k->slept, k->woken );
 		}
 	}
 	uint64_t runHash = 1469598103934665603ULL;
 	for ( int t = 1; t <= ticks; ++t )
 	{
 		runHash = fnv( runHash, &r0->ticks[t].bodies, 8 );
+		runHash = fnv( runHash, &r0->ticks[t].manifolds, 8 );
 		runHash = fnv( runHash, &r0->ticks[t].stages, 8 );
 	}
 	int failures = 0;
@@ -630,7 +734,8 @@ int main( int argc, char** argv )
 		int first = -1;
 		for ( int t = 1; t <= ticks && first < 0; ++t )
 		{
-			if ( runs[ti].ticks[t].bodies != r0->ticks[t].bodies || runs[ti].ticks[t].stages != r0->ticks[t].stages )
+			if ( runs[ti].ticks[t].bodies != r0->ticks[t].bodies || runs[ti].ticks[t].manifolds != r0->ticks[t].manifolds ||
+				 runs[ti].ticks[t].stages != r0->ticks[t].stages )
 			{
 				first = t;
 			}
@@ -739,8 +844,9 @@ int main( int argc, char** argv )
 			say( "body %d at tick %d: y %.9g m (free fall gives %.9g)\n", body, ticks, y, want );
 		}
 	}
-	say( "toy %s %s: run hash %016llx, final bodies %016llx stages %016llx, threads %s, saturations %u (twin: %s)\n", DIALECT_NAME, sceneName,
-		 (unsigned long long)runHash, (unsigned long long)r0->ticks[ticks].bodies, (unsigned long long)r0->ticks[ticks].stages,
+	say( "toy %s %s: run hash %016llx, final bodies %016llx manifolds %016llx stages %016llx, threads %s, saturations %u (twin: %s)\n",
+		 DIALECT_NAME, sceneName, (unsigned long long)runHash, (unsigned long long)r0->ticks[ticks].bodies,
+		 (unsigned long long)r0->ticks[ticks].manifolds, (unsigned long long)r0->ticks[ticks].stages,
 		 failures ? "DISAGREE or sentinel tripped" : "agree", r0->saturations, toy_twin_info() );
 	for ( int ti = 0; ti < tCount; ++ti )
 	{

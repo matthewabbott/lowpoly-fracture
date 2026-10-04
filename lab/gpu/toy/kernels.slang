@@ -1,6 +1,7 @@
 // kernels.slang: the toy's GPU stages so far (DESIGN.md "Pipeline per tick"), one source for the three dialects
-// through num.slang. Every kernel takes an index list: pc.start and pc.count into `lists`, never "the world", so a unit
-// can later be stepped alone. No atomics or groupshared memory (the saturation counter aside).
+// through num.slang; the narrowphase is in narrow.slang (included below). Every kernel takes an index list: pc.start
+// and pc.count into `lists`, never "the world", so a unit can later be stepped alone. No atomics or groupshared memory
+// (the saturation counter aside).
 #define TOY_COUNTERS_BINDING 11
 #include "num.slang"
 
@@ -15,10 +16,20 @@
 [[vk::binding( 8, 0 )]] StructuredBuffer<uint> lists;
 [[vk::binding( 9, 0 )]] StructuredBuffer<Params> params;
 [[vk::binding( 10, 0 )]] RWStructuredBuffer<Hash2> hashes;
+// 11: the saturation counters (num.slang)
+[[vk::binding( 12, 0 )]] StructuredBuffer<Pair> pairs;				 // this tick's, in key order
+[[vk::binding( 13, 0 )]] RWStructuredBuffer<Manifold> manifolds;	 // this tick's, by pair
+[[vk::binding( 14, 0 )]] StructuredBuffer<Manifold> prevManifolds;	 // last tick's (the ping-pong's other half), by prevIndex
+[[vk::binding( 15, 0 )]] RWStructuredBuffer<SatAxis> satAxes;		 // narrowSat to narrowClip, by pair
+[[vk::binding( 16, 0 )]] RWStructuredBuffer<NarrowDiag> narrowDiags; // diagnostics (Params.narrowDiag), by pair
+[[vk::binding( 17, 0 )]] RWStructuredBuffer<Hash2> manifoldHashes;	 // by pair
 [[vk::push_constant]] ConstantBuffer<Push> pc;
 
-// hash categories (hashElements' pc.aux)
+// hash categories
 #define CAT_BODY 1u
+#define CAT_MANIFOLD 2u
+
+#include "narrow.slang"
 
 // World inverse inertia (R invIl R^T, the mantissa keeping eI) and the integer AABB: the local bounds' centre rotated
 // and the half extents through |R|, plus the margin, around the position, on the 2^-10 m grid.
@@ -173,4 +184,41 @@ void hashElements( uint3 tid : SV_DispatchThreadID )
 	h = hashPos( h, pose.p );
 	h = hashQ4( h, pose.q );
 	hashes[i] = hashEnd( h );
+}
+
+// Manifolds: every field (unused point slots are zero), the pair's bodies seeding the element (order-free sums tell
+// pairs apart by their bodies, not by their slot)
+[shader( "compute" )]
+[numthreads( 64, 1, 1 )]
+void hashManifolds( uint3 tid : SV_DispatchThreadID )
+{
+	if ( tid.x >= pc.count )
+		return;
+	uint k = lists[pc.start + tid.x];
+	Manifold m = manifolds[k];
+	H2 h = hashStart( CAT_MANIFOLD, uint( m.bodyA ) );
+	h = hashWord( h, uint( m.bodyB ) );
+	for ( int i = 0; i < MANIFOLD_POINTS; ++i )
+	{
+		ManifoldPoint p = m.points[i];
+		h = hashV3( h, p.anchorA );
+		h = hashV3( h, p.anchorB );
+		h = hashT( h, p.separation );
+		h = hashT( h, p.baseSeparation );
+		h = hashT( h, p.normalImpulse );
+		h = hashT( h, p.totalNormalImpulse );
+		h = hashT( h, p.normalMass );
+		h = hashWord( h, p.featureId );
+		h = hashWord( h, uint( p.shN ) );
+	}
+	h = hashV3( h, m.normal );
+	h = hashV3( h, m.frictionImpulse );
+	h = hashT( h, m.twistImpulse );
+	h = hashT( h, m.axisSeparation );
+	h = hashWord( h, uint( m.pointCount ) );
+	h = hashWord( h, uint( m.eP ) );
+	h = hashWord( h, uint( m.axisType ) );
+	h = hashWord( h, uint( m.axisA ) );
+	h = hashWord( h, uint( m.axisB ) );
+	manifoldHashes[k] = hashEnd( h );
 }

@@ -303,6 +303,15 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 	P->one = QT( 1.0, S_MS );
 	P->half = QT( 0.5, S_MS );
 	P->oneHalf = QT( 1.5, S_MS );
+	// the narrowphase's tolerances: Box3D's scalar b3CollideHulls (0.5 linearSlop, 0.9), B3_PARALLEL_EDGE_TOL, the
+	// reduction's bias
+	P->faceTolerance = QT( 0.5 * st->linearSlop, S_R );
+	P->edgeRelTolerance = QT( 0.9, S_MS );
+	P->parallelTolerance = QT( 0.005, S_MS );
+	P->reduceBias = QT( 0.95, S_MS );
+	P->speculativeSq = QT( 16.0 * st->linearSlop * st->linearSlop, S_D2 );
+	P->cacheTolerance = QT( st->linearSlop, S_S );
+	P->narrowDiag = 0;
 	P->sleepTicks = st->sleepTicks;
 	P->sleepCap = 1000;
 	P->substeps = 4;

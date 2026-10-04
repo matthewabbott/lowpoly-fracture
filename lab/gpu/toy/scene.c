@@ -384,23 +384,20 @@ static void box_planes( double hx, double hy, double hz, double n[][3], double* 
 	}
 }
 
-static int add_box_hull( Scene* s, double hx, double hy, double hz )
+void scene_box_hull( SceneHull* h, double hx, double hy, double hz )
 {
 	double n[6][3], d[6], c[3];
-	SceneHull h;
 	box_planes( hx, hy, hz, n, d );
-	if ( !scene_hull_from_planes( &h, (const double( * )[3])n, d, 6, 0.0, c ) )
+	if ( !scene_hull_from_planes( h, (const double( * )[3])n, d, 6, 0.0, c ) )
 	{
 		fprintf( stderr, "box hull failed\n" );
 		exit( 1 );
 	}
-	return add_hull( s, &h );
 }
 
-// A box cut by one to three random planes through its inside (each keeps the side holding the box's centre), drawn
-// again until the hull fits the limits and has no edge under 2 cm.
-static int add_chunk_hull( Scene* s, Pcg* r, double hx, double hy, double hz )
+int scene_chunk_hull( SceneHull* h, Pcg* r, double hx, double hy, double hz )
 {
+	int redraws = 0;
 	for ( ;; )
 	{
 		double n[9][3], d[9], c[3];
@@ -413,14 +410,28 @@ static int add_chunk_hull( Scene* s, Pcg* r, double hx, double hy, double hz )
 			double t = pcg_range( r, 0.3, 0.9 );
 			d[6 + k] = t * hmin;
 		}
-		SceneHull h;
-		if ( scene_hull_from_planes( &h, (const double( * )[3])n, d, 6 + cuts, 0.02, c ) )
+		if ( scene_hull_from_planes( h, (const double( * )[3])n, d, 6 + cuts, 0.02, c ) )
 		{
-			s->chunkCount += 1;
-			return add_hull( s, &h );
+			return redraws;
 		}
-		s->chunkRedraws += 1;
+		redraws += 1;
 	}
+}
+
+static int add_box_hull( Scene* s, double hx, double hy, double hz )
+{
+	SceneHull h;
+	scene_box_hull( &h, hx, hy, hz );
+	return add_hull( s, &h );
+}
+
+// A box cut by one to three random planes (scene_chunk_hull)
+static int add_chunk_hull( Scene* s, Pcg* r, double hx, double hy, double hz )
+{
+	SceneHull h;
+	s->chunkRedraws += scene_chunk_hull( &h, r, hx, hy, hz );
+	s->chunkCount += 1;
+	return add_hull( s, &h );
 }
 
 static void invert_sym( const double m[6], double out[6] )

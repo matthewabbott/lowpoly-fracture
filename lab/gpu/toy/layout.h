@@ -94,6 +94,18 @@ typedef double T;
 #define HULL_MAX_FACES 24
 #define HULL_MAX_EDGES 48 // half-edges; twins are adjacent (2k, 2k + 1), as Box3D's
 #define MANIFOLD_POINTS 4
+#define CLIP_MAX 32 // the clipped polygon: an incident face (<= 16 vertices) cut by a reference face's side planes
+
+// The SAT's axes and the cache's type: Box3D's b3SeparatingFeature values
+#define AXIS_NONE 0
+#define AXIS_FACE_A 2
+#define AXIS_FACE_B 3
+#define AXIS_EDGE 4
+
+// narrowSat's verdict (SatAxis.kind)
+#define SAT_CACHE_SEPARATED 1 // last tick's cached axis still separates: no contact, the cache kept
+#define SAT_SEPARATED 2		  // the full SAT found a separating axis (SatAxis.type, indices, separation)
+#define SAT_OVERLAP 3		  // no axis separates by more than the speculative distance: build a contact
 
 LSTRUCT( V3 )
 {
@@ -219,25 +231,77 @@ LSTRUCT( ManifoldPoint )
 	T totalNormalImpulse;
 	T normalMass; // V4: mantissa with the point's exponent
 	T pad;
-	uint32_t featureId;
-	int32_t shN; // V4: the shift of normalMass x velocity -> impulse
+	uint32_t featureId; // Box3D's b3MakeFeatureId: owner1 << 24 | index1 << 16 | owner2 << 8 | index2
+	int32_t shN;		// V4: the shift of normalMass x velocity -> impulse
 };
 
+// Written by narrowClip for every active pair (copyManifolds carries an inactive pair's), indexed by pair; the next
+// tick reads it by prevIndex. The SAT cache lives here as data (Box3D's b3SATCache: type, indices, separation), so it
+// persists while the pair does, touching or not.
 LSTRUCT( Manifold )
 {
 	ManifoldPoint points[MANIFOLD_POINTS];
 	V3 normal; // Q1.30, from A to B
 	V3 frictionImpulse;
 	T twistImpulse;
-	T axisSeparation; // the SAT cache as data: the separation of the cached axis, Q9.22
+	T axisSeparation; // the SAT cache: the separation when it was filled (Box3D's cache.separation), Q9.22
 	int32_t pointCount;
 	int32_t bodyA;
 	int32_t bodyB;
 	int32_t eP;		  // V4: impulse exponent
-	int32_t axisType; // Box3D's b3SeparatingFeature
-	int32_t axisA;
+	int32_t axisType; // the SAT cache: AXIS_* (Box3D's b3SeparatingFeature)
+	int32_t axisA;	  // face of A (and B's support vertex in axisB), vertex of A and face of B, or edge of A and edge of B
 	int32_t axisB;
 	int32_t pad;
+};
+
+// narrowSat's record for narrowClip, per pair (not kept between ticks): the cached feature to try first, the full SAT's
+// verdict, and the three queries. Separations Q8.24 (S_R).
+LSTRUCT( SatAxis )
+{
+	T faceASep; // the face query of A: the best face's separation
+	T faceBSep;
+	T edgeSep;	// the best edge pair's (when edgeA >= 0)
+	T sepSep;	// SAT_SEPARATED: the separating axis's separation
+	int32_t kind;	   // SAT_*
+	int32_t type;	   // SAT_SEPARATED: the separating axis (AXIS_*), its indices in sepA, sepB (the cache's order)
+	int32_t sepA;
+	int32_t sepB;
+	int32_t cacheType; // the cached feature to try first (AXIS_NONE: none): Box3D's cached-contact attempt
+	int32_t cacheA;	   // face of A and B's fresh support vertex, vertex of A and face of B, or the edge pair
+	int32_t cacheB;
+	int32_t faceA; // face query of A: the face, B's support vertex
+	int32_t vertexB;
+	int32_t faceB; // face query of B: the face, A's support vertex
+	int32_t vertexA;
+	int32_t edgeA; // the best edge pair (-1: no pair passes the Gauss-map test)
+	int32_t edgeB;
+	int32_t pad;
+};
+
+// The closest call of each decision a pair's narrowphase made, per pair (diagnostics for the corpus's ties, written
+// only when Params.narrowDiag is set; never hashed). Lengths Q8.24, areas Q11.20, cosines Q1.30; the format's largest
+// value (F, D: 1e6) when no decision of that kind was made.
+LSTRUCT( NarrowDiag )
+{
+	T faceAGap;	 // face query of A: best minus second-best separation (of the faces visited)
+	T faceASpec; // the closest |separation - speculative distance| of the faces visited (Box3D's early exit)
+	T faceBGap;
+	T faceBSpec;
+	T edgeGap;	 // edge query: best minus second-best separation of the pairs that pass
+	T edgeSpec;
+	T edgeTest;	 // the best pair's closest Gauss-map or parallel-edge test value (Q8.24)
+	T cacheSpec; // the cached axis's |separation - speculative distance|
+	T axisLen;	 // narrowClip: the closest decision on the axis's path (the queries it used, the face and edge
+				 // preferences, the cache's consistency), Q8.24: below the tie tolerance, the axis is a tie
+	T clipLen;	 // the contact's closest length decision: clip distances, kept separations, the reduction's first step
+	T clipArea;	 // the reduction's closest score comparison
+	T clipCos;	 // the incident face's closest comparison
+	T touchLen;	 // whether a contact touches at all: the clipped separation against the speculative distance, the
+				 // distances of a clip pass that ends with 2 or 3 vertices, the edge contact's segment ends
+	T supportA;	  // the support vertex beside face query A's best face, against the next vertex along its normal
+	T supportB;	  // the same for face query B
+	T supportGap; // the same for the cached face
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -261,10 +325,19 @@ LSTRUCT( Params )
 	T one;				  // Q1.30
 	T half;
 	T oneHalf;
-	int32_t sleepTicks; // ticks under the thresholds before an island may sleep (30)
-	int32_t sleepCap;	// the counter stops here
+	// the narrowphase's tolerances (Box3D's b3CollideHulls and b3ReduceManifoldPoints)
+	T faceTolerance;	 // 0.5 linearSlop, Q8.24: face B over face A, and the edge's absolute preference
+	T edgeRelTolerance;	 // 0.9, Q1.30: the edge contact replaces the face's when edge > 0.9 face + faceTolerance
+	T parallelTolerance; // 0.005, Q1.30: B3_PARALLEL_EDGE_TOL (edges this close to parallel give no axis)
+	T reduceBias;		 // 0.95, Q1.30: the reduction's pecking order
+	T speculativeSq;	 // speculativeDistance^2, Q11.20
+	T cacheTolerance;	 // linearSlop in Q9.22: a cached feature is kept while its separation moves less
+	int32_t sleepTicks;	 // ticks under the thresholds before an island may sleep (30)
+	int32_t sleepCap;	 // the counter stops here
 	int32_t substeps;
 	int32_t enableSleep;
+	int32_t narrowDiag; // write NarrowDiag (the corpus)
+	int32_t pad0;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

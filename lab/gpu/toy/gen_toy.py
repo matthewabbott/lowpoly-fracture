@@ -13,7 +13,8 @@ import sys
 
 DIALECTS = [("F", True), ("V4", True), ("D", False)]  # name, has GPU kernels
 SOURCES = {"battery": ["battery"], "kernels": []}  # source -> SPIR-V entry points (kernels' from KERNELS)
-KERNELS = ["prepareBodies", "integrateVelocities", "integratePositions", "finalizeBodies", "wakeBodies", "hashElements"]
+KERNELS = ["prepareBodies", "integrateVelocities", "integratePositions", "finalizeBodies", "wakeBodies", "hashElements",
+           "narrowSat", "narrowClip", "copyManifolds", "hashManifolds"]
 FLOAT_MODES = ("DenormPreserve", "DenormFlushToZero", "RoundingModeRTE", "RoundingModeRTZ", "SignedZeroInfNanPreserve")
 
 
