@@ -999,6 +999,9 @@ typedef struct RunResult
 	char firstFp[160];
 	int dispatches; // the most in one tick
 	int joints;		// the scene's joint count (its hash joins the tick's three when there are joints)
+	// the costs (step 7), summed over ticks 2 to N (tick 1 warms up): per entry point, the CPU stages, the wall
+	double stageMs[E_COUNT], dispatchCount[E_COUNT];
+	double costCpuMs, costWallMs, costTicks;
 	// after the last tick, over every touching pair (sleeping ones too, their manifolds carried): the deepest point
 	double finalSep;
 	int finalA, finalB, finalTouching;
@@ -1012,7 +1015,13 @@ static void twin_list( Sim* s, const Dispatch* list, int n, int tick, int first,
 {
 	for ( int i = 0; i < n; ++i )
 	{
+		double t0 = vku_now_ms();
 		int m = pool_dispatch( list + i );
+		if ( r && tick > 1 )
+		{
+			r->stageMs[list[i].entry] += vku_now_ms() - t0;
+			r->dispatchCount[list[i].entry] += 1.0;
+		}
 		if ( m && r )
 		{
 			if ( r->fpFailures == 0 )
@@ -1039,8 +1048,13 @@ static void twin_tick( Sim* s, int t, RunResult* r )
 	sim_bind( s, t );
 	int np = sim_list_prepare( s, &prep );
 	twin_list( s, &prep, np, t, 0, r );
+	double c0 = vku_now_ms();
 	sim_gather( s, t );
 	sim_stages( s, t );
+	if ( r && t > 1 )
+	{
+		r->costCpuMs += vku_now_ms() - c0;
+	}
 	sim_bind( s, t );
 	twin_list( s, s->list, s->listCount, t, 1, r );
 }
@@ -1128,7 +1142,13 @@ static RunResult run_twin( const ToyData* init, int ticks, int threads, int keep
 	{
 		double t0 = vku_now_ms();
 		twin_tick( &s, t, &r );
-		total += vku_now_ms() - t0;
+		double wall = vku_now_ms() - t0;
+		total += wall;
+		if ( t > 1 )
+		{
+			r.costWallMs += wall;
+			r.costTicks += 1.0;
+		}
 		if ( getenv( "TOY_DUMP_AABBS" ) != NULL && atoi( getenv( "TOY_DUMP_AABBS" ) ) == t && threads == 1 )
 		{
 			for ( int i = 0; i < n; ++i )
@@ -1209,6 +1229,36 @@ static RunResult run_twin( const ToyData* init, int ticks, int threads, int keep
 	free( trajBuf );
 	sim_free( &s );
 	return r;
+}
+
+// Step 7's cost line (grid.py reads it): per tick over ticks 2 to N, the wall, the kernels (the dispatches' sum), the CPU
+// stages, the uploads and readbacks (GPUs, from timestamps; 0 on the twin), the dispatches and colours, the pairs, and per
+// entry point its ms and dispatches
+static void cost_line( const char* who, const RunResult* r, int ticks, int bodies, double wall, double kernels, double cpu, double upload,
+					   double readback, const double* stage, const double* count, double n )
+{
+	double k = n > 0.0 ? 1.0 / n : 0.0, nd = 0.0, colours = 0.0, pairs = 0.0, active = 0.0;
+	for ( int e = 0; e < E_COUNT; ++e )
+	{
+		nd += count[e];
+	}
+	for ( int t = 2; t <= ticks; ++t )
+	{
+		colours += r->ticks[t].colours;
+		pairs += r->ticks[t].pairs;
+		active += r->ticks[t].active;
+	}
+	say( "cost %s: ticks %.0f bodies %d pairs %.0f active %.0f colours %.2f wall %.4f kernels %.4f cpu %.4f upload %.4f readback %.4f "
+		 "dispatches %.1f |",
+		 who, n, bodies, pairs * k, active * k, colours * k, wall * k, kernels * k, cpu * k, upload * k, readback * k, nd * k );
+	for ( int e = 0; e < E_COUNT; ++e )
+	{
+		if ( count[e] > 0.0 )
+		{
+			say( " %s %.4f %.2f", g_entryNames[e], stage[e] * k, count[e] * k );
+		}
+	}
+	say( "\n" );
 }
 
 static uint64_t run_hash( const RunResult* r, int ticks )
@@ -1420,6 +1470,10 @@ typedef struct Gpu
 	double stageMs[E_COUNT], dispatchCount[E_COUNT], kernelMs, wallMs, cpuMs;
 	double peakWallMs, peakKernelMs; // the busiest tick's
 	int ticks, peakTick;
+	// step 7's: summed over ticks 2 to N (tick 1 warms the driver up), with the transfers from timestamps (the uploads
+	// before the dispatches, the readbacks after them, both submits)
+	int tick;
+	double cStage[E_COUNT], cCount[E_COUNT], cKernel, cWall, cCpu, cUpload, cReadback, cTicks;
 } Gpu;
 
 static int gpu_open( Gpu* G, VkInstance inst, VkPhysicalDevice phys, int index )
@@ -1668,6 +1722,10 @@ static void gpu_start( Gpu* G, const Sim* s )
 	memset( G->dispatchCount, 0, sizeof( G->dispatchCount ) );
 	G->kernelMs = G->wallMs = G->cpuMs = G->peakWallMs = G->peakKernelMs = 0.0;
 	G->ticks = G->peakTick = 0;
+	memset( G->cStage, 0, sizeof( G->cStage ) );
+	memset( G->cCount, 0, sizeof( G->cCount ) );
+	G->cKernel = G->cWall = G->cCpu = G->cUpload = G->cReadback = G->cTicks = 0.0;
+	G->tick = 0;
 }
 
 static void gpu_stop( Gpu* G )
@@ -1735,23 +1793,36 @@ static void record_dispatch( Gpu* G, VkCommandBuffer cb, const Dispatch* d, int*
 	vku_barrier( cb );
 }
 
-// Timestamps [0, count) into per-entry times for the dispatches between them
+// Timestamps [0, nd] into per-entry times for the dispatches between them; [nd + 1] after the readbacks and [nd + 2]
+// before the uploads (step 7's transfers)
 static void gpu_times( Gpu* G, const Dispatch* list, int nd )
 {
 	uint64_t ts[2048];
-	if ( nd + 1 > 2048 )
+	if ( nd + 3 > 2048 )
 	{
 		return;
 	}
-	VK_CHECK( vkGetQueryPoolResults( G->g.device, G->query, 0, (uint32_t)( nd + 1 ), (size_t)( nd + 1 ) * 8, ts, 8,
+	VK_CHECK( vkGetQueryPoolResults( G->g.device, G->query, 0, (uint32_t)( nd + 3 ), (size_t)( nd + 3 ) * 8, ts, 8,
 									 VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
 	uint64_t mask = G->g.timestampValidBits >= 64 ? ~0ULL : ( ( 1ULL << G->g.timestampValidBits ) - 1 );
+	double scale = (double)G->g.timestampPeriod * 1e-6;
 	for ( int i = 0; i < nd; ++i )
 	{
-		double ms = (double)( ( ts[i + 1] - ts[i] ) & mask ) * (double)G->g.timestampPeriod * 1e-6;
+		double ms = (double)( ( ts[i + 1] - ts[i] ) & mask ) * scale;
 		G->stageMs[list[i].entry] += ms;
 		G->dispatchCount[list[i].entry] += 1.0;
 		G->kernelMs += ms;
+		if ( G->tick > 1 )
+		{
+			G->cStage[list[i].entry] += ms;
+			G->cCount[list[i].entry] += 1.0;
+			G->cKernel += ms;
+		}
+	}
+	if ( G->tick > 1 )
+	{
+		G->cReadback += (double)( ( ts[nd + 1] - ts[nd] ) & mask ) * scale;
+		G->cUpload += (double)( ( ts[0] - ts[nd + 2] ) & mask ) * scale;
 	}
 }
 
@@ -1765,20 +1836,21 @@ static void gpu_prepare( Gpu* G, Sim* s, int t )
 	size_t aOff = 0, sOff = n * sizeof( Aabb ), pOff = sOff + n * 4;
 	ensure_staging( G, &G->up, LIST_WORDS( s ) * 4 + (size_t)s->pcap * sizeof( Pair ) );
 	ensure_staging( G, &G->down, pOff + (size_t)( prevCount > 0 ? prevCount : 1 ) * 4 + n * 8 + (size_t)s->pcap * 8 );
-	ensure_query( G, 2 );
+	ensure_query( G, (uint32_t)np + 3 );
 	VkCommandBuffer cb = gpu_begin( G );
+	vkCmdResetQueryPool( cb, G->query, 0, (uint32_t)np + 3 );
+	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)np + 2 ); // before the upload
 	memcpy( G->up.mapped, s->lists + L_PREP, (size_t)s->prepCount * 4 );
 	copy( cb, &G->up, 0, &G->buf[8], 0, (size_t)s->prepCount * 4 );
 	vku_barrier( cb );
-	vkCmdResetQueryPool( cb, G->query, 0, 2 );
 	vkCmdBindDescriptorSets( cb, VK_PIPELINE_BIND_POINT_COMPUTE, G->layout, 0, 1, &G->set[t & 1], 0, NULL );
 	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, 0 );
 	int bound = -1;
 	for ( int i = 0; i < np; ++i )
 	{
 		record_dispatch( G, cb, &prep, &bound );
+		vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)( i + 1 ) );
 	}
-	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, 1 );
 	copy( cb, &G->buf[7], 0, &G->down, aOff, n * sizeof( Aabb ) );
 	VkBufferCopy* r = ensure_regions( G, (int)n + prevCount );
 	for ( size_t i = 0; i < n; ++i )
@@ -1794,6 +1866,8 @@ static void gpu_prepare( Gpu* G, Sim* s, int t )
 		}
 		vkCmdCopyBuffer( cb, G->buf[13 + ( ( t & 1 ) ^ 1 )].buffer, G->down.buffer, (uint32_t)prevCount, r );
 	}
+	vku_barrier( cb );
+	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)np + 1 ); // after the readbacks
 	gpu_submit( G );
 	const uint8_t* down = (const uint8_t*)G->down.mapped;
 	memcpy( s->aabbs, down + aOff, n * sizeof( Aabb ) );
@@ -1815,13 +1889,15 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 	size_t lb = LIST_WORDS( s ) * 4, pb = (size_t)s->st.pairCount * sizeof( Pair );
 	size_t jb = (size_t)s->jc * sizeof( JointCommand ), jhb = (size_t)s->jc * sizeof( Hash2 );
 	size_t pcb = ( (size_t)s->pcap * sizeof( Pair ) + 15 ) & ~(size_t)15; // the commands after the pairs' room
-	ensure_query( G, (uint32_t)count + 1 );
+	ensure_query( G, (uint32_t)count + 3 );
 	if ( full )
 	{
 		ensure_staging( G, &G->up, lb + pcb + jb );
 		ensure_staging( G, &G->down, hb + (size_t)s->pcap * sizeof( Hash2 ) + jhb );
 	}
 	VkCommandBuffer cb = gpu_begin( G );
+	vkCmdResetQueryPool( cb, G->query, 0, (uint32_t)count + 3 );
+	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)count + 2 ); // before the uploads
 	if ( full )
 	{
 		memcpy( G->up.mapped, s->lists, lb );
@@ -1832,7 +1908,6 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 		copy( cb, &G->up, lb + pcb, &G->buf[21], 0, jb );
 		vku_barrier( cb );
 	}
-	vkCmdResetQueryPool( cb, G->query, 0, (uint32_t)count + 1 );
 	vkCmdBindDescriptorSets( cb, VK_PIPELINE_BIND_POINT_COMPUTE, G->layout, 0, 1, &G->set[t & 1], 0, NULL );
 	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, 0 );
 	int bound = -1;
@@ -1847,6 +1922,8 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 		copy( cb, &G->buf[17], 0, &G->down, hb, mb );
 		copy( cb, &G->buf[20], 0, &G->down, hb + mb, jhb );
 	}
+	vku_barrier( cb );
+	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)count + 1 ); // after the readbacks
 	gpu_submit( G );
 	if ( full )
 	{
@@ -1861,10 +1938,12 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 static void gpu_tick( Gpu* G, Sim* s, int t )
 {
 	double t0 = vku_now_ms(), k0 = G->kernelMs;
+	G->tick = t;
 	gpu_prepare( G, s, t );
 	double c0 = vku_now_ms();
 	int grown = sim_stages( s, t );
-	G->cpuMs += vku_now_ms() - c0;
+	double cpu = vku_now_ms() - c0;
+	G->cpuMs += cpu;
 	if ( grown )
 	{
 		gpu_grow( G, s );
@@ -1873,6 +1952,12 @@ static void gpu_tick( Gpu* G, Sim* s, int t )
 	double wall = vku_now_ms() - t0;
 	G->wallMs += wall;
 	G->ticks += 1;
+	if ( t > 1 )
+	{
+		G->cWall += wall;
+		G->cCpu += cpu;
+		G->cTicks += 1.0;
+	}
 	if ( t > 1 && G->kernelMs - k0 > G->peakKernelMs ) // tick 1 warms the driver up
 	{
 		G->peakKernelMs = G->kernelMs - k0;
@@ -2559,6 +2644,18 @@ int main( int argc, char** argv )
 		say( "\n" );
 		twinFailures += first >= 0 || runs[ti].fpFailures > 0;
 	}
+	for ( int ti = 0; ti < tCount; ++ti )
+	{
+		const RunResult* r = runs + ti;
+		double kernels = 0.0;
+		for ( int e = 0; e < E_COUNT; ++e )
+		{
+			kernels += r->stageMs[e];
+		}
+		char who[32];
+		snprintf( who, sizeof( who ), "twin%d", threads[ti] );
+		cost_line( who, r, ticks, d.bodyCount, r->costWallMs, kernels, r->costCpuMs, 0.0, 0.0, r->stageMs, r->dispatchCount, r->costTicks );
+	}
 	solve_report( r0, ticks );
 	if ( posOut )
 	{
@@ -2653,6 +2750,11 @@ int main( int argc, char** argv )
 				failures += !ref_check( &ref, config, &gr, ticks, who );
 			}
 			gpu_costs( &G, gr.dispatches );
+			{
+				char who[32];
+				snprintf( who, sizeof( who ), "gpu%d", gi );
+				cost_line( who, &gr, ticks, d.bodyCount, G.cWall, G.cKernel, G.cCpu, G.cUpload, G.cReadback, G.cStage, G.cCount, G.cTicks );
+			}
 			free( gr.ticks );
 			if ( traceTicks > 0 )
 			{
