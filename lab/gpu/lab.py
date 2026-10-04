@@ -8,6 +8,7 @@
   python lab/gpu/lab.py check [results/M]         # hashes against reference.json; writes results/M/summary.md
   python lab/gpu/lab.py remote HOST [--dir D] [--machine M] [--compiler gcc] [--twins clang] [--quick] [suite ...]
                                                   # copy src and gen to HOST, build and run there, fetch results/M
+                                                  # (--then "CMD": run CMD in lab/gpu instead of the suites)
 
 Kernels and twins are generated once, on Windows, and shipped: every machine then tests its own C compiler and GPU
 driver, never a different slangc. Runs write their logs to lab/gpu/results/<machine>/.
@@ -501,7 +502,10 @@ def cmd_remote(a):
     comps = [a.compiler] + (a.twins.split(",") if a.twins else [])
     steps = [f"python3 lab.py build --compiler {c}" for c in comps]
     run_args = f"--machine {machine} --compiler {a.compiler}" + (f" --twins {a.twins}" if a.twins else "") + (" --quick" if a.quick else "")
-    steps.append(f"python3 lab.py run {run_args} {' '.join(a.suites)}")
+    if a.then:  # any command instead of the suites, run in lab/gpu (e.g. the toy's gates), its output under results/M
+        steps.append(f"mkdir -p results/{machine} && {a.then}")
+    else:
+        steps.append(f"python3 lab.py run {run_args} {' '.join(a.suites)}")
     remote_cmd = f"cd {rdir}/lab/gpu && " + " && ".join(steps)
     print(f"ssh {a.host}: {remote_cmd}")
     r = subprocess.run(["ssh", a.host, remote_cmd])
@@ -510,9 +514,13 @@ def cmd_remote(a):
     r = subprocess.run(["ssh", a.host, f"cd {rdir}/lab/gpu && tar czf - results/{machine}"], capture_output=True)
     if r.returncode == 0 and r.stdout:
         with tarfile.open(fileobj=io.BytesIO(r.stdout), mode="r:gz") as t:
-            t.extractall(LAB)
+            try:
+                t.extractall(LAB, filter="data")
+            except TypeError:  # Python before 3.12
+                t.extractall(LAB)
         print(f"fetched results/{machine}")
-        check(os.path.join(LAB, "results", machine))
+        if not a.then:
+            check(os.path.join(LAB, "results", machine))
 
 
 def main():
@@ -537,6 +545,7 @@ def main():
     m.add_argument("--compiler", default="gcc", choices=["gcc", "clang"])
     m.add_argument("--twins")
     m.add_argument("--quick", action="store_true")
+    m.add_argument("--then", help="a command to run in lab/gpu after the build, instead of the suites")
     m.add_argument("suites", nargs="*")
     a = p.parse_args()
     {"gen": cmd_gen, "build": cmd_build, "run": cmd_run, "check": cmd_check, "remote": cmd_remote}[a.cmd](a)

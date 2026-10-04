@@ -1,0 +1,24 @@
+toy battery, dialect D, 4096 vectors per helper, seed 20261004
+twin: clang 18.1.3 (1ubuntu1), aarch64, contraction off
+layout sizes C/twin: BatIn 56/56 BatOut 40/40
+inputs: 61440 vectors, hash 7865529a02071f94
+accuracy (twin): recip max rel 1.11e-16 (3272), rsqrt max rel 0 (3274), atan2 max abs 2.76e-05 rad (4096), |quatNormalize| - 1 max 3.33e-16 (3092), divClamp max rel 0 (1372)
+helper mul            n   4096  hash b1812e756da33be4  sat      0  fp none                    
+helper sum2/dif2      n   4096  hash d4d9a31bef826c69  sat      0  fp none                    
+helper sum3           n   4096  hash 12de5fce2ed9b4c0  sat      0  fp none                    
+helper rescale        n   4096  hash 40b30eace5d31ecb  sat      0  fp none                    
+helper select         n   4096  hash 9a9ccb683c8fbe1a  sat      0  fp none                    
+helper snap           n   4096  hash d1d91b1f66b9fd14  sat      0  fp none                    
+helper recip          n   4096  hash daf357eab496a5ca  sat      0  fp divzero                 
+  FAIL: the twin's floating-point status after recip
+helper rsqrt          n   4096  hash d62e512e7acc03b6  sat      0  fp none                    
+helper divClamp       n   4096  hash 2a98ac2a10f131f6  sat      0  fp none                    
+helper lpDivQ31       n      0  hash 14650fb0739d0383  sat      0  fp none                    
+helper clz            n   4096  hash 9081d29c0406da04  sat      0  fp none                    
+helper atan2          n   4096  hash a9c5eb56986248ed  sat      0  fp none                    
+helper quatNormalize  n   4096  hash 9ef5169fbe290eca  sat      0  fp none                    
+helper quatMul        n   4096  hash e341fa22ff4e156c  sat      0  fp none                    
+helper rotate         n   4096  hash 23385265dac5c70a  sat      0  fp none                    
+helper pos/grid       n   4096  hash 313ce62738e4edbe  sat      0  fp none                    
+battery D hash 5db9d655b22c9968 (twin: clang 18.1.3 (1ubuntu1), aarch64, contraction off)
+FAIL: 0 GPU(s) against the twin, differences above

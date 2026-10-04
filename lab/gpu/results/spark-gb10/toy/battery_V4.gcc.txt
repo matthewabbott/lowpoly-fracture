@@ -1,0 +1,27 @@
+toy battery, dialect V4, 4096 vectors per helper, seed 20261004
+twin: gcc 13.3.0, aarch64, contraction off
+layout sizes C/twin: BatIn 32/32 BatOut 24/24
+inputs: 153704 vectors, hash c5205a80e5ae43cf
+accuracy (twin): recip max abs (lsb) 1 (2267), rsqrt max rel 2.69e-08 (638), atan2 max abs 2.76e-05 rad (4096), |quatNormalize| - 1 max 1.99e-09 (3092), divClamp max abs (lsb) 1 (7292)
+lpDivQ31 vs C's '/': 79976 inputs, 0 differ; saturations C 17938, lpDivQ31 17938
+divClamp vs C: 16384 inputs, 0 differ (saturations 0)
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; float controls: denorm preserve/ftz 0/0, RTE 1, SZINP 1 (F-plain: none declared)
+gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305; float controls: denorm preserve/ftz 0/0, RTE 1, SZINP 1 (F-plain: none declared)
+helper mul            n   4096  hash 5d12964031f2a2a5  sat    725  fp none                     | nvidia 0 differ, sat 725 | llvmpipe 0 differ, sat 725
+helper sum2/dif2      n   4096  hash 87cfea518736f75b  sat   2100  fp none                     | nvidia 0 differ, sat 2100 | llvmpipe 0 differ, sat 2100
+helper sum3           n   4096  hash 0ebae3aaea1a749f  sat   1284  fp none                     | nvidia 0 differ, sat 1284 | llvmpipe 0 differ, sat 1284
+helper rescale        n   4096  hash 3f2077e9e2860309  sat   1106  fp none                     | nvidia 0 differ, sat 1106 | llvmpipe 0 differ, sat 1106
+helper select         n   4096  hash fc4328d95a6aa22f  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper snap           n   4096  hash 699ede0cf32b9852  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper recip          n   4096  hash 946ee229a4fe201e  sat   1829  fp none                     | nvidia 0 differ, sat 1829 | llvmpipe 0 differ, sat 1829
+helper rsqrt          n   4096  hash dbf13ca77e323b6d  sat    460  fp none                     | nvidia 0 differ, sat 460 | llvmpipe 0 differ, sat 460
+helper divClamp       n  16384  hash a33e31b2a6de1165  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper lpDivQ31       n  79976  hash 2873bc57049239cb  sat  17938  fp none                     | nvidia 0 differ, sat 17938 | llvmpipe 0 differ, sat 17938
+helper clz            n   4096  hash 45f4e5c3799712c4  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper atan2          n   4096  hash 679ef16bcff951dc  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper quatNormalize  n   4096  hash ee34041ae4e94dfd  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper quatMul        n   4096  hash c25306ac7be24c0e  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper rotate         n   4096  hash 138550fe9912f9ec  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper pos/grid       n   4096  hash a547f8a5232d88d5  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+battery V4 hash 50aaf74f7d01b6fe (twin: gcc 13.3.0, aarch64, contraction off)
+PASS: 2 GPU(s) against the twin, every word identical
