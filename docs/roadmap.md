@@ -27,12 +27,13 @@ Order (one at a time):
 8. The physics seam
 9. The outcome catalogue, the engine surface and a seams-first review (done)
 10. Commands, hashes and the first co-op (done)
-11. Integer groundwork
+11. The arithmetic decision (a spike)
+11a. Exact fracture geometry
 11b. Cutting and chopping
-12. The integer core with its CPU twin
+12. The core with its CPU twin
 13. The core on the GPU
 14. The snapshot
-15. The character controller
+15. The character controller and the bubble
 16. Networking
 17. Profiling and a performance review
 18. Large-map physics zones and persistence
@@ -398,7 +399,7 @@ Steps (each committed with the bench and solver hashes unchanged unless noted; n
    nothing beside quickhull); sorting the points within a contact (a hash change for cross-backend bit-identity the
    outcome catalogue does not ask for). Moved to later milestones: collision classes and cast filters as data, a
    backend switch per world, and one snapshot per tick with buffered commands (milestone 12); quickhull and GJK into a
-   geometry module of our own (milestone 11, with exact fracture).
+   geometry module of our own (milestone 11a, with exact fracture).
 
 Exit: hash-neutral but for steps 4 and 5; no Box3D include outside `src/phys_box3d.c` (the lint passes); the 14-leg CI
 green; the lag verdict recorded here.
@@ -689,18 +690,38 @@ Rerunning CI's pair step found a host closing past `--ticks`, which is now fixed
 
 Not taken: a process creation time beside each pid (Sol); removing the session file on stop covers it.
 
-## 11. Integer groundwork
+## 11. The arithmetic decision (a spike)
 
-Fail fast before the integer core is built.
-- **An integer toy** on the CPU (about 1,000 lines: boxes, SAT, the block-scaled soft step, a joint, sleep): does a
-  stack stand, does a rubble pile settle, how far from float are the results (red team R15)?
-- **Exact integer fracture geometry** (L2): integer sites and bisector planes, exact classification, hulls from exact
-  topology; removes the plane-shift hack and every tolerance flip in fracture. Quickhull and GJK, physics-backend
-  services since milestone 8 (`lpPhys_CreateHull`, `lpPhys_HullDistance`), move into a geometry module of our own.
-- **The floor GPU:** E11's binaries on a GTX 1650 or 1060-class box (the integer multiply on Pascal), and on an AMD GPU
-  or a Steam Deck when one is to hand.
+Replanned 2026-10-04 (multiplayer-research.md §10). Milestone 7 committed to a block-scaled int32 core on one GPU
+measurement (E11). The owner reopened the question, float dialect or integers, with Astra and Fable; it is decided on
+evidence here, before the core is built. The netcode inversion was adopted at the same time, and the old milestone's
+exact fracture geometry became milestone 11a.
 
-Exit: stacking holds; recorded blasts fracture exactly; the floor GPU's integer cost measured.
+**What it builds:**
+- **The GPU lab** (`lab/gpu`, research code outside the engine and its CI): E11 moved into the repository and ported
+  to Linux and macOS, with one tool (`lab.py`: generate on Windows, build per compiler, run, check against E11's
+  hashes, run remotely over ssh).
+- **E11 on new hardware:** the DGX Spark (GB10, llvmpipe, aarch64 twins), the GPU fast-math positive control, then
+  the MacBook (Apple's GPU through MoltenVK).
+- **The dual-dialect toy** (`lab/gpu/toy`, its DESIGN.md): one Slang source in the float dialect F, block-scaled V4 and
+  a double reference D. A real narrowphase (SAT with its cache as data, clipping, feature ids), persistent warm starts,
+  sleep, stacks and piles, a revolute joint with a motor, every per-tick numeric stage a GPU kernel with its CPU twin,
+  the combinatorial stages integer C. Decision point 1: outcomes on the twins against Box3D. Decision point 2:
+  bit-exact on every device in both dialects.
+- **The decision record:** multiplayer-research.md §10, research/m11-gpu-lab.md.
+
+Exit: the arithmetic chosen by the rule in multiplayer-research.md §10, provisional on the gate below.
+
+**The gate before milestone 12:** E11's binaries and the toy on a Pascal GPU (GTX 1060: no full-rate int32
+multiply) and an AMD GPU, when the owner's low-end box exists.
+
+## 11a. Exact fracture geometry
+
+The old milestone 11's L2 item, unchanged: integer sites and bisector planes, exact classification, hulls from exact
+topology; removes the plane-shift hack and every tolerance flip in fracture. Quickhull and GJK, physics-backend
+services since milestone 8 (`lpPhys_CreateHull`, `lpPhys_HullDistance`), move into a geometry module of our own.
+
+Exit: recorded blasts fracture exactly.
 
 ## 11b. Cutting and chopping
 
@@ -728,28 +749,33 @@ to a lost limb; slender pieces snap under load. Ropes are hit by rays already.
   notch, the flanks above and below it) bonded where the wood goes on. A blow near an existing notch deepens it. The
   stress solve and the slender-piece snap fell the tree once the core cannot hold, away from the notch.
 - **Determinism:** pure geometry on pieces in their bodies' frames, in piece order, as fracture jobs are; a swing is
-  one tick-stamped command (milestone 10). The exact integer geometry of milestone 11 makes cuts exact too.
+  one tick-stamped command (milestone 10). The exact integer geometry of milestone 11a makes cuts exact too.
 - **A sandbox tool** (a sword stroke and an axe blow on the mouse), and outcomes for the catalogue: a log sliced into
   two halves whose cut faces match; a sword stopped by a bone with the arm hanging; a rope cut; a tree felled in a
   set number of blows, falling away from the notch; a moving body sliced in flight; a structure cut through whose top
   then falls (the stress check).
 
 **Size and slot:** about a milestone (600 to 900 lines with its tests). Placed by the owner (2026-10-02) right after
-the integer groundwork: cuts are the simplest fracture (one plane), so they are built once, on milestone 11's exact
-geometry, and the integer core (milestone 12) is designed knowing what they ask of the physics (bodies split mid-swing,
+the integer groundwork (now 11a): cuts are the simplest fracture (one plane), so they are built once, on milestone 11a's
+exact geometry, and the integer core (milestone 12) is designed knowing what they ask of the physics (bodies split mid-swing,
 a swept blade, perhaps a blade stuck in a body as a joint). The catalogue gains its outcomes, and a swing is a command
 (milestone 10). It comes before the character controller and the creatures that will swing and lose limbs.
 
-## 12. The integer core with its CPU twin
+## 12. The core with its CPU twin
 
-The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
+In the arithmetic milestone 11 chooses: the integer design is below; a float-dialect core keeps its structure, with the
+dialect's rules in place of the formats. The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
 products, 64-bit world positions, per-body exponents; Box3D's graph-coloured soft step transcribed, coloured per tick
 from state; bodies, hulls, a sorted broadphase, SAT, the four joints with motors and limits, islands and sleep, GJK and
 casts; the one-tick pipeline lag as deterministic semantics. It runs behind the seam beside Box3D, switchable per world,
 with overflow freedom checked (lint rules, UBSan, Frama-C or CBMC on the kernels). Two requirements from milestone 10's
 design:
-- it can step a chosen set of causal units in isolation (repair and scoped rollback re-simulate only those);
-- it keeps a short ring buffer of each changed unit's state for the last few ticks, written incrementally.
+- it can step a chosen set of causal units in isolation, with the same bits as inside the world (repair re-simulates
+  only those; the netcode's bubble is stepped this way ahead of the world, multiplayer-research.md §10);
+- a unit's image, hidden state included, can be taken and restored (the bubble is restored from the confirmed world
+  when a prediction was wrong); a short ring buffer of each changed unit's state for the last few ticks, written
+  incrementally, serves repair;
+- kernels take index lists, never "the world" (the toy's rule), so one unit's lists can be stepped alone.
 - Global keys for runtime objects (deferred from milestone 10): an index with its generation names an object only while
   every machine steps every unit; stepping units in isolation needs keys that do not depend on allocation order.
 - The world-wide budgets that couple units unseen today (milestone 10's E3): fracture jobs per step, the stress share,
@@ -783,44 +809,41 @@ written once): saves, late join, host migration, repair images, zone persistence
 
 Exit: the round trip exact on every rung; a join measured at the town's peak.
 
-## 15. The character controller
+## 15. The character controller and the bubble
 
-The player as a destructible body (pools, vitals, knockout), predicted as the feel test decided: a kinematic latency
-state rebased on the canonical body, or the body itself under input delay. The owner's feel test (2026-10-01,
-`sandbox --scene mech --input-delay 6`): 100 ms of unpredicted delay on a walked mech "doesn't feel too bad", so the
-predicted character is a refinement, not a necessity.
+The player as a destructible body (pools, vitals, knockout), predicted by the netcode inversion
+(multiplayer-research.md §10): the avatar, what it holds and the vehicle it drives form a bubble that the core's CPU
+twin steps d ticks ahead of the confirmed world, with the player's own pending inputs. When nothing crosses the
+bubble's boundary the prediction is exact; when something does, the bubble is restored from the confirmed image
+(milestone 14's snapshot, per unit) and re-stepped. Here the bubble is built and measured: its membership (the avatar's
+unit plus every unit whose swept bounds over d ticks reach it, structures under stress excluded, a body-count cap with
+a fallback), reconciliation by unit hash, and how often and how far corrections move the view at 4, 8 and 12 ticks of
+delay. The owner's feel tests: a walked mech at 100 ms of unpredicted delay "doesn't feel too bad" (2026-10-01); co-op
+at 12 ticks without prediction (`coop.py launch --delay 12 --running --allow-input`) is the baseline the bubble must
+beat.
+
+Exit: a predicted avatar and vehicle at 12 ticks of delay whose corrections are rare and eased; the bubble's cost per
+tick measured.
 
 ## 16. Networking
 
 Lockstep over the snapshot and the command log: transport (Steam sockets with a direct fallback, the send rate raised
-above its default), server-timed ticks with a late-input tolerance, the latency-state character, join with a pause or
-a catch-up, host migration, repair by causal unit, desync reports that replay headless.
+above its default), server-timed ticks with a late-input tolerance, the bubble (milestone 15), join with a pause or a
+catch-up, host migration, repair by causal unit, desync reports that replay headless.
 
-**Causally scoped rollback** (the owner's idea, 2026-10-01), an option on top of lockstep, measured against plain input
-delay. Rollback netcode is itself built on deterministic lockstep: every machine predicts the other players' inputs
-(usually "the same as last tick") instead of waiting for them, and corrects itself when the real ones arrive. Classic
-rollback re-simulates the whole world for every wrong guess, which a destruction world cannot afford. Scoped:
-- On a wrong guess, only the cone of that input (bounded by the speed of propagation over the late ticks) is restored
-  to its confirmed state and re-simulated with the true input; everything outside it never depended on the guess and
-  is already right.
-- Each machine computes the truth itself from the confirmed inputs, so no state is shipped, and the corrections never
-  enter the shared history: a late joiner replays confirmed inputs only.
-- A player's own actions on the world feel instant; reality shifts under them when a guess about someone else was
-  wrong.
-- Destructive inputs (blasts, tools) probably keep their input delay: a wrong guess there would mean re-simulating a
-  collapse.
-- The guess is "the same as last tick" (players hold keys), so remote players only jump when they change what they
-  press; the renderer eases the drawn position toward each correction (cosmetic, so free to differ per machine).
+- **Previews of others' actions:** other players' shots, swings and effects go out unreliably on a separate channel
+  as cosmetic previews, each with an id, so the confirmed event does not duplicate its effects. Hitscan is resolved on
+  the shooter's machine and enters as a tick-stamped command.
 - **Adaptive delay** (the owner's idea): each player stamps their own inputs a few ticks ahead, so the delay can differ
-  per player and per kind of input, and change during play without global agreement. It is driven by the measured cost
-  of recent wrong guesses (cone sizes times re-simulated ticks) on the slowest machine: near zero for someone running
-  through the woods, more for someone in a collapse, held for destructive inputs. Raised at once, lowered a tick at a
-  time. Fighting games fix their delay at the match start from ping; Photon Quantum scales it with ping. Driving it by
-  re-simulation cost seems new, because nobody else runs rollback where that cost varies this much.
-- Without determinism the truth would have to be shipped from the host, and divergence could start anywhere, so cones
-  could not be bounded: the lockstep base is what makes it work.
+  per player and per kind of input and change during play without global agreement. It follows measured arrival
+  jitter and deadline misses, raised at once and lowered a tick at a time. Explicit rules: a tick whose input is
+  missing gets a host-finalised repeat that every peer applies; when a player's delay changes, inputs stamped for the
+  same tick merge with the last one winning.
+- **Causally scoped rollback** (the owner's idea, 2026-10-01: predict other players' inputs and re-simulate only the
+  cone of a wrong guess) is dropped by the inversion, which never guesses anyone's inputs. It may return as a layer on
+  the bubble if remote players' motion needs it.
 
-Exit: a 4-player session across machines.
+Exit: a 4-player session across machines, two of them far apart (the owner plays with a friend in Finland).
 
 ## 17. Profiling and a performance review
 
@@ -962,3 +985,16 @@ A scripted, seeded headless run, so the score is repeatable.
 
 **Output:** a report in the style of milestone 7's (`docs/research/`), with a recommendation and a prototype plan for
 the creatures milestone.
+
+### Mining NVIDIA Blast for ideas
+
+Informs milestone 11b (cutting) and the fracture work after it; deferred out of milestone 11 by the owner
+(2026-10-04). NVIDIA Blast (BSD-3) is pre-authored destruction: chunks and bonds made offline, a stress solver that
+spreads forces iteratively with no convergence check, CPU only. It is not a replacement (our fracture is live and
+procedural, our stress solve exact on its oracles), but parts of it may be worth taking:
+- its damage shaders (how an impact's shape and falloff turn into bond and chunk damage);
+- per-mode bond limits (compression, tension, shear, bending separately);
+- the low level's design: allocation-free, serialisable, deterministic by construction;
+- how it splits actors and generates bonds between authored chunks.
+
+**Output:** a short report in `docs/research/` with what to take, where it would go, and what it would replace.

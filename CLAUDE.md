@@ -8,7 +8,7 @@ then performance, then everything else. Determinism is mandatory (docs/determini
 
 First-party code is about 240k tokens (the core, `src/` and `lpf.h`, about 130k; the tests 60k): read what a task
 needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
-`app/sandbox/shaders/generated/` are vendored or generated: never read them whole. The Box3D API is in
+`app/sandbox/shaders/generated/` and `lab/gpu/gen/` are vendored or generated: never read them whole. The Box3D API is in
 `extern/box3d/include/box3d/*.h`; our patches and known Box3D issues are in `extern/box3d/PATCHES.md` (sokol's few in
 `extern/sokol/PATCHES.md`).
 `docs/research/` (milestone 7's track reports, about 150k tokens) is evidence for `docs/multiplayer-research.md`: read
@@ -51,6 +51,7 @@ a track only when a decision needs its detail.
 | `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md`. `test/coop/*.py`: co-op scenarios in sandbox windows, driven by agents' tools (`python tools/coop.py test`; local, Windows) |
 | `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, co-op (`--host 7777` / `--join host:7777`, lockstep through app/net), driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots; the control port (`control.h`, `--control 0`): an agent drives a window over loopback, one request a line, JSON back (keys, the camera, the clock held and stepped, turns, screenshots with or without the panel, state) |
 | `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them), `coop.py` (agent-driven co-op: launch one sandbox window per player, send them requests, step or take turns, screenshots side by side, the scenarios; `python tools/coop.py help`) |
+| `lab/gpu/` | the GPU lab: research for milestone 11's arithmetic decision (float dialect or block-scaled integers), outside the engine, its build and its CI; read only for GPU work (`lab/gpu/README.md`). `lab.py` generates the kernels on Windows, builds, runs E11 and the toy (`toy/DESIGN.md`, `toy/NOTES.md`) and checks hashes, locally or over ssh; results per machine in `results/`, the record in `docs/research/m11-gpu-lab.md` |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
 | `scripts/` | replay scripts of commands for the sandbox and `lpf_bench --script` (`tick[:peer] tool origin dir`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`, `tick impact origin dir radius energy [impulse]`; the full list in `scenes/script.h`) |
 | `docs/` | goals (the north star, the kinds of game the engine serves, the feel), the outcome catalogue (`catalogue.md`: the contract, every outcome with its test or contact sheet in `catalogue/`), references (clips to aspire to; links only), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
@@ -72,6 +73,7 @@ build/msvc-release/bin/lpf_bench.exe --scene town --ticks 300 --host 7777   # th
 python tools/coop.py launch --scene track --players 2   # agent-driven co-op windows, held; then p1 key V tap, step 30, shot, stop
 python tools/coop.py test                               # the co-op scenarios in test/coop (windows, so local only)
 build/msvc-release/bin/lpf_bench.exe --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep
+python lab/gpu/lab.py run --machine win-laptop --quick   # the GPU lab (after lab.py gen and lab.py build); remote HOST for the Spark
 build/msvc-release/bin/sandbox.exe --scene lumber --script scripts/lumber_demo.txt --frames 120 --screenshot build/shots/x.png --hide-ui
 ```
 

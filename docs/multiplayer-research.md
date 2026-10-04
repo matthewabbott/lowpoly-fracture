@@ -5,7 +5,8 @@ Written 2026-09-30. This closes the research of milestone 7 ("Deep research: des
 that the physics is deterministic across machines, plays well with GPUs, and makes co-op as seamless as possible?
 It is judged against the north star in [goals.md](goals.md). The detail, sources and measurements live in
 [research/](research/), one report per track; this file is the decision record. Read the tracks only when a decision
-needs their evidence.
+needs their evidence. Milestone 11 (§10, 2026-10-04) replaced the model's prediction (the netcode inversion: the world
+in delayed lockstep, each player's own bubble predicted by the core) and reopened the arithmetic on evidence.
 
 | track | report | what it holds |
 |---|---|---|
@@ -154,11 +155,11 @@ to hold the first co-op test early, on Box3D. The pinned order is in [roadmap.md
 | 8 | **the physics seam:** every Box3D call behind one interface; the one-tick-lag experiment |
 | 9 | the outcome catalogue (the new core's contract), the engine surface, a seams-first review |
 | 10 | **commands and hashes (L1a)** and the first two-process co-op, on Box3D |
-| 11 | integer groundwork: the integer toy, exact fracture geometry (L2), the floor GPU measured |
+| 11 | integer groundwork: the integer toy, exact fracture geometry (L2), the floor GPU measured (replanned in §10: the arithmetic spike, then 11a exact geometry) |
 | 12 | **the integer core with its CPU twin (L3)**, beside Box3D |
 | 13 | **the core on the GPU (L4)**; Box3D deleted if the gate passes |
 | 14 | **the snapshot (L1b)**, written once, on the integer core |
-| 15 | the character controller, as the feel test decides |
+| 15 | the character controller, as the feel test decides (in §10: the bubble) |
 | 16 | networking |
 | 17 | profiling and a performance review |
 | 18 | large-map zones and persistence |
@@ -287,3 +288,79 @@ Three ideas from the owner, now in the [roadmap](roadmap.md):
 - **Causally scoped rollback** (milestone 16): predict the other players' inputs and, on a wrong guess, re-simulate
   only that input's cone, so a player's own actions on the world feel instant at a cost bounded by the cone, not the
   world. It rests on the lockstep base, which lets every machine compute the truth from confirmed inputs.
+
+## 10. Milestone 11 decisions (2026-10-04)
+
+The owner relitigated two of milestone 7's choices with two outside reviewers (GPT-6 Astra and Fable, independent
+memos) and Claude. The decisions belong to the owner and Claude.
+
+### The netcode inversion (adopted)
+
+**The world runs in delayed lockstep; each player's own bubble is predicted.** Every confirmed tick is applied only
+when every input for it has arrived, as today. On top of that, each machine steps its own player's *bubble* ahead of
+the confirmed world by the input delay d, with that player's own pending inputs, which are known. The bubble is the
+avatar (the real rig, not a capsule), what it holds, and the vehicle it drives, plus every unit whose swept bounds over
+d ticks reach them.
+
+- **It supersedes §1's latency state and §9's causally scoped rollback.** The latency state predicted a kinematic
+  mover rebased on the canonical body, which is wrong every tick for a stumbling rig (red team R6). Scoped rollback
+  guessed *other* players' inputs and re-simulated the cone of a wrong guess. The inversion's only guess is "nothing
+  outside my bubble reaches it within d ticks", so a misprediction is a boundary crossing, never a wrong input. It is
+  strictly less speculative than scoped rollback and strictly more faithful than the latency state. Scoped rollback
+  may return later as a layer on top of it.
+- **Exact when nothing crosses the boundary.** The bubble is stepped by the core itself (the CPU twin, even when the
+  world runs on the GPU), in the unit-isolated mode milestone 12 requires. With nothing crossing, the prediction is
+  bit-identical to what the confirmed world will compute. Reconciliation per confirmed tick compares the bubble's unit
+  hashes with the confirmed world's: equal means nothing to do; different means restore the bubble from the confirmed
+  image, hidden state included (the lab's E3: state-only copies cannot catch up), and re-step it d ticks. A rig and a
+  car are tens of bodies, so this costs microseconds on the twin.
+- **Vehicles join the bubble from day one** (§1 had them take the input delay). Driving with 180 ms of steering
+  delay is bad (lateral error grows from 130 ms, Frontiers in VR 2021); Factorio hides 30 ticks of driving this way
+  (FFF-412).
+- **What needs care.** The rest of the world is d ticks stale in prediction: a moving thing is off by v×d (3 m for
+  debris at 20 m/s and 10 ticks). Structures under stress are never in the bubble (they are static to it).
+  Avatar-avatar contact is softened in prediction. Corrections are eased by the renderer (cosmetic, so free to differ
+  per machine). The bubble is capped by body count (a count, never a time) and falls back to the confirmed world
+  over the cap. A blast from outside reaches the avatar as a late ragdoll.
+- **Others' actions are previewed outside lockstep.** Other players' shots, swings and effects are sent unreliably
+  on a separate channel as cosmetic previews, each with an id, so the confirmed event does not duplicate its effects.
+  Hitscan is resolved on the shooter's machine and enters as a tick-stamped command.
+- **Adaptive delay** stays (milestone 16), driven by measured arrival jitter and deadline misses, raised at once and
+  lowered a tick at a time, with explicit rules for a tick whose inputs arrive late (a host-finalised repeat that
+  every peer applies) and for merging inputs when the delay changes (the last wins).
+- **Determinism requirements are unchanged across machines.** Within a machine the core gains a contract: a unit
+  stepped alone gives the same bits as that unit stepped inside the world; a unit's image carries its hidden state;
+  prediction emits only commands, never state, into the shared history.
+- **The exact bubble experiment needs a world clone,** which Box3D does not have. It moves to milestone 15, on the
+  snapshot (milestone 14). The owner's quick check, which needs no code: play co-op at 12 ticks of input delay with no
+  prediction (`python tools/coop.py launch --delay 12 --running --allow-input`) to feel what the bubble must hide.
+
+### The arithmetic (decided on evidence by milestone 11)
+
+**Catto's rules are CPU rules.** His Box2D v3 post lists three things to avoid: fast math, FMA contraction and
+C-library trigonometry (sqrtf is fine). This engine's 14-leg CI proves them sufficient on CPUs, with our own additions
+(a control-word guard, the static C runtime, total orders, no side effects in one call's arguments). On GPUs two carry
+over (fast math and contraction, as `NoContraction`) and the third expands to "own everything except add, subtract
+and multiply":
+- sqrt and inversesqrt are 1 ulp off on every NVIDIA GPU measured, in every mode; Vulkan requires only 2.5 ulp for
+  division and 2 for inversesqrt;
+- there is no control word the program owns: drivers flush fp32 subnormals by default; NVIDIA keeps them only through
+  an undocumented side effect of `RoundingModeRTE`, which crashes the GB10's compiler on a real kernel;
+- the compiler lives in the driver: selects are rewritten into min/max (±0 and NaN change), llvmpipe folds `0 - a` into
+  `-a`, Slang folds `x + 0`;
+- NaN bits differ by machine.
+
+**Two candidates, both bit-exact so far.** The float dialect F (fp32, NoContraction, only add, subtract and multiply
+on the GPU, software reciprocals, every select written out, no float-control modes) and block-scaled int32 V4 both
+matched their CPU twins on four GPUs (RTX 3060, Intel UHD 630, GB10, llvmpipe) and four twin compilers on two ISAs
+([research/m11-gpu-lab.md](research/m11-gpu-lab.md)); V4 costs 1.25 to 1.36 times F per step. The asymmetry between
+them: an integer driver bug is deterministic, local and loud (a startup battery catches it, and it can be reported);
+a float driver that returns a legal but different result fails late, remotely and silently. Astra leaned float, Fable
+and Claude integers.
+
+**The rule.** Zero unexplained bit differences first, then acceptable outcomes on the catalogue's terms, then the
+whole pipeline's cost; prefer integers if both pass while float still depends on behaviour the driver does not
+promise; prefer float if V4's outcomes fail (stacks creep, piles do not sleep) and no narrowing fixes them. Milestone
+11's toy supplies the evidence: decision point 1 (outcomes on the F, V4 and double twins against Box3D) and decision
+point 2 (bit-exact on every device in both dialects). The Pascal rows (no full-rate int32 multiply) and AMD close the
+gate before milestone 12. The verdict is recorded here when the toy has answered.

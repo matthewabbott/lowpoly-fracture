@@ -1,0 +1,97 @@
+# Milestone 11: the GPU lab's results (float dialect or block-scaled integers)
+
+Written 2026-10-04, and kept current through milestone 11. Question (docs/roadmap.md §11): can a rigid-body core on
+the GPU be bit-identical on every GPU and CPU twin, and in which arithmetic: the float dialect F or block-scaled int32
+(V4)? The code is `lab/gpu` (its README says how to run it); raw logs and a summary per machine are in
+`lab/gpu/results/<machine>/`. Milestone 7's E11 (`m7-gpu-experiments.md`) is the starting point and is not repeated
+here.
+
+## Summary so far
+
+- **E11 holds on two more GPUs, a second CPU architecture and two more compilers.** E11's unchanged kernels were
+  regenerated (byte-identical) and run on the DGX Spark: the GB10 (Blackwell, Linux driver 580.82) and llvmpipe
+  (Mesa's CPU Vulkan, LLVM 20), with gcc 13 and clang 18 twins on aarch64. Every twin on every compiler and ISA
+  reproduces E11's Windows hashes at 1k, 10k and 100k contacts. On every GPU, F (with no float-control modes), I32 and
+  V4 match their twin bit for bit.
+- **The undocumented NVIDIA route is unusable.** E11 found that declaring `RoundingModeRTE` makes NVIDIA's driver
+  keep fp32 subnormals and round division correctly. The GB10's probe shows the same, but the GB10's shader compiler
+  **crashes** (a segfault inside `libnvidia-gpucomp`) building E11's `integratePositions` whenever RTE is declared.
+  A dialect must be bit-exact with no float-control modes at all ("F-plain"), which F is.
+- **NaN bits are each machine's own.** F without its angular speed cap (Fnocap) blows up and makes NaNs: x64 writes
+  `0xffc00000`, ARM `0x7fc00000`, NVIDIA's GPUs `0x7fffffff`, so its hashes hold on x64 only. A float core must make
+  NaN impossible, not merely tolerate it.
+- **Q32.32 (I64) runs correctly on the GB10 and llvmpipe.** Its miscompile was the Intel Gen9.5 driver's alone.
+- **Giving up fast math on the GPU is nearly free here.** `slangc -fp-mode fast` (contraction allowed) saves 1.7% of
+  the 100k solve on the GB10 (4.73 against 4.81 ms per step) and nothing measurable on the row benchmark on either
+  NVIDIA GPU. The fast-math kernels differ from the twin in about one word in ten, as they should (the positive
+  control).
+- **Integers cost what E11 said.** V4 costs 1.25-1.36× F per step at 100k contacts on every GPU measured, and I32
+  1.07-1.20×.
+
+## Machines and drivers
+
+| machine | GPUs (driver) | CPU twin compilers |
+|---|---|---|
+| win-laptop | RTX 3060 Laptop (NVIDIA 610.60), Intel UHD 630 (101.2137) | MSVC 19.42, clang-cl 23.1 (x64) |
+| spark-gb10 | NVIDIA GB10 (580.82.09), llvmpipe (Mesa, LLVM 20.1.2) | gcc 13.3, clang 18.1 (aarch64, Grace) |
+
+Pending: the MacBook (Apple GPU through MoltenVK; Apple clang; x64 under Rosetta 2), a Pascal GPU (GTX 1060) and an
+AMD GPU (the owner's low-end box). The Pascal number gates milestone 12, not this milestone.
+
+## Bit agreement (E11's full solve, 60 steps; mismatching words against the twin at 1k / 10k / 100k contacts)
+
+| variant | RTX 3060 | UHD 630 | GB10 | llvmpipe |
+|---|---|---|---|---|
+| F (no modes; Intel with DenormPreserve) | 0 / 0 / 0 | 0 / 0 / 1 (one -0, E11's) | 0 / 0 / 0 | 0 / 0 / 0 |
+| F-any (no modes on any GPU) | 0 / 0 / 0 | 0 / 0 / 1 | 0 / 0 / 0 | 0 / 0 / 0 |
+| F-ieee (NVIDIA RTE+SZINP, Intel preserve+SZINP) | 0 / 0 / 0 | 0 / 0 / 1 | compiler crash | not reached (the run stops at the crash) |
+| Fdisc (Box3D's sqrt and division) | 4,222 / 44,465 / 432,644 | 4,114 / 43,975 / 426,541 | 4,222 / 44,465 / 432,644 | 0 / 0 / 0 |
+| I32 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| V4 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| I64 (Q32.32) | 0 / 0 / 0 | 5,911 / 89,650 / 899,797 (miscompiled) | 0 / 0 / 0 | 0 / 0 / 0 |
+
+The GB10 and the RTX 3060 make the same wrong Fdisc words (the same counts): two NVIDIA generations on two driver
+branches agree with each other where they disagree with IEEE. llvmpipe's sqrt and division are correctly rounded.
+
+The twins: MSVC and clang-cl on x64, gcc and clang on aarch64, at 1 and 8 threads, give E11's hash for F, Fdisc, I32,
+I64 and V4 at every size, and for the five row formats. The FMA positive control (the twin built with contraction
+allowed) differs on both ISAs.
+
+## The probe (each float operation, ~1M operand triples in eight classes)
+
+- **The GB10's counts equal the RTX 3060's, operation by operation**, under every mode: fp32 subnormals flushed by
+  default (no DenormPreserve advertised); `RoundingModeRTE` turns on preservation and correctly rounded division
+  (only NaN payloads then differ); sqrt and inversesqrt 1 ulp off in every mode; `mad()` fused; select max rewritten
+  unless SignedZeroInfNanPreserve.
+- **llvmpipe** keeps subnormals by default; its division and sqrt are correctly rounded, inversesqrt approximate;
+  `max()` and `min()` get ±0 wrong unless SignedZeroInfNanPreserve is declared; `fma()` is not a single rounding; and
+  it folds `0 - a` into `-a` (wrong for a = +0) under every mode. `a + 0` is folded by Slang itself (E11).
+- **The laptop under the new NVIDIA driver (610.60):** the probe log is identical to E11's under 581.95, count for
+  count.
+
+## Costs (ms per step at 100k contacts, GPU timestamps; the twin on the CPU)
+
+| | F | I32 | V4 | I64 | V4 / F |
+|---|---|---|---|---|---|
+| RTX 3060 | 5.65 | 6.38 | 7.04 | 9.73 | 1.25 |
+| UHD 630 | 34.2 | 41.1 | 42.7 | (wrong) | 1.25 |
+| GB10 | 4.81 | 5.15 | 6.55 | 8.65 | 1.36 |
+| llvmpipe (20 Grace cores) | 52.2 | 55.6 | 63.0 | 88.1 | 1.21 |
+| twin, Grace, 1 / 8 threads | 67.6 / 17.7 | 108.7 / 19.1 | 126.4 / 22.0 | 301.8 / 42.0 | 1.87 / 1.25 |
+
+The laptop's twin timings in this run were taken while another build was compiling; E11's (F 118 / 25 ms at 1 / 8
+threads) stand for the laptop. Multiply throughput (mulbench), relative to an fp32 fma: an int32×int32→int64 product
+with a shift costs 5.7× on the RTX 3060, 8.1× on the GB10 and the UHD; Pascal, with no full-rate int32 multiply, is
+predicted worse (the gate before milestone 12).
+
+## Port notes (what made E11 portable)
+
+- **Unsequenced random draws.** E11's `rows.c` and `probe.c` drew random numbers inside one call's arguments and one
+  product's operands, so clang made a different corpus from MSVC. The port draws in the order MSVC happened to use:
+  mostly right to left, but x, z, y for one call's three box extents and left to right at two probe sites (found by
+  trying the orders against E11's hashes and log). This is docs/determinism-rules.md's rule against side effects in
+  one call's arguments, broken in research code.
+- **A reference left to the C library.** The probe's CPU reference for `max()`/`min()` was `fmaxf`/`fminf`, whose
+  sign for max(-0, +0) differs between MSVC and clang; it is written out.
+- **Contraction:** gcc and clang contract by default on aarch64, so every lab file is built with
+  `-ffp-contract=off`, the scenario generators included.

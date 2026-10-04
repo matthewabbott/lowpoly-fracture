@@ -907,3 +907,23 @@ pieces a reduced judgement left unaudited, and a drift guard (architecture, "The
 - **Idle cost:** an idle controlled window ran at 6,000 fps behind other windows and spun a core. It now sleeps 4 ms
   on frames that step nothing.
 - **The scenarios** (`coop.py test`, seven of them) take 25 s together on this machine, launches included.
+
+## 2026-10-04 milestone 11: the GPU lab (E11 on new hardware)
+
+Engine untouched (the lab is outside it). E11's full solve, 60 steps at 100k contacts, ms per step (GPU timestamps;
+`lab/gpu/results/*/summary.md`, the record in docs/research/m11-gpu-lab.md):
+
+| | F | I32 | V4 | I64 | V4 / F |
+|---|---|---|---|---|---|
+| RTX 3060 (610.60) | 5.65 | 6.38 | 7.04 | 9.73 | 1.25 |
+| UHD 630 | 34.2 | 41.1 | 42.7 | (miscompiled) | 1.25 |
+| GB10 (580.82) | 4.81 | 5.15 | 6.55 | 8.65 | 1.36 |
+| llvmpipe, 20 Grace cores | 52.2 | 55.6 | 63.0 | 88.1 | 1.21 |
+| CPU twin, Grace, 1 / 8 threads | 67.6 / 17.7 | 108.7 / 19.1 | 126.4 / 22.0 | 301.8 / 42.0 | |
+
+- **Fast math on the GPU** (`slangc -fp-mode fast`, contraction allowed) saves 1.7% of the 100k solve on the GB10
+  (4.73 ms) and nothing measurable on the row benchmark on either NVIDIA GPU: the float dialect's NoContraction is
+  nearly free there.
+- **The Grace CPU runs the F twin 1.7 times as fast as the laptop's i7-10870H** at one thread (67.6 against E11's 118
+  ms), 1.4 times at eight. The laptop's twin timings in the lab's own Windows run were taken while a build was
+  compiling and are not comparable.
