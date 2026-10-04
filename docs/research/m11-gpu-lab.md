@@ -96,6 +96,40 @@ predicted worse (the gate before milestone 12).
 - **Contraction:** gcc and clang contract by default on aarch64, so every lab file is built with
   `-ffp-contract=off`, the scenario generators included.
 
+## The dual-dialect toy
+
+A real rigid-body step written once in Slang (`lab/gpu/toy`, its DESIGN.md and NOTES.md): the float dialect F, V4
+and a double reference D; a SAT narrowphase with its cache as data, clipping and feature ids, persistent warm starts,
+Box3D's soft step with friction, twist and restitution, contact recycling, islands and sleep, the combinatorial
+stages in integer C. Built step by step, each step gated.
+
+- **The arithmetic helpers** (battery, 19 helpers): every word identical on the RTX 3060, the UHD 630, the GB10,
+  llvmpipe and the MSVC, clang-cl, gcc and clang twins, in F (no float-control modes) and V4; V4's exact division
+  `lpDivQ31` equals C's `/` on a million inputs.
+- **The narrowphase** (10,000 hull pairs, fresh and warm-started): F and V4 choose D's separating axis on every pair
+  outside ties (9,523) and D's points and feature ids on every pair outside clipping ties (9,187); every word of the
+  SAT records and manifolds matches the twin on all four GPUs.
+- **Decision point 1, physics against Box3D** (`lab/gpu/toy/results/decision1.md`): V4 passes all 20 judged rows of
+  the acceptance table, F 18 of 19, and Box3D and D all of theirs. A 10-box stack stands 60 s and sleeps at the same
+  tick as Box3D's; 200-body piles sleep on 8 seeds with no escapes and rest within 1.7 cm; the ramp slides within
+  0.51% of Box3D. F's one miss (the ramp's position rms against D over 120 ticks, 1.34e-5 m against a 1e-5 bar) is two
+  thirds the start rounded to float. V4's stack crept 93 µm in 50 s (within the bar) because its products rounded
+  exact negative halves up.
+
+**What the toy found about the tools:**
+- **gcc 13.3 miscompiles a float comparison** at -O2 and -O3 (aarch64; `lab/gpu/repro/gcc13-backprop.c`, 25 lines):
+  its backprop pass strips the negation in max(0, -x) because only the square of the result is used, keeps the old
+  range, and VRP folds a live comparison to false. F's gcc twin lost contact points; clang, MSVC and every GPU agreed.
+  Only floats are rewritten by that pass, so V4 was immune. Cross-compiler twins caught it at once, which is the case
+  for keeping them.
+- **The Intel UHD 630's driver misread a variably indexed array** of manifold points once the manifold grew (661 wrong
+  manifolds); reading them from the buffer fixed it. E11's Intel int64 miscompile was the same driver.
+- **MSVC folds `x < 0 ? -x : x` into fabs** in C (so -0 becomes +0); clang does not.
+- **clang raises floating-point flags the source never raises** (speculating a guarded division, or an unused vector
+  lane), so the twins are built with `-ffp-exception-behavior=maytrap`; gcc's default is the same.
+- **F's Newton steps** written y (3/2 - x y^2 / 2) gave rsqrt(1) = 1 - 2^-24, enough to make resting orientations
+  drift; written as a correction, y + y (1/2 - x y^2 / 2), they are exact at powers of four.
+
 ## Pending: the MacBook
 
 What the Mac answers that no other machine here can: Apple's GPU through MoltenVK (Vulkan translated to Metal by

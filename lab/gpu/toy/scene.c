@@ -1,4 +1,5 @@
-// scene.c: see scene.h. Double arithmetic with + - * / and sqrt only; every random draw in its own statement.
+// scene.c: see scene.h. Double arithmetic with + - * / and sqrt only (and the exact floor and ldexp of the start's
+// rounding); every random draw in its own statement.
 #include "scene.h"
 
 #include "rng.h"
@@ -607,6 +608,42 @@ const char* scene_names( void )
 	return "stack10 (stackN) pile200 bounce ramp ratio chip";
 }
 
+// x rounded to float, then to the grid 2^-bits (to nearest, halves up): a value every dialect stores exactly. The float
+// is already on the grid when |x| >= 2^(23 - bits); below that, the grid's value has at most 24 significant bits, so it
+// is still a float (and a double).
+static double start_value( double x, int bits )
+{
+	double f = (double)(float)x;
+	return ldexp( floor( ldexp( f, bits ) + 0.5 ), -bits );
+}
+
+int scene_round_start( Scene* s )
+{
+	int moved = 0;
+	for ( int i = 0; i < s->bodyCount; ++i )
+	{
+		SceneBody* b = s->bodies + i;
+		for ( int k = 0; k < 3; ++k )
+		{
+			double p = start_value( b->p[k], SCENE_GRID_P );
+			double v = start_value( b->v[k], SCENE_GRID_V );
+			double w = start_value( b->w[k], SCENE_GRID_W );
+			moved += ( p != (double)(float)b->p[k] ) + ( v != (double)(float)b->v[k] ) + ( w != (double)(float)b->w[k] );
+			b->p[k] = p;
+			b->v[k] = v;
+			b->w[k] = w;
+		}
+		for ( int k = 0; k < 4; ++k )
+		{
+			double q = start_value( b->q[k], SCENE_GRID_Q );
+			moved += q != (double)(float)b->q[k];
+			b->q[k] = q;
+		}
+	}
+	s->startMoved = moved;
+	return moved;
+}
+
 int scene_build( Scene* s, const char* name, uint64_t seed )
 {
 	memset( s, 0, sizeof( *s ) );
@@ -628,6 +665,7 @@ int scene_build( Scene* s, const char* name, uint64_t seed )
 		build_chip( s );
 	else
 		return 0;
+	scene_round_start( s );
 	return 1;
 }
 

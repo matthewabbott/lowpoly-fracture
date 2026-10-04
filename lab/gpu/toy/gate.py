@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""gate.py: the toy's gates 1 to 4 (NOTES.md) on this machine, from the binaries of `lab.py build`.
+"""gate.py: the toy's gates 1 to 5 (NOTES.md) on this machine, from the binaries of `lab.py build`.
 
-  python lab/gpu/toy/gate.py [--compilers msvc,clang-cl] [--ticks 600] [--out lab/gpu/build/toy-scratch/gate] [--gates 1,2,3,4]
+  python lab/gpu/toy/gate.py [--compilers msvc,clang-cl] [--ticks 600] [--out lab/gpu/build/toy-scratch/gate] [--gates 1,2,3,4,5]
+                             [--gpus MASK] [--write-ref]
+  python3 lab/gpu/toy/gate.py --compilers gcc,clang --gates 5       # another machine, against the committed reference files
 
 Gate 1: each dialect's battery on every GPU and the twin of each compiler: every word identical, lpDivQ31 equal to C's
 division, the battery hashes equal across compilers. Gate 2: stack10 and pile200 (and pile200 without gravity, one body
@@ -15,6 +17,12 @@ Gate 4: the contact solve's physical sanity on the twins of the first compiler, 
 threads must agree, the sentinel stay clean and V4's saturations at 0; the numbers are reported, step 4b judges them
 against Box3D): stack10 for 3,600 ticks with sleep off and on, pile200 over eight seeds, bounce, ramp, ratio and chip,
 each through its trajectory (traj.py's summaries).
+Gate 5 (decision point 2): the whole tick on every GPU in --gpus (all by default) beside the twin of the first compiler,
+F and V4: stack10 for 3,600 ticks with sleep off and on, pile200 over seeds 1 to 8 for 1,200 ticks, bounce, ramp, ratio
+and chip for 600: every tick's hashes identical to the twin's, saturations 0 (as the twin's); and every compiler's twins
+(F, V4 and D, 1 and 8 threads) identical to the reference files in toy/results/ref (written by the Windows MSVC twin:
+--write-ref, first compiler). A GPU that differs is traced (toy --trace) to its first differing word. The GPUs' costs
+are reported.
 """
 import argparse
 import os
@@ -26,6 +34,11 @@ LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = ".exe" if sys.platform == "win32" else ""
 SCENES = [("stack10", []), ("pile200", []), ("pile200-wake", ["--gravity", "0", "--push", "112,1.5,0,0.5"]), ("chip", []), ("ramp", []),
           ("bounce", []), ("ratio", [])]
+# gate 5: name (the reference file's), scene, ticks, extra arguments
+GATE5 = [("stack10-sleep0", "stack10", 3600, ["--sleep", "0"]), ("stack10", "stack10", 3600, [])] + \
+        [(f"pile200-s{k}", "pile200", 1200, ["--seed", str(k)]) for k in range(1, 9)] + \
+        [(s, s, 600, []) for s in ("bounce", "ramp", "ratio", "chip")]
+REF = os.path.join(LAB, "toy", "results", "ref")
 # gate 4: name, scene, ticks, extra arguments
 SANITY = [("stack10-awake", "stack10", 3600, ["--sleep", "0"]), ("stack10-sleep", "stack10", 3600, [])] + \
          [(f"pile200-s{k}", "pile200", 3600, ["--seed", str(k)]) for k in range(1, 9)] + \
@@ -156,12 +169,85 @@ def gate4(a, comps, bad):
                 bad.append(f"sanity {d} {name}: exit {code}, threads {m.group(2) if m else '?'}, saturations {m.group(3) if m else '?'}")
 
 
+def gate5(a, comps, bad):
+    print("gate 5: decision point 2 (the whole tick on the GPUs against the twin; the twins against the reference files)")
+    if a.write_ref:
+        os.makedirs(REF, exist_ok=True)
+    gpu = {}  # (gpu name, dialect) -> [identical, runs]
+    costs = []
+    for name, scene, ticks, extra in GATE5:
+        for d in ("F", "V4", "D"):
+            ref = os.path.join(REF, f"{name}.{d}.txt")
+            for c in comps:
+                exe = os.path.join(LAB, "build", c, "bin", f"toy_{d}{EXE}")
+                log = os.path.join(a.out, f"g5_{d}.{name}.{c}.txt")
+                args = ["--scene", scene, "--ticks", str(ticks), "--threads", "1,8", "--quiet", *extra]
+                args += ["--ref-out", ref] if a.write_ref and c == comps[0] else ["--ref", ref]
+                if d != "D" and c == comps[0] and a.gpus not in ("0", ""):
+                    args += ["--gpus", a.gpus]
+                code, text = run(exe, args, log)
+                m = re.search(r"run hash ([0-9a-f]+).*?threads (\w+), saturations (\d+)", text)
+                refs = re.findall(r"^ref: (.*?) (identical to the reference.*|DIFFERS.*|the reference file is missing.*)$", text, re.M)
+                gpus = re.findall(r"^gpu (\d+) (\w+): per-tick hashes (identical to the twin's|DIFFER from the twin's)(.*?); run hash \w+; "
+                                  r"saturations (\d+) \(twin (\d+)\)$", text, re.M)
+                written = re.search(r"^ref-out \S+: (.*)$", text, re.M)
+                line = f"  {name:14} {d:2} {c:9} run hash {m.group(1) if m else '?'} threads {m.group(2) if m else '?'} saturations " \
+                       f"{m.group(3) if m else '?'} exit {code}"
+                if written:
+                    line += f"; reference {written.group(1)}"
+                twinRefs = [r for r in refs if r[0].startswith("twin")]
+                if twinRefs:
+                    ok = all(r[1].startswith("identical") for r in twinRefs)
+                    line += f"; twins vs reference: {'identical' if ok else 'DIFFER'}"
+                    if not ok:
+                        bad.append(f"gate 5 {name} {d} {c}: a twin differs from the reference "
+                                   f"({'; '.join(r[1] for r in twinRefs if not r[1].startswith('identical'))})")
+                elif not written:
+                    bad.append(f"gate 5 {name} {d} {c}: no reference check")
+                for gi, vendor, verdict, where, sat, twinSat in gpus:
+                    same = verdict.startswith("identical") and sat == twinSat == "0"
+                    gref = [r for r in refs if r[0].startswith(f"gpu {gi}")]
+                    line += f"; gpu {gi} {vendor}: {'identical' if same else 'DIFFERS' + where}" + (f", saturations {sat}" if sat != "0" else "")
+                    g = gpu.setdefault((f"{gi} {vendor}", d), [0, 0])
+                    g[0] += same
+                    g[1] += 1
+                    if not same:
+                        bad.append(f"gate 5 {name} {d} gpu {gi} {vendor}: {verdict}{where}, saturations {sat} (twin {twinSat})")
+                        t = re.search(r"from tick (\d+)", where)
+                        if t:  # trace it to the first differing word
+                            tlog = os.path.join(a.out, f"g5_{d}.{name}.gpu{gi}.trace.txt")
+                            targs = ["--scene", scene, "--ticks", t.group(1), "--threads", "1", "--quiet", *extra, "--gpu", gi,
+                                     "--trace", t.group(1)]
+                            _, ttext = run(exe, targs, tlog)
+                            for tl in re.findall(r"^(trace .*|    .*)$", ttext, re.M)[:12]:
+                                print("      " + tl.strip())
+                    if gref and not all(r[1].startswith("identical") for r in gref):
+                        bad.append(f"gate 5 {name} {d} gpu {gi} {vendor}: differs from the reference")
+                cm = re.findall(r"^gpu (\d+) costs: wall (\S+) ms/tick .*?kernels (\S+) ms/tick; the busiest tick(?: after the first)? \((\d+)\): kernels (\S+) ms, "
+                                r"wall (\S+) ms; at most (\d+) dispatches", text, re.M)
+                for gi, wall, kern, pt, pk, pw, nd in cm:
+                    costs.append((name, d, gi, wall, kern, pt, pk, pw, nd))
+                print(line)
+                if code != 0 or not m or m.group(2) != "agree" or m.group(3) != "0":
+                    bad.append(f"gate 5 {name} {d} {c}: exit {code}, threads {m.group(2) if m else '?'}, saturations {m.group(3) if m else '?'}")
+    print("  decision point 2, per GPU and dialect: runs whose every tick's hashes equal the twin's (saturations 0)")
+    for (g, d), (same, total) in sorted(gpu.items()):
+        print(f"    gpu {g:12} {d:2}: {same} of {total}")
+    if costs:
+        print("  GPU costs (informative): scene, dialect, gpu: wall and kernel ms per tick over the run; the busiest tick after the first: tick, kernels, "
+              "wall (ms); the most dispatches in a tick")
+        for name, d, gi, wall, kern, pt, pk, pw, nd in costs:
+            print(f"    {name:14} {d:2} gpu {gi}: {wall:>7} {kern:>7}; tick {pt:>4}: {pk:>7} {pw:>7}; {nd}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--compilers", default="msvc,clang-cl")
     p.add_argument("--ticks", default="600")
     p.add_argument("--out", default=os.path.join(LAB, "build", "toy-scratch", "gate"))
-    p.add_argument("--gates", default="1,2,3,4")
+    p.add_argument("--gates", default="1,2,3,4,5")
+    p.add_argument("--gpus", default="0xff", help="gate 5: the GPUs to run (a mask; 0: none)")
+    p.add_argument("--write-ref", action="store_true", help="gate 5: write the reference files from the first compiler's twins")
     a = p.parse_args()
     a.out = os.path.abspath(a.out)  # the binaries run from lab/gpu
     os.makedirs(a.out, exist_ok=True)
@@ -176,6 +262,8 @@ def main():
         gate3(a, comps, bad)
     if "4" in gates:
         gate4(a, comps, bad)
+    if "5" in gates:
+        gate5(a, comps, bad)
     print("\n" + ("PASS" if not bad else "FAIL:\n  " + "\n  ".join(bad)))
     sys.exit(1 if bad else 0)
 

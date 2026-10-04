@@ -47,10 +47,22 @@ typedef struct Scene
 	SceneHull* hulls;
 	int chunkCount;	 // irregular hulls
 	int chunkRedraws; // chunks drawn again (too many features, or a feature too small)
+	int startMoved;	  // start values the grid moved off their float (scene_round_start)
 } Scene;
 
-// stack10, pile200, bounce, ramp, ratio, chip. Returns 0 for an unknown name.
+// stack10, pile200, bounce, ramp, ratio, chip. Returns 0 for an unknown name. The start (scene_round_start) is one
+// every dialect holds exactly.
 int scene_build( Scene* s, const char* name, uint64_t seed );
+
+// Every body's start (position, orientation, velocities) rounded to float, then to V4's grid for that quantity (layout.h:
+// positions 2^-32, orientations 2^-30, linear velocities 2^-22, angular velocities 2^-20), so F, V4 and D (and Box3D)
+// start from the same values: the grid moves only floats smaller than 2^(23 - bits), and what it gives is still a float.
+// Returns the number of values the grid moved off their float (pile200's small quaternion components).
+#define SCENE_GRID_P 32
+#define SCENE_GRID_Q 30
+#define SCENE_GRID_V 22
+#define SCENE_GRID_W 20
+int scene_round_start( Scene* s );
 void scene_free( Scene* s );
 const char* scene_names( void );
 

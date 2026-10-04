@@ -9,9 +9,9 @@ program; the decision is F's and V4's). Writes the table to lab/gpu/toy/results/
 Runs (trajectories and logs in --out; --no-run measures what is there): stack10 for 3,600 ticks with sleep off, with
 sleep on, and with sleep and contact recycling off; pile200 for 3,600 ticks over seeds 1 to 8 (every 10th tick
 recorded) and for 120 ticks (every tick); bounce 300, ramp 600, ratio 1,200 and chip 600 ticks; Box3D's chip again
-with continuous collision on; D with every dynamic body moved 1e-9 m along x and y, and D from F's start (every body's
-start rounded to float), the first 120 ticks of each scene (how much the scene amplifies a tiny difference, and how much
-of F's difference from D is its start).
+with continuous collision on; D with every dynamic body moved 1e-9 m along x and y, the first 120 ticks of each scene
+(how much the scene amplifies a tiny difference). Every program starts from the same values (scene_round_start: floats
+on V4's grids, step 5a), so no difference is the start's.
 """
 import argparse
 import concurrent.futures
@@ -43,8 +43,7 @@ JOBS = [("stack-off", "stack10", 3600, ["--sleep", "0"], 1),
         ("chip", "chip", 600, [], 1)] + \
        [(f"pile-s{k}", "pile200", 3600, ["--seed", str(k)], 10) for k in SEEDS] + \
        [(f"pilehead-s{k}", "pile200", 120, ["--seed", str(k)], 1) for k in SEEDS]
-# D perturbed (Dp: every dynamic body moved 1e-9 m along x and y) and D from F's start (Df: the start rounded to float),
-# the first 120 ticks, against D
+# D perturbed (Dp: every dynamic body moved 1e-9 m along x and y), the first 120 ticks, against D
 PERTURBED = [("stack-off", "stack10", ["--sleep", "0"]), ("bounce", "bounce", []), ("ramp", "ramp", []), ("ratio", "ratio", []),
              ("chip", "chip", [])] + [(f"pilehead-s{k}", "pile200", ["--seed", str(k)]) for k in SEEDS]
 
@@ -67,7 +66,6 @@ def run_all(a):
     tasks.append(("chip-ccd", "Box3D", "chip", 600, ["--continuous", "1"], 1))
     for name, scene, extra in PERTURBED:
         tasks.append((name, "Dp", scene, 120, extra + ["--perturb", PERTURB], 1))
-        tasks.append((name, "Df", scene, 120, extra + ["--start-float"], 1))
 
     def one(task):
         name, prog, scene, ticks, extra, every = task
@@ -75,7 +73,7 @@ def run_all(a):
         args = ["--scene", scene, "--ticks", str(ticks), "--quiet", "--traj", tr, "--traj-every", str(every), "--log", log, *extra]
         if prog != "Box3D":
             args += ["--threads", "1"]
-        r = subprocess.run([exe(a.compiler, "D" if prog in ("Dp", "Df") else prog), *args], cwd=LAB, capture_output=True, text=True)
+        r = subprocess.run([exe(a.compiler, "D" if prog == "Dp" else prog), *args], cwd=LAB, capture_output=True, text=True)
         return task, r.returncode
 
     bad = []
@@ -95,13 +93,13 @@ def measure(a):
     M = {}  # M[prog][name] = {"m": metrics, "log": parsed log, "traj": Traj (kept for the 120-tick ones)}
     fns = {"stack10": metrics.stack, "pile200": metrics.pile, "bounce": metrics.bounce, "ramp": metrics.ramp, "ratio": metrics.ratio,
            "chip": metrics.chip}
-    runs = [(n, s, p) for n, s, _, _, _ in JOBS for p in PROGS] + [("chip-ccd", "chip", "Box3D")] + [(n, s, p) for n, s, _ in PERTURBED for p in ("Dp", "Df")]
+    runs = [(n, s, p) for n, s, _, _, _ in JOBS for p in PROGS] + [("chip-ccd", "chip", "Box3D")] + [(n, s, "Dp") for n, s, _ in PERTURBED]
     for name, scene, prog in runs:
         tr, log = paths(a.out, name, prog)
         t = Traj(tr)
         text = open(log, errors="replace").read()
         entry = {"log": metrics.parse_log(text)}
-        if prog not in ("Dp", "Df") and not name.startswith("pilehead"):
+        if prog != "Dp" and not name.startswith("pilehead"):
             entry["m"] = fns[scene](t)
         lg = entry["log"]
         if name.startswith("pile-s") and -lg.get("deep_rest", 0.0) > REST_LOOK and "deep_rest_tick" in lg:
@@ -237,19 +235,16 @@ def build_table(M):
     # the first 120 ticks against D
     for name, label, judged in (("stack-off", "stack10 (sleep off)", True), ("bounce", "bounce", True), ("ramp", "ramp", True),
                                 ("chip", "chip", False), ("ratio", "ratio", False)):
-        r = {p: rms_of(M, p, name)["rms"] for p in ("Box3D", "F", "V4", "Dp", "Df")}
-        rf = rms_of(M, "F", name, "Df")["rms"]  # F against D from F's start: F's arithmetic alone
+        r = {p: rms_of(M, p, name)["rms"] for p in ("Box3D", "F", "V4", "Dp")}
         thr = "F <= 1e-5 m, V4 <= 1e-4 m" if judged else "reported (impacts: judged by outcome)"
         add("position rms against D, ticks 1-120 (m)" if name == "stack-off" else "", label, thr,
-            {"Box3D": fmt(r["Box3D"], 3), "D": f"moved 1e-9 m: {fmt(r['Dp'], 3)}; from F's start: {fmt(r['Df'], 3)}",
-             "F": f"{fmt(r['F'], 3)} (against D from F's start: {fmt(rf, 3)})", "V4": fmt(r["V4"], 3)},
+            {"Box3D": fmt(r["Box3D"], 3), "D": f"moved 1e-9 m: {fmt(r['Dp'], 3)}", "F": fmt(r["F"], 3), "V4": fmt(r["V4"], 3)},
             {"Box3D": None, "D": None, "F": r["F"] <= 1e-5 if judged else None, "V4": r["V4"] <= 1e-4 if judged else None})
-    pr = {p: pooled_rms(M, p) for p in ("Box3D", "F", "V4", "Dp", "Df")}
-    prf = pooled_rms(M, "F", "Df")
+    pr = {p: pooled_rms(M, p) for p in ("Box3D", "F", "V4", "Dp")}
     add("", "pile200, 8 seeds pooled (worst seed)", "reported (impacts: judged by outcome)",
         {"Box3D": f"{fmt(pr['Box3D'][0], 3)} ({fmt(pr['Box3D'][1], 3)})",
-         "D": f"moved 1e-9 m: {fmt(pr['Dp'][0], 3)} ({fmt(pr['Dp'][1], 3)}); from F's start: {fmt(pr['Df'][0], 3)} ({fmt(pr['Df'][1], 3)})",
-         "F": f"{fmt(pr['F'][0], 3)} ({fmt(pr['F'][1], 3)}; against D from F's start: {fmt(prf[0], 3)})",
+         "D": f"moved 1e-9 m: {fmt(pr['Dp'][0], 3)} ({fmt(pr['Dp'][1], 3)})",
+         "F": f"{fmt(pr['F'][0], 3)} ({fmt(pr['F'][1], 3)})",
          "V4": f"{fmt(pr['V4'][0], 3)} ({fmt(pr['V4'][1], 3)})"},
         {p: None for p in P})
     return rows
@@ -343,7 +338,7 @@ def details_md(M):
     hulls = {M["Box3D"][n]["log"].get("hull_differ", 0) for n in M["Box3D"]}
     mass = max(M["Box3D"][n]["log"].get("mass_check", (0, 0))[0] for n in M["Box3D"])
     inertia = max(M["Box3D"][n]["log"].get("mass_check", (0, 0))[1] for n in M["Box3D"])
-    sent = all(e["log"]["sentinel"] for p in ("D", "F", "V4", "Dp", "Df") for e in M[p].values())
+    sent = all(e["log"]["sentinel"] for p in ("D", "F", "V4", "Dp") for e in M[p].values())
     out.append(f"Box3D's hulls: vertex, face and half-edge counts differ from the scene's on {max(hulls)} hulls in any run. Box3D's own mass "
                f"from the shapes against the scene's: within {mass:.2g} (mass) and {inertia:.2g} (inertia, relative); every run sets "
                f"the scene's values. The twins' floating-point sentinel: {'clean in every run' if sent else 'TRIPPED in some run'}.")
@@ -367,11 +362,12 @@ def main():
     M = measure(a)
     rows = build_table(M)
     text = ["# Decision point 1: the acceptance table", "",
-            "Generated by `lab/gpu/toy/accept.py` (step 4b; DESIGN.md \"Scenes and acceptance\", NOTES.md step 4b). Values: Box3D "
+            "Generated by `lab/gpu/toy/accept.py` (step 4b, rerun after step 5a's two corrections; DESIGN.md \"Scenes and acceptance\", NOTES.md steps 4b and 5). Values: Box3D "
             "(`b3ref2`, Box3D's own solver on the toy's scenes), the toy's twins D (double), F (float) and V4 (block-scaled int32), "
             f"{a.compiler}, one thread. The last four columns: PASS or FAIL of each program against the threshold (the decision "
             "is F's and V4's; Box3D's and D's verdicts say whether the bar is fair). Each FAIL's diagnosis, the judgement calls "
-            "behind the measurements and V4's rounding experiment: NOTES.md, step 4b.", "",
+            "behind the measurements and V4's rounding: NOTES.md, steps 4b and 5. Step 5a: V4's mas rounds halves away from "
+            "zero, and every scene starts from values every program holds exactly (floats on V4's grids).", "",
             "Reproduce (Windows, from the repository's root):", "",
             "```",
             "python lab/gpu/toy/gen_toy.py && python lab/gpu/lab.py build --compiler msvc",
@@ -407,8 +403,8 @@ def main():
             "> 5 mm); it sleeps when every record from some tick on is asleep and it never wakes after first sleeping.",
             "- Position rms against D over ticks 1 to 120: the dynamic bodies' centres, as toy.c's --pos-ref. D moved 1e-9 m: D "
             "with every dynamic body's start moved 1e-9 m along x and along y (`--perturb`), against D: how much the scene "
-            "amplifies a tiny difference. D from F's start: D with every body's start rounded to float (`--start-float`), what F "
-            "stores; against D it is the part of F's difference that F's start makes, and F against it is F's arithmetic alone.",
+            "amplifies a tiny difference. Every program starts from the same values (step 5a), so F's and V4's differences are "
+            "their arithmetic's.",
             ""]
     md = "\n".join(text)
     os.makedirs(os.path.dirname(a.md), exist_ok=True)

@@ -615,3 +615,172 @@ hashes as step 4's, the sentinel clean, V4's saturations 0.
 - Box3D still differs in its gyroscopic term, continuous collision (the chip behaves the same with it), its sleep test
   (a position term) and waking in the step; none shows in the table.
 - accept.py runs only the MSVC twins and one thread (gate 2 covers the rest); the Spark has not run 4b.
+
+## 2026-10-04: step 5a (V4's rounding, float starts) and step 5 (the whole tick on the GPUs: decision point 2)
+
+**Step 5a: the two corrections** (they change hashes, so they land before step 5's reference hashes).
+1. **`mas` rounds halves away from zero** (`num.slang`): the offset is 2^(sh-1) for x >= 0 and 2^(sh-1) - 1 for x < 0 (0 for
+   sh = 0), computed as `((1 << sh) + (x >> 63)) >> 1`, no select. **lpDivQ31 re-derived:** `mul64`'s product (q |d|, or
+   lim |d| in divClamp) is never negative, and for x >= 0 halves away is halves up, so its high word is still mas less the
+   low word's top bit (H + (L >> 31) - (L >> 31)); the estimate's mas can be negative but is clamped at 0, where a negative
+   half's rounding cannot show (half up gives 0, half away -1, both 0 after the clamp). So lpDivQ31 gives the same words
+   under either rounding, and the battery says so: the helper hashes of lpDivQ31, divClamp, recip, rsqrt, recipE, sqrtT,
+   clz, atan2, quatNormalize, quatMul, rotate, pos/grid, posDelta, frame and msb/shiftOf are unchanged; mul, sum2/dif2,
+   sum3, rescale, unit3/len3 and discScale changed (their vectors have negative exact halves), with the same saturation
+   counts. lpDivQ31 equals C's `/` on 0 of 79,976 differing inputs, and 0 of 1,063,016 at `--n 65536 --seed 7`; both GPUs
+   every word identical in every helper (F and V4). Battery hashes: **V4 6cddc843b7bf4f72 -> c45f361e4c33722e** (big run
+   6894d90a8ee222b1 -> dce1bffc300d0d5b), F 5add7392dc064a30 and D 17fdc03440fd6596 unchanged.
+2. **Starts every dialect holds exactly** (`scene.c`'s `scene_round_start`, called by `scene_build`, so b3ref2 gets it
+   too): every body's position, orientation and velocities rounded to float (step 4b's `--start-float`, now the default and
+   removed as an option), **then to V4's grid for that quantity** (positions 2^-32, orientations 2^-30, v 2^-22, w 2^-20).
+   The check: float alone is exact in D always and in V4 for |x| >= 2^(23 - bits) (positions above 2 mm, quaternion
+   components above 2^-7, v above 2 m/s or 0, w above 8 rad/s or 0). Every scene passes except pile200's random
+   quaternions: 4 to 8 components per seed below 2^-7 (seed 1: 7, 2: 4, 3: 6, 4: 6, 5: 8, 6: 4, 7: 7, 8: 4) would have
+   been rounded by V4's quantisation. The grid step moves exactly those, by under 2^-31, and leaves a float (at most 24
+   significant bits), so now every start value is exact in F, V4 and D: the toy's new `start:` line checks it in every
+   run (every scene, every dialect: exact). accept.py's "D from F's start" runs (Df) are gone (they equal D).
+
+**Before and after** (gates 1 to 4 and `accept.py` rerun; `results/decision1.md` regenerated):
+
+| | step 4b | step 5a |
+|---|---|---|
+| V4 stack10 sleep off, ticks 600 to 3,600: bottom cube's drift; top's drift | 50.5 um; 0.093 mm | **0.71 um; 0.0168 mm** (D 0.01 um; 0.008 mm, Box3D 0.97 um; 0.0081 mm) |
+| V4 stack10: top's tilt at 60 s; mean speed, last 10 s | 6.2e-4 deg; 0.0057 mm/s | 1.6e-5 deg; 0.0056 mm/s |
+| V4 stack10, recycling off: top drift; last second's speed | 18.8 mm; 47.3 mm/s | 46.5 mm; 51 mm/s (Box3D 45.9; 51.5) |
+| rms vs D, ticks 1-120, stack10: F; V4 | 2.5e-7; 1.53e-5 | 2.5e-7; **2.54e-6** |
+| bounce: F; V4 | 1.3e-6; 4.5e-6 | 1.3e-6; 4.7e-6 |
+| ramp: F; V4 | **1.34e-5 (FAIL)**; 8.9e-6 | **4.9e-6**; 1.9e-5 |
+| chip: F; V4 (reported) | 4.1e-5; 1.4e-4 | 4.05e-5; 1.5e-4 |
+| ratio: F; V4 (reported) | 1.43e-4; 3.0e-7 | 2.1e-7; 1.43e-4 |
+| pile200, 8 seeds pooled: F; V4 (reported) | 0.080; 0.11 | 0.077; 0.106 |
+| pile200 sleep tick, median (max): Box3D; D; F; V4 | 271 (350); 249 (332); 276 (295); 251 (328) | 274 (622); 270 (351); 258 (288); 274 (330) |
+| pile200 deepest at rest (judged, <= 2 cm), worst seed: Box3D; D; F; V4 | 1.13; 1.70; 1.03; 1.24 cm | 1.13; 1.23; 1.20; 1.80 cm |
+| decision point 1, judged rows passed: Box3D; D; F; V4 | 16/16; 16/16; 18/19; 20/20 | 16/16; 16/16; **19/19**; 20/20 |
+
+The creep is gone as step 4b's experiment said (to the digit: 0.7 and 16.8 um). F's ramp miss was its start (F against
+D is now 4.9e-6, step 4b's "F against D from F's start"). ratio swapped its two numbers: it has two outcomes about 1e-4 m
+apart (the same class) that a start difference of 1e-10 m picks; D from the unrounded start agreed with V4 before, D from
+the float start agrees with F now, and V4 is 1.43e-4 m (max 1 mm) from it, F's old number to the digit. V4's ramp rms
+doubled (the sliding box's small friction bias, step 4b's open issue). Box3D's pile200 seed 2 now sleeps at 622 (one
+late body; its seeds 2, 4 and 5 moved with the 4 to 8 grid-moved quaternion components). The solve line's "at rest"
+window (reported, not judged) reached 3.21 cm in D (seed 2) and 3.11 in V4 (seed 8): late impacts, as in step 4b.
+
+Gates 1 to 4 after 5a: **passed** (MSVC 19.42.34435, clang-cl 23.1.2; the sentinel clean, saturations 0). Gate 2 run hashes
+(600 ticks), unchanged ones marked =:
+
+| scene | D | F | V4 |
+|---|---|---|---|
+| stack10 | = f215cccb206c916a | = b090bbc24000a20a | 7b3114bdf3ab6d1a |
+| pile200 | bc83fe37d85e9145 | 080a40a2a279debc | a51a7c89717698d6 |
+| pile200, gravity 0, body 112 pushed | 553488d0c0eb1ea1 | cea8ea392605b5c4 | 0df970da7edaad96 |
+| chip | 7e10e560cf31c9e0 | = 16cbc151b1c07471 | 2b4686ff5dc8fa82 |
+| ramp | 7aa34cf634c31dc3 | = 9fa8eac59c80fee5 | 88a9bf253b0c28db |
+| bounce | = 3fd13858e9d1f9fa | = 694b4d84adf7e4fa | b0af3f647a8ee84c |
+| ratio | cd540394c778a0cc | = 8771b095410fd3f2 | 64b0b2b3a538be00 |
+
+Gate 3: corpus hashes D ec5972a1a82de840 and F 2ea78ea1cf0bdb32 unchanged, **V4 222bdd55590f1dba** (was e71df90861191eec);
+0 differ outside ties in both passes, both GPUs every word identical. Gate 4: every scene's numbers as in the table above.
+
+**Step 5: what landed** (lines, now): `toy.c` 2,545 (was 1,139: the GPU tick path, the trace, the dispatch hashes, the
+reference files, the field tables that name a word; DESIGN's estimate was 600), `gate.py` 272 (gate 5), `scene.c/.h` 677/82
+(the start), `num.slang` 1,038 (mas), `accept.py` 418 (no Df), `results/ref/` (new: 42 reference files, 14 configs x F,
+V4, D, about 10 KB each), `results/gate5-windows.txt` (new: gate 5's output on this machine).
+
+```
+python lab/gpu/toy/gen_toy.py && python lab/gpu/lab.py build --compiler msvc && python lab/gpu/lab.py build --compiler clang-cl
+python lab/gpu/toy/gate.py                      # gates 1 to 5 (about 15 minutes); --gates 5 for decision point 2 alone
+python lab/gpu/toy/gate.py --gates 5 --write-ref     # (Windows, MSVC first) rewrite results/ref after a change meant to change hashes
+build/msvc/bin/toy_V4.exe --scene pile200 --seed 3 --ticks 1200 --threads 1 --gpus 3 --ref toy/results/ref/pile200-s3.V4.txt   # from lab/gpu
+build/msvc/bin/toy_F.exe --scene stack10 --ticks 600 --gpu 1 --trace 600        # every buffer after every tick; a difference to the word
+python3 lab/gpu/toy/gate.py --compilers gcc,clang --gates 5                    # another machine, against the committed files
+```
+
+- **`toy.c` is one simulation (`Sim`: its buffers and CPU stages) driven two ways.** The twin's tick: bind, prepare,
+  `sim_gather` (sleep counters and last tick's point counts from its own buffers), `sim_stages` (stages_tick, growth,
+  lists, the dispatch list), the rest. A GPU's tick (`gpu_tick`): **submit 1** uploads the prepare list, runs
+  `prepareBodies`, and reads back the stages' inputs (the AABBs whole; the sleep counters and last tick's point counts as
+  4-byte copy regions, one per body and one per last tick's pair from the other manifold buffer: no new kernel, no
+  readback of the manifolds); the CPU runs the same `sim_stages` on them; **submit 2** uploads the lists and the pairs,
+  runs every dispatch of the list with a barrier and a timestamp after each, and reads back `hashElements`' and
+  `hashManifolds`' arrays, summed on the CPU as the twin's. The manifolds are ping-ponged on the GPU: two buffers, two
+  descriptor sets (tick parity p binds manifolds = mf[p], prevManifolds = mf[p ^ 1]). Per-pair buffers grow when the
+  pairs outgrow them, the manifolds, SAT records, manifold hashes and constraints keeping their contents and the rest
+  zero, on the GPU (fill, copy) and now on the twin too (its realloc's new parts are zeroed; never read, so no hash
+  changed: gate 5's run hashes of bounce, ramp, ratio and chip equal gate 2's). So every byte of every buffer is
+  deterministic and the whole buffers compare.
+- `--gpus MASK` / `--gpu N`: each GPU runs the scene after the twins; per-tick hashes compared, the first differing tick
+  printed with both triples; the saturation counter read back at the end against the twin's; the costs.
+- `--trace T`: the twin (one thread) and the GPU in step; after every tick's prepare and after its rest every buffer the
+  kernels write (state, pose, mass, AABBs, hashes, both manifold buffers, SAT records, manifold hashes, constraints) is
+  read back and compared word for word. The first tick whose rest differs is stepped again from the prepare's state
+  (the twin's snapshot, uploaded to the GPU), dispatch by dispatch, each followed by the whole comparison, and the first
+  differing word is named: tick, dispatch, kernel, start, count, buffer, element, field (from offsetof tables:
+  `manifolds[1][37].points[2].normalImpulse`), both values (float or integer, and hex), the element's words on both
+  sides, the differing words per buffer. Tested with `TOY_TRACE_POKE=T:D` (flips a bit of the twin's first awake body's
+  v.y after dispatch D of tick T): found at the right dispatch, body and field, in F and V4, stack10 and pile200 (a
+  pile200 F poke that later rounding absorbed within the tick was rightly not reported).
+- `--dispatch-hashes FILE`: an FNV over the same buffers after every dispatch of the first twin run (tick, dispatch, kernel,
+  start, count, hash). pile200 seed 3, 120 ticks: 17,571 lines, identical on MSVC and clang-cl.
+- `--ref-out FILE` / `--ref FILE`: the config line (scene, seed, dialect, ticks, gravity, sleep, recycle, push, perturb),
+  the twin's identity, the three hashes every tick to 120 then every 60th and the last, and a run hash over every tick;
+  `--ref` checks every twin run (1 and 8 threads) and every GPU run against it (the config must match).
+- The toy's `start:` line (above), and the solve and pose reports split into functions; the per-tick table, the final
+  line and every gate 2 and 4 output unchanged.
+
+**Gate 5 = decision point 2: passed** (`gate.py`, `results/gate5-windows.txt`). RTX 3060 Laptop (driver 0x988f0000) and
+UHD 630 (driver 0x194859), F-plain and V4: stack10 for 3,600 ticks with sleep off and on, pile200 seeds 1 to 8 for 1,200
+ticks, bounce, ramp, ratio and chip for 600: **every tick's three hashes identical to the twin's on both GPUs in both
+dialects, 14 of 14 runs each; saturations 0 on the GPUs and the twins.** The twins (F, V4, D; 1 and 8 threads) are
+identical to the reference files on MSVC and clang-cl in all 42 configs (the files written by the MSVC twin, then
+checked in a second full run of gates 1 to 5, which passed). **No difference was found, so nothing was fixed**: the
+narrowphase, the solver (warm start, push, relax, restitution with their per-point loops unrolled), the speed caps,
+finalize, the sleep counters, the hashes and the int64 `mas` gave the same bits on both drivers from tick 1 to the end;
+the Intel driver's misread of a variably indexed private array (step 4's) did not reappear. The trace found nothing in
+pile200 (V4, Intel, 200 ticks) or stack10 (V4, NVIDIA, 60 ticks).
+
+**GPU costs** (informative; one dispatch per colour per substep, a barrier after every dispatch, two submits a tick). ms per
+tick over the run (wall with the two submits, readbacks and CPU stages; kernels from timestamps) and the busiest tick
+after the first:
+
+| | RTX 3060 F | RTX 3060 V4 | UHD 630 F | UHD 630 V4 |
+|---|---|---|---|---|
+| stack10, sleep off (40 dispatches a tick, all awake) | 0.47 / 0.16 | 0.77 / 0.38 | 2.8 / 2.0 | 5.1 / 4.4 |
+| pile200, 8 seeds, 1,200 ticks (F and V4 all asleep by tick 223 to 330) | 0.79-0.93 / 0.25-0.35 | 1.15-1.55 / 0.54-0.93 | 4.3-4.7 / 1.6-1.9 | 4.9-7.4 / 3.1-5.5 |
+| pile200, the busiest tick (270-329 dispatches) | 3.2-4.5 / 2.1-3.0 | 5.3-7.9 / 4.0-4.9 | 13.8-16.9 / 10.7-13.7 | 23.7-29.9 / 21.6-27.9 |
+| bounce, ramp, ratio, chip (28-76 dispatches) | 0.25-0.38 / 0.03-0.08 | 0.27-0.50 / 0.04-0.17 | 0.95-1.6 / 0.31-0.89 | 1.1-3.4 / 0.63-2.6 |
+
+Every cell reads wall / kernels. The solver's per-colour dispatches (warm start, push, relax) take
+74 to 81% of pile200's kernel time, the narrowphase 11 to 14%, the hashes 1 to 10%. Both GPUs are dispatch-bound: the UHD
+630 costs about 50 us a dispatch with its barrier (stack10 F: 2.0 ms for 40), the RTX 3060 about 4 us; V4 costs 1.7 to 2.7
+times F (the int64 `mas`). The twins for comparison (MSVC): stack10 0.18 / 0.22 ms a tick (F / V4, 1 thread), pile200
+1.17 / 1.39 (1 thread), 0.75 / 0.87 (8 threads), averaged over the run.
+
+**Judgement calls.**
+- The starts go to V4's grid after float, so the three dialects (and Box3D) share every start bit; float alone left 4 to
+  8 pile200 quaternion components per seed inexact in V4.
+- The trace compares whole buffers at every tick's two points and replays only the first differing tick dispatch by
+  dispatch (from the prepare's state, both sides restored from the twin's snapshot), rather than reading back every
+  buffer after every one of up to 330 dispatches from tick 1: a difference that a later dispatch of the same tick fully
+  overwrites is not reported (the end state equals); one that reaches the tick's end is, to the first dispatch and word.
+  The replay also tells a non-reproducible difference apart ("differs at its end but not dispatch by dispatch").
+- Two submits a tick (the brief's one readback for the CPU stages, plus the hashes'); the stages' inputs through copy
+  regions rather than a gather kernel; the GPU runs after the twin rather than interleaved (the same comparison, and a
+  divergent GPU cannot disturb the twin's run).
+- Reference files for D too (the twins on other machines), and a run hash over every tick beside the kept lines.
+- gate.py's gate 5 runs every GPU (`--gpus`, default 0xff) on the first compiler's build and traces a GPU that differs
+  to the tick it first differs; `--write-ref` rewrites the files (from the first compiler, MSVC on Windows).
+- The costs are averages over the run (sleeping ticks too) and the busiest tick after the first (tick 1 warms the driver
+  up: up to 9 ms on the UHD).
+- `posDeltaWord` (the two-word position difference, Q8.24) still rounds half up: it is not `mas` and the brief named only
+  `mas`; b - a and a - b can differ by one lsb at exact halves (a quarter of all differences: positions move in Q5.26
+  steps shifted by 6). No creep shows (the stack's bottom cube 0.7 um in 50 s), but it is the same kind of bias.
+
+**Open issues.**
+- Not run on the Spark (GB10, llvmpipe; gcc and clang twins): `python lab/gpu/lab.py remote consulear@spark-d683 --machine
+  spark-gb10 --compiler gcc --twins clang --then "python3 toy/gate.py --compilers gcc,clang > results/spark-gb10/toy-gate.txt"`
+  ships toy/ with results/ref and runs gates 1 to 5 there (llvmpipe's pile200 runs may be slow); then the Mac.
+- `posDeltaWord`'s half-up rounding (above). V4's ramp friction bias (step 4b) and F's chip error not taken apart.
+- Cost: up to 330 dispatches a tick, each with a full barrier; fewer colours (only touching pairs), several colours per
+  dispatch, or a persistent solver kernel are step 7's questions. Bandwidth is not the limit yet.
+- No UBSan build yet (DESIGN's gate).
+- The joint (step 6) and its kernels are not in gate 5 yet; when they land, `--write-ref` and gate 5 again.

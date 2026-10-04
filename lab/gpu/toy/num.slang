@@ -273,12 +273,15 @@ T discScale( T x, T y, T m, T one )
 
 T snap( T x ) { return x; }
 
-// The one helper with int64 inside: a*b + c*d + e*f, rounded half up and shifted by sh in [0, 62], then narrowed to
-// int32 with saturation at +-(2^31 - 1), counted. The exact sum stays below 2^62 in magnitude (the callers' formats).
+// The one helper with int64 inside: a*b + c*d + e*f, shifted by sh in [0, 62] and rounded to nearest with halves away
+// from zero, then narrowed to int32 with saturation at +-(2^31 - 1), counted. The exact sum stays below 2^62 in
+// magnitude (the callers' formats). Symmetric: -x rounds to the negation of x's rounding (half up sent exact negative
+// halves toward +inf, and an aligned stack's anchors at +-0.25 m make many: a slow creep, NOTES.md step 4b). The
+// offset is 2^(sh-1) for x >= 0 and 2^(sh-1) - 1 for x < 0 (0 for sh = 0): (2^sh + (x >> 63)) >> 1, no select.
 int mas( int a, int b, int c, int d, int e, int f, int sh )
 {
 	int64_t x = int64_t( a ) * int64_t( b ) + int64_t( c ) * int64_t( d ) + int64_t( e ) * int64_t( f );
-	int64_t half = ( int64_t( 1 ) << sh ) >> 1;
+	int64_t half = ( ( int64_t( 1 ) << sh ) + ( x >> 63 ) ) >> 1;
 	int64_t y = ( x + half ) >> sh;
 	if ( y > 2147483647LL || y < -2147483647LL )
 	{
@@ -293,8 +296,8 @@ T sum2( T a, T b, T c, T d, int sh ) { return mas( a, b, c, d, 0, 0, sh ); }
 T dif2( T a, T b, T c, T d, int sh ) { return mas( a, b, -c, d, 0, 0, sh ); }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return mas( a, b, c, d, e, f, sh ); }
 
-// A format change by sh bits (the value is kept): sh > 0 rounds half up (negative values too), sh < 0 (to -30)
-// shifts left with saturation.
+// A format change by sh bits (the value is kept): sh > 0 rounds to nearest, halves away from zero (mas), sh < 0 (to
+// -30) shifts left with saturation.
 T rescale( T x, int sh )
 {
 	int s = sh < 0 ? 0 : sh;
@@ -332,8 +335,11 @@ W64 shl64( uint x, int k )
 	return r;
 }
 
-// The exact product of a, b in [0, 2^31): the low word wraps, the high word comes from mas (rounded half up, so one
-// less when the low word's top bit is set).
+// The exact product of a, b in [0, 2^31): the low word wraps, the high word comes from mas. The product x = H 2^32 + L
+// (0 <= L < 2^32) is never negative, so mas's rounding (halves away from zero) is floor( (x + 2^31) / 2^32 ) = H + (L >>
+// 31): the high word is mas less the low word's top bit. (lpDivQ31's remainder N - q d multiplies q >= 0 by |d|, and its
+// estimate's mas, which may be negative, is clamped at 0, where a negative half's rounding cannot show: lpDivQ31 gives
+// the same words under either rounding.)
 W64 mul64( int a, int b )
 {
 	W64 r;
