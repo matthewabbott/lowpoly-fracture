@@ -505,14 +505,48 @@ void QueueGrab()
 	Submit( c );
 }
 
-// Commands for this tick: the grab's, the script's (this player's) and the scene's (live ones were submitted as they
-// came). In co-op the player's go through the host, and the scene's are made here from this machine's world.
-void PreStep( int64_t tick )
+// The held keys and buttons, read once per tick (not per frame, which would tie what they send to the frame rate: S
+// brakes or reverses by the car's speed, the rifle fires every sixth tick)
+void PollControls()
 {
+	if ( app.driving >= 0 )
+	{
+		DriveKeys keys = { app.keys[SAPP_KEYCODE_W], app.keys[SAPP_KEYCODE_S], app.keys[SAPP_KEYCODE_A], app.keys[SAPP_KEYCODE_D],
+						   app.keys[SAPP_KEYCODE_SPACE] };
+		lpVehicleControl control = Drive_Control( app.world, app.driving, keys );
+		if ( Drive_Same( control, app.sent ) == false )
+		{
+			QueueDrive( control );
+		}
+	}
+	if ( app.walking >= 0 )
+	{
+		WalkKeys keys = { app.keys[SAPP_KEYCODE_W], app.keys[SAPP_KEYCODE_S], app.keys[SAPP_KEYCODE_A], app.keys[SAPP_KEYCODE_D],
+						  app.keys[SAPP_KEYCODE_Q], app.keys[SAPP_KEYCODE_E], app.keys[SAPP_KEYCODE_C] };
+		lpRigControl control = Walk_Control( keys );
+		if ( Walk_Same( control, app.walkSent ) == false )
+		{
+			QueueWalk( control );
+		}
+	}
+	if ( app.firing && app.tool == ToolRifle && app.fireCooldown <= 0 )
+	{
+		QueueFire();
+		app.fireCooldown = 6;
+	}
+	app.fireCooldown -= 1;
 	if ( app.firing && app.tool == ToolPull )
 	{
 		QueueGrab();
 	}
+}
+
+// Commands for this tick: the player's held controls, the script's (this player's) and the scene's (keys pressed were
+// submitted as they came). In co-op the player's go through the host, and the scene's are made here from this
+// machine's world.
+void PreStep( int64_t tick )
+{
+	PollControls();
 	if ( app.lockstep != nullptr )
 	{
 		while ( app.scriptNext < app.script.count && app.script.commands[app.scriptNext].tick <= tick )
@@ -577,7 +611,6 @@ void NetStep( int close )
 			break;
 		}
 		PostStep();
-		app.fireCooldown -= 1;
 		steps += 1;
 	}
 	app.stepMs = steps > 0 ? lpGetMilliseconds( t0 ) / (float)steps : app.stepMs;
@@ -996,35 +1029,6 @@ void Frame()
 	bool automated = app.opt.frames > 0;
 
 	UpdateCamera( automated ? 1.0f / 60.0f : dt );
-	if ( app.driving >= 0 )
-	{
-		DriveKeys keys = { app.keys[SAPP_KEYCODE_W], app.keys[SAPP_KEYCODE_S], app.keys[SAPP_KEYCODE_A], app.keys[SAPP_KEYCODE_D],
-						   app.keys[SAPP_KEYCODE_SPACE] };
-		lpVehicleControl control = Drive_Control( app.world, app.driving, keys );
-		if ( Drive_Same( control, app.sent ) == false )
-		{
-			QueueDrive( control );
-		}
-	}
-	if ( app.walking >= 0 )
-	{
-		WalkKeys keys = { app.keys[SAPP_KEYCODE_W], app.keys[SAPP_KEYCODE_S], app.keys[SAPP_KEYCODE_A], app.keys[SAPP_KEYCODE_D],
-						  app.keys[SAPP_KEYCODE_Q], app.keys[SAPP_KEYCODE_E], app.keys[SAPP_KEYCODE_C] };
-		lpRigControl control = Walk_Control( keys );
-		if ( Walk_Same( control, app.walkSent ) == false )
-		{
-			QueueWalk( control );
-		}
-	}
-
-	if ( app.firing && app.tool == ToolRifle )
-	{
-		if ( app.fireCooldown <= 0 )
-		{
-			QueueFire();
-			app.fireCooldown = 6;
-		}
-	}
 
 	if ( !app.paused || app.lockstep != nullptr )
 	{
@@ -1048,7 +1052,6 @@ void Frame()
 		for ( int i = 0; i < steps && app.lockstep == nullptr; ++i )
 		{
 			StepSimulation();
-			app.fireCooldown -= 1;
 		}
 	}
 	UpdateParticles( automated ? 1.0f / 60.0f : dt );
@@ -1185,7 +1188,7 @@ void Event_( const sapp_event* ev )
 			{
 				app.showLinks = !app.showLinks;
 			}
-			if ( ev->key_code == SAPP_KEYCODE_V )
+			if ( ev->key_code == SAPP_KEYCODE_V && ev->key_repeat == false )
 			{
 				ToggleDriving();
 			}
