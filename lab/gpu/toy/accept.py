@@ -40,12 +40,13 @@ JOBS = [("stack-off", "stack10", 3600, ["--sleep", "0"], 1),
         ("bounce", "bounce", 300, [], 1),
         ("ramp", "ramp", 600, [], 1),
         ("ratio", "ratio", 1200, [], 1),
-        ("chip", "chip", 600, [], 1)] + \
+        ("chip", "chip", 600, [], 1),
+        ("arm", "arm", 1200, [], 1)] + \
        [(f"pile-s{k}", "pile200", 3600, ["--seed", str(k)], 10) for k in SEEDS] + \
        [(f"pilehead-s{k}", "pile200", 120, ["--seed", str(k)], 1) for k in SEEDS]
 # D perturbed (Dp: every dynamic body moved 1e-9 m along x and y), the first 120 ticks, against D
 PERTURBED = [("stack-off", "stack10", ["--sleep", "0"]), ("bounce", "bounce", []), ("ramp", "ramp", []), ("ratio", "ratio", []),
-             ("chip", "chip", [])] + [(f"pilehead-s{k}", "pile200", ["--seed", str(k)]) for k in SEEDS]
+             ("chip", "chip", []), ("arm", "arm", [])] + [(f"pilehead-s{k}", "pile200", ["--seed", str(k)]) for k in SEEDS]
 
 
 def exe(comp, prog):
@@ -99,7 +100,9 @@ def measure(a):
         t = Traj(tr)
         text = open(log, errors="replace").read()
         entry = {"log": metrics.parse_log(text)}
-        if prog != "Dp" and not name.startswith("pilehead"):
+        if scene == "arm":  # the joints' measures (Dp's too: its angles against D's)
+            entry["m"] = metrics.arm(t, metrics.parse_joints(text))
+        elif prog != "Dp" and not name.startswith("pilehead"):
             entry["m"] = fns[scene](t)
         lg = entry["log"]
         if name.startswith("pile-s") and -lg.get("deep_rest", 0.0) > REST_LOOK and "deep_rest_tick" in lg:
@@ -229,8 +232,22 @@ def build_table(M):
         {p: m[p]["lowest"] > 0.0 and m[p]["final_y"] > 0.005 for p in P})
     add("", "asleep from tick (stays asleep)", "sleeps and stays asleep",
         {p: f"{fmt(m[p]['asleep'])} ({'stays' if m[p]['stays'] else 'wakes'})" for p in P}, {p: m[p]["asleep"] is not None and m[p]["stays"] for p in P})
+    # arm (step 6): the servo joint (0) and the limited joint (1)
+    m = {p: M[p]["arm"]["m"] for p in P}
+    dp = M["Dp"]["arm"]["m"]
+    for k, label in ((0, "servo joint (0)"), (1, "limited joint (1)")):
+        d = {p: metrics.angle_diff(m[p][k], m["D"][k])[0] for p in P}
+        dpk = metrics.angle_diff(dp[k], m["D"][k])[0]
+        add("arm, 1,200 ticks" if k == 0 else "", f"{label}: angle against D's, ticks 1-120, largest (mrad)", "F, V4: <= 1 mrad",
+            {"Box3D": fmt(d["Box3D"] * 1e3, 3), "D": f"moved 1e-9 m: {fmt(dpk * 1e3, 3)}", "F": fmt(d["F"] * 1e3, 3), "V4": fmt(d["V4"] * 1e3, 3)},
+            {"Box3D": None, "D": None, "F": d["F"] <= 1e-3, "V4": d["V4"] <= 1e-3})
+    add("", "hinge gap, largest over the run: servo joint; limited joint (mm)", "<= 1 mm",
+        {p: f"{fmt(m[p][0]['gap'] * 1e3, 3)}; {fmt(m[p][1]['gap'] * 1e3, 3)}" for p in P},
+        {p: max(m[p][0]["gap"], m[p][1]["gap"]) <= 1e-3 for p in P})
+    add("", "limited joint: overshoot beyond its limits (+-0.5 rad), largest over the run (mrad)", "<= 10 mrad (0.01 rad)",
+        {p: fmt(m[p][1]["overshoot"] * 1e3, 3) for p in P}, {p: m[p][1]["overshoot"] <= 0.01 for p in P})
     sat = {p: sum(e["log"].get("saturations", 0) for e in M[p].values()) for p in ("D", "F", "V4")}
-    add("", "saturation counters, summed over every run", "V4: 0", {"Box3D": "-", **{p: str(sat[p]) for p in sat}},
+    add("every run", "saturation counters, summed over every run", "V4: 0", {"Box3D": "-", **{p: str(sat[p]) for p in sat}},
         {"Box3D": None, "D": None, "F": None, "V4": sat["V4"] == 0})
     # the first 120 ticks against D
     for name, label, judged in (("stack-off", "stack10 (sleep off)", True), ("bounce", "bounce", True), ("ramp", "ramp", True),
@@ -333,6 +350,17 @@ def details_md(M):
                f"{fmt(c['lowest'])}; {fmt(c['final_y'])}; {fmt(c['asleepstay'])} | | | |")
     m = {p: M[p]["chip"]["log"] for p in P}
     out.append("| chip: deepest point over the run (mm) | " + " | ".join(fmt(-m[p]["deep"] * 1e3, 3) for p in P) + " |")
+    m = {p: M[p]["arm"]["m"] for p in P}
+    out.append("| arm: the largest gap's tick, servo joint; limited joint | " + " | ".join(
+        f"{m[p][0]['gapAt']}; {m[p][1]['gapAt']}" for p in P) + " |")
+    out.append("| arm: the hinge axes' largest misalignment, servo joint; limited joint (mrad) | " + " | ".join(
+        f"{fmt(m[p][0]['swing'] * 1e3, 3)}; {fmt(m[p][1]['swing'] * 1e3, 3)}" for p in P) + " |")
+    out.append("| arm: the servo's largest lag behind its target (rad) | " + " | ".join(fmt(m[p][0]["track"], 3) for p in P) + " |")
+    out.append("| arm: the limited joint's records at a limit (within 1 mrad or beyond), of 1,200; its angles' range (rad) | " + " | ".join(
+        f"{m[p][1]['atLimit']}; {fmt(m[p][1]['range'][0], 4)} to {fmt(m[p][1]['range'][1], 4)}" for p in P) + " |")
+    out.append("| arm: the gap over ticks 30 to 90 (the sweep, the limited link resting on a limit, before the arm turns), largest (mm): "
+               "servo joint; limited joint | " + " | ".join(
+                   f"{fmt(m[p][0]['gapSweep'] * 1e3, 3)}; {fmt(m[p][1]['gapSweep'] * 1e3, 3)}" for p in P) + " |")
     out.append("")
     # health of the runs
     hulls = {M["Box3D"][n]["log"].get("hull_differ", 0) for n in M["Box3D"]}

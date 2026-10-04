@@ -83,7 +83,70 @@ void stages_free( Stages* s )
 	free( s->counts );
 	free( s->sortA );
 	free( s->sortB );
+	free( s->jointKeys );
+	free( s->jointActive );
+	free( s->jointColour );
+	free( s->jointFlags );
+	free( s->jointActiveList );
+	free( s->jointColourList );
 	memset( s, 0, sizeof( *s ) );
+}
+
+void stages_set_joints( Stages* s, int count, const int32_t* a, const int32_t* b )
+{
+	s->jointCount = count;
+	s->jointA = a;
+	s->jointB = b;
+	size_t n = (size_t)( count > 0 ? count : 1 );
+	s->jointKeys = (uint64_t*)malloc( n * sizeof( uint64_t ) );
+	s->jointActive = (uint8_t*)calloc( n, 1 );
+	s->jointColour = (int32_t*)malloc( n * sizeof( int32_t ) );
+	s->jointFlags = (int32_t*)calloc( n, sizeof( int32_t ) );
+	s->jointActiveList = (int32_t*)malloc( n * sizeof( int32_t ) );
+	s->jointColourList = (int32_t*)malloc( n * sizeof( int32_t ) );
+	// the filter's keys: sorted (insertion: a scene has few joints), duplicates dropped
+	int kc = 0;
+	for ( int k = 0; k < count; ++k )
+	{
+		s->jointColour[k] = -1;
+		uint32_t lo = (uint32_t)( a[k] < b[k] ? a[k] : b[k] ), hi = (uint32_t)( a[k] < b[k] ? b[k] : a[k] );
+		uint64_t key = ( (uint64_t)lo << 32 ) | hi;
+		int i = kc;
+		while ( i > 0 && s->jointKeys[i - 1] > key )
+		{
+			s->jointKeys[i] = s->jointKeys[i - 1];
+			--i;
+		}
+		if ( i > 0 && s->jointKeys[i - 1] == key )
+		{
+			for ( int m = i; m < kc; ++m ) // undo the shift: a duplicate
+			{
+				s->jointKeys[m] = s->jointKeys[m + 1];
+			}
+			continue;
+		}
+		s->jointKeys[i] = key;
+		kc += 1;
+	}
+	s->jointKeyCount = kc;
+}
+
+static int jointed( const Stages* s, uint64_t key )
+{
+	int lo = 0, hi = s->jointKeyCount;
+	while ( lo < hi )
+	{
+		int mid = ( lo + hi ) / 2;
+		if ( s->jointKeys[mid] < key )
+		{
+			lo = mid + 1;
+		}
+		else
+		{
+			hi = mid;
+		}
+	}
+	return lo < s->jointKeyCount && s->jointKeys[lo] == key;
 }
 
 static void grow_pairs( Stages* s, int need )
@@ -153,9 +216,14 @@ static void broadphase( Stages* s, const Aabb* b )
 			{
 				continue;
 			}
-			grow_pairs( s, count + 1 );
 			uint32_t lo = (uint32_t)( i < j ? i : j ), hi = (uint32_t)( i < j ? j : i );
-			s->keys[count++] = ( (uint64_t)lo << 32 ) | hi;
+			uint64_t key = ( (uint64_t)lo << 32 ) | hi;
+			if ( s->jointKeyCount > 0 && jointed( s, key ) )
+			{
+				continue;
+			}
+			grow_pairs( s, count + 1 );
+			s->keys[count++] = key;
 		}
 	}
 	grow_pairs( s, count + 1 );
@@ -197,10 +265,19 @@ static void set_active( Stages* s )
 		s->active[k] = (uint8_t)( is_awake( s, s->pairs[k].bodyA ) || is_awake( s, s->pairs[k].bodyB ) );
 		s->activeCount += s->active[k];
 	}
+	s->jointActiveCount = 0;
+	for ( int k = 0; k < s->jointCount; ++k )
+	{
+		s->jointActive[k] = (uint8_t)( is_awake( s, s->jointA[k] ) || is_awake( s, s->jointB[k] ) );
+		if ( s->jointActive[k] )
+		{
+			s->jointActiveList[s->jointActiveCount++] = k;
+		}
+	}
 }
 
-// A touching pair between an awake body and a sleeping one wakes the sleeping one's island (repeated until nothing
-// more wakes)
+// A touching pair (or a joint) between an awake body and a sleeping one wakes the sleeping one's island (repeated until
+// nothing more wakes); the joints after the pairs
 static void wake( Stages* s, const uint8_t* prevTouching )
 {
 	s->wokenCount = 0;
@@ -208,9 +285,11 @@ static void wake( Stages* s, const uint8_t* prevTouching )
 	while ( changed )
 	{
 		changed = 0;
-		for ( int k = 0; k < s->pairCount; ++k )
+		for ( int k = 0; k < s->pairCount + s->jointCount; ++k )
 		{
-			int a = s->pairs[k].bodyA, b = s->pairs[k].bodyB;
+			int isJoint = k >= s->pairCount;
+			int a = isJoint ? s->jointA[k - s->pairCount] : s->pairs[k].bodyA;
+			int b = isJoint ? s->jointB[k - s->pairCount] : s->pairs[k].bodyB;
 			int sleeper = -1;
 			if ( is_awake( s, a ) && !s->isStatic[b] && s->asleep[b] )
 			{
@@ -220,7 +299,7 @@ static void wake( Stages* s, const uint8_t* prevTouching )
 			{
 				sleeper = a;
 			}
-			if ( sleeper < 0 || !touching( s, prevTouching, k ) )
+			if ( sleeper < 0 || ( !isJoint && !touching( s, prevTouching, k ) ) )
 			{
 				continue;
 			}
@@ -258,10 +337,12 @@ static void islands( Stages* s, const int32_t* sleepTicks, const uint8_t* prevTo
 	{
 		s->parent[i] = i;
 	}
-	for ( int k = 0; k < s->pairCount; ++k )
+	for ( int k = 0; k < s->pairCount + s->jointCount; ++k ) // the joints after the pairs (the roots are the minima either way)
 	{
-		int a = s->pairs[k].bodyA, b = s->pairs[k].bodyB;
-		if ( !is_awake( s, a ) || !is_awake( s, b ) || !touching( s, prevTouching, k ) )
+		int isJoint = k >= s->pairCount;
+		int a = isJoint ? s->jointA[k - s->pairCount] : s->pairs[k].bodyA;
+		int b = isJoint ? s->jointB[k - s->pairCount] : s->pairs[k].bodyB;
+		if ( !is_awake( s, a ) || !is_awake( s, b ) || ( !isJoint && !touching( s, prevTouching, k ) ) )
 		{
 			continue;
 		}
@@ -349,6 +430,29 @@ static void islands( Stages* s, const int32_t* sleepTicks, const uint8_t* prevTo
 // on this tick, touching or not, so a contact is solved the tick it appears (prepare and the solve skip a pair whose
 // manifold has no points). The lowest colour neither moving body has used; a static or sleeping body is solved as
 // static (PAIR_SOLVE_*: never written) and takes no colour. Beyond STAGE_MAX_COLOURS: the overflow colour.
+// The lowest colour neither moving body of (a, b) has used (STAGE_MAX_COLOURS: the overflow), taken; flags gets which
+// bodies move
+static int colour_one( Stages* s, int a, int b, int32_t* flags )
+{
+	int da = is_awake( s, a ), db = is_awake( s, b );
+	*flags = ( da ? PAIR_SOLVE_A : 0 ) | ( db ? PAIR_SOLVE_B : 0 );
+	uint64_t mask = ( da ? s->used[a] : 0 ) | ( db ? s->used[b] : 0 );
+	int c = 0;
+	while ( c < STAGE_MAX_COLOURS && ( mask & ( 1ULL << c ) ) )
+	{
+		++c;
+	}
+	if ( c < STAGE_MAX_COLOURS )
+	{
+		if ( da )
+			s->used[a] |= 1ULL << c;
+		if ( db )
+			s->used[b] |= 1ULL << c;
+		s->colourCount = c + 1 > s->colourCount ? c + 1 : s->colourCount;
+	}
+	return c;
+}
+
 static void colour( Stages* s )
 {
 	int n = s->bodyCount;
@@ -356,9 +460,63 @@ static void colour( Stages* s )
 	{
 		s->used[i] = 0;
 	}
+	s->colourCount = 0;
+	// the joints first, in index order. Box3D's b3AssignJointColor: a joint between two moving bodies takes the lowest
+	// free colour; one with a body solved as static takes the highest free colour from the top down (never colour 0), so
+	// it is solved after the dynamic ones ("higher priority than dyn-dyn constraints": a chain's anchor corrects last)
+	int jcounts[STAGE_MAX_COLOURS + 1];
+	memset( jcounts, 0, sizeof( jcounts ) );
+	for ( int k = 0; k < s->jointCount; ++k )
+	{
+		s->jointColour[k] = -1;
+		s->jointFlags[k] = 0;
+		if ( !s->jointActive[k] )
+		{
+			continue;
+		}
+		int a = s->jointA[k], b = s->jointB[k];
+		int c = STAGE_MAX_COLOURS;
+		if ( is_awake( s, a ) && is_awake( s, b ) )
+		{
+			c = colour_one( s, a, b, s->jointFlags + k );
+		}
+		else
+		{
+			int m = is_awake( s, a ) ? a : b;
+			s->jointFlags[k] = m == a ? PAIR_SOLVE_A : PAIR_SOLVE_B;
+			for ( int i = STAGE_MAX_COLOURS - 1; i >= 1 && c == STAGE_MAX_COLOURS; --i )
+			{
+				if ( !( s->used[m] & ( 1ULL << i ) ) )
+				{
+					s->used[m] |= 1ULL << i;
+					c = i;
+					s->colourCount = c + 1 > s->colourCount ? c + 1 : s->colourCount;
+				}
+			}
+		}
+		s->jointColour[k] = c;
+		jcounts[c] += 1;
+	}
+	s->jointOverflow = jcounts[STAGE_MAX_COLOURS];
+	s->jointColourStart[0] = 0;
+	for ( int c = 0; c <= STAGE_MAX_COLOURS; ++c )
+	{
+		s->jointColourStart[c + 1] = s->jointColourStart[c] + jcounts[c];
+	}
+	{
+		int fill[STAGE_MAX_COLOURS + 1];
+		memcpy( fill, s->jointColourStart, sizeof( fill ) );
+		for ( int k = 0; k < s->jointCount; ++k )
+		{
+			if ( s->jointColour[k] >= 0 )
+			{
+				s->jointColourList[fill[s->jointColour[k]]++] = k;
+			}
+		}
+	}
+	// then the pairs, in key order
 	int counts[STAGE_MAX_COLOURS + 1];
 	memset( counts, 0, sizeof( counts ) );
-	s->colourCount = 0;
 	for ( int k = 0; k < s->pairCount; ++k )
 	{
 		Pair* p = s->pairs + k;
@@ -368,23 +526,7 @@ static void colour( Stages* s )
 		{
 			continue;
 		}
-		int a = p->bodyA, b = p->bodyB;
-		int da = is_awake( s, a ), db = is_awake( s, b );
-		p->flags = ( da ? PAIR_SOLVE_A : 0 ) | ( db ? PAIR_SOLVE_B : 0 );
-		uint64_t mask = ( da ? s->used[a] : 0 ) | ( db ? s->used[b] : 0 );
-		int c = 0;
-		while ( c < STAGE_MAX_COLOURS && ( mask & ( 1ULL << c ) ) )
-		{
-			++c;
-		}
-		if ( c < STAGE_MAX_COLOURS )
-		{
-			if ( da )
-				s->used[a] |= 1ULL << c;
-			if ( db )
-				s->used[b] |= 1ULL << c;
-			s->colourCount = c + 1 > s->colourCount ? c + 1 : s->colourCount;
-		}
+		int c = colour_one( s, p->bodyA, p->bodyB, &p->flags );
 		p->colour = c;
 		counts[c] += 1;
 	}
@@ -456,5 +598,12 @@ uint64_t stages_hash( const Stages* s )
 	h = fnv( h, s->awake, (size_t)s->awakeCount * sizeof( int32_t ) );
 	h = fnv( h, &s->wokenCount, sizeof( int ) );
 	h = fnv( h, s->woken, (size_t)s->wokenCount * sizeof( int32_t ) );
+	if ( s->jointCount > 0 ) // (so a scene without joints hashes as before step 6)
+	{
+		h = fnv( h, &s->jointCount, sizeof( int ) );
+		h = fnv( h, s->jointActive, (size_t)s->jointCount );
+		h = fnv( h, s->jointColour, (size_t)s->jointCount * sizeof( int32_t ) );
+		h = fnv( h, s->jointFlags, (size_t)s->jointCount * sizeof( int32_t ) );
+	}
 	return h;
 }

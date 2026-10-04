@@ -38,7 +38,7 @@
 #define HAS_GPU 0
 #endif
 
-#define TOY_BUFFERS 19 // kernels.slang's bindings 0..18 (the constraints, 18, unused here)
+#define TOY_BUFFERS 22 // kernels.slang's bindings 0..21 (the constraints and joints, 18 to 21, unused here)
 void toy_bind( void* const* bufs, const size_t* counts );
 const char* toy_twin_info( void );
 size_t toy_sizeof( int which );
@@ -691,7 +691,7 @@ static void pass_setup( PassIO* io, int n, int pass )
 static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state, Aabb* aabbs, Hash2* hashes )
 {
 	void* bufs[TOY_BUFFERS] = { d->hulls, d->points, d->faces, d->edges, state,	 d->pose,  d->mass, aabbs,	io->lists,
-								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes, NULL };
+								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes, NULL, NULL, NULL, NULL };
 	size_t counts[TOY_BUFFERS] = { (size_t)d->hullCount, (size_t)d->pointCount, (size_t)d->faceCount, (size_t)d->edgeCount,
 								   (size_t)d->bodyCount,
 								   (size_t)d->bodyCount,
@@ -707,6 +707,9 @@ static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state
 								   (size_t)n,
 								   (size_t)n,
 								   (size_t)n,
+								   0,
+								   0,
+								   0,
 								   0 };
 	toy_bind( bufs, counts );
 }

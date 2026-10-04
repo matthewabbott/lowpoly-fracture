@@ -751,6 +751,60 @@ T atan2T( T y, T x )
 }
 
 // =====================================================================================================================
+// The joint's helpers (step 6)
+// =====================================================================================================================
+
+// The twist angle about z of a relative rotation q (Box3D's b3GetTwistAngle): 2 atan2( qz, qs ), qs's sign taken out
+// first, so the angle is in [-pi, pi]. Q3.28 (V4: atan2T's Q2.29 doubled is the same mantissa in Q3.28, exactly); the
+// inputs are snapped (atan2T).
+T twistAngle( Q4 q )
+{
+	bool neg = q.s < zero();
+	T y = selectT( neg, -q.z, q.z );
+	T x = selectT( neg, -q.s, q.s );
+	T a = atan2T( y, x );
+	return rescale( a + a, S_A - S_JA );
+}
+
+// The inverse of a symmetric positive definite 3x3 matrix by Gaussian elimination with reciprocal pivots (A = L D L^T:
+// each pivot's reciprocal through divClamp, the multipliers as products, then A^-1 = L^-T D^-1 L^-1). V4: a in Q1.30
+// with its largest diagonal entry in [0.5, 1) (the caller normalises), the reciprocal pivots, the multipliers and the
+// inverse in Q9.22 (S_J): a pivot under 2^-9 of the largest diagonal (a condition near 512) saturates, and a pivot that
+// is not positive or whose reciprocal reaches the clamp is counted as a saturation. F and D: plain arithmetic.
+Sym3 invertSym( Sym3 a, T one )
+{
+	T lim = KT( 1.0e20f, 1.0e20l, 2147483647 );
+	T rp1 = divClamp( one, a.xx, S_J, lim );
+	T l21 = snap( M( a.xy, rp1, S_Q ) );
+	T l31 = snap( M( a.xz, rp1, S_Q ) );
+	T d2 = snap( a.yy - M( a.xy, l21, S_J ) );
+	T e2 = snap( a.yz - M( a.xz, l21, S_J ) );
+	T f2 = snap( a.zz - M( a.xz, l31, S_J ) );
+	T rp2 = divClamp( one, d2, S_J, lim );
+	T l32 = snap( M( e2, rp2, S_Q ) );
+	T d3 = snap( f2 - M( e2, l32, S_J ) );
+	T rp3 = divClamp( one, d3, S_J, lim );
+	bool bad = !( a.xx > zero() ) || !( d2 > zero() ) || !( d3 > zero() );
+	bad = bad || !( rp1 < lim ) || !( rp2 < lim ) || !( rp3 < lim );
+	if ( bad )
+	{
+		countSaturation();
+	}
+	// L^-1 = [1 0 0; m21 1 0; m31 m32 1]
+	T m21 = -l21;
+	T m32 = -l32;
+	T m31 = snap( M( l21, l32, S_J ) - l31 );
+	Sym3 r;
+	r.zz = rp3;
+	r.yz = snap( M( m32, rp3, S_J ) );
+	r.xz = snap( M( m31, rp3, S_J ) );
+	r.yy = snap( rp2 + M( m32, r.yz, S_J ) );
+	r.xy = snap( sum2( m21, rp2, m31, r.yz, S_J ) );
+	r.xx = snap( rp1 + sum2( m21, snap( M( m21, rp2, S_J ) ), m31, r.xz, S_J ) );
+	return r;
+}
+
+// =====================================================================================================================
 // Positions and the broadphase grid
 // =====================================================================================================================
 

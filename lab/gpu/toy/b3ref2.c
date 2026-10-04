@@ -2,7 +2,10 @@
 // toy's generator (scene.c: the same doubles for hull points, poses, velocities, masses, friction and restitution),
 // runs it with the toy's settings (60 Hz, 4 substeps, gravity -10, contact hertz 30, damping ratio 10, push speed 3 m/s,
 // restitution threshold 1 m/s, two restitution iterations, one worker; sleep and contact recycling as asked; continuous
-// collision off unless asked) and writes the toy's trajectory format (traj.h's LPTRAJ1).
+// collision off unless asked) and writes the toy's trajectory format (traj.h's LPTRAJ1). The scene's joints (step 6's arm)
+// are Box3D revolute joints with the same frames, limits and motor; a servo's motor speed is set before each step from
+// the joint's angle then, by the toy's rule (gain (target - angle), capped), and each joint's line is printed as the toy
+// prints it (metrics.py measures the angles, gaps and overshoots from the trajectory).
 //
 //   b3ref2 --scene pile200 [--seed S] [--ticks N] [--sleep 0|1] [--recycle 0|1] [--continuous 0|1] [--mass scene|shapes]
 //          [--traj FILE [--traj-every N]] [--log FILE] [--quiet]
@@ -326,6 +329,34 @@ int main( int argc, char** argv )
 		}
 	}
 
+	// the joints (step 6): revolute joints with the scene's frames (from each body's origin, its centre of mass here),
+	// limits and motor; Box3D's defaults otherwise (constraint hertz 60, damping ratio 2, collideConnected false). A servo's
+	// motor speed is set before every step from the angle then (b3RevoluteJoint_GetAngle) by the toy's rule.
+	b3JointId* jids = (b3JointId*)calloc( (size_t)( sc.jointCount > 0 ? sc.jointCount : 1 ), sizeof( b3JointId ) );
+	for ( int k = 0; k < sc.jointCount; ++k )
+	{
+		const SceneJoint* j = sc.joints + k;
+		b3RevoluteJointDef jd = b3DefaultRevoluteJointDef();
+		jd.base.bodyIdA = ids[j->bodyA];
+		jd.base.bodyIdB = ids[j->bodyB];
+		jd.base.localFrameA.p = ( b3Vec3 ){ (float)j->localAnchorA[0], (float)j->localAnchorA[1], (float)j->localAnchorA[2] };
+		jd.base.localFrameA.q.v = ( b3Vec3 ){ (float)j->localFrameA[0], (float)j->localFrameA[1], (float)j->localFrameA[2] };
+		jd.base.localFrameA.q.s = (float)j->localFrameA[3];
+		jd.base.localFrameB.p = ( b3Vec3 ){ (float)j->localAnchorB[0], (float)j->localAnchorB[1], (float)j->localAnchorB[2] };
+		jd.base.localFrameB.q.v = ( b3Vec3 ){ (float)j->localFrameB[0], (float)j->localFrameB[1], (float)j->localFrameB[2] };
+		jd.base.localFrameB.q.s = (float)j->localFrameB[3];
+		jd.enableLimit = j->enableLimit != 0;
+		jd.lowerAngle = (float)j->lowerAngle;
+		jd.upperAngle = (float)j->upperAngle;
+		jd.enableMotor = j->enableMotor != 0 || j->servo != 0;
+		jd.maxMotorTorque = (float)j->maxMotorTorque;
+		jd.motorSpeed = (float)j->motorSpeed;
+		jids[k] = b3CreateRevoluteJoint( world, &jd );
+		char line[640];
+		scene_joint_text( j, k, line, (int)sizeof( line ) );
+		say( "%s\n", line );
+	}
+
 	TrajWriter traj;
 	int trajOk = trajPath ? traj_open( &traj, trajPath, (uint32_t)n, (uint32_t)trajEvery, 1.0 / 60.0 ) : 0;
 	if ( trajPath && !trajOk )
@@ -342,6 +373,19 @@ int main( int argc, char** argv )
 			for ( int i = 0; i < n; ++i )
 			{
 				stepped[i] = sc.bodies[i].isStatic ? 0 : (uint8_t)b3Body_IsAwake( ids[i] );
+			}
+			for ( int k = 0; k < sc.jointCount; ++k ) // the servos: gain (target - angle), capped, in float (the toy's F rule)
+			{
+				const SceneJoint* j = sc.joints + k;
+				if ( j->servo )
+				{
+					float angle = b3RevoluteJoint_GetAngle( jids[k] );
+					float err = (float)scene_servo_target( j, t ) - angle;
+					float speed = (float)j->servoGain * err;
+					float cap = (float)j->servoMaxSpeed;
+					speed = speed < -cap ? -cap : ( speed > cap ? cap : speed );
+					b3RevoluteJoint_SetMotorSpeed( jids[k], speed );
+				}
 			}
 			b3World_Step( world, 1.0f / 60.0f, 4 );
 			TickInfo* k = info + t;
@@ -480,6 +524,7 @@ int main( int argc, char** argv )
 	free( stepped );
 	free( info );
 	free( ids );
+	free( jids );
 	free( boxes );
 	free( made );
 	free( hulls );

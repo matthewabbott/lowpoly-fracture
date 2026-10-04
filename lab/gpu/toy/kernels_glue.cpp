@@ -9,9 +9,10 @@ static GlobalParams_0 g_base;
 #define TWIN_MAX_THREADS 64
 static uint32_t g_counters[TWIN_MAX_THREADS][4];
 
-// The buffers, in kernels.slang's binding order 0..10 then 12..18 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
+// The buffers, in kernels.slang's binding order 0..10 then 12..21 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
 // bodyPose, bodyMass, aabbs, lists, params, hashes; pairs, manifolds, prevManifolds, satAxes, narrowDiag,
-// manifoldHashes, constraints: TOY_BUFFERS entries, the counters' slot 11 unused) with their element counts
+// manifoldHashes, constraints, joints, jointHashes, jointCommands: TOY_BUFFERS entries, the counters' slot 11 unused)
+// with their element counts
 extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 {
 	g_base.hulls_0.data = (Hull_0*)bufs[0];
@@ -50,6 +51,12 @@ extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 	g_base.manifoldHashes_0.count = counts[17];
 	g_base.constraints_0.data = (Constraint_0*)bufs[18];
 	g_base.constraints_0.count = counts[18];
+	g_base.joints_0.data = (Joint_0*)bufs[19];
+	g_base.joints_0.count = counts[19];
+	g_base.jointHashes_0.data = (Hash2_0*)bufs[20];
+	g_base.jointHashes_0.count = counts[20];
+	g_base.jointCommands_0.data = (JointCommand_0*)bufs[21];
+	g_base.jointCommands_0.count = counts[21];
 }
 
 extern "C" const char* toy_twin_info( void )
@@ -58,11 +65,13 @@ extern "C" const char* toy_twin_info( void )
 }
 
 // sizes of the twin's structs, against the C layout: Hull, HullFace, BodyState, BodyPose, BodyMass, Aabb, Params,
-// Hash2, V3, Pair, Manifold, SatAxis, NarrowDiag, Constraint
+// Hash2, V3, Pair, Manifold, SatAxis, NarrowDiag, Constraint, Joint, JointCommand
 extern "C" size_t toy_sizeof( int which )
 {
 	switch ( which )
 	{
+		case 14: return sizeof( Joint_0 );
+		case 15: return sizeof( JointCommand_0 );
 		case 0: return sizeof( Hull_0 );
 		case 1: return sizeof( HullFace_0 );
 		case 2: return sizeof( BodyState_0 );
@@ -101,7 +110,8 @@ extern "C" void toy_reset_saturations( void )
 
 // entry: 0 prepareBodies, 1 integrateVelocities, 2 integratePositions, 3 finalizeBodies, 4 wakeBodies, 5 hashElements,
 // 6 narrowSat, 7 narrowClip, 8 copyManifolds, 9 hashManifolds, 10 prepareContacts, 11 warmStart, 12 pushContacts,
-// 13 relaxContacts, 14 restitution, 15 storeImpulses
+// 13 relaxContacts, 14 restitution, 15 storeImpulses, 16 prepareJoints, 17 warmStartJoints, 18 solveJoints, 19 relaxJoints,
+// 20 hashJoints
 extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux, uint32_t g0, uint32_t g1, int thread )
 {
 	GlobalParams_0 gp = g_base;
@@ -137,5 +147,10 @@ extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux
 		case 13: relaxContacts( &vi, nullptr, &gp ); break;
 		case 14: restitution( &vi, nullptr, &gp ); break;
 		case 15: storeImpulses( &vi, nullptr, &gp ); break;
+		case 16: prepareJoints( &vi, nullptr, &gp ); break;
+		case 17: warmStartJoints( &vi, nullptr, &gp ); break;
+		case 18: solveJoints( &vi, nullptr, &gp ); break;
+		case 19: relaxJoints( &vi, nullptr, &gp ); break;
+		case 20: hashJoints( &vi, nullptr, &gp ); break;
 	}
 }

@@ -96,6 +96,9 @@ typedef double T;
 #define S_VV 30 // squared velocities near rest (the sleep test): Q1.30
 #define S_G 10	// the broadphase grid: 2^-10 m
 #define S_BR 24 // the soft contact's bias rates and 1 / speculative distance (1/s, 1/m): Q8.24
+#define S_JA 28 // joint angles, limits and servo targets: Q3.28 (+-8 rad, so a difference of two angles fits)
+#define S_TQ 16 // motor torques (N m): Q15.16
+#define S_J 22	// the joint's 3x3 point block: reciprocal pivots, multipliers and its inverse, Q9.22
 
 #define HULL_MAX_VERTS 16
 #define HULL_MAX_FACES 24
@@ -390,6 +393,81 @@ LSTRUCT( Constraint )
 #define CON_SOFT 4 // one body is solved as static: Box3D's static softness
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Revolute joints (step 6): Box3D's b3RevoluteJoint, one struct per joint holding the definition (the scene's,
+// quantised), the step's prepared data (prepareJoints) and the impulses (kept from tick to tick: the warm start). Its
+// index is fixed for the run. The CPU's per-tick decisions and commands come in a JointCommand per joint.
+// ---------------------------------------------------------------------------------------------------------------------
+
+LSTRUCT( Joint )
+{
+	// the definition
+	V3 localAnchorA;   // Q8.24: the hinge point in A's body frame, from A's centre of mass
+	V3 localAnchorB;
+	Q4 localFrameA;	   // Q1.30: the joint frame in A's body frame; its z axis is the hinge axis
+	Q4 localFrameB;
+	T lowerAngle;	   // Q3.28 (S_JA)
+	T upperAngle;
+	T maxMotorTorque;  // N m, Q15.16 (S_TQ)
+	T motorSpeed;	   // rad/s, Q11.20: the speed motor's (JOINT_MOTOR without JOINT_SERVO)
+	T servoGain;	   // 1/s, Q8.24: the servo's speed is gain (target - angle), capped at servoMaxSpeed
+	T servoMaxSpeed;   // rad/s, Q11.20
+	// the step's (prepareJoints)
+	Q4 frameAq;		   // the world joint frames (b3RevoluteJoint frameA.q, frameB.q), Q1.30
+	Q4 frameBq;
+	V3 frameAp;		   // the hinge point from each centre of mass, world frame, at prepare (frameA.p, frameB.p), Q8.24
+	V3 frameBp;
+	V3 deltaCenter;	   // pB - pA at prepare, Q8.24
+	V3 axisZ;		   // the hinge axis (frameA's z), Q1.30
+	V3 perpAxisX;	   // the axis block's Jacobians, Q1.30 (the solve keeps them current, for the warm start)
+	V3 perpAxisY;
+	Sym3 invIA;		   // V4: mantissas (2^-eI); zero for a body solved as static
+	Sym3 invIB;
+	Sym3 pointMass;	   // the 3x3 point block's inverse (Gaussian elimination, reciprocal pivots), V4: mantissas (shK)
+	T invMassA;		   // V4: a mantissa (2^-eM); zero for a body solved as static
+	T invMassB;
+	T axisMassXX;	   // the 2x2 axis block's inverse, V4: mantissas (shK2)
+	T axisMassXY;
+	T axisMassYY;
+	T axialMass;	   // 1 / (z . (IA + IB) z), V4: a mantissa (shAx)
+	T angle;		   // the twist angle at prepare, Q3.28
+	T speed;		   // the motor's speed this step (the servo's from the target), Q11.20
+	T maxMotorImpulse; // maxMotorTorque h, eP
+	// the impulses (eP), kept from tick to tick
+	V3 linearImpulse;
+	T perpImpulseX;
+	T perpImpulseY;
+	T motorImpulse;
+	T lowerImpulse;
+	T upperImpulse;
+	T pad;
+	int32_t bodyA;
+	int32_t bodyB;
+	int32_t flags; // JOINT_LIMIT, JOINT_MOTOR, JOINT_SERVO
+	int32_t solve; // the bodies the last prepare solved as dynamic (PAIR_SOLVE_A, PAIR_SOLVE_B)
+	int32_t eP;	   // V4: the impulses' exponent
+	int32_t shMA;  // V4: invMass x impulse -> velocity (Q9.22)
+	int32_t shMB;
+	int32_t shIA;  // V4: invI x angular impulse -> angular velocity (Q11.20)
+	int32_t shIB;
+	int32_t shK;   // V4: pointMass x velocity (Q9.22) -> impulse
+	int32_t shK2;  // V4: the axis block's inverse x angular velocity (Q11.20) -> impulse
+	int32_t shAx;  // V4: axialMass x angular velocity -> impulse
+};
+
+#define JOINT_LIMIT 1 // lower and upper angle limits
+#define JOINT_MOTOR 2 // a speed motor with a torque cap
+#define JOINT_SERVO 4 // the motor's speed from a target angle (the JointCommand's), each step
+
+// Per joint per tick, from the CPU: this tick's servo target (a command) and the stages' decisions
+LSTRUCT( JointCommand )
+{
+	T target;	   // the servo's target angle, Q3.28
+	T pad;
+	int32_t solve; // PAIR_SOLVE_A | PAIR_SOLVE_B: the awake dynamic bodies (0: the joint is not active this tick)
+	int32_t colour;
+};
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Params (every tolerance)
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -443,6 +521,11 @@ LSTRUCT( Params )
 	int32_t enableSleep;
 	int32_t narrowDiag; // write NarrowDiag (the corpus)
 	int32_t restitutionIterations; // Box3D's world default, 2
+	// the joints (step 6): Box3D's constraint softness, b3MakeSoft( min( 60, 0.25 inv_h ), 2, h ) (b3PrepareJoint)
+	T jointBiasRate;	 // 1/s, Q8.24
+	T jointMassScale;	 // Q1.30
+	T jointImpulseScale; // Q1.30
+	T jointPad;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

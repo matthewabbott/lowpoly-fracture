@@ -27,7 +27,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from traj import Traj, dynamic, norm, rel_angles  # noqa: E402
+from traj import Traj, dynamic, norm, qconj, qmul, rel_angles  # noqa: E402
 
 PIT = 2.0  # the walls' inner faces (pile200: walls at +-2.25, 0.25 thick)
 SLOPE = math.radians(25.0)
@@ -162,6 +162,100 @@ def chip(t):
             "end": s[-1][0]}
 
 
+JOINT = re.compile(r"^joint (\d+): bodies (\d+) (\d+) anchorA (\S+) (\S+) (\S+) anchorB (\S+) (\S+) (\S+) frameA (\S+) (\S+) (\S+) (\S+) "
+                   r"frameB (\S+) (\S+) (\S+) (\S+) limit (\d) (\S+) (\S+) motor (\d) (\S+) (\S+) servo (\d) (\S+) (\S+) (\S+) (\d+)", re.M)
+
+
+def parse_joints(text):
+    """The scene's joints from a log's joint lines (the toy and b3ref2 print the same, from the scene's doubles)."""
+    out = []
+    for m in JOINT.finditer(text):
+        g = m.groups()
+        f = [float(x) for x in g[3:17]]
+        out.append({"a": int(g[1]), "b": int(g[2]), "anchorA": f[0:3], "anchorB": f[3:6], "frameA": f[6:10], "frameB": f[10:14],
+                    "limit": g[17] == "1", "lower": float(g[18]), "upper": float(g[19]), "motor": g[20] == "1",
+                    "servo": g[23] == "1", "gain": float(g[24]), "maxSpeed": float(g[25]), "amplitude": float(g[26]), "period": int(g[27])})
+    return out
+
+
+def qrot(q, v):
+    """b3RotateVector: v + 2 q.v x (q.v x v + q.s v), q = (x, y, z, s)."""
+    x, y, z, s = q
+    t = (y * v[2] - z * v[1] + s * v[0], z * v[0] - x * v[2] + s * v[1], x * v[1] - y * v[0] + s * v[2])
+    c = (y * t[2] - z * t[1], z * t[0] - x * t[2], x * t[1] - y * t[0])
+    return (v[0] + 2 * c[0], v[1] + 2 * c[1], v[2] + 2 * c[2])
+
+
+def servo_target(j, tick):
+    """scene.c's scene_servo_target: the triangle wave before step tick."""
+    if not j["servo"] or j["period"] <= 0:
+        return 0.0
+    x = (tick % j["period"]) / j["period"]
+    tri = 4 * x if x < 0.25 else (2 - 4 * x if x < 0.75 else 4 * x - 4)
+    return j["amplitude"] * tri
+
+
+def joint_state(rec, j):
+    """One record's joint: (twist angle about the hinge in rad, the anchors' gap in m, the hinge axes' misalignment in rad),
+    as Box3D's b3RevoluteJoint_GetAngle (polarity, b3GetTwistAngle)."""
+    (pA, qA), (pB, qB) = (rec[j["a"]][0], rec[j["a"]][1]), (rec[j["b"]][0], rec[j["b"]][1])
+    rA, rB = qrot(qA, j["anchorA"]), qrot(qB, j["anchorB"])
+    gap = math.sqrt(sum((pB[i] + rB[i] - pA[i] - rA[i]) ** 2 for i in range(3)))
+    fA, fB = qmul(qA, j["frameA"]), qmul(qB, j["frameB"])
+    if sum(fA[i] * fB[i] for i in range(4)) < 0:
+        fB = tuple(-x for x in fB)
+    r = qmul(qconj(fA), fB)
+    twist = 2 * (math.atan2(-r[2], -r[3]) if r[3] < 0 else math.atan2(r[2], r[3]))
+    n = math.sqrt(sum(x * x for x in r))
+    swing = 2 * math.asin(min(1.0, math.sqrt(r[0] ** 2 + r[1] ** 2) / n))
+    return twist, gap, swing
+
+
+def arm(t, joints, lo=1, hi=None):
+    """Per joint over the records (ticks lo..hi): the largest gap, limit overshoot (beyond lower or upper), axis
+    misalignment, the servo's largest tracking error against its target, and the angle track (for the comparison against
+    D); the limited joint's ticks at a limit (within 1 mrad, or beyond)."""
+    out = []
+    for k, j in enumerate(joints):
+        gap = over = swing = track = gapSweep = 0.0
+        gapAt = overAt = None
+        atLimit = 0
+        angles = {}
+        for i, tick in enumerate(t.ticks):
+            if tick < lo or (hi is not None and tick > hi):
+                continue
+            a, g, s = joint_state(t.rec[i], j)
+            angles[tick] = a
+            if g > gap:
+                gap, gapAt = g, tick
+            if 30 <= tick <= 90:
+                gapSweep = max(gapSweep, g)
+            swing = max(swing, s)
+            if j["limit"]:
+                o = max(j["lower"] - a, a - j["upper"], 0.0)
+                if o > over:
+                    over, overAt = o, tick
+                atLimit += a <= j["lower"] + 1e-3 or a >= j["upper"] - 1e-3
+            if j["servo"] and tick >= 1:
+                track = max(track, abs(a - servo_target(j, tick)))
+        out.append({"gap": gap, "gapAt": gapAt, "gapSweep": gapSweep, "overshoot": over, "overAt": overAt, "swing": swing, "track": track,
+                    "angles": angles,
+                    "atLimit": atLimit, "limit": j["limit"], "servo": j["servo"],
+                    "range": (min(angles.values()), max(angles.values())) if angles else (0, 0)})
+    return out
+
+
+def angle_diff(x, ref, lo=1, hi=120):
+    """The largest difference of a joint's angle against a reference run's over ticks lo..hi (both recorded)."""
+    d, at = 0.0, None
+    for tick in range(lo, hi + 1):
+        if tick in x["angles"] and tick in ref["angles"]:
+            e = abs(x["angles"][tick] - ref["angles"][tick])
+            if e > d:
+                d, at = e, tick
+    return d, at
+
+
 def rms(t, ref, lo=1, hi=120):
     """Position rms (m) of the dynamic bodies over ticks lo..hi against ref (both need those ticks recorded), and the
     largest single difference."""
@@ -230,6 +324,21 @@ def main():
     a.add_argument("--log")
     a = a.parse_args()
     t = Traj(a.file)
+    if a.scene == "arm":
+        if not a.log:
+            raise SystemExit("arm: --log (the run's log, for its joint lines)")
+        joints = parse_joints(open(a.log, errors="replace").read())
+        res = arm(t, joints)
+        ref = arm(Traj(a.ref), joints) if a.ref else None
+        for k, r in enumerate(res):
+            line = (f"joint {k}: gap {r['gap'] * 1e3:.4g} mm (tick {r['gapAt']}), overshoot {r['overshoot'] * 1e3:.4g} mrad (tick {r['overAt']}), "
+                    f"axis error {r['swing'] * 1e3:.4g} mrad, "
+                    f"servo tracking {r['track']:.4g} rad, angles {r['range'][0]:.4f} to {r['range'][1]:.4f}, records at a limit {r['atLimit']}")
+            if ref:
+                d, at = angle_diff(r, ref[k])
+                line += f"; angle vs ref, ticks 1-120: {d * 1e3:.4g} mrad (tick {at})"
+            print(line)
+        return
     fn = {"stack10": stack, "pile200": pile, "bounce": bounce, "ramp": ramp, "ratio": ratio, "chip": chip}[a.scene]
     for k, v in fn(t).items():
         print(f"{k}: {v}")

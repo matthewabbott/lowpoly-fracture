@@ -17,6 +17,9 @@ typedef struct ToyData
 	BodyState* state;
 	BodyPose* pose;
 	BodyMass* mass;
+	int jointCount;
+	Joint* joints;			   // the definitions, the rest zero
+	const SceneJoint* sceneJoints; // the scene's (the servo targets' rule), not owned
 	Params params;
 	int rangeErrors; // values that did not fit their format (V4)
 } ToyData;
@@ -46,5 +49,8 @@ double toy_pos_x( const Pos3* p );
 double toy_pos_y( const Pos3* p );
 double toy_pos_z( const Pos3* p );
 double toy_val( T x, int s );
+
+// A double in format s (the joints' servo targets each tick: Q3.28 in V4)
+T toy_q( double x, int s );
 
 #endif

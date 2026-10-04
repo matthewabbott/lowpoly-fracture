@@ -603,9 +603,142 @@ static void build_chip( Scene* s )
 	b->w[2] = 40.0;
 }
 
+// The joint frame of both arm joints: a rotation of -90 degrees about x, so the frame's z axis (the hinge) is the
+// world's y (b3RotateVector takes (0, 0, 1) to (0, 1, 0))
+static void hinge_up( double q[4] )
+{
+	double h = sqrt( 0.5 );
+	q[0] = -h;
+	q[1] = 0.0;
+	q[2] = 0.0;
+	q[3] = h;
+}
+
+static SceneJoint* add_joint( Scene* s, int a, int b, const double anchorWorld[3] )
+{
+	s->joints = (SceneJoint*)realloc( s->joints, (size_t)( s->jointCount + 1 ) * sizeof( SceneJoint ) );
+	SceneJoint* j = s->joints + s->jointCount++;
+	memset( j, 0, sizeof( *j ) );
+	j->bodyA = a;
+	j->bodyB = b;
+	for ( int i = 0; i < 3; ++i )
+	{
+		j->localAnchorA[i] = anchorWorld[i] - s->bodies[a].p[i]; // the bodies start unrotated
+		j->localAnchorB[i] = anchorWorld[i] - s->bodies[b].p[i];
+	}
+	hinge_up( j->localFrameA );
+	hinge_up( j->localFrameB );
+	return j;
+}
+
+// arm: a static base (body 1, 0.3 x 0.5 x 0.3 m, its top at 0.5 m); link 1 (body 2: 1 m x 10 cm x 10 cm, 10 kg) hinged
+// about the vertical on the base's axis, 3 cm above it, driven by a servo (torque cap 150 N m, gain 8/s, at most 1.5
+// rad/s) whose target sweeps +-1 rad as a triangle wave of 6 s; link 2 (body 3: 0.8 m, 8 kg) hinged to link 1's end
+// (a 4 cm gap) with limits +-0.5 rad and no motor. Both links lie along +x at y 0.58 m; positive angles turn toward -z.
+// A stack of four 0.2 m cubes (bodies 4 to 7, 8 kg each) stands at (1.2, 0.8) in x, z (1.44 m out, at -0.59 rad), in
+// link 2's path on the return sweep (reached near tick 245, after the first 2 s): the links span 0.53 to 0.63 m in
+// height, the third and fourth cubes 0.4 to 0.8. Each cube is offset by up to 1.5 cm and turned by up to 3.4 degrees
+// about y. (A stack's face-on-face contacts are ties from tick 1, its settling differs by dialect at the mm level: the
+// stack is reached after the 2 s over which the joint's angle is compared with D's.)
+static void build_arm( Scene* s )
+{
+	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
+	add_body( s, ground, 1, 0.0, -0.5, 0.0, 0.0 );
+	add_body( s, add_box_hull( s, 0.15, 0.25, 0.15 ), 1, 0.0, 0.25, 0.0, 0.0 );
+	double y = 0.58;
+	add_body( s, add_box_hull( s, 0.5, 0.05, 0.05 ), 0, 0.5, y, 0.0, 1000.0 );
+	add_body( s, add_box_hull( s, 0.4, 0.05, 0.05 ), 0, 1.44, y, 0.0, 1000.0 );
+	int cube = add_box_hull( s, 0.1, 0.1, 0.1 );
+	static const double dx[4] = { 0.0, 0.012, -0.008, 0.006 }, dz[4] = { 0.0, -0.006, 0.01, -0.012 }, yaw[4] = { 0.0, 0.02, -0.015, 0.03 };
+	for ( int i = 0; i < 4; ++i )
+	{
+		SceneBody* b = add_body( s, cube, 0, 1.2 + dx[i], 0.1 + 0.2 * i, 0.8 + dz[i], 1000.0 );
+		double l = sqrt( 1.0 + yaw[i] * yaw[i] );
+		double q[4] = { 0.0, yaw[i] / l, 0.0, 1.0 / l }; // about y by the angle whose half-angle tangent is yaw[i]
+		set_quat( b, q );
+	}
+	double hinge1[3] = { 0.0, y, 0.0 };
+	SceneJoint* j = add_joint( s, 1, 2, hinge1 );
+	j->enableMotor = 1;
+	j->maxMotorTorque = 150.0;
+	j->servo = 1;
+	j->servoGain = 8.0;
+	j->servoMaxSpeed = 1.5;
+	j->servoAmplitude = 1.0;
+	j->servoPeriod = 360;
+	double hinge2[3] = { 1.02, y, 0.0 };
+	j = add_joint( s, 2, 3, hinge2 );
+	j->enableLimit = 1;
+	j->lowerAngle = -0.5;
+	j->upperAngle = 0.5;
+}
+
+// grid:K: K copies of pile200's pit and bodies (the same seed, so the same draws) on a square grid 6.5 m apart, on one
+// floor; sleep is the caller's (step 7 times it off)
+static void build_grid( Scene* s, int K, uint64_t seed )
+{
+	int side = 1;
+	while ( side * side < K )
+	{
+		++side;
+	}
+	double span = 6.5 * ( side - 1 );
+	int floorHull = add_box_hull( s, span * 0.5 + 3.0, 0.5, span * 0.5 + 3.0 );
+	add_body( s, floorHull, 1, span * 0.5, -0.5, span * 0.5, 0.0 );
+	int wallX = add_box_hull( s, 0.25, 1.25, 2.5 );
+	int wallZ = add_box_hull( s, 2.5, 1.25, 0.25 );
+	for ( int c = 0; c < K; ++c )
+	{
+		double ox = 6.5 * ( c % side ), oz = 6.5 * ( c / side );
+		add_body( s, wallX, 1, ox + 2.25, 1.25, oz, 0.0 );
+		add_body( s, wallX, 1, ox - 2.25, 1.25, oz, 0.0 );
+		add_body( s, wallZ, 1, ox, 1.25, oz + 2.25, 0.0 );
+		add_body( s, wallZ, 1, ox, 1.25, oz - 2.25, 0.0 );
+		Pcg r = pcg_seed( seed, 7 );
+		for ( int k = 0; k < 200; ++k )
+		{
+			int layer = k / 25, cell = k % 25;
+			double x = -1.4 + 0.7 * ( cell % 5 );
+			double z = -1.4 + 0.7 * ( cell / 5 );
+			double y = 3.0 + 0.7 * layer;
+			double hx = pcg_range( &r, 0.1, 0.2 );
+			double hy = pcg_range( &r, 0.1, 0.2 );
+			double hz = pcg_range( &r, 0.1, 0.2 );
+			int hull = k % 5 == 4 ? add_chunk_hull( s, &r, hx, hy, hz ) : add_box_hull( s, hx, hy, hz );
+			SceneBody* b = add_body( s, hull, 0, ox + x, y, oz + z, 1000.0 );
+			double q[4];
+			pcg_unit_quat( &r, q );
+			set_quat( b, q );
+		}
+	}
+}
+
+double scene_servo_target( const SceneJoint* j, int tick )
+{
+	if ( !j->servo || j->servoPeriod <= 0 )
+	{
+		return 0.0;
+	}
+	int t = tick % j->servoPeriod;
+	double x = (double)t / (double)j->servoPeriod;
+	double tri = x < 0.25 ? 4.0 * x : x < 0.75 ? 2.0 - 4.0 * x : 4.0 * x - 4.0;
+	return j->servoAmplitude * tri;
+}
+
+void scene_joint_text( const SceneJoint* j, int k, char* out, int size )
+{
+	snprintf( out, (size_t)size,
+			  "joint %d: bodies %d %d anchorA %.17g %.17g %.17g anchorB %.17g %.17g %.17g frameA %.17g %.17g %.17g %.17g frameB %.17g %.17g "
+			  "%.17g %.17g limit %d %.17g %.17g motor %d %.17g %.17g servo %d %.17g %.17g %.17g %d",
+			  k, j->bodyA, j->bodyB, j->localAnchorA[0], j->localAnchorA[1], j->localAnchorA[2], j->localAnchorB[0], j->localAnchorB[1],
+			  j->localAnchorB[2], j->localFrameA[0], j->localFrameA[1], j->localFrameA[2], j->localFrameA[3], j->localFrameB[0], j->localFrameB[1],
+			  j->localFrameB[2], j->localFrameB[3], j->enableLimit, j->lowerAngle, j->upperAngle, j->enableMotor, j->maxMotorTorque, j->motorSpeed,
+			  j->servo, j->servoGain, j->servoMaxSpeed, j->servoAmplitude, j->servoPeriod );
+}
+
 const char* scene_names( void )
 {
-	return "stack10 (stackN) pile200 bounce ramp ratio chip";
+	return "stack10 (stackN) pile200 bounce ramp ratio chip arm grid:K";
 }
 
 // x rounded to float, then to the grid 2^-bits (to nearest, halves up): a value every dialect stores exactly. The float
@@ -663,6 +796,10 @@ int scene_build( Scene* s, const char* name, uint64_t seed )
 		build_ratio( s );
 	else if ( strcmp( name, "chip" ) == 0 )
 		build_chip( s );
+	else if ( strcmp( name, "arm" ) == 0 )
+		build_arm( s );
+	else if ( strncmp( name, "grid:", 5 ) == 0 && atoi( name + 5 ) >= 1 && atoi( name + 5 ) <= 256 )
+		build_grid( s, atoi( name + 5 ), seed );
 	else
 		return 0;
 	scene_round_start( s );
@@ -673,5 +810,6 @@ void scene_free( Scene* s )
 {
 	free( s->bodies );
 	free( s->hulls );
+	free( s->joints );
 	memset( s, 0, sizeof( *s ) );
 }

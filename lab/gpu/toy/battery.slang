@@ -32,6 +32,8 @@
 #define H_RECIPE 20
 #define H_SQRT 21
 #define H_DISC 22
+#define H_TWIST 23
+#define H_INVSYM 24
 
 [shader( "compute" )]
 [numthreads( 64, 1, 1 )]
@@ -273,6 +275,31 @@ void battery( uint3 tid : SV_DispatchThreadID )
 		o.r0 = sc;
 		o.r1 = snap( M( sc, v.a, S_MS ) );
 		o.r2 = snap( M( sc, v.b, S_MS ) );
+	}
+	else if ( h == H_TWIST )
+	{
+		// the joint's twist angle (Q3.28) of a quaternion (x, y, z, s) = (a, b, c, d), and of (c, d, e, f)
+		o.r0 = twistAngle( q4( v.a, v.b, v.c, v.d ) );
+		o.r1 = twistAngle( q4( v.c, v.d, v.e, v.f ) );
+	}
+	else if ( h == H_INVSYM )
+	{
+		// the joint's 3x3 point block inverse: a symmetric positive definite matrix (xx, xy, xz, yy, yz, zz) = (a .. f)
+		Sym3 m;
+		m.xx = v.a;
+		m.xy = v.b;
+		m.xz = v.c;
+		m.yy = v.d;
+		m.yz = v.e;
+		m.zz = v.f;
+		Sym3 r = invertSym( m, one );
+		o.r0 = r.xx;
+		o.r1 = r.xy;
+		o.r2 = r.xz;
+		o.r3 = r.yy;
+		H2 hh = hashT( hashT( hashStart( 0u, 1u ), r.yz ), r.zz );
+		o.u0 = hh.a;
+		o.u1 = hh.b;
 	}
 	batOut[i] = o;
 }

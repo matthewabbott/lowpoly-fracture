@@ -7,19 +7,21 @@
 
 Gate 1: each dialect's battery on every GPU and the twin of each compiler: every word identical, lpDivQ31 equal to C's
 division, the battery hashes equal across compilers. Gate 2: stack10 and pile200 (and pile200 without gravity, one body
-pushed: sleep and wake), chip, ramp, bounce and ratio per dialect and compiler at 1 and 8 threads: per-tick hashes
-(bodies, manifolds, stages) equal across thread counts and compilers, the floating-point sentinel clean, V4's saturation
-counters at 0; F and V4 positions against D's.
+pushed: sleep and wake), chip, ramp, bounce, ratio and arm (step 6's joints) per dialect and compiler at 1 and 8 threads:
+per-tick hashes (bodies, manifolds, stages; joints when the scene has them) equal across thread counts and compilers, the
+floating-point sentinel clean, V4's saturation counters at 0; F and V4 positions against D's.
 Gate 3: the narrowphase's corpus (narrow_<d>): D's results as the reference, F and V4 pick D's axis and feature ids on
 every pair outside ties (both passes: fresh, and cached with warm starts), the corpus hashes equal across compilers;
 the corpus on every GPU against the twin is reported (desired, not required).
 Gate 4: the contact solve's physical sanity on the twins of the first compiler, every dialect, 1 and 8 threads (the
 threads must agree, the sentinel stay clean and V4's saturations at 0; the numbers are reported, step 4b judges them
 against Box3D): stack10 for 3,600 ticks with sleep off and on, pile200 over eight seeds, bounce, ramp, ratio and chip,
-each through its trajectory (traj.py's summaries).
+each through its trajectory (traj.py's summaries), and the arm for 1,200 (its joints' gaps, overshoots and angles,
+metrics.py's arm).
 Gate 5 (decision point 2): the whole tick on every GPU in --gpus (all by default) beside the twin of the first compiler,
 F and V4: stack10 for 3,600 ticks with sleep off and on, pile200 over seeds 1 to 8 for 1,200 ticks, bounce, ramp, ratio
-and chip for 600: every tick's hashes identical to the twin's, saturations 0 (as the twin's); and every compiler's twins
+and chip for 600, the arm for 1,200 with sleep on and off (step 6): every tick's hashes identical to the twin's,
+saturations 0 (as the twin's); and every compiler's twins
 (F, V4 and D, 1 and 8 threads) identical to the reference files in toy/results/ref (written by the Windows MSVC twin:
 --write-ref, first compiler). A GPU that differs is traced (toy --trace) to its first differing word. The GPUs' costs
 are reported.
@@ -33,16 +35,20 @@ import sys
 LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = ".exe" if sys.platform == "win32" else ""
 SCENES = [("stack10", []), ("pile200", []), ("pile200-wake", ["--gravity", "0", "--push", "112,1.5,0,0.5"]), ("chip", []), ("ramp", []),
-          ("bounce", []), ("ratio", [])]
+          ("bounce", []), ("ratio", []), ("arm", [])]
 # gate 5: name (the reference file's), scene, ticks, extra arguments
 GATE5 = [("stack10-sleep0", "stack10", 3600, ["--sleep", "0"]), ("stack10", "stack10", 3600, [])] + \
         [(f"pile200-s{k}", "pile200", 1200, ["--seed", str(k)]) for k in range(1, 9)] + \
-        [(s, s, 600, []) for s in ("bounce", "ramp", "ratio", "chip")]
+        [(s, s, 600, []) for s in ("bounce", "ramp", "ratio", "chip")] + \
+        [("arm", "arm", 1200, []), ("arm-sleep0", "arm", 1200, ["--sleep", "0"])]
 REF = os.path.join(LAB, "toy", "results", "ref")
 # gate 4: name, scene, ticks, extra arguments
 SANITY = [("stack10-awake", "stack10", 3600, ["--sleep", "0"]), ("stack10-sleep", "stack10", 3600, [])] + \
          [(f"pile200-s{k}", "pile200", 3600, ["--seed", str(k)]) for k in range(1, 9)] + \
-         [("bounce", "bounce", 300, []), ("ramp", "ramp", 600, []), ("ratio", "ratio", 1200, []), ("chip", "chip", 600, [])]
+         [("bounce", "bounce", 300, []), ("ramp", "ramp", 600, []), ("ratio", "ratio", 1200, []), ("chip", "chip", 600, []),
+          ("arm", "arm", 1200, [])]
+# the final line's hashes (a scene with joints adds its joints' hash)
+FINAL = r"run hash ([0-9a-f]+), final bodies ([0-9a-f]+) manifolds ([0-9a-f]+) stages ([0-9a-f]+)(?: joints [0-9a-f]+)?, threads (\w+)"
 
 
 def run(exe, args, log):
@@ -92,7 +98,7 @@ def gate2(a, comps, bad):
                 elif d != "D":
                     args += ["--pos-ref", ref]
                 code, text = run(exe, args, log)
-                m = re.search(r"run hash ([0-9a-f]+), final bodies ([0-9a-f]+) manifolds ([0-9a-f]+) stages ([0-9a-f]+), threads (\w+)", text)
+                m = re.search(FINAL, text)
                 ticks = re.findall(r"^ *\d+  [0-9a-f]{16}  [0-9a-f]{16}  [0-9a-f]{16} .*$", text, re.M)
                 runs[(d, c)] = (m.group(1) if m else None, ticks)
                 pos = re.findall(r"pose vs \S+, ticks (\d+-\d+): position rms (\S+) m, max (\S+) m.*?rotation rms (\S+) rad, max (\S+) rad", text)
@@ -146,6 +152,7 @@ def gate3(a, comps, bad):
 def gate4(a, comps, bad):
     print("gate 4: the contact solve's sanity (twins, " + comps[0] + ")")
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import metrics  # noqa: E402
     import traj  # noqa: E402
     import contextlib
     import io
@@ -158,10 +165,16 @@ def gate4(a, comps, bad):
             code, text = run(exe, args, log)
             m = re.search(r"run hash ([0-9a-f]+).*?threads (\w+), saturations (\d+)", text)
             solve = re.search(r"^solve: (.*?); at most", text, re.M)
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                getattr(traj, scene)(traj.Traj(tr))
-            summary = buf.getvalue().strip().split(": ", 1)[-1]
+            if scene == "arm":  # the joints, from the trajectory and the log's joint lines (metrics.py)
+                res = metrics.arm(traj.Traj(tr), metrics.parse_joints(text))
+                summary = "; ".join(f"joint {k}: gap {r['gap'] * 1e3:.3g} mm, overshoot {r['overshoot'] * 1e3:.3g} mrad, axis error "
+                                    f"{r['swing'] * 1e3:.3g} mrad, angles {r['range'][0]:.3f} to {r['range'][1]:.3f}"
+                                    for k, r in enumerate(res))
+            else:
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    getattr(traj, scene)(traj.Traj(tr))
+                summary = buf.getvalue().strip().split(": ", 1)[-1]
             print(f"  {name:14} {d:2} {summary}")
             print(f"  {'':14} {'':2} toy: {solve.group(1) if solve else '?'}; threads {m.group(2) if m else '?'}, saturations "
                   f"{m.group(3) if m else '?'}")

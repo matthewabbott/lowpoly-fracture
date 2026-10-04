@@ -53,6 +53,11 @@ static T QT_up( double x, int s )
 #endif
 }
 
+T toy_q( double x, int s )
+{
+	return QT( x, s );
+}
+
 double toy_val( T x, int s )
 {
 #if defined( DIALECT_V4 )
@@ -289,12 +294,45 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 		}
 #if defined( DIALECT_V4 )
 		M->eM = exp_for( b->invMass, 31 ); // mantissa in [2^30, 2^31)
+		if ( round_scaled( b->invMass, M->eM ) > 2147483647LL )
+		{
+			M->eM -= 1; // a value a hair under a power of two (a mass of 8 - 2e-15 kg) rounds up to 2^31: one bit less (step 6)
+		}
 		M->eI = exp_for( rowMax, 30 );	   // row sums below 2^30, so R S R^T fits (its entries are bounded by them)
 #endif
 		M->invMass = QT( b->invMass, M->eM );
 		M->invIl = qsym( b->invI, M->eI );
 		M->friction = QT( b->friction, S_MS );
 		M->restitution = QT( b->restitution, S_MS );
+	}
+
+	// joints: the definitions (the solver's fields zero until the first prepare)
+	d->jointCount = sc->jointCount;
+	d->sceneJoints = sc->joints;
+	d->joints = (Joint*)calloc( (size_t)( sc->jointCount > 0 ? sc->jointCount : 1 ), sizeof( Joint ) );
+	for ( int k = 0; k < sc->jointCount; ++k )
+	{
+		const SceneJoint* s = sc->joints + k;
+		Joint* J = d->joints + k;
+		J->localAnchorA = qv3( s->localAnchorA, S_R );
+		J->localAnchorB = qv3( s->localAnchorB, S_R );
+		J->localFrameA.x = QT( s->localFrameA[0], S_Q );
+		J->localFrameA.y = QT( s->localFrameA[1], S_Q );
+		J->localFrameA.z = QT( s->localFrameA[2], S_Q );
+		J->localFrameA.s = QT( s->localFrameA[3], S_Q );
+		J->localFrameB.x = QT( s->localFrameB[0], S_Q );
+		J->localFrameB.y = QT( s->localFrameB[1], S_Q );
+		J->localFrameB.z = QT( s->localFrameB[2], S_Q );
+		J->localFrameB.s = QT( s->localFrameB[3], S_Q );
+		J->lowerAngle = QT( s->lowerAngle, S_JA );
+		J->upperAngle = QT( s->upperAngle, S_JA );
+		J->maxMotorTorque = QT( s->maxMotorTorque, S_TQ );
+		J->motorSpeed = QT( s->motorSpeed, S_W );
+		J->servoGain = QT( s->servoGain, S_BR );
+		J->servoMaxSpeed = QT( s->servoMaxSpeed, S_W );
+		J->bodyA = s->bodyA;
+		J->bodyB = s->bodyB;
+		J->flags = ( s->enableLimit ? JOINT_LIMIT : 0 ) | ( s->enableMotor ? JOINT_MOTOR : 0 ) | ( s->servo ? JOINT_SERVO | JOINT_MOTOR : 0 );
 	}
 
 	// Params: F computes in float as Box3D does (h = dt / 4); V4 rounds the doubles; D keeps them
@@ -362,6 +400,15 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 		P->staBiasRate = mass[1] * bias[1];
 		P->staMassScale = mass[1];
 		P->staImpulseScale = imp[1];
+		// the joints' softness (b3PrepareJoint): b3MakeSoft( min( 60, 0.25 inv_h ), 2, h ), its bias rate alone
+		float jhz = 60.0f < 0.25f * P->inv_h ? 60.0f : 0.25f * P->inv_h;
+		float omega = 2.0f * 3.14159265359f * jhz;
+		float a1 = 2.0f * 2.0f + h * omega;
+		float a2 = h * omega * a1;
+		float a3 = 1.0f / ( 1.0f + a2 );
+		P->jointBiasRate = omega / a1;
+		P->jointMassScale = a2 * a3;
+		P->jointImpulseScale = a3;
 	}
 #else
 	{
@@ -384,6 +431,14 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 		P->staBiasRate = QT( mass[1] * bias[1], S_BR );
 		P->staMassScale = QT( mass[1], S_MS );
 		P->staImpulseScale = QT( imp[1], S_MS );
+		double jhz = 60.0 < 0.25 * 240.0 ? 60.0 : 0.25 * 240.0;
+		double omega = 2.0 * 3.14159265358979323846 * jhz;
+		double a1 = 2.0 * 2.0 + h * omega;
+		double a2 = h * omega * a1;
+		double a3 = 1.0 / ( 1.0 + a2 );
+		P->jointBiasRate = QT( omega / a1, S_BR );
+		P->jointMassScale = QT( a2 * a3, S_MS );
+		P->jointImpulseScale = QT( a3, S_MS );
 	}
 #endif
 	P->negContactSpeed = QT( -st->contactSpeed, S_V );
@@ -421,5 +476,6 @@ void toy_free_data( ToyData* d )
 	free( d->state );
 	free( d->pose );
 	free( d->mass );
+	free( d->joints );
 	memset( d, 0, sizeof( *d ) );
 }

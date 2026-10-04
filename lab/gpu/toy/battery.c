@@ -58,12 +58,14 @@ enum
 	H_RECIPE,
 	H_SQRT,
 	H_DISC,
+	H_TWIST,
+	H_INVSYM,
 	H_COUNT
 };
 static const char* g_names[H_COUNT] = { "mul",		"sum2/dif2", "sum3",	 "rescale",	   "select",	"snap",		 "recip",
 										"rsqrt",	"divClamp",	 "lpDivQ31", "clz",		   "atan2",		"quatNormalize", "quatMul",
 										"rotate",	"pos/grid",	 "unit3/len3", "posDelta", "frame",		"msb/shiftOf", "recipE",
-										"sqrtT",	"discScale" };
+										"sqrtT",	"discScale", "twistAngle", "invertSym" };
 
 static FILE* g_log;
 
@@ -278,12 +280,128 @@ static void quat_input( Pcg* r, double q[4] )
 	}
 }
 
+// The twist angle's quaternions: unit ones, pure twists about z (any sign of s), s = 0, negated ones, and z = 0
+static void twist_input( Pcg* r, double q[4], double e[2] )
+{
+	pcg_unit_quat( r, q );
+	uint32_t c = pcg_next( r ) % 5u;
+	if ( c == 1 )
+	{
+		double t = pcg_range( r, -8.0, 8.0 ); // a pure twist: (z, s) = (t, 1) / sqrt(1 + t^2), either sign of s
+		double l = sqrt( 1.0 + t * t );
+		uint32_t neg = pcg_next( r ) & 1u;
+		q[0] = 0.0;
+		q[1] = 0.0;
+		q[2] = t / l;
+		q[3] = neg ? -1.0 / l : 1.0 / l;
+	}
+	else if ( c == 2 )
+	{
+		q[3] = 0.0;
+	}
+	else if ( c == 3 )
+	{
+		for ( int i = 0; i < 4; ++i )
+		{
+			q[i] = -q[i];
+		}
+	}
+	else if ( c == 4 )
+	{
+		q[2] = 0.0;
+	}
+	e[0] = pcg_range( r, -1.0, 1.0 );
+	e[1] = pcg_range( r, -1.0, 1.0 );
+}
+
+// A symmetric positive definite matrix B^T B + lambda I (B's entries in [-1, 1], lambda log-uniform from 2^-9 to 0.5, one
+// in sixteen near singular at 1e-6), scaled so its largest diagonal entry is in [0.5, 1): the joint's normalised point
+// block (V4's Q1.30)
+static void spd_input( Pcg* r, double m[6] )
+{
+	double b[3][3];
+	for ( int i = 0; i < 3; ++i )
+	{
+		for ( int j = 0; j < 3; ++j )
+		{
+			b[i][j] = pcg_range( r, -1.0, 1.0 );
+		}
+	}
+	double lambda = fabs( pcg_log( r, -9, -1 ) );
+	uint32_t near = pcg_next( r ) % 16u;
+	lambda = near == 0 ? 1e-6 : lambda;
+	double a[3][3];
+	for ( int i = 0; i < 3; ++i )
+	{
+		for ( int j = 0; j < 3; ++j )
+		{
+			a[i][j] = b[0][i] * b[0][j] + b[1][i] * b[1][j] + b[2][i] * b[2][j] + ( i == j ? lambda : 0.0 );
+		}
+	}
+	double mx = a[0][0] > a[1][1] ? a[0][0] : a[1][1];
+	mx = a[2][2] > mx ? a[2][2] : mx;
+	double u = pcg_range( r, 0.5, 0.999 );
+	double s = u / mx;
+	m[0] = a[0][0] * s;
+	m[1] = a[0][1] * s;
+	m[2] = a[0][2] * s;
+	m[3] = a[1][1] * s;
+	m[4] = a[1][2] * s;
+	m[5] = a[2][2] * s;
+}
+
 static void gen_vec( int h, BatIn* v, Pcg* r )
 {
 	memset( v, 0, sizeof( *v ) );
 	double q[4];
 	switch ( h )
 	{
+		case H_TWIST:
+		{
+			double e[2];
+			twist_input( r, q, e );
+#if defined( DIALECT_V4 )
+			v->a = q_of( q[0], S_Q );
+			v->b = q_of( q[1], S_Q );
+			v->c = q_of( q[2], S_Q );
+			v->d = q_of( q[3], S_Q );
+			v->e = q_of( e[0], S_Q );
+			v->f = q_of( e[1], S_Q );
+#else
+			v->a = (T)q[0];
+			v->b = (T)q[1];
+			v->c = (T)q[2];
+			v->d = (T)q[3];
+			v->e = (T)e[0];
+			v->f = (T)e[1];
+#endif
+			break;
+		}
+		case H_INVSYM:
+		{
+			double m[6];
+			spd_input( r, m );
+#if defined( DIALECT_V4 )
+			v->a = q_of( m[0], S_Q );
+			v->b = q_of( m[1], S_Q );
+			v->c = q_of( m[2], S_Q );
+			v->d = q_of( m[3], S_Q );
+			v->e = q_of( m[4], S_Q );
+			v->f = q_of( m[5], S_Q );
+#else
+			for ( int i = 0; i < 6; ++i ) // the matrix the kernel gets is snapped (F: entries under 2^-30 are +0)
+			{
+				m[i] = fabs( m[i] ) < ldexp( 1.0, -30 ) ? 0.0 : m[i];
+			}
+			v->a = (T)m[0];
+			v->b = (T)m[1];
+			v->c = (T)m[2];
+			v->d = (T)m[3];
+			v->e = (T)m[4];
+			v->f = (T)m[5];
+#endif
+			break;
+		}
 #if defined( DIALECT_V4 )
 		case H_MUL:
 			v->a = q_value( r );
@@ -1020,6 +1138,55 @@ static void accuracy( const Battery* b, const BatOut* o )
 	}
 	say( "accuracy (twin): sqrtT max rel %.3g (%d), recipE max rel %.3g (%d), discScale max rel %.3g (%d clamped), %d not exactly 1 inside\n", sq,
 		 nsq, re, nre, ds, nds, notOne );
+	// the joint's: twistAngle against 2 atan2 (z, s) with s's sign taken out (C's atan2 as the reference, the inputs as
+	// the kernel sees them), invertSym against the double inverse (relative to its largest entry; V4: only where every
+	// entry fits Q9.22)
+	double tw = 0.0, iv = 0.0;
+	int ntw = 0, niv = 0, nbig = 0;
+	for ( int i = b->start[H_TWIST]; i < b->start[H_TWIST + 1]; ++i )
+	{
+		for ( int k = 0; k < 2; ++k )
+		{
+			double z = snapd( val( k ? b->in[i].e : b->in[i].c, S_Q ) ) + 0.0, s = snapd( val( k ? b->in[i].f : b->in[i].d, S_Q ) ) + 0.0;
+			double got = val( k ? o[i].r1 : o[i].r0, S_JA );
+			double ref = ( z == 0.0 && s == 0.0 ) ? 0.0 : 2.0 * ( s < 0.0 ? atan2( -z, -s ) : atan2( z, s ) );
+			double e = fabs( got - ref );
+			tw = e > tw ? e : tw;
+			++ntw;
+		}
+	}
+	for ( int i = b->start[H_INVSYM]; i < b->start[H_INVSYM + 1]; ++i )
+	{
+		const BatIn* v = b->in + i;
+		double a = val( v->a, S_Q ), x = val( v->b, S_Q ), c = val( v->c, S_Q ), d = val( v->d, S_Q ), e = val( v->e, S_Q ), f = val( v->f, S_Q );
+		double A = d * f - e * e, B = c * e - x * f, C = x * e - c * d;
+		double det = a * A + x * B + c * C;
+		double ref[4] = { A / det, B / det, C / det, ( a * f - c * c ) / det };
+		double got[4] = { val( o[i].r0, S_J ), val( o[i].r1, S_J ), val( o[i].r2, S_J ), val( o[i].r3, S_J ) };
+		double mx = 0.0, err = 0.0;
+		for ( int k = 0; k < 4; ++k )
+		{
+			mx = fabs( ref[k] ) > mx ? fabs( ref[k] ) : mx;
+		}
+		mx = fabs( ( a * d - x * x ) / det ) > mx ? fabs( ( a * d - x * x ) / det ) : mx;
+#if defined( DIALECT_V4 )
+		if ( mx >= 256.0 ) // near the format's limit (or saturated): not judged
+		{
+			++nbig;
+			continue;
+		}
+#endif
+		for ( int k = 0; k < 4; ++k )
+		{
+			err = fabs( got[k] - ref[k] ) > err ? fabs( got[k] - ref[k] ) : err;
+		}
+		err /= mx;
+		iv = err > iv ? err : iv;
+		++niv;
+	}
+	say( "accuracy (twin): twistAngle max abs %.3g rad (%d), invertSym max error relative to the largest entry %.3g (%d; %d near V4's limit "
+		 "left out)\n",
+		 tw, ntw, iv, niv, nbig );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

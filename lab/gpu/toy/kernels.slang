@@ -1,6 +1,6 @@
 // kernels.slang: the toy's GPU stages so far (DESIGN.md "Pipeline per tick"), one source for the three dialects
-// through num.slang; the narrowphase is in narrow.slang and the contact solve in solve.slang (included below), the
-// body kernels here. Every kernel takes an index list: pc.start
+// through num.slang; the narrowphase is in narrow.slang, the contact solve in solve.slang and the revolute joint in
+// joint.slang (included below), the body kernels here. Every kernel takes an index list: pc.start
 // and pc.count into `lists`, never "the world", so a unit can later be stepped alone. No atomics or groupshared memory
 // (the saturation counter aside).
 #define TOY_COUNTERS_BINDING 11
@@ -25,14 +25,19 @@
 [[vk::binding( 16, 0 )]] RWStructuredBuffer<NarrowDiag> narrowDiags; // diagnostics (Params.narrowDiag), by pair
 [[vk::binding( 17, 0 )]] RWStructuredBuffer<Hash2> manifoldHashes;	 // by pair
 [[vk::binding( 18, 0 )]] RWStructuredBuffer<Constraint> constraints; // the contact solve's, by pair (prepareContacts)
+[[vk::binding( 19, 0 )]] RWStructuredBuffer<Joint> joints;			 // the revolute joints (step 6), by joint
+[[vk::binding( 20, 0 )]] RWStructuredBuffer<Hash2> jointHashes;		 // by joint
+[[vk::binding( 21, 0 )]] StructuredBuffer<JointCommand> jointCommands; // this tick's targets and decisions, by joint
 [[vk::push_constant]] ConstantBuffer<Push> pc;
 
 // hash categories
 #define CAT_BODY 1u
 #define CAT_MANIFOLD 2u
+#define CAT_JOINT 3u
 
 #include "narrow.slang"
 #include "solve.slang"
+#include "joint.slang"
 
 // World inverse inertia (R invIl R^T, the mantissa keeping eI) and the integer AABB: the local bounds' centre rotated
 // and the half extents through |R|, plus the margin, around the position, on the 2^-10 m grid.

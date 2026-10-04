@@ -40,6 +40,22 @@ typedef struct Stages
 	int32_t* woken; // bodies woken this tick (their state is reset on the GPU)
 	int wokenCount;
 
+	// joints (step 6): fixed for the run (stages_set_joints), and this tick's decisions. A joint joins its bodies'
+	// islands and wakes a sleeping one as a touching pair does; jointed bodies never make a pair (Box3D's collideConnected
+	// false); joints are coloured before the pairs, in index order.
+	int jointCount;
+	const int32_t* jointA; // the caller's
+	const int32_t* jointB;
+	uint64_t* jointKeys; // the jointed bodies' pair keys, sorted and unique (the broadphase's filter)
+	int jointKeyCount;
+	uint8_t* jointActive; // per joint: at least one awake body
+	int32_t* jointColour; // per joint: its colour (-1: not active)
+	int32_t* jointFlags;  // per joint: PAIR_SOLVE_*
+	int32_t* jointActiveList; // the active joints, index order
+	int jointActiveCount, jointOverflow;
+	int jointColourStart[STAGE_MAX_COLOURS + 2]; // into jointColourList, per colour then the overflow
+	int32_t* jointColourList;
+
 	// scratch
 	int pairCap;
 	uint64_t* sortA;
@@ -54,13 +70,17 @@ typedef struct Stages
 void stages_init( Stages* s, int bodyCount, const uint8_t* isStatic );
 void stages_free( Stages* s );
 
+// The run's joints (bodies a[k], b[k]; the arrays stay the caller's). No joints: every decision as before step 6.
+void stages_set_joints( Stages* s, int count, const int32_t* a, const int32_t* b );
+
 // One tick. aabbs: every body's (the GPU's prepareBodies); sleepTicks: every body's counter (the GPU's finalize, last
 // tick); prevTouching: per last tick's pair, whether its manifold had points (NULL: every pair touches, step 2), for
 // waking and islands (colouring takes every active pair).
 void stages_tick( Stages* s, const Aabb* aabbs, const int32_t* sleepTicks, const uint8_t* prevTouching, int sleepTicksNeeded,
 				  int enableSleep );
 
-// Everything the stages decided this tick, hashed (keys, prevIndex, colours, islands, sleep, the awake list)
+// Everything the stages decided this tick, hashed (keys, prevIndex, colours, islands, sleep, the awake list; the joints'
+// activity, flags and colours when there are joints)
 uint64_t stages_hash( const Stages* s );
 
 // LSD radix sort of 64-bit keys, 16 bits a pass (passes where every key has the same digit are skipped)
