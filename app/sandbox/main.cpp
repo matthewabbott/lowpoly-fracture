@@ -1286,7 +1286,8 @@ std::string StateJson()
 		if ( st.alive && st.body >= 0 )
 		{
 			Drive_Describe( app.world, v, hud, (int)sizeof( hud ) );
-			e.Raw( "position", Position( st.position ) ).Num( "speed", st.speed ).Int( "wheels", st.attached ).Str( "hud", hud );
+			e.Raw( "position", Position( st.position ) ).Raw( "forward", Position( st.forward ) ).Num( "speed", st.speed );
+			e.Int( "wheels", st.attached ).Str( "hud", hud );
 		}
 		vehicles.push_back( e.Done() );
 	}
@@ -1298,7 +1299,8 @@ std::string StateJson()
 		if ( st.alive && st.body >= 0 )
 		{
 			Walk_Describe( app.world, r, hud, (int)sizeof( hud ) );
-			e.Raw( "position", Position( st.position ) ).Num( "speed", st.speed ).Int( "able", st.able ).Str( "hud", hud );
+			e.Raw( "position", Position( st.position ) ).Raw( "forward", Position( st.forward ) ).Num( "speed", st.speed );
+			e.Int( "able", st.able ).Str( "hud", hud );
 		}
 		rigs.push_back( e.Done() );
 	}

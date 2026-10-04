@@ -32,7 +32,7 @@ How the sandbox plays (tips for agents):
   screen's centre. Point the camera first: camera x y z at x y z. While driving, the camera chases the car.
 - A player's input applies after the session's input delay (state's session.delay, 4 by default): step at least
   delay + 1 ticks before looking for what it did. state's vehicles list each car's controller (-1: the scene's
-  driver, else the peer driving it) and position.
+  driver, else the peer driving it), position, forward (the way it faces) and speed; y is up.
 - A screenshot is a PNG: read it to see. --ui adds the sandbox's panel (the co-op line, a desync's report).
 """
 
