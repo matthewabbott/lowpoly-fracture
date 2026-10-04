@@ -1,138 +1,140 @@
-toy pile200, dialect D, 600 ticks, threads 1 8; gravity 0, sleep on, one body pushed
+toy pile200, dialect D, 600 ticks, threads 1 8; gravity 0, sleep on, contact recycling on, one body pushed
 twin: gcc 13.3.0, aarch64, contraction off
-layout sizes C/twin: Hull 88/88 HullFace 40/40 BodyState 112/112 BodyPose 56/56 BodyMass 128/128 Aabb 32/32 Params 152/152 Hash2 8/8 V3 24/24
+layout sizes C/twin: Hull 112/112 HullFace 40/40 BodyState 112/112 BodyPose 56/56 BodyMass 144/144 Aabb 32/32 Params 344/344 Hash2 8/8 V3 24/24 Pair 24/24 Manifold 632/632 SatAxis 88/88 NarrowDiag 128/128 Constraint 840/840
 scene pile200 (seed 1): 205 bodies (5 static), 203 hulls (40 irregular chunks, 16 redrawn), largest hull 14 vertices 9 faces 42 half-edges; mass 5.309 to 55.65 kg; quantisation range errors 0
   hull 0 (box 12 x 1 x 12 m): volume 144 (8abc 144), Ixx/density 1740 (V(b^2+c^2)/3 1740), Ixy -0
-tick  bodies-hash       stages-hash       awake pairs active colours(ovf) islands(largest) slept woken
-   1  1169675b48d8f5b2  b37601480ba78809    200     1      1    1(0)    199(2)     0     0
-   2  6b8735f48438d662  98767b6fc6dd9bcd    200     1      1    1(0)    199(2)     0     0
-   3  cb185e8b9332d61a  98767b6fc6dd9bcd    200     1      1    1(0)    199(2)     0     0
-   4  152fc9521ac8963c  98767b6fc6dd9bcd    200     1      1    1(0)    199(2)     0     0
-   5  73cae113d4fb0aa0  d14e100c9c801dff    200     2      2    1(0)    198(2)     0     0
-   6  56ec5a5f9d86d0bd  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-   7  d2951ceb63961572  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-   8  4c26f07a0d58fb76  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-   9  696e5e1de5c6446a  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  10  0224013966d0e939  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  11  8720e884307b4fec  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  12  975ae6fd2832466c  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  13  d4b5be8c034abdbf  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  14  3dd4d95ec759c3fe  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  15  ed0e1e7c8f3df808  521ee64d11f855ba    200     2      2    1(0)    198(2)     0     0
-  16  7a11fed7a1b27fe2  875bcf74e51dd67f    200     3      3    2(0)    197(3)     0     0
-  17  9f35cab5cbce1c84  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  18  a941e9e48c6a60c8  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  19  1ab3c5fcc5c4abc5  c2819e4dde15da19    200     4      4    3(0)    196(4)     0     0
-  20  ef0965b707009ec4  f733a3ee346ef75a    200     4      4    3(0)    196(4)     0     0
-  21  25d74c82ee47a4fc  f733a3ee346ef75a    200     4      4    3(0)    196(4)     0     0
-  22  0e78597ae037e23f  f733a3ee346ef75a    200     4      4    3(0)    196(4)     0     0
-  23  c8b5d0ae085b027a  11a521cbc874355c    200     3      3    2(0)    197(3)     0     0
-  24  a1a9914a0d4256dc  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  25  92efd3a0f78ece3e  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  26  f6fbc8803a65a757  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  27  e75318ac99a5a5d0  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  28  94d820b4ae21231e  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  29  01c690c666447ef1  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  30  61110f5b102dcb8d  59c754a48dcf1f09    200     3      3    2(0)    197(3)     0     0
-  31  1dbe65272869993f  20c8151488b5b19d      3     3      2    2(0)      1(3)   197     0
-  32  c9b29b48fd5b0359  20c8151488b5b19d      3     3      2    2(0)      1(3)     0     0
-  33  b4b16ea14d9363ff  b2be77e0ecf90234      4     4      3    3(0)      1(4)     0     1
-  34  487ae7df2e6e4696  9045e7355655f53d      4     4      3    3(0)      1(4)     0     0
-  35  9699c69a620902db  6ef010ab6e458e35      5     5      4    4(0)      1(5)     0     1
-  36  3088daa516e02dcb  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  37  0c8a279d0d8eac5c  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  38  9cd9193044e4e521  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  39  c8791c31c7b5374d  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  40  465c0731736b686e  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  41  bdeba53a760397a1  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  42  1f0eb886a81a2064  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  43  3cb265c19528064e  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  44  7bf82ecf7ab86999  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  45  e56ca2ed103959b6  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  46  db2fa12e87f0431c  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  47  854d5c275b914ae6  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  48  4762726ee4c3e511  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  49  19081c4a15620985  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  50  e33910e5e9eba15b  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  51  5076d457a6f1e5a3  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  52  bf1ba34c2c53e5c3  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  53  fb09a6391012f9c0  c6b51b9db23c1350      5     5      4    4(0)      1(5)     0     0
-  54  63ebc1b5afcf8217  1dbceee2e8f76352      3     3      2    2(0)      1(3)     2     0
-  55  a997cbb63165c165  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  56  675db7b47dbb4b73  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  57  80e5cb8c52b9518d  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  58  5fc517910e698dd7  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  59  6734cf4db1009b5f  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  60  30e4ba3db7c4b96d  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  61  795732bb1dde7790  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  62  811d5f019c9e5925  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  63  a3287b79c7215b8d  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  64  ade2d6ee9f213d17  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  65  f30ac0b69acec776  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  66  ec1f97c08d07a111  410cae348ddf90b1      3     3      2    2(0)      1(3)     0     0
-  67  cc3de36df55f0329  c81d00498a61aafd      2     2      1    1(0)      1(2)     1     0
-  68  a1096e93f0ab63b9  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  69  483671c71b14443c  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  70  ca57c2017c599b8e  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  71  91faa750fc54a0cc  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  72  776da6f9405ee72b  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  73  4ec30077e96edf75  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  74  b09de826caf0bd4b  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  75  945d8430d338b635  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  76  ebd892507c8db118  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  77  9468cd86eefddfd1  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  78  4ae71350b374470f  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  79  4bd94deef08fb540  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  80  2b86d38854905cef  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  81  234e0abea369913c  97f29b3c42328b4e      2     2      1    1(0)      1(2)     0     0
-  82  3d59204aa9ff071c  4d77e520a76f647c      1     1      0    0(0)      1(1)     1     0
-  83  5c8b8a713b5b6413  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  84  16ddeffc720d860f  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  85  e3928d5e867ea1a6  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  86  09cb6717b39e8c0c  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  87  9436e5bb32936a89  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  88  e86f75a5ec3a5769  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  89  c5b232004bfbeb22  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  90  ea91e914bee83743  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  91  0ae7251982b343c6  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  92  60d3dc110a2b170f  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  93  3a11b93b00c766d3  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  94  f46221abc137ea60  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  95  34cc455da2405352  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  96  7540869c82af3d28  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  97  e1bc9ecc20dc5df1  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  98  3cdcf8058d82d661  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-  99  7e71328fc91197c2  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 100  e8ee91ea125eaa04  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 101  b618cce04c79aa5e  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 102  980db0e1ba56faf9  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 103  fd01718b5b7d5a43  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 104  e4daa471be8163dc  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 105  37b0068afbe657bc  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 106  3292d090a90fc2e2  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 107  984f6a82018c6ecf  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 108  1c0414911751a4bd  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 109  2715b97f5893a3d8  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 110  e7c75d9141abfa45  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 111  f8fbcb6aa1b888b2  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 112  62eef230e48f94bc  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 113  ac2caad46c39627d  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 114  82c46c7c8635d320  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 115  8b6ccd7cf910f80d  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 116  c74dd0e066fb08b5  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 117  e7adf7b83e6afc45  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 118  f1bdb24e02dd7909  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 119  040b53c6d5b2c0ef  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 120  53013f35d3cb9632  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 180  3659b1df76ef1ebb  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 240  cad2bc0d7a8b54f1  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 300  42a0ee738dc444aa  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 360  36ec4add3ea1bcb8  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 420  1213cd96147ed076  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 480  4964dc2cbcfecd2c  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 540  dfcc592c43133251  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
- 600  6cebb5376fa2d650  4d77e520a76f647c      1     1      0    0(0)      1(1)     0     0
-threads 1: 0.090 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes (reference)
-threads 8: 0.098 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes identical
+tick  bodies-hash       manifolds-hash    stages-hash       awake pairs active touching points colours(ovf) islands(largest) slept woken
+   1  1169675b48d8f5b2  0321131d87d9c9a7  3f01c69ff9767d9d    200     1      1        0      0    1(0)    200(1)     0     0
+   2  6b8735f48438d662  9c8fc407c25ac3c4  4f7b7497340a0071    200     1      1        0      0    1(0)    200(1)     0     0
+   3  cb185e8b9332d61a  9c8fc407c25ac3c4  4f7b7497340a0071    200     1      1        0      0    1(0)    200(1)     0     0
+   4  152fc9521ac8963c  9c8fc407c25ac3c4  4f7b7497340a0071    200     1      1        0      0    1(0)    200(1)     0     0
+   5  73cae113d4fb0aa0  6c9be5ee3cba9aa2  5b4edf2cb8e9c531    200     2      2        0      0    1(0)    200(1)     0     0
+   6  56ec5a5f9d86d0bd  f9856c677254c56a  29678e827fffca8c    200     2      2        0      0    1(0)    200(1)     0     0
+   7  d2951ceb63961572  19550556fe300b51  29678e827fffca8c    200     2      2        0      0    1(0)    200(1)     0     0
+   8  4c26f07a0d58fb76  0612489f9c066054  29678e827fffca8c    200     2      2        0      0    1(0)    200(1)     0     0
+   9  696e5e1de5c6446a  531114255224e4d4  29678e827fffca8c    200     2      2        0      0    1(0)    200(1)     0     0
+  10  252fba9ab1ef6492  cc58eb55c9393750  29678e827fffca8c    200     2      2        1      4    1(0)    200(1)     0     0
+  11  92705ea46838f887  1ad80a7e8c67c54c  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  12  de0e5b631a64054d  90b7cccdb756734a  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  13  4fffbc029651c706  5e6832caf6a64952  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  14  75bff2a408d8eb28  683ea442e724bc68  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  15  717de685b0cc9dfc  163277b8ee567c17  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  16  5d8d75510ffe1fbe  c9d65340949a29fd  9f839dc4bba3537f    200     2      2        1      4    1(0)    199(2)     0     0
+  17  67b5081c4c3926ec  b0f8f4de4f2ddc56  55dc40a07647406b    200     3      3        1      4    2(0)    199(2)     0     0
+  18  db5412cdde3f11e4  f439ce72066d935d  461dff58d2e19281    200     3      3        0      0    2(0)    199(2)     0     0
+  19  4522a3eedbb5aade  c3ee2a4ea5492e9e  2507903c7c9d280e    200     3      3        0      0    2(0)    200(1)     0     0
+  20  77a0cf59c15ddf35  676a5341009255bd  559f49af5b6bdd84    200     4      4        0      0    3(0)    200(1)     0     0
+  21  fde3fadd691aaf5d  cab2ca78e6b03632  f26c2048d056d2ff    200     4      4        0      0    3(0)    200(1)     0     0
+  22  d839b8e9f8ae971c  7028d31645686aaa  501219c759bea638    200     5      5        0      0    3(0)    200(1)     0     0
+  23  85774faac9581e0d  2e5e8da2768b2e9d  1eda00d1002c8d18    200     5      5        0      0    3(0)    200(1)     0     0
+  24  0c75b0adce57aa80  0cd308c41c7f52c0  1eda00d1002c8d18    200     5      5        0      0    3(0)    200(1)     0     0
+  25  22a4c447a453b5a2  42da43ebbb61d38b  1eda00d1002c8d18    200     5      5        0      0    3(0)    200(1)     0     0
+  26  a89f3dc689fc17f7  3a11e3339a0c5e39  1eda00d1002c8d18    200     5      5        0      0    3(0)    200(1)     0     0
+  27  be03f42580bf4204  11bc74711f0fecfa  7502e058977759d8    200     4      4        0      0    2(0)    200(1)     0     0
+  28  dc97c2cb2f1c474a  11ac696f2a2cf7e7  058cfb21766f775c    200     4      4        0      0    2(0)    200(1)     0     0
+  29  b9e5fb94d4599986  867beb452eff36c7  058cfb21766f775c    200     4      4        0      0    2(0)    200(1)     0     0
+  30  70580e267dd5cccd  8035544b53ab0a62  058cfb21766f775c    200     4      4        2      6    2(0)    200(1)     0     0
+  31  dc46c0c46c16cd0b  b5ec0b444872b29d  61136fb084b7ee08      4     4      3        2      6    2(0)      2(2)   196     0
+  32  054aba55535532a3  86d5191ab250ab66  61136fb084b7ee08      4     4      3        2      6    2(0)      2(2)     0     0
+  33  9da1e26d027d3dab  915c39302dbc1d26  61136fb084b7ee08      4     4      3        2      6    2(0)      2(2)     0     0
+  34  081236c3eeb27451  2fccc8878f718f24  61136fb084b7ee08      4     4      3        2      7    2(0)      2(2)     0     0
+  35  bc38fe7720017b1a  39c9a418891a69aa  61136fb084b7ee08      4     4      3        2      7    2(0)      2(2)     0     0
+  36  48b95ee1f4976d7f  35f83c69316c3640  61136fb084b7ee08      4     4      3        2      8    2(0)      2(2)     0     0
+  37  2299ea712b3b96f7  607626c5e8fa4dee  61136fb084b7ee08      4     4      3        2      8    2(0)      2(2)     0     0
+  38  e62043238d6a277c  d9305d8accde186d  61136fb084b7ee08      4     4      3        2      8    2(0)      2(2)     0     0
+  39  e40cd99c9df1b9c4  ae8b5eed09e5f7c4  61136fb084b7ee08      4     4      3        2      8    2(0)      2(2)     0     0
+  40  ddf836e4d35423a0  217e1b105aff45c5  61136fb084b7ee08      4     4      3        1      4    2(0)      2(2)     0     0
+  41  4380345da48633eb  5ea980f9799a643f  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  42  27967d19454147c1  ac29642a32b8d5df  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  43  64cbea5d91cd4337  da773fc97e41c788  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  44  3b25ecff0684598c  1783013d338a6960  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  45  f39328ef38c8b32a  4b81427cb96d6120  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  46  50554c5846ff4e40  0a32940fc22f6637  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  47  f558a8f506f80325  ab90463a552d244f  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  48  d8f294d719d36593  415338146924880f  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  49  9f99c13c4eda42ce  81932e835f053d31  24df91de38086de6      4     4      3        1      4    2(0)      3(2)     0     0
+  50  d3314a51a8d19ecb  23f35e6dd0e8a7e5  aa82e8fb451f5eee      4     5      4        1      4    3(0)      3(2)     0     0
+  51  2fe3040bdec9579b  a4ee2332c7e16252  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  52  b226b3ca111ebc77  6200d4936e674d0e  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  53  cb706847735231ca  3c3524210b38d883  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  54  d1b9499a71be59d0  16c0e4300c22101c  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  55  5b512a1daa318cb7  4fdf95a183e0b4e4  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  56  4ac4c1d86c7fe48d  5b1c942990440ac0  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  57  0e29eb44d078d02b  27911b3d37b2f4e2  1bcee15551b0b408      4     5      4        1      4    3(0)      3(2)     0     0
+  58  a400ef4348ec8b8e  3d77a7cc1235d04f  3e052d7dad528bd8      4     6      5        1      4    3(0)      3(2)     0     0
+  59  b4eac0008da7a49e  5c856d0f75a8f06d  68f634563d505961      4     6      5        0      0    3(0)      3(2)     0     0
+  60  f0d918aeddea2220  24ceb978d7696779  6d5957ce45c55bf8      4     6      5        0      0    3(0)      4(1)     0     0
+  61  f4f6a67f7aff6214  1ae16581d0f88563  6d5957ce45c55bf8      4     6      5        1      4    3(0)      4(1)     0     0
+  62  a936c857ef1102d7  577cd4c054d55d7e  40147eda1b8d3170      5     6      5        1      4    3(0)      4(2)     0     1
+  63  55f46e7cdbe0b7b2  fc74f245e2d06249  d8b555a409d389be      5     7      6        1      4    3(0)      4(2)     0     0
+  64  f5384a44e0fee467  77acde68bbabdd63  69312d8b4deadaca      5     7      6        1      4    3(0)      4(2)     0     0
+  65  b7eef38f623e1c3c  9d7bc0be932eb6aa  d9f3d3faf7f5a7e7      5     8      7        1      4    4(0)      4(2)     0     0
+  66  26c00474f7149673  4ec3e2b5b7283411  b075d4325cb3167e      5     8      7        2      8    4(0)      4(2)     0     0
+  67  cc690bba1afb45f2  1c139ca186ef687b  61c933f23b0f1cf1      5     9      8        2      8    4(0)      3(2)     0     0
+  68  de875da69eb9b465  e0756ed7b89141d6  043d9f6a64f5b7fd      5     9      8        2      8    4(0)      3(2)     0     0
+  69  267f5d3ba51cee04  1d73ad306f292bcd  beaf46bc131ca434      5    10      9        2      8    5(0)      3(2)     0     0
+  70  177feba19e142d1d  695527145ccfc350  4cc62f2a6eba7dfd      5    10      9        2      8    5(0)      3(2)     0     0
+  71  7f5270df404c1ac2  681e32a5db2856cd  4cc62f2a6eba7dfd      5    10      9        2      8    5(0)      3(2)     0     0
+  72  fd77b94174da2426  63b9e1d14092b4c8  4cc62f2a6eba7dfd      5    10      9        2      8    5(0)      3(2)     0     0
+  73  bb5d7ae38cc5907c  34fd8b4cb3560b65  4cc62f2a6eba7dfd      5    10      9        2      8    5(0)      3(2)     0     0
+  74  1def595b82241469  9b53a89c4de6157b  43cfc5c7a315fb94      5     9      8        2      8    4(0)      3(2)     0     0
+  75  db6a6c79a7d787f8  627727c59c6c3ce3  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  76  ce0e8286d3ff6046  2588305df1b2df56  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  77  2ae2c069fddd2538  4fe3e51a29893c76  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  78  f9b735b53f2cc052  b09449dbb4486455  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  79  ac9fe308d15a1b2b  d374afcc1bb225ed  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  80  20cded95983c739b  ccdb66c4ed2294b3  ef6cace2876aa6c5      5     9      8        2      8    4(0)      3(2)     0     0
+  81  4bbf7754b03dd35f  60cc1b3ad768d2fc  c0e36f744b899da6      5    10      9        2      8    4(0)      3(2)     0     0
+  82  2b0bfa626f97649d  805ea68bf685a8e9  e7dcae113654b94f      5    10      9        3     12    4(0)      3(2)     0     0
+  83  e1a56b41112bdda9  cde4896fee3e25f2  aefcc9797c56e54b      6    10      9        3     12    4(0)      3(2)     0     1
+  84  0ebd7e747154383d  d9665385da3643b2  40621b7ef12a9ef1      6    10      9        3     12    4(0)      3(2)     0     0
+  85  131bdcaf4286029c  b2f977ac8ba9af6d  40621b7ef12a9ef1      6    10      9        3     12    4(0)      3(2)     0     0
+  86  15df6215f6ab5a48  84c598cf40dad350  40621b7ef12a9ef1      6    10      9        3     12    4(0)      3(2)     0     0
+  87  5fa743f326787648  769cbbe7ab9635e0  40621b7ef12a9ef1      6    10      9        3     12    4(0)      3(2)     0     0
+  88  907a70e5bc905d1f  d193f182ef9d45d5  40621b7ef12a9ef1      6    10      9        3     12    4(0)      3(2)     0     0
+  89  ccc58a25969c0bae  4c705732516cad99  39063f27c72fc5c4      6     9      8        3     12    3(0)      3(2)     0     0
+  90  01ca1b247842816a  5f04762042655cd1  46274a29fe0f4f59      6     9      8        3     12    3(0)      3(2)     0     0
+  91  9dd2dcbb9def76ba  36d9f2a6667d02a9  46274a29fe0f4f59      6     9      8        3     12    3(0)      3(2)     0     0
+  92  9792baf895cbc92a  0999eb8ca51df948  c2b6e132966ac440      6     8      7        3     12    3(0)      3(2)     0     0
+  93  951b0261daf90fe9  37e539bb9f60a091  bcf1d95ceec945f7      6     8      7        2      8    3(0)      3(2)     0     0
+  94  1e9b7c50e4381c05  f8973caa9c363a3c  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+  95  5e9ff4b6e0274716  c1bedfc977468bd6  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+  96  3fff7085bad709de  2eb1500748c95ea1  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+  97  4f80fd16f35f6fae  2734812fa3df98d8  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+  98  49044439136a3dc4  dea5a849a84ec98a  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+  99  e686ebe511d5082d  43a7fe6d2a6ac59b  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+ 100  232d828ae3d1333b  9d180d538c3821a1  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+ 101  e32d74ade681d787  fe378ae48d941d88  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+ 102  dce8505ff13c7a34  acf1fc8e7f016d9a  6695fd095bd9235e      6     8      7        2      8    3(0)      4(2)     0     0
+ 103  afb8559847963dc0  2594b03d859f1f05  7690a5a009d38af3      6     9      8        2      8    4(0)      4(2)     0     0
+ 104  aaaeecc0e6f45bcf  51fa323475fc31a8  97f1730ec57ed375      6     9      8        2      8    4(0)      4(2)     0     0
+ 105  fc4e94a68246788b  44d88c4f4fd0ba5f  97f1730ec57ed375      6     9      8        1      4    4(0)      4(2)     0     0
+ 106  3b50ff4ef7181dc6  7346eb08c111a814  19d6e48004962ed6      6     9      8        1      4    4(0)      5(2)     0     0
+ 107  61b5784960b271b5  f294bea80ec6a41d  19d6e48004962ed6      6     9      8        2      8    4(0)      5(2)     0     0
+ 108  668ff59886ca0a2d  cca5ac667125da40  6b27723b6aaf10af      6     9      8        2      8    4(0)      4(2)     0     0
+ 109  36981616f410c342  dfdf405b5e88ce1b  6b27723b6aaf10af      6     9      8        1      4    4(0)      4(2)     0     0
+ 110  b8102f975b39cb5c  81cfba3c6dc11820  d15347d651fd7aef      5     9      8        1      4    4(0)      4(2)     1     0
+ 111  98863a6a4af50629  6ad0ace7982712fd  d15347d651fd7aef      5     9      8        1      4    4(0)      4(2)     0     0
+ 112  d4ed3596d936df80  29b4ddce5b5c7323  d15347d651fd7aef      5     9      8        1      4    4(0)      4(2)     0     0
+ 113  e13ef7c3b110cbb4  41cccb88b6ac7f06  d15347d651fd7aef      5     9      8        2      8    4(0)      4(2)     0     0
+ 114  cbd75628759ec9f6  67deeadbc0d5141a  f50bc0e040172816      6     9      8        2      8    4(0)      4(2)     0     1
+ 115  095e41ea85f9bcb8  788b8e833cc031f2  fd15c6ef6d57c65b      6     9      8        2      8    4(0)      4(2)     0     0
+ 116  3eb6639f1d90b7a9  aa8e334fa3f584f6  fd15c6ef6d57c65b      6     9      8        2      8    4(0)      4(2)     0     0
+ 117  962ee0cb47e9c256  117946e7ccdd9134  fd15c6ef6d57c65b      6     9      8        2      8    4(0)      4(2)     0     0
+ 118  2321b9c9b32cef54  b6ab0f2ef4ac65cb  fd15c6ef6d57c65b      6     9      8        2      8    4(0)      4(2)     0     0
+ 119  9e28763964e38c69  7194caf47e09bc9a  d4fe6699bbdca5cb      6     8      7        2      8    4(0)      4(2)     0     0
+ 120  2f25d426a4c08258  bc4b369b7d2d9573  adf0a9ff62a4ef1b      6     8      7        2      8    4(0)      4(2)     0     0
+ 180  d129c229c4a510db  8cff0435c2e2e88e  41d7da4b053f616f      6    11     10        0      0    5(0)      6(1)     0     0
+ 240  c10d36babc88df9b  4f79d8b628452b8c  b2eceb70161ea079      6    14     13        0      0    7(0)      6(1)     0     0
+ 300  dfe6dfdee32ff50c  0133d5a138eac30c  5d787adcf2e63440      9    13     12        3     11    5(0)      6(2)     0     1
+ 360  fb1605bc39bebef0  11df0093c477ddb0  73091670a8f8904a      9    12     11        1      4    5(0)      8(2)     0     0
+ 420  25c08f969f8a760e  90d3046e2e78d771  50f49f2bcfe69d08     10    13     12        1      4    4(0)      9(2)     0     0
+ 480  704a87b18eb91834  593b78d34ca308f5  8ce65f254f759bd5      9    13     12        0      0    5(0)      9(1)     0     0
+ 540  5023d1250e1d0447  a7afe40f9b49cb1f  320e8954bfa94fc0     10    18     17        1      4    8(0)      9(2)     0     0
+ 600  72f530c9202c480c  440a2fd39c62465d  46835db44a16decb      9    15     14        0      0    8(0)      9(1)     0     0
+threads 1: 0.142 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes (reference)
+threads 8: 0.209 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes identical
+solve: 9 bodies awake at the end; deepest point -0.00902905 m (tick 38, bodies 113 114), at rest (the 60 ticks before every body sleeps, or the last 60) 0.00696401 m (tick 541, bodies 123 127); at most 114 dispatches a tick
+rest: after tick 600, over every touching pair (sleeping ones too): deepest point 0 m (bodies -1 -1), 0 touching pairs
 body 5 at tick 600: y 3 m (free fall gives 3)
-toy D pile200: run hash 17884cfbe1e2b27a, final bodies 6cebb5376fa2d650 stages 4d77e520a76f647c, threads agree, saturations 0 (twin: gcc 13.3.0, aarch64, contraction off)
+toy D pile200: run hash 269dc387427aadb6, final bodies 72f530c9202c480c manifolds 440a2fd39c62465d stages 46835db44a16decb, threads agree, saturations 0 (twin: gcc 13.3.0, aarch64, contraction off)

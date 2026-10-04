@@ -510,7 +510,9 @@ int reducePoints( inout LocalPoint pts[CLIP_MAX], int count, V3 n, Params P, ino
 	{
 		V3 dd = sub3( pts[i].pos, a );
 		V3 v = snap3( mulSubSV( dd, snap( dot3( dd, n, S_Q ) ), n, S_Q ) );
-		T s = maxT( zero(), -pts[i].sep );
+		// minus the depth, not the depth: only its square is used. Written max( 0, -sep ), gcc 13 -O2 strips the negation
+		// (backprop) but keeps the old range and folds the comparison below to false (lab/gpu/repro/gcc13-backprop.c)
+		T s = minT( zero(), pts[i].sep );
 		T s2 = s + s;
 		T score = snap( dot3( v, v, 2 * S_R - S_D2 ) + M( s2, s2, 2 * S_R - S_D2 ) ); // |v|^2 + 4 s^2
 		T bs = M( bias, score, S_Q );

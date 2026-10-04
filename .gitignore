@@ -24,3 +24,5 @@ __pycache__/
 # the GPU lab: generated kernels and twins (lab/gpu/lab.py gen)
 lab/gpu/gen/
 lab/gpu/results/**/*.pos
+lab/gpu/results/**/*.traj
+lab/gpu/results/**/*.bin
