@@ -179,6 +179,8 @@ static void merge_prev( Stages* s )
 		pr->bodyB = (int32_t)( key & 0xffffffffu );
 		pr->prevIndex = ( p < s->prevCount && s->prevKeys[p] == key ) ? p : -1;
 		pr->colour = -1;
+		pr->flags = 0;
+		pr->pad = 0;
 	}
 }
 
@@ -343,9 +345,11 @@ static void islands( Stages* s, const int32_t* sleepTicks, const uint8_t* prevTo
 	s->islandCount -= s->sleptIslands;
 }
 
-// Greedy colouring of the active touching pairs in key order (joints first, when there are any): the lowest colour
-// neither dynamic body has used; static bodies take no colour. Beyond STAGE_MAX_COLOURS: the overflow colour.
-static void colour( Stages* s, const uint8_t* prevTouching )
+// Greedy colouring of every active pair in key order (joints first, when there are any): the pairs the narrowphase runs
+// on this tick, touching or not, so a contact is solved the tick it appears (prepare and the solve skip a pair whose
+// manifold has no points). The lowest colour neither moving body has used; a static or sleeping body is solved as
+// static (PAIR_SOLVE_*: never written) and takes no colour. Beyond STAGE_MAX_COLOURS: the overflow colour.
+static void colour( Stages* s )
 {
 	int n = s->bodyCount;
 	for ( int i = 0; i < n; ++i )
@@ -359,12 +363,15 @@ static void colour( Stages* s, const uint8_t* prevTouching )
 	{
 		Pair* p = s->pairs + k;
 		p->colour = -1;
-		if ( !s->active[k] || !touching( s, prevTouching, k ) )
+		p->flags = 0;
+		if ( !s->active[k] )
 		{
 			continue;
 		}
 		int a = p->bodyA, b = p->bodyB;
-		uint64_t mask = ( s->isStatic[a] ? 0 : s->used[a] ) | ( s->isStatic[b] ? 0 : s->used[b] );
+		int da = is_awake( s, a ), db = is_awake( s, b );
+		p->flags = ( da ? PAIR_SOLVE_A : 0 ) | ( db ? PAIR_SOLVE_B : 0 );
+		uint64_t mask = ( da ? s->used[a] : 0 ) | ( db ? s->used[b] : 0 );
 		int c = 0;
 		while ( c < STAGE_MAX_COLOURS && ( mask & ( 1ULL << c ) ) )
 		{
@@ -372,9 +379,9 @@ static void colour( Stages* s, const uint8_t* prevTouching )
 		}
 		if ( c < STAGE_MAX_COLOURS )
 		{
-			if ( !s->isStatic[a] )
+			if ( da )
 				s->used[a] |= 1ULL << c;
-			if ( !s->isStatic[b] )
+			if ( db )
 				s->used[b] |= 1ULL << c;
 			s->colourCount = c + 1 > s->colourCount ? c + 1 : s->colourCount;
 		}
@@ -405,7 +412,7 @@ void stages_tick( Stages* s, const Aabb* aabbs, const int32_t* sleepTicks, const
 	wake( s, prevTouching );
 	islands( s, sleepTicks, prevTouching, needed, enableSleep );
 	set_active( s );
-	colour( s, prevTouching );
+	colour( s );
 	s->awakeCount = 0;
 	for ( int i = 0; i < s->bodyCount; ++i )
 	{
@@ -439,6 +446,7 @@ uint64_t stages_hash( const Stages* s )
 		h = fnv( h, s->keys + k, 8 );
 		h = fnv( h, &s->pairs[k].prevIndex, 4 );
 		h = fnv( h, &s->pairs[k].colour, 4 );
+		h = fnv( h, &s->pairs[k].flags, 4 );
 		h = fnv( h, s->active + k, 1 );
 	}
 	h = fnv( h, s->islandOf, (size_t)s->bodyCount * sizeof( int32_t ) );

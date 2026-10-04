@@ -31,6 +31,10 @@ typedef struct ToySettings
 	int enableSleep;
 	double maxLinearSpeed;	 // m/s (Box3D's 4 m * 100)
 	double maxRotationPerStep; // rad per step (Box3D's 0.25 pi)
+	double contactSpeed;		 // m/s, the push's largest overlap bias (Box3D's 3)
+	double restitutionThreshold; // m/s (Box3D's 1)
+	int restitutionIterations;	 // Box3D's 2
+	int recycle;				 // contact recycling (Box3D's default, at 10 linearSlop)
 } ToySettings;
 
 void toy_default_settings( ToySettings* s );

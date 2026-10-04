@@ -1,7 +1,8 @@
 // stages.h: the toy's CPU stages between the kernels (DESIGN.md "Pipeline per tick", step 2), C17 integers only,
 // dialect-free: sort-and-sweep broadphase on the integer AABBs, radix-sorted pair keys (min id, max id), a merge-join
 // with last tick's keys (prevIndex, so manifolds stay on the GPU), waking, union-find islands and sleep, greedy colouring
-// (joints first, then pairs in key order). Static bodies never join islands or take colours.
+// (joints first, then every active pair in key order: this tick's, touching or not). Static bodies never join islands;
+// static and sleeping bodies take no colours (the solver treats them as static).
 #ifndef TOY_STAGES_H
 #define TOY_STAGES_H
 
@@ -27,7 +28,7 @@ typedef struct Stages
 	// this tick
 	uint64_t* keys; // sorted pair keys (min << 32 | max)
 	Pair* pairs;	// in key order
-	uint8_t* active; // per pair: at least one awake body (solved, coloured)
+	uint8_t* active; // per pair: at least one awake body (narrowphase, coloured, solved)
 	int pairCount, activeCount;
 	int colourCount, overflowCount;
 	int colourStart[STAGE_MAX_COLOURS + 2]; // into colourList, per colour then the overflow
@@ -54,7 +55,8 @@ void stages_init( Stages* s, int bodyCount, const uint8_t* isStatic );
 void stages_free( Stages* s );
 
 // One tick. aabbs: every body's (the GPU's prepareBodies); sleepTicks: every body's counter (the GPU's finalize, last
-// tick); prevTouching: per last tick's pair, whether its manifold had points (NULL: every pair touches, step 2).
+// tick); prevTouching: per last tick's pair, whether its manifold had points (NULL: every pair touches, step 2), for
+// waking and islands (colouring takes every active pair).
 void stages_tick( Stages* s, const Aabb* aabbs, const int32_t* sleepTicks, const uint8_t* prevTouching, int sleepTicksNeeded,
 				  int enableSleep );
 

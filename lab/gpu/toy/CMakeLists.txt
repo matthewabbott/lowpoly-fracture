@@ -15,6 +15,21 @@ function(toy_twin name glue generated)
 	set_source_files_properties("${wrapper}" PROPERTIES OBJECT_DEPENDS "${generated};${TOY_SRC}/${glue}")
 	lab_quiet(toytwin_${name})
 	lab_no_contract(toytwin_${name})
+	toy_fp_traps(toytwin_${name})
+endfunction()
+
+# The floating-point sentinel reads the exception flags the kernels' code raises, so the twins are compiled without
+# floating-point speculation: clang's default (-fno-trapping-math) may evaluate a guarded operation ahead of its guard,
+# or in an unused vector lane, and raise a flag the source never raises. maytrap forbids introducing exceptions and
+# changes no value (gcc's default -ftrapping-math is the same); MSVC's /fp:precise has not shown it.
+function(toy_fp_traps target)
+	if(LAB_MSVC_FRONTEND AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+		target_compile_options(${target} PRIVATE /clang:-ffp-exception-behavior=maytrap)
+	elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		target_compile_options(${target} PRIVATE -ffp-exception-behavior=maytrap)
+	elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		target_compile_options(${target} PRIVATE -ftrapping-math)
+	endif()
 endfunction()
 
 function(toy_c17 target)
@@ -23,9 +38,9 @@ function(toy_c17 target)
 	lab_no_contract(${target})
 endfunction()
 
-# Dialect-free C: the scene generator (double) and the CPU stages (integers)
+# Dialect-free C: the scene generator (double), the CPU stages (integers), the trajectory files
 if(EXISTS "${TOY_SRC}/scene.c" AND EXISTS "${TOY_SRC}/stages.c")
-	add_library(toy_common STATIC "${TOY_SRC}/scene.c" "${TOY_SRC}/stages.c")
+	add_library(toy_common STATIC "${TOY_SRC}/scene.c" "${TOY_SRC}/stages.c" "${TOY_SRC}/traj.c")
 	toy_c17(toy_common)
 	if(NOT WIN32)
 		target_link_libraries(toy_common PUBLIC m)

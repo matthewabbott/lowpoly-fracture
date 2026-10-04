@@ -37,14 +37,20 @@ LSTRUCT( Aabb )
 };
 
 // A broadphase pair (CPU): bodies by index (bodyA < bodyB), last tick's slot of the same key (-1 when new), colour
-// (-1 when not solved this tick).
+// (-1 when not solved this tick), which bodies the solver moves (PAIR_SOLVE_*: awake dynamic bodies; a static or
+// sleeping body is solved as static, Box3D's null body).
 LSTRUCT( Pair )
 {
 	int32_t bodyA;
 	int32_t bodyB;
 	int32_t prevIndex;
 	int32_t colour;
+	int32_t flags;
+	int32_t pad;
 };
+
+#define PAIR_SOLVE_A 1
+#define PAIR_SOLVE_B 2
 
 LSTRUCT( Push )
 {
@@ -89,6 +95,7 @@ typedef double T;
 #define S_U 20	// (speed / max speed)^2 in the speed caps: Q11.20
 #define S_VV 30 // squared velocities near rest (the sleep test): Q1.30
 #define S_G 10	// the broadphase grid: 2^-10 m
+#define S_BR 24 // the soft contact's bias rates and 1 / speculative distance (1/s, 1/m): Q8.24
 
 #define HULL_MAX_VERTS 16
 #define HULL_MAX_FACES 24
@@ -106,6 +113,7 @@ typedef double T;
 #define SAT_CACHE_SEPARATED 1 // last tick's cached axis still separates: no contact, the cache kept
 #define SAT_SEPARATED 2		  // the full SAT found a separating axis (SatAxis.type, indices, separation)
 #define SAT_OVERLAP 3		  // no axis separates by more than the speculative distance: build a contact
+#define SAT_RECYCLED 4		  // contact recycling: the relative pose moved less than the recycle distance
 
 LSTRUCT( V3 )
 {
@@ -161,6 +169,7 @@ LSTRUCT( Hull )
 {
 	V3 boundsCenter; // local AABB centre, Q8.24
 	V3 boundsHalf;	 // local AABB half extents, Q8.24
+	V3 maxExtentV;	 // the largest |vertex| per axis, Q8.24 (Box3D's b3BodySim maxExtent: contact recycling, isFast)
 	T maxExtent;	 // largest distance from the centre of mass to a vertex, Q8.24 (the sleep test, Box3D's)
 	T minExtent;	 // smallest distance from the centre of mass to a face plane, Q8.24
 	int32_t vertexStart;
@@ -192,8 +201,10 @@ LSTRUCT( BodyState )
 	V3 dp; // Q5.26
 	Q4 dq; // Q1.30
 	int32_t sleepTicks; // ticks in a row under the sleep thresholds (finalize)
-	int32_t flags;
+	int32_t flags;		// STATE_FAST (finalize)
 };
+
+#define STATE_FAST 1 // Box3D's b3_isFast: the body moved more than half its inner radius last tick (no contact recycling)
 
 // The centre of mass and the orientation.
 LSTRUCT( BodyPose )
@@ -202,12 +213,15 @@ LSTRUCT( BodyPose )
 	Q4 q;
 };
 
-// Inverse mass and inertia. V4: mantissas, the value being mantissa * 2^-e (eM for the mass, eI for both inertias).
+// Inverse mass and inertia, and the material. V4: mantissas, the value being mantissa * 2^-e (eM for the mass, eI for
+// both inertias).
 LSTRUCT( BodyMass )
 {
 	Sym3 invIl; // local, about the centre of mass
 	Sym3 invIw; // world, written by prepareBodies
 	T invMass;
+	T friction;	   // Q1.30; a pair mixes them as Box3D does, sqrt( fA fB )
+	T restitution; // Q1.30; a pair takes the larger
 	T pad;
 	int32_t eM;
 	int32_t eI;
@@ -226,7 +240,7 @@ LSTRUCT( ManifoldPoint )
 	V3 anchorA; // Q8.24, world frame, from A's centre of mass
 	V3 anchorB;
 	T separation;	  // Q9.22
-	T baseSeparation; // Q9.22
+	T baseSeparation; // Q9.22: the separation at the last full narrowphase (Box3D's, for contact recycling)
 	T normalImpulse;  // V4: mantissa with the manifold's impulse exponent eP
 	T totalNormalImpulse;
 	T normalMass; // V4: mantissa with the point's exponent
@@ -252,8 +266,16 @@ LSTRUCT( Manifold )
 	int32_t axisType; // the SAT cache: AXIS_* (Box3D's b3SeparatingFeature)
 	int32_t axisA;	  // face of A (and B's support vertex in axisB), vertex of A and face of B, or edge of A and edge of B
 	int32_t axisB;
-	int32_t pad;
+	int32_t flags; // MANIFOLD_CACHE_VALID, MANIFOLD_RECYCLED
+	// contact recycling (Box3D's b3Collide, its default): the poses at the last full narrowphase
+	Q4 cachedRotationA; // Q1.30
+	Q4 cachedRotationB;
+	V3 cachedPoseP; // B's centre in A's frame, Q8.24 (b3InvMulWorldTransforms)
+	Q4 cachedPoseQ; // qA* qB
 };
+
+#define MANIFOLD_CACHE_VALID 1 // Box3D's b3_relativeTransformValid: the cached poses are set
+#define MANIFOLD_RECYCLED 2	   // this tick's manifold is last tick's, its separations moved with the bodies
 
 // narrowSat's record for narrowClip, per pair (not kept between ticks): the cached feature to try first, the full SAT's
 // verdict, and the three queries. Separations Q8.24 (S_R).
@@ -305,6 +327,69 @@ LSTRUCT( NarrowDiag )
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
+// The contact solve (step 4): one constraint per pair, written by prepareContacts every tick (Box3D's
+// b3ContactConstraintWide, one lane), solved per colour, its impulses stored back into the manifold (storeImpulses)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// V4's impulses (normal, friction, twist, restitution; linear N s and angular N m s alike) are mantissas with the
+// constraint's exponent eP, from the lighter body solved as dynamic: the reduced mass mu = 1 / (invMassA + invMassB) is
+// at most the lighter mass, so mu 2^eP lies in [2^19, 2^21] and an impulse of mu x 1024 m/s fits. Effective masses
+// carry their own exponents, folded into the shifts below, all computed in prepare and clamped to [1, 62] (counted).
+LSTRUCT( ConstraintPoint )
+{
+	V3 anchorA;			  // Q8.24, world frame, from A's centre of mass (the manifold's)
+	V3 anchorB;
+	T baseSeparation;	  // Q9.22: separation - (rB - rA) . n (Box3D's anchor update: s = base + n . (dpB - dpA) + ...)
+	T normalImpulse;	  // eP
+	T totalNormalImpulse; // the relax passes' and restitution's sum, eP
+	T restitutionImpulse; // eP
+	T normalMass;		  // 1 / k, V4: a mantissa (its exponent folded into shN)
+	T leverArm;			  // |rA - centerA|, Q8.24 (the twist friction's limit)
+	T relativeVelocity;	  // the normal velocity at prepare, Q9.22 (restitution)
+	T pad;
+	int32_t shN; // V4: normalMass x velocity (Q9.22) -> impulse (eP)
+	int32_t pad1;
+};
+
+LSTRUCT( Constraint )
+{
+	ConstraintPoint points[MANIFOLD_POINTS];
+	V3 normal;	 // Q1.30, from A to B
+	V3 tangent1; // b3Perp( normal )
+	V3 tangent2; // tangent1 x normal
+	V3 centerA;	 // the friction centre (the points' weighted mean), Q8.24, from A's centre of mass
+	V3 centerB;
+	Sym3 invIA; // the world inverse inertia, V4: a mantissa (2^-eI); zero for a body solved as static
+	Sym3 invIB;
+	T invMassA; // V4: a mantissa (2^-eM); zero for a body solved as static
+	T invMassB;
+	T tangentMassXX; // the inverse of the 2x2 tangent mass, V4: mantissas (their exponent folded into shT)
+	T tangentMassXY;
+	T tangentMassYY;
+	T twistMass;		// 1 / (n . (IA + IB) n), V4: a mantissa (shTw)
+	T frictionImpulse1; // along tangent1, eP
+	T frictionImpulse2; // along tangent2
+	T twistImpulse;		// eP
+	T friction;			// Q1.30, sqrt( fA fB )
+	T restitution;		// Q1.30, max( rA, rB )
+	T pad;
+	int32_t bodyA;
+	int32_t bodyB;
+	int32_t pointCount; // 0: the pair is coloured but has no contact this tick (nothing is solved)
+	int32_t flags;		// PAIR_SOLVE_A, PAIR_SOLVE_B, CON_SOFT
+	int32_t eP;			// V4: the impulses' exponent
+	int32_t shMA;		// V4: invMass x impulse -> velocity (Q9.22)
+	int32_t shMB;
+	int32_t shIA; // V4: invI x angular impulse -> angular velocity (Q11.20)
+	int32_t shIB;
+	int32_t shT;  // V4: tangentMass x velocity -> impulse
+	int32_t shTw; // V4: twistMass x angular velocity -> impulse
+	int32_t pad1;
+};
+
+#define CON_SOFT 4 // one body is solved as static: Box3D's static softness
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Params (every tolerance)
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -332,12 +417,32 @@ LSTRUCT( Params )
 	T reduceBias;		 // 0.95, Q1.30: the reduction's pecking order
 	T speculativeSq;	 // speculativeDistance^2, Q11.20
 	T cacheTolerance;	 // linearSlop in Q9.22: a cached feature is kept while its separation moves less
+	// the contact solve (Box3D's world defaults: contact hertz 30, damping ratio 10, the static softness at twice the
+	// hertz and half the damping ratio, b3MakeSoft at h; contact speed 3 m/s; restitution threshold 1 m/s)
+	T dynBiasRate;		 // massScale x biasRate, Q8.24 (S_BR)
+	T dynMassScale;		 // Q1.30
+	T dynImpulseScale;	 // Q1.30
+	T staBiasRate;		 // the static softness's
+	T staMassScale;
+	T staImpulseScale;
+	T negContactSpeed;	 // -contactSpeed (the push's largest overlap bias), Q9.22
+	T negRestitutionThreshold; // Q9.22
+	T invSpeculative;	 // 1 / speculativeDistance, Q8.24 (the friction centre's weights, Box3D's invTau)
+	T minFrictionWeight; // Q9.22 (Box3D's B3_MIN_FRICTION_WEIGHT; see NOTES.md)
+	T oneV;				 // 1 in Q9.22
+	T twoV;				 // 2 in Q9.22
+	// contact recycling (Box3D's default: 10 linearSlop; 0 turns it off) and Box3D's isFast
+	T recycleDistance;	   // Q8.24, for a pair that was touching
+	T recycleNonTouching;  // min( recycleDistance, speculativeDistance ), Q8.24
+	T recycleAngular;	   // cos( 5 degrees )^2 (Box3D's B3_CONTACT_RECYCLE_ANGULAR_DISTANCE: 10 degrees), Q1.30
+	T fastSafety;		   // Box3D's safetyFactor, 0.5, Q1.30
+	T dt;				   // the step, Q0.32
 	int32_t sleepTicks;	 // ticks under the thresholds before an island may sleep (30)
 	int32_t sleepCap;	 // the counter stops here
 	int32_t substeps;
 	int32_t enableSleep;
 	int32_t narrowDiag; // write NarrowDiag (the corpus)
-	int32_t pad0;
+	int32_t restitutionIterations; // Box3D's world default, 2
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

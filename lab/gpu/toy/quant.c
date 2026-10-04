@@ -133,9 +133,20 @@ static V3 qv3( const double v[3], int s )
 	return r;
 }
 
+// A symmetric matrix; F sends entries under 2^-30 to +0 (the kernels' snap: an inertia's round-off off-diagonals, near
+// 1e-17, would otherwise make subnormal products)
 static Sym3 qsym( const double m[6], int s )
 {
-	Sym3 r = { QT( m[0], s ), QT( m[1], s ), QT( m[2], s ), QT( m[3], s ), QT( m[4], s ), QT( m[5], s ) };
+	double c[6];
+	for ( int i = 0; i < 6; ++i )
+	{
+#if defined( DIALECT_F )
+		c[i] = fabs( m[i] ) < ldexp( 1.0, -30 ) ? 0.0 : m[i];
+#else
+		c[i] = m[i];
+#endif
+	}
+	Sym3 r = { QT( c[0], s ), QT( c[1], s ), QT( c[2], s ), QT( c[3], s ), QT( c[4], s ), QT( c[5], s ) };
 	return r;
 }
 
@@ -149,6 +160,10 @@ void toy_default_settings( ToySettings* s )
 	s->enableSleep = 1;
 	s->maxLinearSpeed = 400.0;
 	s->maxRotationPerStep = 0.25 * 3.14159265358979323846;
+	s->contactSpeed = 3.0;
+	s->restitutionThreshold = 1.0;
+	s->restitutionIterations = 2;
+	s->recycle = 1;
 }
 
 void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
@@ -191,6 +206,16 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 			qp[k][1] = toy_val( d->points[pv + k].y, S_R );
 			qp[k][2] = toy_val( d->points[pv + k].z, S_R );
 		}
+		// Box3D's maxExtent vector: the largest |vertex| per axis (from the quantised points: exact)
+		double ext[3] = { 0.0, 0.0, 0.0 };
+		for ( int k = 0; k < sh->vertexCount; ++k )
+		{
+			for ( int i = 0; i < 3; ++i )
+			{
+				ext[i] = fabs( qp[k][i] ) > ext[i] ? fabs( qp[k][i] ) : ext[i];
+			}
+		}
+		H->maxExtentV = qv3( ext, S_R );
 		for ( int e = 0; e < sh->edgeCount; ++e )
 		{
 			d->edges[pe + e] = (uint32_t)sh->edge[e][0] | ( (uint32_t)sh->edge[e][1] << 8 ) | ( (uint32_t)sh->edge[e][2] << 16 ) |
@@ -268,6 +293,8 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 #endif
 		M->invMass = QT( b->invMass, M->eM );
 		M->invIl = qsym( b->invI, M->eI );
+		M->friction = QT( b->friction, S_MS );
+		M->restitution = QT( b->restitution, S_MS );
 	}
 
 	// Params: F computes in float as Box3D does (h = dt / 4); V4 rounds the doubles; D keeps them
@@ -311,11 +338,77 @@ void toy_quantize( const Scene* sc, const ToySettings* st, ToyData* d )
 	P->reduceBias = QT( 0.95, S_MS );
 	P->speculativeSq = QT( 16.0 * st->linearSlop * st->linearSlop, S_D2 );
 	P->cacheTolerance = QT( st->linearSlop, S_S );
+	// the contact solve: Box3D's b3MakeSoft at h for the contact hertz (min( 30, 0.125 inv_h )) and damping ratio 10, the
+	// static softness at twice the hertz and half the ratio; F in float as Box3D computes them (B3_PI), V4 and D from
+	// doubles. The push uses massScale x biasRate.
+#if defined( DIALECT_F )
+	{
+		float hz = 30.0f < 0.125f * P->inv_h ? 30.0f : 0.125f * P->inv_h;
+		float hertz[2] = { hz, 2.0f * hz }, zeta[2] = { 10.0f, 5.0f };
+		float bias[2], mass[2], imp[2];
+		for ( int i = 0; i < 2; ++i )
+		{
+			float omega = 2.0f * 3.14159265359f * hertz[i];
+			float a1 = 2.0f * zeta[i] + h * omega;
+			float a2 = h * omega * a1;
+			float a3 = 1.0f / ( 1.0f + a2 );
+			bias[i] = omega / a1;
+			mass[i] = a2 * a3;
+			imp[i] = a3;
+		}
+		P->dynBiasRate = mass[0] * bias[0];
+		P->dynMassScale = mass[0];
+		P->dynImpulseScale = imp[0];
+		P->staBiasRate = mass[1] * bias[1];
+		P->staMassScale = mass[1];
+		P->staImpulseScale = imp[1];
+	}
+#else
+	{
+		double hz = 30.0 < 0.125 * 240.0 ? 30.0 : 0.125 * 240.0;
+		double hertz[2] = { hz, 2.0 * hz }, zeta[2] = { 10.0, 5.0 };
+		double bias[2], mass[2], imp[2];
+		for ( int i = 0; i < 2; ++i )
+		{
+			double omega = 2.0 * 3.14159265358979323846 * hertz[i];
+			double a1 = 2.0 * zeta[i] + h * omega;
+			double a2 = h * omega * a1;
+			double a3 = 1.0 / ( 1.0 + a2 );
+			bias[i] = omega / a1;
+			mass[i] = a2 * a3;
+			imp[i] = a3;
+		}
+		P->dynBiasRate = QT( mass[0] * bias[0], S_BR );
+		P->dynMassScale = QT( mass[0], S_MS );
+		P->dynImpulseScale = QT( imp[0], S_MS );
+		P->staBiasRate = QT( mass[1] * bias[1], S_BR );
+		P->staMassScale = QT( mass[1], S_MS );
+		P->staImpulseScale = QT( imp[1], S_MS );
+	}
+#endif
+	P->negContactSpeed = QT( -st->contactSpeed, S_V );
+	P->negRestitutionThreshold = QT( -st->restitutionThreshold, S_V );
+	P->invSpeculative = QT( 1.0 / ( 4.0 * st->linearSlop ), S_BR );
+	P->minFrictionWeight = QT( ldexp( 1.0, -20 ), S_S );
+	P->oneV = QT( 1.0, S_S );
+	P->twoV = QT( 2.0, S_S );
+	// contact recycling: Box3D's B3_CONTACT_RECYCLE_DISTANCE (10 linearSlop) and angular threshold; isFast's safety factor
+	double recycle = st->recycle ? 10.0 * st->linearSlop : 0.0;
+	P->recycleDistance = QT( recycle, S_R );
+	P->recycleNonTouching = QT( recycle < 4.0 * st->linearSlop ? recycle : 4.0 * st->linearSlop, S_R );
+	P->recycleAngular = QT( 0.99240388, S_MS );
+	P->fastSafety = QT( 0.5, S_MS );
+#if defined( DIALECT_F )
+	P->dt = dt;
+#else
+	P->dt = QT( 1.0 / 60.0, S_H );
+#endif
 	P->narrowDiag = 0;
 	P->sleepTicks = st->sleepTicks;
 	P->sleepCap = 1000;
 	P->substeps = 4;
 	P->enableSleep = st->enableSleep;
+	P->restitutionIterations = st->restitutionIterations;
 	d->rangeErrors = g_range;
 }
 

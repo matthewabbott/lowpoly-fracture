@@ -38,7 +38,7 @@
 #define HAS_GPU 0
 #endif
 
-#define TOY_BUFFERS 18
+#define TOY_BUFFERS 19 // kernels.slang's bindings 0..18 (the constraints, 18, unused here)
 void toy_bind( void* const* bufs, const size_t* counts );
 const char* toy_twin_info( void );
 size_t toy_sizeof( int which );
@@ -691,7 +691,7 @@ static void pass_setup( PassIO* io, int n, int pass )
 static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state, Aabb* aabbs, Hash2* hashes )
 {
 	void* bufs[TOY_BUFFERS] = { d->hulls, d->points, d->faces, d->edges, state,	 d->pose,  d->mass, aabbs,	io->lists,
-								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes };
+								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes, NULL };
 	size_t counts[TOY_BUFFERS] = { (size_t)d->hullCount, (size_t)d->pointCount, (size_t)d->faceCount, (size_t)d->edgeCount,
 								   (size_t)d->bodyCount,
 								   (size_t)d->bodyCount,
@@ -706,7 +706,8 @@ static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state
 								   (size_t)n,
 								   (size_t)n,
 								   (size_t)n,
-								   (size_t)n };
+								   (size_t)n,
+								   0 };
 	toy_bind( bufs, counts );
 }
 
@@ -1421,6 +1422,8 @@ int main( int argc, char** argv )
 		}
 		params[p] = data[p].params;
 		params[p].narrowDiag = 1;
+		params[p].recycleDistance = 0; // the full narrowphase on every pair (no contact recycling)
+		params[p].recycleNonTouching = 0;
 		uint32_t before = toy_saturations();
 		fpFlags[p] = run_twin( data + p, params + p, io + p, n, state, aabbs, hashes );
 		twinSat[p] = toy_saturations() - before;
@@ -1571,7 +1574,23 @@ int main( int argc, char** argv )
 			if ( bs || bm )
 			{
 				int k = f1 >= 0 ? f1 : f2;
-				say( "    first: pair %d (%s)\n", k, g_catNames[c.category[k]] );
+				say( "    first: pair %d (%s)", k, g_catNames[c.category[k]] );
+				if ( f1 < 0 && f2 >= 0 )
+				{
+					// the manifold's differing words: offset in 32-bit words, the twin's and the GPU's
+					const uint32_t* tw = (const uint32_t*)( io[p].out + f2 );
+					const uint32_t* gw = (const uint32_t*)( gout + f2 );
+					int shown = 0;
+					for ( int w = 0; w < (int)( sizeof( Manifold ) / 4 ) && shown < 8; ++w )
+					{
+						if ( tw[w] != gw[w] )
+						{
+							say( "%s word %d: %08x %08x", shown ? "," : ";", w, tw[w], gw[w] );
+							++shown;
+						}
+					}
+				}
+				say( "\n" );
 			}
 		}
 		vkDeviceWaitIdle( g.device );

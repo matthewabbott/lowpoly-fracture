@@ -139,6 +139,45 @@ T divClamp( T n, T d, int k, T lim )
 // mn / mx for 0 <= mn <= mx, mx > 0 (atan2's ratio)
 T ratio01( T mn, T mx ) { return snap( mn * recipPos( mx > 0.0f ? mx : 1.0f ) ); }
 
+// V4's exponent bookkeeping (the solver's): F tracks none, so exponents and shifts are 0
+int msbT( T x ) { return 0; }
+int fmtV4( int e ) { return 0; }
+int shiftOf( int sh ) { return 0; }
+
+// 1/k for k > 0, else 0 (Box3D's effective masses); er is V4's exponent
+T recipE( T k, int ek, out int er )
+{
+	er = 0;
+	T ks = k > 0.0f ? k : 1.0f;
+	T r = recipPos( ks );
+	return snap( k > 0.0f ? r : 0.0f );
+}
+
+// sqrt(x) for x >= 0 (0 below): x times the software rsqrt
+T sqrtT( T x, int sx )
+{
+	T xs = x > 0.0f ? x : 1.0f;
+	T r = xs * rsqrtPos( xs );
+	return snap( x > 0.0f ? r : 0.0f );
+}
+
+// The friction disc's scale (Box3D's b3SolveContacts): 1 when |(x, y)| <= m, else m / |(x, y)| through the software
+// rsqrt (Box3D: m / (sqrt + FLT_EPSILON)); m >= 0
+T discScale( T x, T y, T m, T one )
+{
+	x = snap( x );
+	y = snap( y );
+	m = snap( m );
+	T lsq = x * x + y * y; // not snapped: squares of snapped values are at least 2^-60, and small ones still clamp
+	T ls = lsq > 0.0f ? lsq : 1.0f;
+	T r = one;
+	if ( lsq > m * m )
+	{
+		r = snap( m * rsqrtPos( ls ) );
+	}
+	return r;
+}
+
 // =====================================================================================================================
 // D: double (twin only)
 // =====================================================================================================================
@@ -153,18 +192,24 @@ T dif2( T a, T b, T c, T d, int sh ) { return a * b - c * d; }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return a * b + c * d + e * f; }
 T rescale( T x, int sh ) { return x; }
 
-// Every division and square root divides by (or roots) an input made safe before the test that discards it (d == 0 ?
-// 1 : d): clang 18 on aarch64 evaluated 1 / d ahead of the select, and the sentinel saw divide-by-zero.
+// Every division and square root divides by (or roots) an input made safe before the test that discards it: clang 18
+// on aarch64 evaluated 1 / d ahead of the select, and the sentinel saw divide-by-zero. The safe input is the value
+// itself when it is at least the smallest normal double, else that (safePos), a different test from the select's
+// (x > 0): clang-cl 23 folded x > 0 ? 1 / sqrt( x > 0 ? x : 1 ) : 0 into a speculated 1 / sqrt( x ). Results for
+// normal inputs are unchanged.
+static const double D_MIN = 2.2250738585072014e-308l; // the l suffix: an unsuffixed Slang literal is a float (0 here)
+T safePos( T x ) { return x > D_MIN ? x : D_MIN; }
+
 T rsqrtT( T x, int sx, int sy )
 {
-	T xs = x > 0.0l ? x : 1.0l;
-	T r = 1.0l / sqrt( xs );
+	T r = 1.0l / sqrt( safePos( x ) );
 	return x > 0.0l ? r : 0.0l;
 }
 
 T recipT( T d, int sd, int sr )
 {
-	T ds = d != 0.0l ? d : 1.0l;
+	T ad = d < 0.0l ? -d : d;
+	T ds = ad > D_MIN ? d : D_MIN;
 	T r = 1.0l / ds;
 	return d != 0.0l ? r : 0.0l;
 }
@@ -173,7 +218,7 @@ T divClamp( T n, T d, int k, T lim )
 {
 	T an = n < 0.0l ? -n : n;
 	T ad = d < 0.0l ? -d : d;
-	T as = ad > 0.0l ? ad : 1.0l;
+	T as = safePos( ad );
 	bool neg = ( n < 0.0l ) != ( d < 0.0l );
 	T q = 0.0l;
 	if ( an == 0.0l )
@@ -191,7 +236,35 @@ T divClamp( T n, T d, int k, T lim )
 	return snap( neg ? -q : q );
 }
 
-T ratio01( T mn, T mx ) { return mn / ( mx > 0.0l ? mx : 1.0l ); }
+T ratio01( T mn, T mx ) { return mn / safePos( mx ); }
+
+int msbT( T x ) { return 0; }
+int fmtV4( int e ) { return 0; }
+int shiftOf( int sh ) { return 0; }
+
+T recipE( T k, int ek, out int er )
+{
+	er = 0;
+	T r = 1.0l / safePos( k );
+	return k > 0.0l ? r : 0.0l;
+}
+
+T sqrtT( T x, int sx )
+{
+	T r = sqrt( safePos( x ) );
+	return x > 0.0l ? r : 0.0l;
+}
+
+T discScale( T x, T y, T m, T one )
+{
+	T lsq = x * x + y * y;
+	T r = one;
+	if ( lsq > m * m )
+	{
+		r = m / sqrt( safePos( lsq ) );
+	}
+	return snap( r );
+}
 
 // =====================================================================================================================
 // V4: block-scaled int32
@@ -402,6 +475,83 @@ T rsqrtQ( T u, int su, int sy )
 
 T rsqrtT( T x, int sx, int sy ) { return rsqrtQ( x, sx, sy ); }
 
+// ---- the solver's exponent bookkeeping (V4 only; F and D return 0) ----
+
+// The position of |x|'s highest set bit (-1 for 0)
+int msbT( T x ) { return 31 - clz( uint( x < 0 ? -x : x ) ); }
+
+// An exponent kept for V4 (F and D keep none)
+int fmtV4( int e ) { return e; }
+
+// A shift for mas, computed in prepare: clamped to [1, 62], counted as a saturation when it is not
+int shiftOf( int sh )
+{
+	int r = sh;
+	if ( sh < 1 || sh > 62 )
+	{
+		countSaturation();
+		r = sh < 1 ? 1 : 62;
+	}
+	return r;
+}
+
+// 1/k for k > 0 in format ek, as a mantissa in (2^29, 2^30] and its exponent er (the value is r 2^-er); 0 for k <= 0.
+// With p = msb(k): 2^(30 + p) / k, exact to the truncation.
+T recipE( T k, int ek, out int er )
+{
+	T r = 0;
+	er = 0;
+	if ( k > 0 )
+	{
+		int p = msbT( k );
+		r = lpDivQ31( 1 << 30, k, p );
+		er = 30 + p - ek;
+	}
+	return r;
+}
+
+// sqrt(x) for x >= 0 in format sx (even), the result in format sx: x times its rsqrt, which goes to a format sy where
+// it has about 29 bits (sy = 29 - (sx + 1 - p) / 2, p = msb(x)); 0 for x <= 0
+T sqrtT( T x, int sx )
+{
+	T r = 0;
+	if ( x > 0 )
+	{
+		int p = msbT( x );
+		int sy = 29 - ( ( sx + 1 - p ) >> 1 );
+		T y = rsqrtQ( x, sx, sy );
+		r = M( x, y, sy );
+	}
+	return r;
+}
+
+// The friction disc's scale in Q1.30: 1 when |(x, y)| <= m, else m / |(x, y)| (m >= 0; x, y, m in one format). The
+// three are shifted together so the largest has its top bit at 27 (values below 1 in Q4.28), so the squares cannot
+// overflow at any magnitude; |(x, y)|^2 is then in [1/4, 2) whenever it exceeds m^2, its rsqrt in Q2.29.
+T discScale( T x, T y, T m, T one )
+{
+	int ax = x < 0 ? -x : x;
+	int ay = y < 0 ? -y : y;
+	int mx = ax > ay ? ax : ay;
+	mx = m > mx ? m : mx;
+	T r = one;
+	if ( mx > 0 )
+	{
+		int s = clz( uint( mx ) ) - 4;
+		T a = rescale( x, -s );
+		T b = rescale( y, -s );
+		T c = rescale( m, -s );
+		T lsq = sum2( a, a, b, b, 28 );
+		T c2 = M( c, c, 28 );
+		if ( lsq > c2 )
+		{
+			T z = rsqrtQ( lsq, 28, 29 );
+			r = M( c, z, 27 );
+		}
+	}
+	return r;
+}
+
 #endif
 
 // =====================================================================================================================
@@ -492,6 +642,9 @@ Sym3 rotateSym( M3 m, Sym3 s )
 				sum3( m.r1.x, s.xz, m.r1.y, s.yz, m.r1.z, s.zz, S_Q ) );
 	V3 a2 = v3( sum3( m.r2.x, s.xx, m.r2.y, s.xy, m.r2.z, s.xz, S_Q ), sum3( m.r2.x, s.xy, m.r2.y, s.yy, m.r2.z, s.yz, S_Q ),
 				sum3( m.r2.x, s.xz, m.r2.y, s.yz, m.r2.z, s.zz, S_Q ) );
+	a0 = snap3( a0 ); // F: a cancelled entry times another would be subnormal
+	a1 = snap3( a1 );
+	a2 = snap3( a2 );
 	Sym3 r;
 	r.xx = snap( dot3( a0, m.r0, S_Q ) );
 	r.xy = snap( dot3( a0, m.r1, S_Q ) );
@@ -545,9 +698,11 @@ V3 invRotate( Q4 q, V3 v )
 	return add3( v, add3( t3, t3 ) );
 }
 
-// b3NormalizeQuat with the software rsqrt (|q|^2 below 2 in V4); a zero quaternion gives the identity
+// b3NormalizeQuat with the software rsqrt (|q|^2 below 2 in V4); a zero quaternion gives the identity. F snaps the
+// components first: a sum of products (dq + h w dq / 2) can leave one near 1e-21, whose square is subnormal.
 Q4 quatNormalize( Q4 q, T one )
 {
+	q = q4( snap( q.x ), snap( q.y ), snap( q.z ), snap( q.s ) );
 	T x = sum3( q.x, q.x, q.y, q.y, q.z, q.z, S_Q ) + M( q.s, q.s, S_Q );
 	Q4 r = quatIdentity( one );
 	if ( x > zero() )

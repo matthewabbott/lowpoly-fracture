@@ -4,10 +4,13 @@
 // b3ReduceManifoldPoints) and contact.c's b3ComputeConvexManifold (anchors, warm starts by feature id), in the three
 // dialects, with the SAT cache made data: it lives in the manifold, which the next tick reads by prevIndex.
 //
-//   narrowSat     per active pair: last tick's cached axis first; when it still separates by the speculative distance,
-//                 nothing more. Otherwise the full SAT (the face query of A, of B, the edge pairs whose Gauss-map arcs
-//                 cross), all recorded in a SatAxis.
-//   narrowClip    per active pair: Box3D's decision. The cached feature's contact, kept while its separation stays
+//   narrowSat     per active pair: Box3D's contact recycling first (b3Collide, its default): while the relative pose
+//                 stays within the recycle distance of the one cached at the last full narrowphase, last tick's manifold
+//                 is kept and only its separations follow the bodies. Then last tick's cached axis; when it still
+//                 separates by the speculative distance, nothing more. Otherwise the full SAT (the face query of A, of
+//                 B, the edge pairs whose Gauss-map arcs cross), all recorded in a SatAxis.
+//   narrowClip    per active pair: a recycled manifold's separations moved with the bodies (anchors, ids and impulses
+//                 kept); otherwise Box3D's decision. The cached feature's contact, kept while its separation stays
 //                 within linearSlop of the cache's; else the separating axis (no contact), or the face contact (the
 //                 face of B when it beats A's by faceTolerance) and the edge contact when the face's is empty or the
 //                 edge beats 0.9 times its clipped separation plus faceTolerance. Then the manifold in the world frame.
@@ -906,8 +909,80 @@ Manifold emptyManifold( int bodyA, int bodyB )
 	m.axisType = AXIS_NONE;
 	m.axisA = 0;
 	m.axisB = 0;
-	m.pad = 0;
+	m.flags = 0;
+	m.cachedRotationA = q4( zero(), zero(), zero(), zero() );
+	m.cachedRotationB = q4( zero(), zero(), zero(), zero() );
+	m.cachedPoseP = zero3();
+	m.cachedPoseQ = q4( zero(), zero(), zero(), zero() );
 	return m;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Contact recycling (Box3D's b3Collide: "keep anchors but update separation, same as sub-stepping")
+// ---------------------------------------------------------------------------------------------------------------------
+
+// B's pose in A's frame (b3InvMulWorldTransforms): p = qA* (pB - pA), q = qA* qB
+struct RelPose
+{
+	V3 p; // Q8.24
+	Q4 q; // Q1.30
+};
+
+RelPose relPose( BodyPose a, BodyPose b )
+{
+	RelPose r;
+	Q4 q = quatMul( quatConj( a.q ), b.q );
+	r.q = q4( snap( q.x ), snap( q.y ), snap( q.z ), snap( q.s ) );
+	r.p = snap3( invRotate( a.q, posDelta( a.p, b.p ) ) );
+	return r;
+}
+
+T dotQ4( Q4 a, Q4 b ) { return snap( sum3( a.x, b.x, a.y, b.y, a.z, b.z, S_Q ) + M( a.s, b.s, S_Q ) ); }
+
+// Whether last tick's manifold is kept (Box3D's test, in its order): neither body fast, a valid cache, each body turned
+// less than 10 degrees since it (cos^2 of the half angle above recycleAngular), the relative position moved less than
+// the tolerance (the recycle distance when the pair was touching, else at most the speculative distance), and that
+// distance plus twice the arc of the relative turn at the larger extent (b3ModifiedCross) still under it. Each
+// difference is gated per component before it is squared, so nothing saturates.
+bool recycleTest( Pair pr, Manifold pm, BodyPose poseA, BodyPose poseB, Params P )
+{
+	bool fast = ( ( bodyState[pr.bodyA].flags | bodyState[pr.bodyB].flags ) & STATE_FAST ) != 0;
+	if ( fast || !( P.recycleDistance > zero() ) || ( pm.flags & MANIFOLD_CACHE_VALID ) == 0 )
+	{
+		return false;
+	}
+	T tol = selectT( pm.pointCount > 0, P.recycleDistance, P.recycleNonTouching );
+	T angleA = dotQ4( poseA.q, pm.cachedRotationA );
+	T angleB = dotQ4( poseB.q, pm.cachedRotationB );
+	T angular = minT( M( angleA, angleA, S_Q ), M( angleB, angleB, S_Q ) );
+	RelPose xf = relPose( poseA, poseB );
+	V3 d = snap3( sub3( xf.p, pm.cachedPoseP ) );
+	bool near = absT( d.x ) < tol && absT( d.y ) < tol && absT( d.z ) < tol;
+	if ( !( angular > P.recycleAngular ) || !near )
+	{
+		return false;
+	}
+	T dist2 = dot3( d, d, 2 * S_R - S_D2 ); // F: squares of snapped values, never subnormal (not snapped)
+	if ( !( dist2 < M( tol, tol, 2 * S_R - S_D2 ) ) )
+	{
+		return false;
+	}
+	T distance = rescale( sqrtT( dist2, S_D2 ), S_D2 - S_R );
+	T slack = snap( tol - distance );
+	// qr: the turn of the relative pose since the cache (b3InvMulQuat); the arc at the larger extent of the moving bodies
+	Q4 qr = quatMul( quatConj( pm.cachedPoseQ ), xf.q );
+	V3 eA = ( bodyMass[pr.bodyA].flags & BODY_STATIC ) != 0 ? zero3() : hulls[bodyMass[pr.bodyA].hull].maxExtentV;
+	V3 eB = ( bodyMass[pr.bodyB].flags & BODY_STATIC ) != 0 ? zero3() : hulls[bodyMass[pr.bodyB].hull].maxExtentV;
+	V3 e = v3( maxT( eA.x, eB.x ), maxT( eA.y, eB.y ), maxT( eA.z, eB.z ) );
+	V3 aq = v3( absT( qr.x ), absT( qr.y ), absT( qr.z ) );
+	V3 arc = snap3( v3( sum2( aq.y, e.z, aq.z, e.y, S_Q ), sum2( aq.z, e.x, aq.x, e.z, S_Q ), sum2( aq.x, e.y, aq.y, e.x, S_Q ) ) );
+	if ( !( arc.x < slack && arc.y < slack && arc.z < slack ) )
+	{
+		return false;
+	}
+	T a2 = dot3( arc, arc, 2 * S_R - S_D2 );
+	T arcSq = ( a2 + a2 ) + ( a2 + a2 );
+	return arcSq < M( slack, slack, 2 * S_R - S_D2 );
 }
 
 SatAxis satInit()
@@ -957,16 +1032,22 @@ void narrowSat( uint3 tid : SV_DispatchThreadID )
 	int cType = AXIS_NONE;
 	int cA = 0;
 	int cB = 0;
+	bool stop = false;
 	if ( pr.prevIndex >= 0 )
 	{
 		Manifold pm = prevManifolds[pr.prevIndex];
 		cType = pm.axisType;
 		cA = pm.axisA;
 		cB = pm.axisB;
+		if ( recycleTest( pr, pm, bodyPose[pr.bodyA], bodyPose[pr.bodyB], P ) )
+		{
+			s.kind = SAT_RECYCLED;
+			cType = AXIS_NONE;
+			stop = true;
+		}
 	}
 
 	// the cached axis: still separating? (Box3D: >= for a face, > for an edge pair whose arcs still cross)
-	bool stop = false;
 	if ( cType == AXIS_FACE_A || cType == AXIS_FACE_B )
 	{
 		bool onB = cType == AXIS_FACE_B;
@@ -1107,6 +1188,31 @@ void narrowClip( uint3 tid : SV_DispatchThreadID )
 	{
 		pm = prevManifolds[pr.prevIndex];
 	}
+	if ( s.kind == SAT_RECYCLED )
+	{
+		// Box3D's recycled contact: the anchors (world, from the bodies' centres at the cache), the normal, the ids and
+		// every impulse kept; each separation is the cached one plus n . (dc + RB rB - RA rA), RX the body's turn since
+		// the cache (dqX = qX qX0*), dc the centres' offset now
+		// (copied buffer to buffer, then the separations and the flags written: no second private manifold)
+		manifolds[k] = prevManifolds[pr.prevIndex];
+		manifolds[k].flags = MANIFOLD_CACHE_VALID | MANIFOLD_RECYCLED;
+		Q4 dqA = quatMul( poseA.q, quatConj( pm.cachedRotationA ) );
+		Q4 dqB = quatMul( poseB.q, quatConj( pm.cachedRotationB ) );
+		M3 RA = snapM3( matrixFromQuat( q4( snap( dqA.x ), snap( dqA.y ), snap( dqA.z ), snap( dqA.s ) ), P.one ) );
+		M3 RB = snapM3( matrixFromQuat( q4( snap( dqB.x ), snap( dqB.y ), snap( dqB.z ), snap( dqB.s ) ), P.one ) );
+		V3 dc = posDelta( poseA.p, poseB.p );
+		for ( int i = 0; i < MANIFOLD_POINTS; ++i )
+		{
+			if ( i < pm.pointCount )
+			{
+				V3 rA = rotFrameM( RA, pm.points[i].anchorA );
+				V3 rB = rotFrameM( RB, pm.points[i].anchorB );
+				V3 dp = snap3( add3( dc, sub3( rB, rA ) ) );
+				manifolds[k].points[i].separation = snap( pm.points[i].baseSeparation + dot3( dp, pm.normal, S_Q + S_R - S_S ) );
+			}
+		}
+		return;
+	}
 
 	// the cache (Box3D's b3SATCache) stays unless the full SAT runs
 	int cType = pm.axisType;
@@ -1240,6 +1346,15 @@ void narrowClip( uint3 tid : SV_DispatchThreadID )
 	m.axisB = cB;
 	m.axisSeparation = cSep;
 	m.pointCount = c.count;
+	// the recycling cache (Box3D caches on every full update, touching or not)
+	{
+		RelPose xf = relPose( poseA, poseB );
+		m.flags = MANIFOLD_CACHE_VALID;
+		m.cachedRotationA = poseA.q;
+		m.cachedRotationB = poseB.q;
+		m.cachedPoseP = xf.p;
+		m.cachedPoseQ = xf.q;
+	}
 	if ( c.count > 0 )
 	{
 		M3 RA = snapM3( matrixFromQuat( poseA.q, P.one ) );
@@ -1256,13 +1371,16 @@ void narrowClip( uint3 tid : SV_DispatchThreadID )
 				mp.anchorA = rotFrameM( RA, lp.pos );
 				mp.anchorB = snap3( sub3( mp.anchorA, d ) );
 				mp.separation = rescale( lp.sep, S_R - S_S );
+				mp.baseSeparation = mp.separation; // the recycling's cached separation
 				mp.featureId = lp.id;
+				// last tick's points read from the buffer, not the private copy pm: indexed by j there, the Intel UHD 630's
+				// compiler (0x194859) read other fields once the manifold grew by the recycling cache (step 4)
 				for ( int j = 0; j < MANIFOLD_POINTS; ++j )
 				{
 					bool avail = carry && j < pm.pointCount && ( claimed & ( 1u << uint( j ) ) ) == 0u;
-					if ( avail && pm.points[j].featureId == lp.id )
+					if ( avail && prevManifolds[pr.prevIndex].points[j].featureId == lp.id )
 					{
-						mp.normalImpulse = pm.points[j].normalImpulse;
+						mp.normalImpulse = prevManifolds[pr.prevIndex].points[j].normalImpulse;
 						claimed = claimed | ( 1u << uint( j ) );
 						break;
 					}

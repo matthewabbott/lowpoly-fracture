@@ -9,9 +9,9 @@ static GlobalParams_0 g_base;
 #define TWIN_MAX_THREADS 64
 static uint32_t g_counters[TWIN_MAX_THREADS][4];
 
-// The buffers, in kernels.slang's binding order 0..10 then 12..17 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
+// The buffers, in kernels.slang's binding order 0..10 then 12..18 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
 // bodyPose, bodyMass, aabbs, lists, params, hashes; pairs, manifolds, prevManifolds, satAxes, narrowDiag,
-// manifoldHashes: TOY_BUFFERS entries, the counters' slot 11 unused) with their element counts
+// manifoldHashes, constraints: TOY_BUFFERS entries, the counters' slot 11 unused) with their element counts
 extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 {
 	g_base.hulls_0.data = (Hull_0*)bufs[0];
@@ -48,6 +48,8 @@ extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 	g_base.narrowDiags_0.count = counts[16];
 	g_base.manifoldHashes_0.data = (Hash2_0*)bufs[17];
 	g_base.manifoldHashes_0.count = counts[17];
+	g_base.constraints_0.data = (Constraint_0*)bufs[18];
+	g_base.constraints_0.count = counts[18];
 }
 
 extern "C" const char* toy_twin_info( void )
@@ -56,7 +58,7 @@ extern "C" const char* toy_twin_info( void )
 }
 
 // sizes of the twin's structs, against the C layout: Hull, HullFace, BodyState, BodyPose, BodyMass, Aabb, Params,
-// Hash2, V3, Pair, Manifold, SatAxis, NarrowDiag
+// Hash2, V3, Pair, Manifold, SatAxis, NarrowDiag, Constraint
 extern "C" size_t toy_sizeof( int which )
 {
 	switch ( which )
@@ -74,6 +76,7 @@ extern "C" size_t toy_sizeof( int which )
 		case 10: return sizeof( Manifold_0 );
 		case 11: return sizeof( SatAxis_0 );
 		case 12: return sizeof( NarrowDiag_0 );
+		case 13: return sizeof( Constraint_0 );
 		default: return 0;
 	}
 }
@@ -97,7 +100,8 @@ extern "C" void toy_reset_saturations( void )
 }
 
 // entry: 0 prepareBodies, 1 integrateVelocities, 2 integratePositions, 3 finalizeBodies, 4 wakeBodies, 5 hashElements,
-// 6 narrowSat, 7 narrowClip, 8 copyManifolds, 9 hashManifolds
+// 6 narrowSat, 7 narrowClip, 8 copyManifolds, 9 hashManifolds, 10 prepareContacts, 11 warmStart, 12 pushContacts,
+// 13 relaxContacts, 14 restitution, 15 storeImpulses
 extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux, uint32_t g0, uint32_t g1, int thread )
 {
 	GlobalParams_0 gp = g_base;
@@ -127,5 +131,11 @@ extern "C" void toy_run( int entry, uint32_t start, uint32_t count, uint32_t aux
 		case 7: narrowClip( &vi, nullptr, &gp ); break;
 		case 8: copyManifolds( &vi, nullptr, &gp ); break;
 		case 9: hashManifolds( &vi, nullptr, &gp ); break;
+		case 10: prepareContacts( &vi, nullptr, &gp ); break;
+		case 11: warmStart( &vi, nullptr, &gp ); break;
+		case 12: pushContacts( &vi, nullptr, &gp ); break;
+		case 13: relaxContacts( &vi, nullptr, &gp ); break;
+		case 14: restitution( &vi, nullptr, &gp ); break;
+		case 15: storeImpulses( &vi, nullptr, &gp ); break;
 	}
 }

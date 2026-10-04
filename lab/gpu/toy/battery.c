@@ -54,11 +54,16 @@ enum
 	H_UNIT,
 	H_DELTA,
 	H_FRAME,
+	H_EXP,
+	H_RECIPE,
+	H_SQRT,
+	H_DISC,
 	H_COUNT
 };
-static const char* g_names[H_COUNT] = { "mul",	  "sum2/dif2", "sum3",	   "rescale",	   "select",  "snap",	"recip",
-										"rsqrt",  "divClamp",  "lpDivQ31", "clz",		   "atan2",	  "quatNormalize",
-										"quatMul", "rotate",   "pos/grid", "unit3/len3", "posDelta", "frame" };
+static const char* g_names[H_COUNT] = { "mul",		"sum2/dif2", "sum3",	 "rescale",	   "select",	"snap",		 "recip",
+										"rsqrt",	"divClamp",	 "lpDivQ31", "clz",		   "atan2",		"quatNormalize", "quatMul",
+										"rotate",	"pos/grid",	 "unit3/len3", "posDelta", "frame",		"msb/shiftOf", "recipE",
+										"sqrtT",	"discScale" };
 
 static FILE* g_log;
 
@@ -446,6 +451,39 @@ static void gen_vec( int h, BatIn* v, Pcg* r )
 			v->f = q_of( f, S_R );
 			break;
 		}
+		case H_EXP:
+			v->a = q_value( r );
+			v->k = pcg_int( r, -10, 80 ); // shiftOf: in range, and out of it on both sides (counted)
+			v->sh = pcg_int( r, -64, 64 );
+			break;
+		case H_RECIPE:
+			v->a = q_value( r ); // zero and negative give 0
+			v->sh = pcg_int( r, 0, 62 );
+			break;
+		case H_SQRT:
+		{
+			static const int sx[4] = { 20, 22, 24, 30 };
+			int i = pcg_int( r, 0, 3 );
+			int32_t a = q_value( r );
+			v->a = a < 0 ? -a : a;
+			v->sh = sx[i];
+			break;
+		}
+		case H_DISC:
+		{
+			v->a = q_value( r );
+			v->b = q_value( r );
+			int32_t c = q_value( r );
+			v->c = c < 0 ? -c : c;
+			uint32_t edge = pcg_next( r ) % 4u;
+			if ( edge == 0 ) // a limit within 0.1% of |(a, b)|: the clamp's edge
+			{
+				double f = pcg_range( r, 0.999, 1.001 );
+				double l = sqrt( (double)v->a * v->a + (double)v->b * v->b ) * f;
+				v->c = l > 2147483647.0 ? 2147483647 : (int32_t)l;
+			}
+			break;
+		}
 #else
 		case H_MUL:
 		case H_SUM2:
@@ -567,6 +605,38 @@ static void gen_vec( int h, BatIn* v, Pcg* r )
 			v->d = (T)q[3];
 			v->e = (T)e;
 			v->f = (T)f;
+			break;
+		}
+		case H_EXP:
+			v->a = (T)fd_value( r );
+			v->k = pcg_int( r, -10, 80 );
+			v->sh = pcg_int( r, -64, 64 );
+			break;
+		case H_RECIPE:
+			v->a = (T)fd_value( r );
+			v->sh = pcg_int( r, 0, 62 );
+			break;
+		case H_SQRT:
+		{
+			double x = fd_value( r );
+			v->a = (T)fabs( x );
+			v->sh = 30;
+			break;
+		}
+		case H_DISC:
+		{
+			double a = fd_value( r );
+			double b = fd_value( r );
+			double c = fd_value( r );
+			v->a = (T)a;
+			v->b = (T)b;
+			v->c = (T)fabs( c );
+			uint32_t edge = pcg_next( r ) % 4u;
+			if ( edge == 0 )
+			{
+				double f = pcg_range( r, 0.999, 1.001 );
+				v->c = (T)( sqrt( a * a + b * b ) * f );
+			}
 			break;
 		}
 		case H_POS:
@@ -898,6 +968,58 @@ static void accuracy( const Battery* b, const BatOut* o )
 #endif
 		 dc, nd );
 	say( "accuracy (twin): |unit3| - 1 max %.3g (%d)\n", un, nu );
+	// the solver's: sqrtT (relative), recipE (relative), discScale against m / |(a, b)| when it clamps (relative) and
+	// exactly 1 when it does not (counted)
+	double sq = 0.0, re = 0.0, ds = 0.0;
+	int nsq = 0, nre = 0, nds = 0, notOne = 0;
+	for ( int i = b->start[H_SQRT]; i < b->start[H_SQRT + 1]; ++i )
+	{
+		double x = val( b->in[i].a, b->in[i].sh ), got = val( o[i].r0, b->in[i].sh );
+		if ( !( x > 0.0 ) || got == 0.0 )
+		{
+			continue;
+		}
+		double e = fabs( got / sqrt( x ) - 1.0 );
+#if defined( DIALECT_V4 )
+		if ( got < ldexp( 1.0, 20 - b->in[i].sh ) )
+		{
+			continue; // too few bits in the format to say
+		}
+#endif
+		sq = e > sq ? e : sq;
+		++nsq;
+	}
+	for ( int i = b->start[H_RECIPE]; i < b->start[H_RECIPE + 1]; ++i )
+	{
+		double k = val( b->in[i].a, b->in[i].sh ), got = val( o[i].r0, (int)o[i].u0 );
+		if ( !( k > 0.0 ) || got == 0.0 )
+		{
+			continue;
+		}
+		double e = fabs( got * k - 1.0 );
+		re = e > re ? e : re;
+		++nre;
+	}
+	for ( int i = b->start[H_DISC]; i < b->start[H_DISC + 1]; ++i )
+	{
+		double x = val( b->in[i].a, 0 ), y = val( b->in[i].b, 0 ), m = val( b->in[i].c, 0 ), got = val( o[i].r0, S_MS );
+		x = snapd( x );
+		y = snapd( y );
+		m = snapd( m );
+		double l = sqrt( x * x + y * y );
+		if ( l > m * 1.000001 && m > 0.0 && m / l > ldexp( 1.0, -20 ) ) // V4: smaller scales have under 10 bits
+		{
+			double e = fabs( got / ( m / l ) - 1.0 );
+			ds = e > ds ? e : ds;
+			++nds;
+		}
+		else if ( l < m * 0.999999 )
+		{
+			notOne += got != 1.0;
+		}
+	}
+	say( "accuracy (twin): sqrtT max rel %.3g (%d), recipE max rel %.3g (%d), discScale max rel %.3g (%d clamped), %d not exactly 1 inside\n", sq,
+		 nsq, re, nre, ds, nds, notOne );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 // kernels.slang: the toy's GPU stages so far (DESIGN.md "Pipeline per tick"), one source for the three dialects
-// through num.slang; the narrowphase is in narrow.slang (included below). Every kernel takes an index list: pc.start
+// through num.slang; the narrowphase is in narrow.slang and the contact solve in solve.slang (included below), the
+// body kernels here. Every kernel takes an index list: pc.start
 // and pc.count into `lists`, never "the world", so a unit can later be stepped alone. No atomics or groupshared memory
 // (the saturation counter aside).
 #define TOY_COUNTERS_BINDING 11
@@ -23,6 +24,7 @@
 [[vk::binding( 15, 0 )]] RWStructuredBuffer<SatAxis> satAxes;		 // narrowSat to narrowClip, by pair
 [[vk::binding( 16, 0 )]] RWStructuredBuffer<NarrowDiag> narrowDiags; // diagnostics (Params.narrowDiag), by pair
 [[vk::binding( 17, 0 )]] RWStructuredBuffer<Hash2> manifoldHashes;	 // by pair
+[[vk::binding( 18, 0 )]] RWStructuredBuffer<Constraint> constraints; // the contact solve's, by pair (prepareContacts)
 [[vk::push_constant]] ConstantBuffer<Push> pc;
 
 // hash categories
@@ -30,6 +32,7 @@
 #define CAT_MANIFOLD 2u
 
 #include "narrow.slang"
+#include "solve.slang"
 
 // World inverse inertia (R invIl R^T, the mantissa keeping eI) and the integer AABB: the local bounds' centre rotated
 // and the half extents through |R|, plus the margin, around the position, on the 2^-10 m grid.
@@ -44,7 +47,7 @@ void prepareBodies( uint3 tid : SV_DispatchThreadID )
 	BodyPose pose = bodyPose[i];
 	BodyMass m = bodyMass[i];
 	Hull h = hulls[m.hull];
-	M3 R = matrixFromQuat( pose.q, P.one );
+	M3 R = snapM3( matrixFromQuat( pose.q, P.one ) );
 	m.invIw = rotateSym( R, m.invIl );
 	bodyMass[i] = m;
 	V3 c = mulM3V( R, h.boundsCenter );
@@ -127,6 +130,25 @@ void finalizeBodies( uint3 tid : SV_DispatchThreadID )
 	BodyState s = bodyState[i];
 	BodyPose pose = bodyPose[i];
 	Hull h = hulls[bodyMass[i].hull];
+	// Box3D's isFast (b3FinalizeBodiesTask; it stops contact recycling): the farthest point's motion, max( |dp| + 2
+	// |arc of dq|, (|v| + |arc of w|) dt ), above half the inner radius; the arcs b3ModifiedCross( |local turn|,
+	// maxExtent ) in the body's frame before this step's turn. (Box3D also asks for a body that is not falling asleep;
+	// one under the sleep speed cannot move that far.)
+	{
+		V3 lw = invRotate( pose.q, s.w );							// Q11.20
+		V3 ldq = invRotate( pose.q, v3( s.dq.x, s.dq.y, s.dq.z ) ); // Q1.30
+		V3 e = h.maxExtentV;
+		V3 aw = v3( absT( lw.x ), absT( lw.y ), absT( lw.z ) );
+		V3 aq = v3( absT( ldq.x ), absT( ldq.y ), absT( ldq.z ) );
+		V3 velArc = snap3( v3( sum2( aw.y, e.z, aw.z, e.y, S_W + S_R - S_V ), sum2( aw.z, e.x, aw.x, e.z, S_W + S_R - S_V ),
+							   sum2( aw.x, e.y, aw.y, e.x, S_W + S_R - S_V ) ) ); // Q9.22
+		V3 rotArc = snap3( v3( sum2( aq.y, e.z, aq.z, e.y, S_Q ), sum2( aq.z, e.x, aq.x, e.z, S_Q ), sum2( aq.x, e.y, aq.y, e.x, S_Q ) ) ); // Q8.24
+		T maxVelocity = snap( len3( s.v ) + len3( velArc ) ); // Q9.22
+		T rotLen = len3( rotArc );
+		T maxDelta = snap( rescale( len3( s.dp ), S_DP - S_R ) + ( rotLen + rotLen ) ); // Q8.24
+		T maxMotion = maxT( maxDelta, M( maxVelocity, P.dt, S_V + S_H - S_R ) );
+		s.flags = maxMotion > M( P.fastSafety, h.minExtent, S_MS ) ? STATE_FAST : 0;
+	}
 	pose.p = posAdd( pose.p, s.dp );
 	pose.q = quatNormalize( quatMul( s.dq, pose.q ), P.one );
 	s.dp = zero3();
@@ -160,6 +182,7 @@ void wakeBodies( uint3 tid : SV_DispatchThreadID )
 	s.dp = zero3();
 	s.dq = quatIdentity( P.one );
 	s.sleepTicks = 0;
+	s.flags = 0;
 	bodyState[i] = s;
 }
 
@@ -220,5 +243,10 @@ void hashManifolds( uint3 tid : SV_DispatchThreadID )
 	h = hashWord( h, uint( m.axisType ) );
 	h = hashWord( h, uint( m.axisA ) );
 	h = hashWord( h, uint( m.axisB ) );
+	h = hashWord( h, uint( m.flags ) );
+	h = hashQ4( h, m.cachedRotationA );
+	h = hashQ4( h, m.cachedRotationB );
+	h = hashV3( h, m.cachedPoseP );
+	h = hashQ4( h, m.cachedPoseQ );
 	manifoldHashes[k] = hashEnd( h );
 }

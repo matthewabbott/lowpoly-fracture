@@ -28,6 +28,10 @@
 #define H_UNIT 16
 #define H_DELTA 17
 #define H_FRAME 18
+#define H_EXP 19
+#define H_RECIPE 20
+#define H_SQRT 21
+#define H_DISC 22
 
 [shader( "compute" )]
 [numthreads( 64, 1, 1 )]
@@ -244,6 +248,31 @@ void battery( uint3 tid : SV_DispatchThreadID )
 		H2 hh = hashT( hashT( hashT( hashT( hashStart( 0u, 0u ), x.y ), x.z ), f.R.r1.z ), g.p.x );
 		o.u0 = hh.a;
 		o.u1 = hh.b;
+	}
+	else if ( h == H_EXP )
+	{
+		// the solver's exponent bookkeeping (V4; F and D give 0): msb, a clamped shift (counted), a kept exponent
+		o.u0 = uint( msbT( v.a ) );
+		o.u1 = uint( shiftOf( v.k ) ) ^ ( uint( fmtV4( v.sh ) ) << 8u );
+	}
+	else if ( h == H_RECIPE )
+	{
+		// 1/k as a mantissa and its exponent (k in format sh)
+		int er = 0;
+		o.r0 = recipE( v.a, v.sh, er );
+		o.u0 = uint( er );
+	}
+	else if ( h == H_SQRT )
+	{
+		o.r0 = sqrtT( v.a, v.sh );
+	}
+	else if ( h == H_DISC )
+	{
+		// the friction disc's scale, and the clamped pair
+		T sc = discScale( v.a, v.b, v.c, one );
+		o.r0 = sc;
+		o.r1 = snap( M( sc, v.a, S_MS ) );
+		o.r2 = snap( M( sc, v.b, S_MS ) );
 	}
 	batOut[i] = o;
 }

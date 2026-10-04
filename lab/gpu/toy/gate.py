@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""gate.py: the toy's gates 1 to 3 (NOTES.md) on this machine, from the binaries of `lab.py build`.
+"""gate.py: the toy's gates 1 to 4 (NOTES.md) on this machine, from the binaries of `lab.py build`.
 
-  python lab/gpu/toy/gate.py [--compilers msvc,clang-cl] [--ticks 600] [--out lab/gpu/build/toy-scratch/gate] [--gates 1,2,3]
+  python lab/gpu/toy/gate.py [--compilers msvc,clang-cl] [--ticks 600] [--out lab/gpu/build/toy-scratch/gate] [--gates 1,2,3,4]
 
 Gate 1: each dialect's battery on every GPU and the twin of each compiler: every word identical, lpDivQ31 equal to C's
 division, the battery hashes equal across compilers. Gate 2: stack10 and pile200 (and pile200 without gravity, one body
-pushed: sleep and wake), chip and ramp per dialect and compiler at 1 and 8 threads: per-tick hashes (bodies, manifolds,
-stages) equal across thread counts and compilers, the floating-point sentinel clean; F and V4 positions against D's.
+pushed: sleep and wake), chip, ramp, bounce and ratio per dialect and compiler at 1 and 8 threads: per-tick hashes
+(bodies, manifolds, stages) equal across thread counts and compilers, the floating-point sentinel clean, V4's saturation
+counters at 0; F and V4 positions against D's.
 Gate 3: the narrowphase's corpus (narrow_<d>): D's results as the reference, F and V4 pick D's axis and feature ids on
 every pair outside ties (both passes: fresh, and cached with warm starts), the corpus hashes equal across compilers;
 the corpus on every GPU against the twin is reported (desired, not required).
+Gate 4: the contact solve's physical sanity on the twins of the first compiler, every dialect, 1 and 8 threads (the
+threads must agree, the sentinel stay clean and V4's saturations at 0; the numbers are reported, step 4b judges them
+against Box3D): stack10 for 3,600 ticks with sleep off and on, pile200 over eight seeds, bounce, ramp, ratio and chip,
+each through its trajectory (traj.py's summaries).
 """
 import argparse
 import os
@@ -19,7 +24,12 @@ import sys
 
 LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = ".exe" if sys.platform == "win32" else ""
-SCENES = [("stack10", []), ("pile200", []), ("pile200-wake", ["--gravity", "0", "--push", "112,1.5,0,0.5"]), ("chip", []), ("ramp", [])]
+SCENES = [("stack10", []), ("pile200", []), ("pile200-wake", ["--gravity", "0", "--push", "112,1.5,0,0.5"]), ("chip", []), ("ramp", []),
+          ("bounce", []), ("ratio", [])]
+# gate 4: name, scene, ticks, extra arguments
+SANITY = [("stack10-awake", "stack10", 3600, ["--sleep", "0"]), ("stack10-sleep", "stack10", 3600, [])] + \
+         [(f"pile200-s{k}", "pile200", 3600, ["--seed", str(k)]) for k in range(1, 9)] + \
+         [("bounce", "bounce", 300, []), ("ramp", "ramp", 600, []), ("ratio", "ratio", 1200, []), ("chip", "chip", 600, [])]
 
 
 def run(exe, args, log):
@@ -81,6 +91,9 @@ def gate2(a, comps, bad):
                       + "".join(f"; vs D {w}: pos rms {r} max {x}, rot rms {rr} max {rx}" for w, r, x, rr, rx in pos))
                 if code != 0 or not m or m.group(5) != "agree":
                     bad.append(f"toy {d} {name} {c}: exit {code}")
+                sat = re.search(r"saturations (\d+) \(twin", text)
+                if not sat or int(sat.group(1)) != 0:
+                    bad.append(f"toy {d} {name} {c}: saturations {sat.group(1) if sat else '?'}")
             same = len({runs[(d, c)][0] for c in comps}) == 1 and len({tuple(runs[(d, c)][1]) for c in comps}) == 1
             print(f"  {name:12} {d:2} per-tick hashes {'identical on ' + ', '.join(comps) if same else 'DIFFER between compilers'}")
             if not same:
@@ -117,12 +130,38 @@ def gate3(a, comps, bad):
             bad.append(f"narrow {d}: compilers differ")
 
 
+def gate4(a, comps, bad):
+    print("gate 4: the contact solve's sanity (twins, " + comps[0] + ")")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import traj  # noqa: E402
+    import contextlib
+    import io
+    for name, scene, ticks, extra in SANITY:
+        for d in ("F", "V4", "D"):
+            exe = os.path.join(LAB, "build", comps[0], "bin", f"toy_{d}{EXE}")
+            log = os.path.join(a.out, f"sanity_{d}.{name}.txt")
+            tr = os.path.join(a.out, f"sanity_{d}.{name}.traj")
+            args = ["--scene", scene, "--ticks", str(ticks), "--threads", "1,8", "--quiet", "--traj", tr, *extra]
+            code, text = run(exe, args, log)
+            m = re.search(r"run hash ([0-9a-f]+).*?threads (\w+), saturations (\d+)", text)
+            solve = re.search(r"^solve: (.*?); at most", text, re.M)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                getattr(traj, scene)(traj.Traj(tr))
+            summary = buf.getvalue().strip().split(": ", 1)[-1]
+            print(f"  {name:14} {d:2} {summary}")
+            print(f"  {'':14} {'':2} toy: {solve.group(1) if solve else '?'}; threads {m.group(2) if m else '?'}, saturations "
+                  f"{m.group(3) if m else '?'}")
+            if code != 0 or not m or m.group(2) != "agree" or m.group(3) != "0":
+                bad.append(f"sanity {d} {name}: exit {code}, threads {m.group(2) if m else '?'}, saturations {m.group(3) if m else '?'}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--compilers", default="msvc,clang-cl")
     p.add_argument("--ticks", default="600")
     p.add_argument("--out", default=os.path.join(LAB, "build", "toy-scratch", "gate"))
-    p.add_argument("--gates", default="1,2,3")
+    p.add_argument("--gates", default="1,2,3,4")
     a = p.parse_args()
     a.out = os.path.abspath(a.out)  # the binaries run from lab/gpu
     os.makedirs(a.out, exist_ok=True)
@@ -135,6 +174,8 @@ def main():
         gate2(a, comps, bad)
     if "3" in gates:
         gate3(a, comps, bad)
+    if "4" in gates:
+        gate4(a, comps, bad)
     print("\n" + ("PASS" if not bad else "FAIL:\n  " + "\n  ".join(bad)))
     sys.exit(1 if bad else 0)
 

@@ -493,13 +493,13 @@ static void quat_about_z( double t, double q[4] )
 	q[3] = 1.0 / l;
 }
 
-// stack10: ten 0.5 m cubes, touching, on a ground box whose top is y = 0
-static void build_stack10( Scene* s )
+// stack10: ten 0.5 m cubes, touching, on a ground box whose top is y = 0 (stackN: N cubes, N in 1 to 40)
+static void build_stack( Scene* s, int count )
 {
 	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
 	add_body( s, ground, 1, 0.0, -0.5, 0.0, 0.0 );
 	int cube = add_box_hull( s, 0.25, 0.25, 0.25 );
-	for ( int i = 0; i < 10; ++i )
+	for ( int i = 0; i < count; ++i )
 	{
 		add_body( s, cube, 0, 0.0, 0.25 + 0.5 * i, 0.0, 1000.0 );
 	}
@@ -534,7 +534,8 @@ static void build_pile200( Scene* s, Pcg* r )
 	}
 }
 
-// bounce: a 0.5 m box dropped from 2 m, restitution 0.5
+// bounce: a 0.5 m box dropped from 2 m (its centre; 1.75 m to the ground), restitution 0.5 (the ground's 0: the pair
+// takes the larger). The analytic first apex: the centre at 0.25 + 0.5^2 1.75 = 0.6875 m.
 static void build_bounce( Scene* s )
 {
 	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
@@ -543,28 +544,33 @@ static void build_bounce( Scene* s )
 	b->restitution = 0.5;
 }
 
-// ramp: a static slope (about 20 degrees: tan 10 degrees = 0.17633) and two boxes on it, friction 0.6 and 0.2
+// ramp: a static slope of 25 degrees (the rotation's half-angle tangent is tan 12.5 degrees; tan 25 degrees = 0.4663)
+// and two 0.5 m boxes 2.5 m up it, friction 0.6 (body 2) and 0.2 (body 3). Mixed with the ramp's 0.6 (Box3D's sqrt):
+// 0.6 holds, sqrt(0.12) = 0.3464 slides at g (sin 25 - 0.3464 cos 25) = 1.0866 m/s^2, 6.5 m to the ramp's lower end.
 static void build_ramp( Scene* s )
 {
 	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
 	add_body( s, ground, 1, 0.0, -0.5, 0.0, 0.0 );
 	double q[4];
-	quat_about_z( 0.17632698070846498, q );
-	SceneBody* ramp = add_body( s, add_box_hull( s, 4.0, 0.25, 2.0 ), 1, 0.0, 1.5, 0.0, 0.0 );
+	quat_about_z( 0.22169466264293988, q );
+	double cy = 2.0;
+	SceneBody* ramp = add_body( s, add_box_hull( s, 4.0, 0.25, 2.0 ), 1, 0.0, cy, 0.0, 0.0 );
 	set_quat( ramp, q );
 	int box = add_box_hull( s, 0.25, 0.25, 0.25 );
-	double up[3] = { -2.0 * q[2] * q[3], 1.0 - 2.0 * q[2] * q[2], 0.0 }; // the ramp's local y in the world
+	double along[3] = { 1.0 - 2.0 * q[2] * q[2], 2.0 * q[2] * q[3], 0.0 }; // the ramp's local x in the world (up the slope)
+	double up[3] = { -2.0 * q[2] * q[3], 1.0 - 2.0 * q[2] * q[2], 0.0 }; // its local y
 	for ( int i = 0; i < 2; ++i )
 	{
 		double off = 0.25 + 0.25 + 0.001;
 		double z = i == 0 ? -0.8 : 0.8;
-		SceneBody* b = add_body( s, box, 0, up[0] * off, 1.5 + up[1] * off, z, 1000.0 );
+		SceneBody* b = add_body( s, box, 0, along[0] * 2.5 + up[0] * off, cy + along[1] * 2.5 + up[1] * off, z, 1000.0 );
 		set_quat( b, q );
 		b->friction = i == 0 ? 0.6 : 0.2;
 	}
 }
 
-// ratio: 3 t resting on 1 kg
+// ratio: 3 t resting on 1 kg (bodies 1, 2: a 1 m cube on a 0.5 m cube); a 100 kg plate (1 m x 5 cm x 1 m, body 7)
+// resting on four 0.05 kg chips (10 x 2 x 10 cm, bodies 3 to 6) under its corners, 3 m away
 static void build_ratio( Scene* s )
 {
 	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
@@ -573,22 +579,32 @@ static void build_ratio( Scene* s )
 	add_body( s, small, 0, 0.0, 0.25, 0.0, 1.0 / 0.125 );
 	int big = add_box_hull( s, 0.5, 0.5, 0.5 );
 	add_body( s, big, 0, 0.0, 1.0, 0.0, 3000.0 );
+	int chip = add_box_hull( s, 0.05, 0.01, 0.05 );
+	for ( int k = 0; k < 4; ++k )
+	{
+		double x = 3.0 + ( ( k & 1 ) ? 0.4 : -0.4 );
+		double z = ( k & 2 ) ? 0.4 : -0.4;
+		add_body( s, chip, 0, x, 0.01, z, 0.05 / ( 0.1 * 0.02 * 0.1 ) );
+	}
+	int plate = add_box_hull( s, 0.5, 0.025, 0.5 );
+	add_body( s, plate, 0, 3.0, 0.02 + 0.025, 0.0, 100.0 / ( 1.0 * 0.05 * 1.0 ) );
 }
 
-// chip: a 0.05 kg chip at 10 m/s and 40 rad/s just above the ground
+// chip: a 0.05 kg chip (10 x 2 x 10 cm) at 10 m/s, (6, -8, 0), spinning at 40 rad/s about z, 0.3 m above the ground
 static void build_chip( Scene* s )
 {
 	int ground = add_box_hull( s, 10.0, 0.5, 10.0 );
 	add_body( s, ground, 1, 0.0, -0.5, 0.0, 0.0 );
 	int chip = add_box_hull( s, 0.05, 0.01, 0.05 );
 	SceneBody* b = add_body( s, chip, 0, -3.0, 0.3, 0.0, 0.05 / ( 0.1 * 0.02 * 0.1 ) );
-	b->v[0] = 10.0;
+	b->v[0] = 6.0;
+	b->v[1] = -8.0;
 	b->w[2] = 40.0;
 }
 
 const char* scene_names( void )
 {
-	return "stack10 pile200 bounce ramp ratio chip";
+	return "stack10 (stackN) pile200 bounce ramp ratio chip";
 }
 
 int scene_build( Scene* s, const char* name, uint64_t seed )
@@ -597,8 +613,9 @@ int scene_build( Scene* s, const char* name, uint64_t seed )
 	snprintf( s->name, sizeof( s->name ), "%s", name );
 	s->seed = seed;
 	Pcg r = pcg_seed( seed, 7 );
-	if ( strcmp( name, "stack10" ) == 0 )
-		build_stack10( s );
+	int count = strncmp( name, "stack", 5 ) == 0 ? atoi( name + 5 ) : 0;
+	if ( count >= 1 && count <= 40 )
+		build_stack( s, count );
 	else if ( strcmp( name, "pile200" ) == 0 )
 		build_pile200( s, &r );
 	else if ( strcmp( name, "bounce" ) == 0 )
