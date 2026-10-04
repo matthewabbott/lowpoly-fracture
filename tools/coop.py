@@ -8,16 +8,19 @@ prints the JSON replies, one line per player.
   python tools/coop.py launch [--scene track] [--players 2] [--delay 4] [--size 960x540] [--name NAME]
                               [--camera p1=x,y,z,yaw,pitch] [--script p1=file] [--bombard N] [--running] [--allow-input]
   python tools/coop.py p1 key V tap          any request to one player (p0 is the host), or to "all" of them
-  python tools/coop.py all state
+  python tools/coop.py p1 brief              short lines: the clock, what p1 drives, every car's place, heading,
+                                             speed and distance from p1's camera (state: everything, as JSON)
   python tools/coop.py step 60               the session's clock: every machine steps 60 ticks, then holds
   python tools/coop.py turn p1 30            p1 is ready for 30 more ticks; returns once every player has asked
   python tools/coop.py shot [p1|all] [--ui]  PNGs in build/coop/NAME/shots/ (all: one side by side, too)
   python tools/coop.py sync                  every player at one tick with one hash? (exit 1 if not)
-  python tools/coop.py net p1 delay 120 40   p1's link held 120 ms and up to 40 more, each way (stall MS: a pause)
+  python tools/coop.py p1 net delay 120 40   p1's link held 120 ms and up to 40 more, each way (net stall MS: a pause)
   python tools/coop.py log p1 [lines]        the end of a player's log (its reports, a desync's)
   python tools/coop.py stop                  quit every window of the session
   python tools/coop.py test [name ...]       the scenarios in test/coop/*.py, each in its own session
---name NAME picks the session on any command (default: "default"); several sessions may run at once.
+--name NAME picks the session on any command (default: "default"); several sessions may run at once. A relative
+path given to shot or dump goes in build/coop/NAME/shots/; keep other scratch files there too (in a folder of your
+player's), so agents sharing a machine do not overwrite each other's.
 
 Requests a player takes (control.h has them all):
   state | key A-Z|0-9|SPACE|SHIFT|F1|F12 down|up|tap | mouse down|up | camera x y z [yaw pitch | at x y z]
@@ -27,18 +30,26 @@ Requests a player takes (control.h has them all):
 How the sandbox plays (tips for agents):
 - The clock is held: nothing moves until step (from the host) or every player's turn. The same requests in the same
   order give the same session, hash for hash.
-- A key acts as a person's would: V takes the nearest free car (or mech) within 25 m of the camera, or leaves the one
-  driven; W/S/A/D drive while held (key W down, step, key W up); 1-7 pick a tool; the left button fires it at the
-  screen's centre. Point the camera first: camera x y z at x y z. While driving, the camera chases the car.
+- A key acts as a person's would: V takes the nearest free car (or mech) within 25 m of the CAMERA (not of anything
+  else), or leaves the one driven; so first point the camera near it: camera x y z at x y z. 1-7 pick a tool; the
+  left button fires it at the screen's centre. While driving, the camera chases the car.
+- Driving: hold keys with "key W down", step, then "key W up". W throttles, S brakes (then reverses once stopped), A
+  steers left and D right, SPACE is the handbrake. Steering is gentle at speed (about 7 degrees in half a second at 10
+  m/s, 20-25 at 3 m/s): slow down or brake to turn tightly. It also lags by the input delay, so let go a little early.
+- Headings, and the camera's yaw, are degrees: 0 faces -z, 90 faces +x, 180 faces +z, 270 faces -x; y is up. A turns
+  toward a lower heading, D toward a higher one.
 - A player's input applies after the session's input delay (state's session.delay, 4 by default): step at least
-  delay + 1 ticks before looking for what it did. state's vehicles list each car's controller (-1: the scene's
-  driver, else the peer driving it), position, forward (the way it faces) and speed; y is up.
+  delay + 1 ticks before looking for what it did. A car's controller is -1 while nobody drives it: on the track the
+  scene's driver then takes it round its laps, so free cars move from the first tick.
+- A claim can lose: if two players press V on one car in one tick, the lower peer gets it, and the other's state
+  shows a notice ("car 1 went to peer 0 first").
 - A screenshot is a PNG: read it to see. --ui adds the sandbox's panel (the co-op line, a desync's report).
 """
 
 import argparse
 import importlib.util
 import json
+import math
 import os
 import re
 import socket
@@ -157,8 +168,9 @@ def _screen_width():
 # ---- a session ----
 
 class Session:
-    def __init__(self, name, players, scene, game=None):
+    def __init__(self, name, players, scene, game=None, others=None):
         self.name, self.players, self.scene, self.game = name, players, scene, game
+        self.others = others or []  # sandboxes outside the session that stop with it (join_late's)
         self.dir = os.path.join(ROOT, name)
 
     @property
@@ -191,35 +203,56 @@ class Session:
         common += ['--allow-input'] if allow_input else []
         common += ['--bombard', str(bombard)] if bombard > 0 else []
         session = Session(name, [], scene)
-        game = None
-        for k in range(players):
-            args = list(common)
-            args += ['--window', '%d,%d' % ((k % columns) * (size[0] + 16), (k // columns) * (size[1] + 40))]
-            if 'p%d' % k in cameras:
-                args += ['--camera', cameras['p%d' % k]]
-            if 'p%d' % k in scripts:
-                args += ['--script', scripts['p%d' % k]]
+        try:
+            for k in range(players):
+                args = list(common)
+                args += ['--window', '%d,%d' % ((k % columns) * (size[0] + 16), (k // columns) * (size[1] + 40))]
+                if 'p%d' % k in cameras:
+                    args += ['--camera', cameras['p%d' % k]]
+                if 'p%d' % k in scripts:
+                    args += ['--script', scripts['p%d' % k]]
+                if players > 1:
+                    args += ['--host', '127.0.0.1:0', '--peers', str(players - 1)] if k == 0 else ['--join', '127.0.0.1:%d' % session.game]
+                log = os.path.join(folder, 'p%d.log' % k)
+                process = _start(args, log)
+                session.players.append(Player(k, 0, process.pid, log))
+                session.save()  # at once: a launch that fails part way can still be stopped
+                session.players[k].port = int(_wait_for(log, r'control 127\.0\.0\.1:(\d+)', process).group(1))
+                if k == 0 and players > 1:
+                    session.game = int(_wait_for(log, r'co-op: hosting \S+ on port (\d+)', process).group(1))
+                session.save()
+                if k > 0:
+                    session._welcome(session.players[k])
             if players > 1:
-                args += ['--host', '127.0.0.1:0', '--peers', str(players - 1)] if k == 0 else ['--join', '127.0.0.1:%d' % game]
-            log = os.path.join(folder, 'p%d.log' % k)
-            process = _start(args, log)
-            port = int(_wait_for(log, r'control 127\.0\.0\.1:(\d+)', process).group(1))
-            if k == 0 and players > 1:
-                game = int(_wait_for(log, r'co-op: hosting \S+ on port (\d+)', process).group(1))
-            player = Player(k, port, process.pid, log)
-            session.players.append(player)
-            if k > 0:
-                # Welcome before the next joins, so peer ids follow the order of launch
-                end = time.time() + 30.0
-                while player.state().get('peer') != k:
-                    if time.time() > end:
-                        raise CoopError('p%d was not welcome as peer %d: %s' % (k, k, player.tail(5)))
-                    time.sleep(0.05)
-        session.game = game
-        session.save()
-        if players > 1:
-            session.wait_running()
+                session.wait_running()
+        except BaseException:
+            session.stop()
+            raise
         return session
+
+    def _welcome(self, player, seconds=30.0):
+        """Waits for a joiner's welcome, so peer ids follow the order of launch; fails at once if it was refused"""
+        end = time.time() + seconds
+        while True:
+            state = player.state()
+            if state.get('peer') == player.peer and state['session']['state'] == 'running':
+                return
+            if state['session']['state'] not in ('joining', 'running'):
+                raise CoopError('p%d did not join: %s' % (player.peer, state['session']['report']))
+            if time.time() > end:
+                raise CoopError('p%d was not welcome as peer %d: %s' % (player.peer, player.peer, player.tail(5)))
+            time.sleep(0.05)
+
+    def join_late(self, label='late'):
+        """Another sandbox joining the running session (the host refuses it: no catch-up yet); it stops with the
+        session. Returns it as a Player."""
+        log = os.path.join(self.dir, '%s.log' % label)
+        process = _start(['--scene', self.scene, '--control', '0', '--background', '--width', '640', '--height', '360',
+                          '--join', '127.0.0.1:%d' % self.game], log)
+        player = Player(len(self.players) + len(self.others), 0, process.pid, log)
+        self.others.append(player)
+        player.port = int(_wait_for(log, r'control 127\.0\.0\.1:(\d+)', process).group(1))
+        return player
 
     def wait_running(self, seconds=30.0):
         end = time.time() + seconds
@@ -298,10 +331,11 @@ class Session:
     # -- the end --
 
     def stop(self):
-        alive = [p for p in self.players if _alive(p.pid)]
+        alive = [p for p in self.players + self.others if _alive(p.pid)]
         for p in alive:
             try:
-                p.ask('quit', timeout=5.0, ok=False)
+                if p.port > 0:
+                    p.ask('quit', timeout=5.0, ok=False)
             except CoopError:
                 pass
             p.close()
@@ -311,6 +345,10 @@ class Session:
         for p in alive:
             if _alive(p.pid):
                 _kill(p.pid)
+        try:
+            os.remove(os.path.join(self.dir, 'session.json'))  # its pids may be reused by now
+        except OSError:
+            pass
 
     @staticmethod
     def stop_named(name):
@@ -436,6 +474,39 @@ def _print(name, reply):
     print('%s %s' % (name, json.dumps(reply, separators=(',', ':'))), flush=True)
 
 
+def heading(forward):
+    """Degrees, as the camera's yaw: 0 faces -z, 90 faces +x, 180 faces +z, 270 faces -x"""
+    return math.degrees(math.atan2(forward[0], -forward[2])) % 360.0
+
+
+def brief(name, state):
+    """A player's state in a few lines: the clock, what it drives, and where everything is from its camera"""
+    session = state.get('session', {})
+    cam = state['camera']
+    head = '%s tick %d (%s%s)' % (name, state['tick'], session.get('state', 'solo'),
+                                  ', delay %d' % session['delay'] if 'delay' in session else '')
+    if session.get('report'):
+        head += ', report: %s' % session['report']
+    head += '; drives car %d' % state['driving'] if state['driving'] >= 0 else (
+        '; walks rig %d' % state['walking'] if state['walking'] >= 0 else '; on foot')
+    head += '; camera (%.1f, %.1f, %.1f) yaw %.0f' % (cam['x'], cam['y'], cam['z'], cam['yaw'] % 360.0)
+    head += '; keys %s' % (' '.join(state['keys']) or 'none')
+    if state.get('notice'):
+        head += '; notice: %s' % state['notice']
+    lines = [head]
+    for kind, items in (('car', state.get('vehicles', [])), ('rig', state.get('rigs', []))):
+        for v in items:
+            who = 'scene' if v['controller'] < 0 else 'p%d' % v['controller']
+            if not v['alive'] or 'position' not in v:
+                lines.append('  %s %d [%s] wrecked' % (kind, v['index'], who))
+                continue
+            x, y, z = v['position']
+            far = math.sqrt((x - cam['x']) ** 2 + (y - cam['y']) ** 2 + (z - cam['z']) ** 2)
+            lines.append('  %s %d [%s] at (%.1f, %.1f, %.1f) heading %.0f, %.1f m/s, %.1f m from the camera' % (
+                kind, v['index'], who, x, y, z, heading(v['forward']), v['speed'], far))
+    return '\n'.join(lines)
+
+
 def main(argv):
     if not argv or argv[0] in ('help', '-h', '--help'):
         print(__doc__)
@@ -480,7 +551,7 @@ def main(argv):
             peer = s.player(argv[1]).peer
             reply = s.turn(peer, int(argv[2]))
             _print(argv[1], reply)
-            _print(argv[1], s.player(argv[1]).state())
+            print(brief(argv[1], s.player(argv[1]).state()))
             return 0
         if verb == 'shot':
             which = next((x for x in argv[1:] if not x.startswith('--')), 'all')
@@ -497,17 +568,24 @@ def main(argv):
         if verb == 'log':
             print(s.player(argv[1]).tail(int(argv[2]) if len(argv) > 2 else 20), end='')
             return 0
-        if verb == 'net':
-            _print(argv[1], s.player(argv[1]).ask(' '.join(['net'] + argv[2:]), ok=False))
-            return 0
         # A request to a player, or to all of them
         targets = s.players if verb == 'all' else [s.player(verb)]
-        line = ' '.join(argv[1:])
-        if not line:
+        words = argv[1:]
+        if not words:
             raise CoopError('no request given (coop.py help)')
+        if words[0] == 'brief':
+            for p in targets:
+                print(brief(p.name, p.state()))
+            return 0
+        if words[0] in ('shot', 'dump') and len(words) > 1 and not os.path.isabs(words[1]):
+            # A relative path goes in the session's folder, not wherever the sandbox runs
+            words[1] = os.path.join(s.dir, 'shots', words[1])
+            if words[0] == 'shot' and not words[1].lower().endswith('.png'):
+                words[1] += '.png'
+        line = ' '.join(words)
         code = 0
         for p in targets:
-            timeout = 600.0 if line.startswith(('wait', 'step', 'turn')) else 30.0
+            timeout = 600.0 if words[0] in ('wait', 'step', 'turn') else 30.0
             reply = p.ask(line, timeout=timeout, ok=False)
             _print(p.name, reply)
             code = code if reply.get('ok') else 1

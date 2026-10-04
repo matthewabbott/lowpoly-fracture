@@ -9,7 +9,8 @@ then performance, then everything else. Determinism is mandatory (docs/determini
 First-party code is about 240k tokens (the core, `src/` and `lpf.h`, about 130k; the tests 60k): read what a task
 needs. `extern/` (sokol, imgui, Box3D; about 1.9M tokens) and
 `app/sandbox/shaders/generated/` are vendored or generated: never read them whole. The Box3D API is in
-`extern/box3d/include/box3d/*.h`; our patches and known Box3D issues are in `extern/box3d/PATCHES.md`.
+`extern/box3d/include/box3d/*.h`; our patches and known Box3D issues are in `extern/box3d/PATCHES.md` (sokol's few in
+`extern/sokol/PATCHES.md`).
 `docs/research/` (milestone 7's track reports, about 150k tokens) is evidence for `docs/multiplayer-research.md`: read
 a track only when a decision needs its detail.
 

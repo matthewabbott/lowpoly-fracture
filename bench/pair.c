@@ -132,10 +132,14 @@ int lpBenchLockstep( const lpPairDef* def )
 				lpLockstep_AddPeer( lockstep, lpTcp_Transport( c ) );
 			}
 		}
-		bool sending = hosting && lpLockstep_GetClosed( lockstep ) < def->ticks;
-		int64_t next = def->leaveTick >= 0 ? def->leaveTick : def->stallTick >= 0 && stalled == false ? def->stallTick : tick + 64;
-		int room = next - tick < 64 ? (int)( next - tick ) : 64; // stop on the tick a fault is due at
-		int steps = lpLockstep_Pump( lockstep, lpPairStep, &machine, sending ? 64 : 0, room > 0 ? room : 64 );
+		int64_t unsent = hosting ? def->ticks - lpLockstep_GetClosed( lockstep ) : 0; // never past the run's last tick
+		bool sending = unsent > 0;
+		int64_t next = tick + 64; // stop on the tick a fault is due at
+		next = def->leaveTick >= 0 && def->leaveTick < next ? def->leaveTick : next;
+		next = def->stallTick >= 0 && stalled == false && def->stallTick < next ? def->stallTick : next;
+		int room = (int)( next - tick );
+		int close = sending ? ( unsent < 64 ? (int)unsent : 64 ) : 0;
+		int steps = lpLockstep_Pump( lockstep, lpPairStep, &machine, close, room > 0 ? room : 64 );
 		lpLockstepState state = lpLockstep_GetState( lockstep );
 		if ( state == lp_lockstepDesync )
 		{

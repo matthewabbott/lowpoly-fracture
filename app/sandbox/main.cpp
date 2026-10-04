@@ -105,17 +105,18 @@ struct Options
 	int windowPos[2] = {};
 };
 
-// A control request still waiting (control.h): for ticks to be stepped, or for the next frame's screenshot
+// A control request (control.h) waiting for ticks to be stepped
 struct Waiting
 {
-	enum Kind
-	{
-		Everyone, // every machine has stepped to `target` (step and turn)
-		Here,	  // this machine has (wait)
-		Shot,
-	} kind;
+	bool everyone; // every machine has stepped to `target` (step and turn), or this one has (wait)
 	int id;
 	int64_t target;
+};
+
+// A screenshot asked for, taken after the next frame is drawn
+struct Shot
+{
+	int id;
 	std::string path;
 	bool ui;
 };
@@ -184,6 +185,7 @@ struct App
 	bool control = false;
 	int64_t budget = 0;
 	std::vector<Waiting> waits;
+	std::vector<Shot> shots;
 	std::vector<Turn> turns;
 
 	std::vector<Particle> particles;
@@ -441,12 +443,16 @@ void ToggleDriving()
 	float rigDistance = 0.0f;
 	int rig = Walk_Nearest( app.world, app.camPos, 25.0f, app.peer, &rigDistance ); // free, or this player's already
 	int car = Drive_Nearest( app.world, app.camPos, rig >= 0 ? rigDistance : 25.0f, app.peer );
+	if ( car < 0 && rig < 0 )
+	{
+		return; // nothing free within reach of the camera
+	}
 	if ( car >= 0 )
 	{
 		app.driving = car;
 		QueueDrive( lpVehicleControl{} );
 	}
-	else if ( rig >= 0 )
+	else
 	{
 		app.walking = rig;
 		QueueWalk( lpRigControl{} );
@@ -468,8 +474,16 @@ void SettleClaim()
 	if ( owner != app.peer )
 	{
 		char text[96];
-		snprintf( text, sizeof( text ), "%s %d went to peer %d first", app.driving >= 0 ? "car" : "rig",
-				  app.driving >= 0 ? app.driving : app.walking, owner );
+		const char* what = app.driving >= 0 ? "car" : "rig";
+		int index = app.driving >= 0 ? app.driving : app.walking;
+		if ( owner >= 0 )
+		{
+			snprintf( text, sizeof( text ), "%s %d went to peer %d first", what, index, owner );
+		}
+		else
+		{
+			snprintf( text, sizeof( text ), "%s %d could not be taken (wrecked?)", what, index );
+		}
 		app.notice = text;
 		printf( "%s\n", text );
 		app.driving = -1;
@@ -1249,10 +1263,10 @@ std::string StateJson()
 	{
 		Json s;
 		s.Str( "state", kStates[lpLockstep_GetState( app.lockstep )] ).Str( "report", lpLockstep_GetReport( app.lockstep ) );
-		s.Int( "closed", lpLockstep_GetClosed( app.lockstep ) ).Int( "delay", lpLockstep_GetDelay( app.lockstep ) ).Int( "players", Players() );
+		s.Int( "closed", lpLockstep_GetClosed( app.lockstep ) ).Int( "delay", lpLockstep_GetDelay( app.lockstep ) );
 		if ( app.listener != nullptr )
 		{
-			s.Int( "welcome", lpLockstep_GetPeerCount( app.lockstep ) ).Int( "confirmed", lpLockstep_GetConfirmed( app.lockstep ) );
+			s.Int( "players", Players() ).Int( "welcome", lpLockstep_GetPeerCount( app.lockstep ) ).Int( "confirmed", lpLockstep_GetConfirmed( app.lockstep ) );
 			s.Int( "desyncTick", lpLockstep_GetDesyncTick( app.lockstep ) );
 		}
 		j.Raw( "session", s.Done() );
@@ -1315,6 +1329,36 @@ std::string Rest( const std::string& line, size_t verb, const char* flag, bool* 
 	std::string tail = std::string( " " ) + flag;
 	*has = rest.size() > tail.size() && rest.compare( rest.size() - tail.size(), tail.size(), tail ) == 0;
 	return *has ? rest.substr( 0, rest.size() - tail.size() ) : rest;
+}
+
+// A request's form, for the reply to one whose verb is known but whose words do not fit (nullptr: no such verb)
+const char* Usage( const std::string& verb )
+{
+	static const char* kUsages[][2] = {
+		{ "state", "state" },
+		{ "key", "key A-Z|0-9|SPACE|SHIFT|F1|F12 down|up|tap" },
+		{ "mouse", "mouse down|up" },
+		{ "camera", "camera x y z [yaw pitch | at x y z]" },
+		{ "cmd", "cmd <script line without its tick>" },
+		{ "pause", "pause (alone, or the host)" },
+		{ "run", "run (alone, or the host)" },
+		{ "step", "step N (N > 0; alone, or the host)" },
+		{ "wait", "wait T" },
+		{ "turn", "turn PEER N (N > 0; sent to the host)" },
+		{ "shot", "shot PATH [ui]" },
+		{ "dump", "dump PATH" },
+		{ "inject", "inject" },
+		{ "net", "net delay MS [JITTER] | net stall MS (a joiner)" },
+		{ "quit", "quit" },
+	};
+	for ( const auto& u : kUsages )
+	{
+		if ( verb == u[0] )
+		{
+			return u[1];
+		}
+	}
+	return nullptr;
 }
 
 // One request: its reply, or "" if it waits (FinishWaits and FinishShots answer it)
@@ -1390,8 +1434,12 @@ std::string Request( const ControlRequest& r )
 		Submit( c );
 		return Json().Bool( "ok", true ).Int( "applies", applies ).Done();
 	}
-	if ( verb == "pause" || verb == "run" )
+	if ( ( verb == "pause" || verb == "run" ) && w.size() == 1 )
 	{
+		if ( peerOnly )
+		{
+			return JsonError( "a peer: the host keeps the clock (send pause or run to the host)" );
+		}
 		app.paused = verb == "pause"; // held, it still steps what step and turn allowed already
 		app.budget = app.paused ? app.budget : 0;
 		app.accumulator = 0.0;
@@ -1409,12 +1457,12 @@ std::string Request( const ControlRequest& r )
 		}
 		app.paused = true;
 		app.budget += atoi( w[1].c_str() );
-		app.waits.push_back( Waiting{ Waiting::Everyone, r.id, Clock() + app.budget, "", false } );
+		app.waits.push_back( Waiting{ true, r.id, Clock() + app.budget } );
 		return "";
 	}
 	if ( verb == "wait" && w.size() == 2 )
 	{
-		app.waits.push_back( Waiting{ Waiting::Here, r.id, atoll( w[1].c_str() ), "", false } );
+		app.waits.push_back( Waiting{ false, r.id, atoll( w[1].c_str() ) } );
 		return "";
 	}
 	if ( verb == "turn" && w.size() == 3 && atoi( w[2].c_str() ) > 0 )
@@ -1432,7 +1480,7 @@ std::string Request( const ControlRequest& r )
 		{
 			if ( t.peer == peer )
 			{
-				return JsonError( "that player is waiting for its turn already" );
+				return JsonError( ( "player " + std::to_string( peer ) + " is waiting for its turn already" ).c_str() );
 			}
 		}
 		app.turns.push_back( Turn{ r.id, peer, atoi( w[2].c_str() ) } );
@@ -1442,13 +1490,12 @@ std::string Request( const ControlRequest& r )
 	{
 		bool ui = false;
 		std::string path = Rest( r.line, verb.size(), "ui", &ui );
-		app.waits.push_back( Waiting{ Waiting::Shot, r.id, 0, path, ui } );
+		app.shots.push_back( Shot{ r.id, path, ui } );
 		return "";
 	}
 	if ( verb == "dump" && w.size() > 1 )
 	{
-		bool unused = false;
-		std::string path = Rest( r.line, verb.size(), "", &unused );
+		std::string path = r.line.substr( 5 );
 		FILE* f = fopen( path.c_str(), "w" );
 		if ( f == nullptr )
 		{
@@ -1499,12 +1546,18 @@ std::string Request( const ControlRequest& r )
 		{
 			Control_Reply( t.id, JsonError( "quit" ) );
 		}
+		for ( const Shot& shot : app.shots )
+		{
+			Control_Reply( shot.id, JsonError( "quit" ) );
+		}
 		app.waits.clear();
 		app.turns.clear();
+		app.shots.clear();
 		app.quitting = true;
 		return Ok();
 	}
-	return JsonError( "unknown request (control.h lists them)" );
+	const char* usage = Usage( verb );
+	return JsonError( usage != nullptr ? ( std::string( "usage: " ) + usage ).c_str() : "unknown request (control.h lists them)" );
 }
 
 void Serve()
@@ -1549,20 +1602,16 @@ void FinishWaits()
 		app.budget += ticks;
 		for ( const Turn& t : app.turns )
 		{
-			app.waits.push_back( Waiting{ Waiting::Everyone, t.id, Clock() + app.budget, "", false } );
+			app.waits.push_back( Waiting{ true, t.id, Clock() + app.budget } );
 		}
 		app.turns.clear();
 	}
 	for ( size_t i = 0; i < app.waits.size(); )
 	{
 		const Waiting& w = app.waits[i];
-		bool everyone = w.kind == Waiting::Everyone && app.lockstep != nullptr;
-		bool done = everyone ? lpLockstep_GetConfirmed( app.lockstep ) >= w.target - 1 : app.tick >= w.target;
+		bool done = w.everyone && app.lockstep != nullptr ? lpLockstep_GetConfirmed( app.lockstep ) >= w.target - 1 : app.tick >= w.target;
 		std::string reply;
-		if ( w.kind == Waiting::Shot )
-		{
-		}
-		else if ( Control_Open( w.id ) == false )
+		if ( Control_Open( w.id ) == false )
 		{
 			reply = JsonError( "gone" );
 		}
@@ -1584,22 +1633,17 @@ void FinishWaits()
 	}
 }
 
-// Answers the screenshots asked for, of the frame just drawn
+// Answers the screenshots asked for, of the frame just drawn (a stopped session's too: its report is worth seeing)
 void FinishShots()
 {
-	for ( size_t i = 0; i < app.waits.size(); )
+	for ( const Shot& shot : app.shots )
 	{
-		const Waiting& w = app.waits[i];
-		if ( w.kind != Waiting::Shot )
-		{
-			++i;
-			continue;
-		}
-		bool ok = w.ui ? Renderer_ScreenshotWindow( w.path.c_str() ) : Renderer_Screenshot( w.path.c_str() );
-		Control_Reply( w.id, ok ? Json().Bool( "ok", true ).Str( "path", w.path.c_str() ).Int( "tick", app.tick ).Done()
-								: JsonError( "the screenshot failed (can the path be written?)" ) );
-		app.waits.erase( app.waits.begin() + (long long)i );
+		bool ok = Control_Open( shot.id ) &&
+				  ( shot.ui ? Renderer_ScreenshotWindow( shot.path.c_str() ) : Renderer_Screenshot( shot.path.c_str() ) );
+		Control_Reply( shot.id, ok ? Json().Bool( "ok", true ).Str( "path", shot.path.c_str() ).Int( "tick", app.tick ).Done()
+								   : JsonError( "the screenshot failed (can the path be written?)" ) );
 	}
+	app.shots.clear();
 }
 
 void Frame()
@@ -1952,9 +1996,9 @@ int main( int argc, char** argv )
 			o.inputDelay = atoi( v ) < 0 ? 0 : atoi( v );
 		else if ( strcmp( a, "--host" ) == 0 )
 		{
-			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port listens on loopback only
+			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port (or localhost:port) listens on loopback only
 			o.hostPort = atoi( colon != nullptr ? colon + 1 : v );
-			o.hostLoopback = colon != nullptr;
+			o.hostLoopback = strncmp( v, "127.0.0.1:", 10 ) == 0 || strncmp( v, "localhost:", 10 ) == 0;
 		}
 		else if ( strcmp( a, "--join" ) == 0 )
 		{

@@ -189,16 +189,25 @@ lpLockstep* lpLockstep_CreatePeer( const lpLockstepDef* def, lpTransport host )
 
 void lpLockstep_AddPeer( lpLockstep* ls, lpTransport peer )
 {
-	if ( ls->peerCount == LP_LOCKSTEP_MAX_PEERS )
+	// A slot whose connection was refused, or left before its welcome, takes the next one
+	int slot = ls->peerCount;
+	for ( int i = ls->peerCount - 1; i >= 0; --i )
+	{
+		slot = ls->peers[i]->gone ? i : slot;
+	}
+	if ( slot == LP_LOCKSTEP_MAX_PEERS )
 	{
 		peer.send( peer.context, "refuse full" );
 		peer.flush( peer.context );
 		return;
 	}
-	lpLockPeer* p = calloc( 1, sizeof( lpLockPeer ) );
+	lpLockPeer* p = slot < ls->peerCount ? ls->peers[slot] : calloc( 1, sizeof( lpLockPeer ) );
+	free( p->session );
+	memset( p, 0, sizeof( lpLockPeer ) );
 	p->transport = peer;
 	p->stepped = (int64_t)lpWorld_GetTick( ls->world ) - 1;
-	ls->peers[ls->peerCount++] = p;
+	ls->peers[slot] = p;
+	ls->peerCount = slot == ls->peerCount ? slot + 1 : ls->peerCount;
 }
 
 void lpLockstep_Destroy( lpLockstep* ls )
@@ -263,6 +272,10 @@ static void lpBroadcast( lpLockstep* ls, const char* line )
 // The host stops, and every peer with it, with the same report
 static void lpStopAll( lpLockstep* ls, lpLockstepState state, const char* report )
 {
+	if ( ls->state > lp_lockstepRunning )
+	{
+		return; // stopped already, and everyone was told why
+	}
 	char line[600];
 	snprintf( line, sizeof( line ), "stop %s", report );
 	lpStop( ls, state, report );

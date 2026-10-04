@@ -362,9 +362,9 @@ int main( int argc, char** argv )
 		}
 		else if ( strcmp( a, "--host" ) == 0 )
 		{
-			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port listens on loopback only
+			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port (or localhost:port) listens on loopback only
 			pair.hostPort = atoi( colon != NULL ? colon + 1 : v );
-			pair.loopback = colon != NULL;
+			pair.loopback = strncmp( v, "127.0.0.1:", 10 ) == 0 || strncmp( v, "localhost:", 10 ) == 0;
 			++i;
 		}
 		else if ( strcmp( a, "--net-delay" ) == 0 )

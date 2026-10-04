@@ -137,7 +137,7 @@ jobs:
           pair stall 7780 "" "--net-stall 100,2000"
           [ "$codes" = " 0 0" ]
           pair leave 7781 "--peers 2" "" "--leave-at 150"
-          [ "$codes" = " 6 6 0" ] && grep -q "peer 2 left" out/leave_host.txt && grep -q "peer 2 left" out/leave_peer.txt
+          [ "$codes" = " 6 6 0" ] && grep -q "peer [12] left" out/leave_host.txt && grep -q "peer [12] left" out/leave_peer.txt
 
       - name: Keep the x64 binaries for the emulators
         if: matrix.keepbin

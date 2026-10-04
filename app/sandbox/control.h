@@ -13,7 +13,7 @@
 //   camera x y z [yaw pitch]   the free camera (degrees, as --camera); "camera x y z at x y z" looks at a point. The
 //                              crosshair is the screen's centre, so this aims the tools and picks what V takes
 //   cmd LINE                   this player's command, as a script line without its tick (scenes/script.h)
-//   pause | run                hold the clock, or let it run at 60 Hz
+//   pause | run                hold the clock, or let it run at 60 Hz (alone, or the host)
 //   step N                     N more ticks, then hold (alone, or the host: the host keeps the clock). Answered once
 //                              every machine has stepped them
 //   wait T                     answered once this machine has stepped to tick T
@@ -28,7 +28,9 @@
 //
 // While the clock is held, the camera and the particles move once per stepped tick, not per frame, and the held keys
 // are read once per tick: the same requests in the same order give the same session, hash for hash.
-// A request still waiting (step, wait, turn, shot) fails if the session stops first, with the session's report.
+// A request still waiting (step, wait, turn) fails if the session stops first, with the session's report; a
+// screenshot is still taken (the report on screen is worth seeing). A known verb with words that do not fit is
+// answered with its usage.
 #pragma once
 
 #include <stdint.h>

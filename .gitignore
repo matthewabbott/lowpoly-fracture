@@ -19,3 +19,4 @@ screenshot_*.png
 
 # agent worktrees and local Claude state
 .claude/
+__pycache__/
