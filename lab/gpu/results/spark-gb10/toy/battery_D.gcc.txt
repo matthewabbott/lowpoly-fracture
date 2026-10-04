@@ -1,10 +1,11 @@
 toy battery, dialect D, 4096 vectors per helper, seed 20261004
 twin: gcc 13.3.0, aarch64, contraction off
 layout sizes C/twin: BatIn 56/56 BatOut 40/40
-inputs: 90112 vectors, hash a958f011c5a905e4
+inputs: 98304 vectors, hash 200883b90d49ea57
 accuracy (twin): recip max rel 1.11e-16 (3272), rsqrt max rel 0 (3274), atan2 max abs 2.76e-05 rad (4096), |quatNormalize| - 1 max 3.33e-16 (3092), divClamp max rel 0 (1372)
 accuracy (twin): |unit3| - 1 max 3.33e-16 (2850)
 accuracy (twin): sqrtT max rel 0 (3286), recipE max rel 1.11e-16 (1636), discScale max rel 0 (1242 clamped), 0 not exactly 1 inside
+accuracy (twin): twistAngle max abs 5.4e-05 rad (8192), invertSym max error relative to the largest entry 2.46e-12 (4096; 0 near V4's limit left out)
 helper mul            n   4096  hash b1812e756da33be4  sat      0  fp none                    
 helper sum2/dif2      n   4096  hash d4d9a31bef826c69  sat      0  fp none                    
 helper sum3           n   4096  hash 12de5fce2ed9b4c0  sat      0  fp none                    
@@ -28,5 +29,7 @@ helper msb/shiftOf    n   4096  hash 444351fe063b0383  sat      0  fp none
 helper recipE         n   4096  hash 7dbf9288ea292508  sat      0  fp none                    
 helper sqrtT          n   4096  hash a582fef5ff580236  sat      0  fp none                    
 helper discScale      n   4096  hash 92f47e042e4a725b  sat      0  fp none                    
-battery D hash 17fdc03440fd6596 (twin: gcc 13.3.0, aarch64, contraction off)
-PASS: 0 GPU(s) against the twin, every word identical
+helper twistAngle     n   4096  hash f5720bc984143d3b  sat      0  fp none                    
+helper invertSym      n   4096  hash ede0b304cae1ecd9  sat      0  fp none                    
+battery D hash e0865a1f66f355ab (twin: gcc 13.3.0, aarch64, contraction off)
+PASS: the twin alone (dialect D has no GPU kernels), every helper clean

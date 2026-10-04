@@ -1,6 +1,6 @@
 # Milestone 11: the GPU lab's results (float dialect or block-scaled integers)
 
-Written 2026-10-04, and kept current through milestone 11. Question (docs/roadmap.md §11): can a rigid-body core on
+Written 2026-10-04 (overnight), and kept current through milestone 11. Question (docs/roadmap.md §11): can a rigid-body core on
 the GPU be bit-identical on every GPU and CPU twin, and in which arithmetic: the float dialect F or block-scaled int32
 (V4)? The code is `lab/gpu` (its README says how to run it); raw logs and a summary per machine are in
 `lab/gpu/results/<machine>/`. Milestone 7's E11 (`m7-gpu-experiments.md`) is the starting point and is not repeated
@@ -100,35 +100,70 @@ predicted worse (the gate before milestone 12).
 
 A real rigid-body step written once in Slang (`lab/gpu/toy`, its DESIGN.md and NOTES.md): the float dialect F, V4
 and a double reference D; a SAT narrowphase with its cache as data, clipping and feature ids, persistent warm starts,
-Box3D's soft step with friction, twist and restitution, contact recycling, islands and sleep, the combinatorial
-stages in integer C. Built step by step, each step gated.
+Box3D's soft step with friction, twist and restitution, contact recycling, a revolute joint with a motor, a servo and
+limits, islands and sleep, the combinatorial stages in integer C. Built step by step by implementation agents, each
+step gated, then reviewed by Fable and the Codex reviewer, whose fixes are in (below).
 
-- **The arithmetic helpers** (battery, 19 helpers): every word identical on the RTX 3060, the UHD 630, the GB10,
-  llvmpipe and the MSVC, clang-cl, gcc and clang twins, in F (no float-control modes) and V4; V4's exact division
-  `lpDivQ31` equals C's `/` on a million inputs.
-- **The narrowphase** (10,000 hull pairs, fresh and warm-started): F and V4 choose D's separating axis on every pair
-  outside ties (9,523) and D's points and feature ids on every pair outside clipping ties (9,187); every word of the
-  SAT records and manifolds matches the twin on all four GPUs.
-- **Decision point 1, physics against Box3D** (`lab/gpu/toy/results/decision1.md`): V4 passes all 20 judged rows of
-  the acceptance table, F 18 of 19, and Box3D and D all of theirs. A 10-box stack stands 60 s and sleeps at the same
-  tick as Box3D's; 200-body piles sleep on 8 seeds with no escapes and rest within 1.7 cm; the ramp slides within
-  0.51% of Box3D. F's one miss (the ramp's position rms against D over 120 ticks, 1.34e-5 m against a 1e-5 bar) is two
-  thirds the start rounded to float. V4's stack crept 93 µm in 50 s (within the bar) because its products rounded
-  exact negative halves up.
+**Decision point 2, bits (gate 5).** The whole tick on the GPU against the CPU twin, every tick's hash of every word
+the tick writes (bodies, poses, masses, AABBs, SAT records, constraints, manifolds, joints, the stages' lists), plus
+a full-buffer trace of the pile and the arm on every GPU: 16 runs per dialect (stack10 for 3,600 ticks asleep and
+awake, pile200 seeds 1 to 8 for 1,200 ticks, bounce, ramp, ratio, chip, the arm asleep and awake).
+
+| | F (no float-control modes) | V4 |
+|---|---|---|
+| RTX 3060 | every tick identical | every tick identical |
+| Intel UHD 630 | every tick identical | every tick identical |
+| GB10 | every tick identical | every tick identical |
+| llvmpipe | every tick identical | every tick identical |
+| twins: MSVC, clang-cl (x64); gcc, clang (aarch64) | the reference files | the reference files |
+
+Every row is the final code (after the reviews), with the full-buffer traces showing no differing word on any GPU
+(`lab/gpu/toy/results/gate5-windows.txt`, `lab/gpu/results/spark-gb10/toy-gate.txt`). The helper battery (25 helpers) and the narrowphase corpus (10,000 hull
+pairs, fresh and warm-started; F and V4 choose D's axis, points and ids on every pair outside ties) are word-identical
+on all four GPUs. A clang UBSan build of the twins runs gates 1 to 4 clean (it found one V4 overflow, now fixed).
+
+**Decision point 1, physics (`lab/gpu/toy/results/decision1.md`).** DESIGN.md's acceptance table against Box3D and D:
+
+| | Box3D | D | F | V4 |
+|---|---|---|---|---|
+| DESIGN.md's rules as written | 17 of 18 | 17 of 18 | 24 of 27 | 24 of 28 |
+| with the rows judged post hoc | 18 of 18 | 18 of 18 | 26 of 27 | 27 of 28 |
+
+- **What passes everywhere:** a 10-box stack stands 60 s and sleeps at Box3D's tick; 200-body piles sleep on 8 seeds
+  with no escapes; the ramp slides within 0.51% of Box3D; bounce, ratio and chip reach Box3D's outcomes; the arm's
+  angles, hinge gaps and limit overshoot are within their bars (Box3D's servo angle is 0.58 mrad from D's, F's 0.0001,
+  V4's 0.03).
+- **What misses as written:** the 120-tick position rms against D (1e-5 m for F, 1e-4 m for V4) on the impact scenes:
+  chip for both (F 4.05e-5, V4 1.5e-4: arithmetic in the contact solve at the first impact, amplified by the tumbles),
+  ratio for V4 (1.43e-4: lost at tick 1 under a 2,000:1 mass ratio, not yet traced to a format), the arm (its stack
+  parts from D's on face-on ties at tick 1) and pile200 (chaotic: D against itself moved 1e-9 m differs by 0.017 m).
+  The penetration bar in pile200's original window fails for Box3D (2.04 cm) and D (3.21 cm), not for F or V4.
+- **Honesty about the table:** both reviewers found that step 4b had narrowed the rms rule and moved the penetration
+  window after seeing the results. The table now judges DESIGN.md's rules as written and keeps the later judgements
+  as separate rows labelled post hoc.
+
+**Costs (`lab/gpu/toy/results/grid.md`, K copies of pile200, sleep off).** At one pile (about 230 dispatches a tick)
+both GPUs are dispatch-bound: 92% of the RTX 3060's kernel time is fixed cost per dispatch, 6 µs in F and 13 µs in V4
+(longer kernels), so V4's tick is 1.7 times F's. At 64 piles (13,057 bodies) V4 costs the same as F per body on the
+3060; the tick (32 ms on the 3060, 165 ms on the UHD) is then dominated by the single-threaded CPU stages (15 ms) and,
+on the UHD, by readbacks made one region per body (66 ms). E11's solve alone: V4 1.25-1.36 times F.
 
 **What the toy found about the tools:**
 - **gcc 13.3 miscompiles a float comparison** at -O2 and -O3 (aarch64; `lab/gpu/repro/gcc13-backprop.c`, 25 lines):
   its backprop pass strips the negation in max(0, -x) because only the square of the result is used, keeps the old
   range, and VRP folds a live comparison to false. F's gcc twin lost contact points; clang, MSVC and every GPU agreed.
-  Only floats are rewritten by that pass, so V4 was immune. Cross-compiler twins caught it at once, which is the case
-  for keeping them.
+  The pass rewrites only floats, so V4 was immune. Cross-compiler twins caught it at once.
 - **The Intel UHD 630's driver misread a variably indexed array** of manifold points once the manifold grew (661 wrong
-  manifolds); reading them from the buffer fixed it. E11's Intel int64 miscompile was the same driver.
+  manifolds, in F); reading them from the buffer fixed it. E11's Intel int64 miscompile was the same driver.
 - **MSVC folds `x < 0 ? -x : x` into fabs** in C (so -0 becomes +0); clang does not.
-- **clang raises floating-point flags the source never raises** (speculating a guarded division, or an unused vector
-  lane), so the twins are built with `-ffp-exception-behavior=maytrap`; gcc's default is the same.
+- **clang raises floating-point flags the source never raises** (a guarded division speculated, an unused vector
+  lane), so the twins are built with `-ffp-exception-behavior=maytrap`.
+- **Rounding bias in V4:** products rounded half up leaned an aligned stack (exact negative halves); rounding half
+  away from zero cut the bottom cube's creep from 50 to 0.7 µm in 50 s.
 - **F's Newton steps** written y (3/2 - x y^2 / 2) gave rsqrt(1) = 1 - 2^-24, enough to make resting orientations
   drift; written as a correction, y + y (1/2 - x y^2 / 2), they are exact at powers of four.
+- **Contact recycling is load-bearing:** without Box3D's recycling an exactly aligned stack loses its warm start every
+  other tick and slides, in every dialect and in Box3D itself.
 
 ## Pending: the MacBook
 

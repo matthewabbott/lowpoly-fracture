@@ -927,3 +927,20 @@ Engine untouched (the lab is outside it). E11's full solve, 60 steps at 100k con
 - **The Grace CPU runs the F twin 1.7 times as fast as the laptop's i7-10870H** at one thread (67.6 against E11's 118
   ms), 1.4 times at eight. The laptop's twin timings in the lab's own Windows run were taken while a build was
   compiling and are not comparable.
+
+## 2026-10-04 milestone 11: the toy's whole tick on the GPUs
+
+The dual-dialect toy (`lab/gpu/toy/results/grid.md`): K copies of pile200, sleep off, ms per tick (wall; the RTX
+3060's kernels in brackets), F:
+
+| K (bodies) | RTX 3060 | UHD 630 | twin, 1 thread | twin, 8 threads |
+|---|---|---|---|---|
+| 1 (205) | 2.36 (1.42) | 10.6 | 4.1 | 2.6 |
+| 64 (13,057) | 32 (8.3) | 165 | 275 | 70 |
+
+- **Dispatch-bound at small scale:** about 230 dispatches a tick, 6 µs each with its barrier in F and 13 µs in V4 on
+  the 3060 (92% of the kernel time at K = 1, 9% at K = 64). V4's tick is 1.7 times F's at K = 1 and the same per body
+  at K = 64.
+- **At scale the CPU side dominates:** the single-threaded CPU stages take 15 ms at K = 64 (half the 3060's wall
+  time), and the UHD spends 66 ms reading back the stages' inputs one 4-byte region per body and pair. A gather kernel,
+  the stages on the twin's pool or the GPU, and fewer dispatches are milestone 13's work.

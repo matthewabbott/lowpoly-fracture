@@ -1,77 +1,87 @@
+gate.py: compilers gcc, clang; GPUs mask 0xff, expected 1
 gate 1: the battery
-  battery F  gcc       hash 5add7392dc064a30  exit 0  GPUs NVIDIA Tegra NVIDIA GB10, llvmpipe
-  battery F  clang     hash 5add7392dc064a30  exit 0  GPUs NVIDIA Tegra NVIDIA GB10, llvmpipe
+  battery F  gcc       hash f7006e1c8f347ba5  exit 0  GPUs nvidia, llvmpipe
+  battery F  clang     hash f7006e1c8f347ba5  exit 0  GPUs nvidia, llvmpipe
   battery F: same hash and helper lines on gcc, clang
-  battery V4 gcc       hash 6cddc843b7bf4f72  exit 0  GPUs NVIDIA Tegra NVIDIA GB10, llvmpipe; lpDivQ31 vs C: 0 of 79976 differ
-  battery V4 clang     hash 6cddc843b7bf4f72  exit 0  GPUs NVIDIA Tegra NVIDIA GB10, llvmpipe; lpDivQ31 vs C: 0 of 79976 differ
+  battery V4 gcc       hash 081ff06910407f15  exit 0  GPUs nvidia, llvmpipe; lpDivQ31 vs C: 0 of 79976 differ
+  battery V4 clang     hash 081ff06910407f15  exit 0  GPUs nvidia, llvmpipe; lpDivQ31 vs C: 0 of 79976 differ
   battery V4: same hash and helper lines on gcc, clang
-  battery D  gcc       hash 17fdc03440fd6596  exit 0  GPUs -
-  battery D  clang     hash 17fdc03440fd6596  exit 0  GPUs -
+  battery D  gcc       hash e0865a1f66f355ab  exit 0  GPUs -
+  battery D  clang     hash e0865a1f66f355ab  exit 0  GPUs -
   battery D: same hash and helper lines on gcc, clang
 gate 2: the twin driver
-  stack10      D  gcc       run hash f215cccb206c916a threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
-  stack10      D  clang     run hash f215cccb206c916a threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
+  stack10      D  gcc       run hash 93e8a1b30e072c68 threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
+  stack10      D  clang     run hash 93e8a1b30e072c68 threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
   stack10      D  per-tick hashes identical on gcc, clang
-  stack10      F  gcc       run hash b090bbc24000a20a threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 1.91e-07 max 6.22e-07, rot rms 6.81e-08 max 3.83e-07; vs D 121-600: pos rms 1.96e-07 max 3.34e-07, rot rms 6.8e-08 max 1.1e-07; vs D 1-600: pos rms 1.95e-07 max 6.22e-07, rot rms 6.8e-08 max 3.83e-07
-  stack10      F  clang     run hash b090bbc24000a20a threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 1.91e-07 max 6.22e-07, rot rms 6.81e-08 max 3.83e-07; vs D 121-600: pos rms 1.96e-07 max 3.34e-07, rot rms 6.8e-08 max 1.1e-07; vs D 1-600: pos rms 1.95e-07 max 6.22e-07, rot rms 6.8e-08 max 3.83e-07
+  stack10      F  gcc       run hash 75fe3f09ef74fce1 threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 1.91e-07 max 6.22e-07 (tick 17, body 10), rot rms 6.81e-08 max 3.83e-07; vs D 121-600: pos rms 1.96e-07 max 3.34e-07 (tick 121, body 5), rot rms 6.8e-08 max 1.1e-07; vs D 1-600: pos rms 1.95e-07 max 6.22e-07 (tick 17, body 10), rot rms 6.8e-08 max 3.83e-07
+  stack10      F  clang     run hash 75fe3f09ef74fce1 threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
   stack10      F  per-tick hashes identical on gcc, clang
-  stack10      V4 gcc       run hash ff90bc0f84bb5f3d threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 1.02e-05 max 2.46e-05, rot rms 5.27e-06 max 1.03e-05; vs D 121-600: pos rms 1.19e-05 max 2.46e-05, rot rms 6.07e-06 max 1.03e-05; vs D 1-600: pos rms 1.16e-05 max 2.46e-05, rot rms 5.92e-06 max 1.03e-05
-  stack10      V4 clang     run hash ff90bc0f84bb5f3d threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 1.02e-05 max 2.46e-05, rot rms 5.27e-06 max 1.03e-05; vs D 121-600: pos rms 1.19e-05 max 2.46e-05, rot rms 6.07e-06 max 1.03e-05; vs D 1-600: pos rms 1.16e-05 max 2.46e-05, rot rms 5.92e-06 max 1.03e-05
+  stack10      V4 gcc       run hash 99d818cb28a9505f threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10); vs D 1-120: pos rms 4.34e-07 max 9.89e-07 (tick 18, body 10), rot rms 3.32e-07 max 8.57e-07; vs D 121-600: pos rms 4.8e-07 max 9.21e-07 (tick 121, body 10), rot rms 3.44e-07 max 5.27e-07; vs D 1-600: pos rms 4.71e-07 max 9.89e-07 (tick 18, body 10), rot rms 3.41e-07 max 8.57e-07
+  stack10      V4 clang     run hash 99d818cb28a9505f threads agree exit 0; last tick: awake 0 pairs 10 touching 10 (most 10)
   stack10      V4 per-tick hashes identical on gcc, clang
-  pile200      D  gcc       run hash e635bae0d2463a70 threads agree exit 0; last tick: awake 0 pairs 1236 touching 512 (most 513)
-  pile200      D  clang     run hash e635bae0d2463a70 threads agree exit 0; last tick: awake 0 pairs 1236 touching 512 (most 513)
+  pile200      D  gcc       run hash 7977d22cb4b18c9f threads agree exit 0; last tick: awake 0 pairs 1156 touching 484 (most 484)
+  pile200      D  clang     run hash 7977d22cb4b18c9f threads agree exit 0; last tick: awake 0 pairs 1156 touching 484 (most 484)
   pile200      D  per-tick hashes identical on gcc, clang
-  pile200      F  gcc       run hash 38c289f62a391e3e threads agree exit 0; last tick: awake 0 pairs 1208 touching 497 (most 497); vs D 1-120: pos rms 0.102 max 0.891, rot rms 0.43 max 2; vs D 121-600: pos rms 0.357 max 2.83, rot rms 0.983 max 2; vs D 1-600: pos rms 0.323 max 2.83, rot rms 0.9 max 2
-  pile200      F  clang     run hash 38c289f62a391e3e threads agree exit 0; last tick: awake 0 pairs 1208 touching 497 (most 497); vs D 1-120: pos rms 0.102 max 0.891, rot rms 0.43 max 2; vs D 121-600: pos rms 0.357 max 2.83, rot rms 0.983 max 2; vs D 1-600: pos rms 0.323 max 2.83, rot rms 0.9 max 2
+  pile200      F  gcc       run hash 66ad7e5a215d6141 threads agree exit 0; last tick: awake 0 pairs 1221 touching 485 (most 485); vs D 1-120: pos rms 0.0981 max 0.875 (tick 118, body 178), rot rms 0.421 max 2; vs D 121-600: pos rms 0.267 max 1.19 (tick 201, body 201), rot rms 0.951 max 2; vs D 1-600: pos rms 0.243 max 1.19 (tick 201, body 201), rot rms 0.872 max 2
+  pile200      F  clang     run hash 66ad7e5a215d6141 threads agree exit 0; last tick: awake 0 pairs 1221 touching 485 (most 485)
   pile200      F  per-tick hashes identical on gcc, clang
-  pile200      V4 gcc       run hash a06b44300bf74f15 threads agree exit 0; last tick: awake 0 pairs 1208 touching 500 (most 500); vs D 1-120: pos rms 0.121 max 1.16, rot rms 0.463 max 2; vs D 121-600: pos rms 0.367 max 2.82, rot rms 1.02 max 2; vs D 1-600: pos rms 0.333 max 2.82, rot rms 0.935 max 2
-  pile200      V4 clang     run hash a06b44300bf74f15 threads agree exit 0; last tick: awake 0 pairs 1208 touching 500 (most 500); vs D 1-120: pos rms 0.121 max 1.16, rot rms 0.463 max 2; vs D 121-600: pos rms 0.367 max 2.82, rot rms 1.02 max 2; vs D 1-600: pos rms 0.333 max 2.82, rot rms 0.935 max 2
+  pile200      V4 gcc       run hash 80016df1e5c89e4c threads agree exit 0; last tick: awake 0 pairs 1202 touching 490 (most 490); vs D 1-120: pos rms 0.113 max 1.36 (tick 105, body 163), rot rms 0.464 max 2; vs D 121-600: pos rms 0.301 max 1.32 (tick 135, body 163), rot rms 0.995 max 2; vs D 1-600: pos rms 0.274 max 1.36 (tick 105, body 163), rot rms 0.914 max 2
+  pile200      V4 clang     run hash 80016df1e5c89e4c threads agree exit 0; last tick: awake 0 pairs 1202 touching 490 (most 490)
   pile200      V4 per-tick hashes identical on gcc, clang
-  pile200-wake D  gcc       run hash 269dc387427aadb6 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3)
-  pile200-wake D  clang     run hash 269dc387427aadb6 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3)
+  pile200-wake D  gcc       run hash 63c7697a4ca9f492 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3)
+  pile200-wake D  clang     run hash 63c7697a4ca9f492 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3)
   pile200-wake D  per-tick hashes identical on gcc, clang
-  pile200-wake F  gcc       run hash fe1c75a7c754da4a threads agree exit 0; last tick: awake 10 pairs 15 touching 1 (most 3); vs D 1-120: pos rms 1.88e-06 max 0.000111, rot rms 1.51e-05 max 0.000959; vs D 121-600: pos rms 0.000496 max 0.00844, rot rms 0.0042 max 0.0771; vs D 1-600: pos rms 0.000444 max 0.00844, rot rms 0.00376 max 0.0771
-  pile200-wake F  clang     run hash fe1c75a7c754da4a threads agree exit 0; last tick: awake 10 pairs 15 touching 1 (most 3); vs D 1-120: pos rms 1.88e-06 max 0.000111, rot rms 1.51e-05 max 0.000959; vs D 121-600: pos rms 0.000496 max 0.00844, rot rms 0.0042 max 0.0771; vs D 1-600: pos rms 0.000444 max 0.00844, rot rms 0.00376 max 0.0771
+  pile200-wake F  gcc       run hash 452bd6380e46ee6f threads agree exit 0; last tick: awake 10 pairs 15 touching 1 (most 3); vs D 1-120: pos rms 1.91e-06 max 0.000114 (tick 120, body 124), rot rms 1.54e-05 max 0.000985; vs D 121-600: pos rms 0.000662 max 0.0125 (tick 600, body 118), rot rms 0.00722 max 0.205; vs D 1-600: pos rms 0.000592 max 0.0125 (tick 600, body 118), rot rms 0.00646 max 0.205
+  pile200-wake F  clang     run hash 452bd6380e46ee6f threads agree exit 0; last tick: awake 10 pairs 15 touching 1 (most 3)
   pile200-wake F  per-tick hashes identical on gcc, clang
-  pile200-wake V4 gcc       run hash 9b493f468eb9d5c8 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3); vs D 1-120: pos rms 8.05e-06 max 0.000351, rot rms 6.92e-05 max 0.00306; vs D 121-600: pos rms 0.00302 max 0.0742, rot rms 0.0302 max 0.853; vs D 1-600: pos rms 0.0027 max 0.0742, rot rms 0.027 max 0.853
-  pile200-wake V4 clang     run hash 9b493f468eb9d5c8 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3); vs D 1-120: pos rms 8.05e-06 max 0.000351, rot rms 6.92e-05 max 0.00306; vs D 121-600: pos rms 0.00302 max 0.0742, rot rms 0.0302 max 0.853; vs D 1-600: pos rms 0.0027 max 0.0742, rot rms 0.027 max 0.853
+  pile200-wake V4 gcc       run hash 1802ea607b976402 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3); vs D 1-120: pos rms 6.63e-06 max 0.000366 (tick 120, body 124), rot rms 5.01e-05 max 0.00319; vs D 121-600: pos rms 0.00362 max 0.0929 (tick 600, body 154), rot rms 0.0272 max 0.765; vs D 1-600: pos rms 0.00324 max 0.0929 (tick 600, body 154), rot rms 0.0243 max 0.765
+  pile200-wake V4 clang     run hash 1802ea607b976402 threads agree exit 0; last tick: awake 9 pairs 15 touching 0 (most 3)
   pile200-wake V4 per-tick hashes identical on gcc, clang
-  chip         D  gcc       run hash 78cdacdad5ba1611 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
-  chip         D  clang     run hash 78cdacdad5ba1611 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
+  chip         D  gcc       run hash 35cac36b6d7121e2 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
+  chip         D  clang     run hash 35cac36b6d7121e2 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   chip         D  per-tick hashes identical on gcc, clang
-  chip         F  gcc       run hash 16cbc151b1c07471 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.1e-05 max 0.00014, rot rms 0.000504 max 0.00245; vs D 121-600: pos rms 3.85e-05 max 3.85e-05, rot rms 4.64e-05 max 4.64e-05; vs D 1-600: pos rms 3.9e-05 max 0.00014, rot rms 0.000229 max 0.00245
-  chip         F  clang     run hash 16cbc151b1c07471 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.1e-05 max 0.00014, rot rms 0.000504 max 0.00245; vs D 121-600: pos rms 3.85e-05 max 3.85e-05, rot rms 4.64e-05 max 4.64e-05; vs D 1-600: pos rms 3.9e-05 max 0.00014, rot rms 0.000229 max 0.00245
+  chip         F  gcc       run hash 22308826aec57c83 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.05e-05 max 0.000139 (tick 17, body 1), rot rms 0.0005 max 0.00242; vs D 121-600: pos rms 3.79e-05 max 3.79e-05 (tick 121, body 1), rot rms 4.59e-05 max 4.59e-05; vs D 1-600: pos rms 3.85e-05 max 0.000139 (tick 17, body 1), rot rms 0.000228 max 0.00242
+  chip         F  clang     run hash 22308826aec57c83 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   chip         F  per-tick hashes identical on gcc, clang
-  chip         V4 gcc       run hash 0b14d5bbcbe86ba7 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 0.000136 max 0.000441, rot rms 0.00124 max 0.00774; vs D 121-600: pos rms 0.000138 max 0.000138, rot rms 4.74e-05 max 4.74e-05; vs D 1-600: pos rms 0.000138 max 0.000441, rot rms 0.000554 max 0.00774
-  chip         V4 clang     run hash 0b14d5bbcbe86ba7 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 0.000136 max 0.000441, rot rms 0.00124 max 0.00774; vs D 121-600: pos rms 0.000138 max 0.000138, rot rms 4.74e-05 max 4.74e-05; vs D 1-600: pos rms 0.000138 max 0.000441, rot rms 0.000554 max 0.00774
+  chip         V4 gcc       run hash 19bd156226d3b1f4 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 0.00015 max 0.000483 (tick 17, body 1), rot rms 0.00134 max 0.00844; vs D 121-600: pos rms 0.000153 max 0.000153 (tick 121, body 1), rot rms 0.000227 max 0.000227; vs D 1-600: pos rms 0.000152 max 0.000483 (tick 17, body 1), rot rms 0.000634 max 0.00844
+  chip         V4 clang     run hash 19bd156226d3b1f4 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   chip         V4 per-tick hashes identical on gcc, clang
-  ramp         D  gcc       run hash ad627f06abb55c70 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
-  ramp         D  clang     run hash ad627f06abb55c70 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
+  ramp         D  gcc       run hash 4c94be0151e3537f threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
+  ramp         D  clang     run hash 4c94be0151e3537f threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
   ramp         D  per-tick hashes identical on gcc, clang
-  ramp         F  gcc       run hash 9fa8eac59c80fee5 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 1.34e-05 max 3.09e-05, rot rms 2.55e-06 max 3.24e-05; vs D 121-600: pos rms 0.0161 max 0.0277, rot rms 0.00553 max 0.0697; vs D 1-600: pos rms 0.0144 max 0.0277, rot rms 0.00494 max 0.0697
-  ramp         F  clang     run hash 9fa8eac59c80fee5 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 1.34e-05 max 3.09e-05, rot rms 2.55e-06 max 3.24e-05; vs D 121-600: pos rms 0.0161 max 0.0277, rot rms 0.00553 max 0.0697; vs D 1-600: pos rms 0.0144 max 0.0277, rot rms 0.00494 max 0.0697
+  ramp         F  gcc       run hash cc7d156d0e35c9f7 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 4.9e-06 max 9.82e-06 (tick 107, body 3), rot rms 2.55e-06 max 3.24e-05; vs D 121-600: pos rms 0.00247 max 0.00517 (tick 274, body 3), rot rms 0.00168 max 0.0192; vs D 1-600: pos rms 0.00221 max 0.00517 (tick 274, body 3), rot rms 0.0015 max 0.0192
+  ramp         F  clang     run hash cc7d156d0e35c9f7 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
   ramp         F  per-tick hashes identical on gcc, clang
-  ramp         V4 gcc       run hash bf6268179ea2dea9 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 8.87e-06 max 3.28e-05, rot rms 2.57e-06 max 3.22e-05; vs D 121-600: pos rms 0.0529 max 0.0903, rot rms 0.0204 max 0.234; vs D 1-600: pos rms 0.0473 max 0.0903, rot rms 0.0182 max 0.234
-  ramp         V4 clang     run hash bf6268179ea2dea9 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 8.87e-06 max 3.28e-05, rot rms 2.57e-06 max 3.22e-05; vs D 121-600: pos rms 0.0529 max 0.0903, rot rms 0.0204 max 0.234; vs D 1-600: pos rms 0.0473 max 0.0903, rot rms 0.0182 max 0.234
+  ramp         V4 gcc       run hash 251330e7e0643146 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2); vs D 1-120: pos rms 1.88e-05 max 6.13e-05 (tick 120, body 3), rot rms 2.51e-06 max 3.17e-05; vs D 121-600: pos rms 0.056 max 0.096 (tick 282, body 3), rot rms 0.0209 max 0.241; vs D 1-600: pos rms 0.0501 max 0.096 (tick 282, body 3), rot rms 0.0187 max 0.241
+  ramp         V4 clang     run hash 251330e7e0643146 threads agree exit 0; last tick: awake 0 pairs 2 touching 2 (most 2)
   ramp         V4 per-tick hashes identical on gcc, clang
-  bounce       D  gcc       run hash 3fd13858e9d1f9fa threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
-  bounce       D  clang     run hash 3fd13858e9d1f9fa threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
+  bounce       D  gcc       run hash b1d611cc0f697635 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
+  bounce       D  clang     run hash b1d611cc0f697635 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   bounce       D  per-tick hashes identical on gcc, clang
-  bounce       F  gcc       run hash 694b4d84adf7e4fa threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 1.32e-06 max 2.47e-06, rot rms 2.16e-06 max 6.27e-06; vs D 121-600: pos rms 2.3e-06 max 2.3e-06, rot rms 2.27e-06 max 2.27e-06; vs D 1-600: pos rms 2.14e-06 max 2.47e-06, rot rms 2.25e-06 max 6.27e-06
-  bounce       F  clang     run hash 694b4d84adf7e4fa threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 1.32e-06 max 2.47e-06, rot rms 2.16e-06 max 6.27e-06; vs D 121-600: pos rms 2.3e-06 max 2.3e-06, rot rms 2.27e-06 max 2.27e-06; vs D 1-600: pos rms 2.14e-06 max 2.47e-06, rot rms 2.25e-06 max 6.27e-06
+  bounce       F  gcc       run hash 5a472a3b03339b86 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 1.32e-06 max 2.47e-06 (tick 99, body 1), rot rms 2.16e-06 max 6.27e-06; vs D 121-600: pos rms 2.3e-06 max 2.3e-06 (tick 127, body 1), rot rms 2.27e-06 max 2.27e-06; vs D 1-600: pos rms 2.14e-06 max 2.47e-06 (tick 99, body 1), rot rms 2.25e-06 max 6.27e-06
+  bounce       F  clang     run hash 5a472a3b03339b86 threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   bounce       F  per-tick hashes identical on gcc, clang
-  bounce       V4 gcc       run hash 419876943b12a5bc threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.46e-06 max 1.16e-05, rot rms 9.39e-06 max 3.52e-05; vs D 121-600: pos rms 2.78e-06 max 2.79e-06, rot rms 4.2e-06 max 4.78e-06; vs D 1-600: pos rms 3.19e-06 max 1.16e-05, rot rms 5.64e-06 max 3.52e-05
-  bounce       V4 clang     run hash 419876943b12a5bc threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.46e-06 max 1.16e-05, rot rms 9.39e-06 max 3.52e-05; vs D 121-600: pos rms 2.78e-06 max 2.79e-06, rot rms 4.2e-06 max 4.78e-06; vs D 1-600: pos rms 3.19e-06 max 1.16e-05, rot rms 5.64e-06 max 3.52e-05
+  bounce       V4 gcc       run hash bd0624b07e8cefaf threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1); vs D 1-120: pos rms 4.68e-06 max 1.21e-05 (tick 89, body 1), rot rms 1.02e-05 max 3.73e-05; vs D 121-600: pos rms 7.83e-07 max 7.96e-07 (tick 123, body 1), rot rms 8.62e-06 max 8.63e-06; vs D 1-600: pos rms 2.21e-06 max 1.21e-05 (tick 89, body 1), rot rms 8.96e-06 max 3.73e-05
+  bounce       V4 clang     run hash bd0624b07e8cefaf threads agree exit 0; last tick: awake 0 pairs 1 touching 1 (most 1)
   bounce       V4 per-tick hashes identical on gcc, clang
-  ratio        D  gcc       run hash 4031f223785390f0 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
-  ratio        D  clang     run hash 4031f223785390f0 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
+  ratio        D  gcc       run hash 67b7e59404194816 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
+  ratio        D  clang     run hash 67b7e59404194816 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
   ratio        D  per-tick hashes identical on gcc, clang
-  ratio        F  gcc       run hash 8771b095410fd3f2 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 0.000143 max 0.001, rot rms 0.00768 max 0.0763; vs D 121-600: pos rms 0.000118 max 0.000278, rot rms 0.000873 max 0.00207; vs D 1-600: pos rms 0.000123 max 0.001, rot rms 0.00352 max 0.0763
-  ratio        F  clang     run hash 8771b095410fd3f2 threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 0.000143 max 0.001, rot rms 0.00768 max 0.0763; vs D 121-600: pos rms 0.000118 max 0.000278, rot rms 0.000873 max 0.00207; vs D 1-600: pos rms 0.000123 max 0.001, rot rms 0.00352 max 0.0763
+  ratio        F  gcc       run hash c2bc875f4967a9ee threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 2.12e-07 max 5.28e-07 (tick 11, body 5), rot rms 8.7e-07 max 1.8e-06; vs D 121-600: pos rms 2.2e-07 max 3.49e-07 (tick 121, body 3), rot rms 9.82e-07 max 1.8e-06; vs D 1-600: pos rms 2.19e-07 max 5.28e-07 (tick 11, body 5), rot rms 9.61e-07 max 1.8e-06
+  ratio        F  clang     run hash c2bc875f4967a9ee threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
   ratio        F  per-tick hashes identical on gcc, clang
-  ratio        V4 gcc       run hash f381c5ba9d11ca6e threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 2.99e-07 max 1.16e-06, rot rms 3.11e-05 max 6.45e-05; vs D 121-600: pos rms 2.87e-07 max 4.75e-07, rot rms 3.49e-05 max 6.45e-05; vs D 1-600: pos rms 2.9e-07 max 1.16e-06, rot rms 3.42e-05 max 6.45e-05
-  ratio        V4 clang     run hash f381c5ba9d11ca6e threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 2.99e-07 max 1.16e-06, rot rms 3.11e-05 max 6.45e-05; vs D 121-600: pos rms 2.87e-07 max 4.75e-07, rot rms 3.49e-05 max 6.45e-05; vs D 1-600: pos rms 2.9e-07 max 1.16e-06, rot rms 3.42e-05 max 6.45e-05
+  ratio        V4 gcc       run hash d0b69b314f19d00d threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12); vs D 1-120: pos rms 0.000143 max 0.001 (tick 7, body 5), rot rms 0.00768 max 0.0763; vs D 121-600: pos rms 0.000118 max 0.000278 (tick 121, body 5), rot rms 0.000869 max 0.00206; vs D 1-600: pos rms 0.000123 max 0.001 (tick 7, body 5), rot rms 0.00352 max 0.0763
+  ratio        V4 clang     run hash d0b69b314f19d00d threads agree exit 0; last tick: awake 0 pairs 12 touching 12 (most 12)
   ratio        V4 per-tick hashes identical on gcc, clang
+  arm          D  gcc       run hash 1a2a8b149d83d013 threads agree exit 0; last tick: awake 2 pairs 6 touching 5 (most 5)
+  arm          D  clang     run hash 1a2a8b149d83d013 threads agree exit 0; last tick: awake 2 pairs 6 touching 5 (most 5)
+  arm          D  per-tick hashes identical on gcc, clang
+  arm          F  gcc       run hash 04bd8e67c8fa161a threads agree exit 0; last tick: awake 2 pairs 7 touching 5 (most 5); vs D 1-120: pos rms 0.0016 max 0.00404 (tick 25, body 7), rot rms 0.00446 max 0.00806; vs D 121-600: pos rms 0.0637 max 0.195 (tick 341, body 7), rot rms 0.442 max 1.43; vs D 1-600: pos rms 0.057 max 0.195 (tick 341, body 7), rot rms 0.396 max 1.43
+  arm          F  clang     run hash 04bd8e67c8fa161a threads agree exit 0; last tick: awake 2 pairs 7 touching 5 (most 5)
+  arm          F  per-tick hashes identical on gcc, clang
+  arm          V4 gcc       run hash ff9394053976a8db threads agree exit 0; last tick: awake 2 pairs 6 touching 5 (most 5); vs D 1-120: pos rms 0.0016 max 0.00404 (tick 25, body 7), rot rms 0.00446 max 0.00806; vs D 121-600: pos rms 0.0612 max 0.184 (tick 341, body 7), rot rms 0.444 max 1.43; vs D 1-600: pos rms 0.0547 max 0.184 (tick 341, body 7), rot rms 0.397 max 1.43
+  arm          V4 clang     run hash ff9394053976a8db threads agree exit 0; last tick: awake 2 pairs 6 touching 5 (most 5)
+  arm          V4 per-tick hashes identical on gcc, clang
 gate 3: the narrowphase corpus
   narrow D  gcc       corpus hash ec5972a1a82de840 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
   narrow D  clang     corpus hash ec5972a1a82de840 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
@@ -91,105 +101,263 @@ gate 3: the narrowphase corpus
     gpu llvmpipe pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
   narrow F  clang     corpus hash 2ea78ea1cf0bdb32 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
   narrow F: same corpus hash on gcc, clang
-  narrow V4 gcc       corpus hash e71df90861191eec exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
+  narrow V4 gcc       corpus hash c5d33b47944fc009 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
     pass 1: 10000 pairs compared; D: 6976 touching, 3017 separated (0 by the cached axis), 0 tried a cached feature and 0 kept its contact
-    ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 477 axis ties (8 with another axis, 193 other points), 336 clip ties (282 with other points)
+    ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 477 axis ties (8 with another axis, 193 other points), 336 clip ties (283 with other points)
     GATE outside ties: axis kind and index differ in 0 of 9523; point count or ids differ in 0 of 9187 (no tie at all); the support vertex beside a face axis differs in 0 of 4901 outside its own ties (3762 ties)
-    errors against D (agreeing pairs): normal rms 1.9e-07 max 9.34e-06; anchor rms 1.39e-07 max 8e-06 m (23245 points); separation rms 9.57e-08 max 4.8e-07 m; SAT face separations rms 6.23e-08 max 2.57e-07 m
-    pass 2: 9525 pairs compared (of 10000: pass 1 agreed on the rest); D: 6535 touching, 2985 separated (2961 by the cached axis), 6558 tried a cached feature and 6530 kept its contact
+    errors against D (agreeing pairs): normal rms 1.9e-07 max 9.34e-06; anchor rms 1.39e-07 max 8.07e-06 m (23245 points); separation rms 9.83e-08 max 4.8e-07 m; SAT face separations rms 6.22e-08 max 2.57e-07 m
+    pass 2: 9524 pairs compared (of 10000: pass 1 agreed on the rest); D: 6534 touching, 2985 separated (2961 by the cached axis), 6557 tried a cached feature and 6529 kept its contact
     ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 9 axis ties (0 with another axis, 0 other points), 20 clip ties (0 with other points)
-    GATE outside ties: axis kind and index differ in 0 of 9516; point count or ids differ in 0 of 9496 (no tie at all); warm-start impulses (markers) differ in 0; the support vertex beside a face axis differs in 0 of 13 outside its own ties (2 ties)
-    errors against D (agreeing pairs): normal rms 1.33e-07 max 7.15e-06; anchor rms 4.56e-07 max 6.66e-05 m (24125 points); separation rms 9.72e-08 max 3.91e-07 m; SAT face separations rms 6.34e-08 max 2.99e-07 m
+    GATE outside ties: axis kind and index differ in 0 of 9515; point count or ids differ in 0 of 9495 (no tie at all); warm-start impulses (markers) differ in 0; the support vertex beside a face axis differs in 0 of 13 outside its own ties (2 ties)
+    errors against D (agreeing pairs): normal rms 1.33e-07 max 7.15e-06; anchor rms 1.56e-07 max 1.21e-05 m (24121 points); separation rms 9.94e-08 max 3.91e-07 m; SAT face separations rms 6.34e-08 max 2.99e-07 m
     gpu nvidia pass 1: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
     gpu nvidia pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
     gpu llvmpipe pass 1: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
     gpu llvmpipe pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
-  narrow V4 clang     corpus hash e71df90861191eec exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
+  narrow V4 clang     corpus hash c5d33b47944fc009 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
   narrow V4: same corpus hash on gcc, clang
-gate 4: the contact solve's sanity (twins, gcc)
-  stack10-awake  F  top cube (body 10) after tick 3600: drift 0.2247 mm, sink 26.03 mm, yaw 6.606e-05 deg, tilt 9.697e-06 deg; last second's largest speed 0.001048 mm/s, spin 7.79e-07 rad/s; asleep never
-                    toy: 10 bodies awake at the end; deepest point -0.00514519 m (tick 101, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00506607 m (tick 3543, bodies 1 2); threads agree, saturations 0
-  stack10-awake  V4 top cube (body 10) after tick 3600: drift 0.1549 mm, sink 26.04 mm, yaw 6.403e-05 deg, tilt 0.0006222 deg; last second's largest speed 0.01356 mm/s, spin 3.38e-05 rad/s; asleep never
-                    toy: 10 bodies awake at the end; deepest point -0.00514436 m (tick 100, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00506687 m (tick 3584, bodies 1 2); threads agree, saturations 0
-  stack10-awake  D  top cube (body 10) after tick 3600: drift 0.2261 mm, sink 26.03 mm, yaw 6.622e-05 deg, tilt 0 deg; last second's largest speed 1.426e-12 mm/s, spin 2.67e-15 rad/s; asleep never
-                    toy: 10 bodies awake at the end; deepest point -0.00514516 m (tick 101, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00506606 m (tick 3542, bodies 1 2); threads agree, saturations 0
-  stack10-sleep  F  top cube (body 10) after tick 3600: drift 5.675 mm, sink 25.21 mm, yaw 2.744e-05 deg, tilt 0.103 deg; last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
-                    toy: every dynamic body asleep from tick 42; deepest point -0.0051319 m (tick 41, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0051319 m (tick 41, bodies 1 2); threads agree, saturations 0
-  stack10-sleep  V4 top cube (body 10) after tick 3600: drift 5.696 mm, sink 25.21 mm, yaw 2.743e-05 deg, tilt 0.1035 deg; last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
-                    toy: every dynamic body asleep from tick 42; deepest point -0.00513268 m (tick 41, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00513268 m (tick 41, bodies 1 2); threads agree, saturations 0
-  stack10-sleep  D  top cube (body 10) after tick 3600: drift 5.675 mm, sink 25.21 mm, yaw 2.758e-05 deg, tilt 0.103 deg; last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
-                    toy: every dynamic body asleep from tick 42; deepest point -0.00513194 m (tick 41, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00513194 m (tick 41, bodies 1 2); threads agree, saturations 0
-  pile200-s1     F  every body asleep from tick 265 (0 awake at tick 3600); escapes 0; highest centre 2.355 m
-                    toy: every dynamic body asleep from tick 265; deepest point -0.168572 m (tick 65, bodies 172 197), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00804197 m (tick 228, bodies 10 110); threads agree, saturations 0
-  pile200-s1     V4 every body asleep from tick 250 (0 awake at tick 3600); escapes 0; highest centre 2.354 m
-                    toy: every dynamic body asleep from tick 250; deepest point -0.168558 m (tick 65, bodies 172 197), at rest (the 60 ticks before every body sleeps, or the last 60) -0.010462 m (tick 192, bodies 35 80); threads agree, saturations 0
-  pile200-s1     D  every body asleep from tick 332 (0 awake at tick 3600); escapes 0; highest centre 1.154 m
-                    toy: every dynamic body asleep from tick 332; deepest point -0.168567 m (tick 65, bodies 172 197), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0107529 m (tick 272, bodies 4 197); threads agree, saturations 0
-  pile200-s2     F  every body asleep from tick 295 (0 awake at tick 3600); escapes 0; highest centre 1.270 m
-                    toy: every dynamic body asleep from tick 295; deepest point -0.172919 m (tick 60, bodies 91 116), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0103247 m (tick 268, bodies 27 52); threads agree, saturations 0
-  pile200-s2     V4 every body asleep from tick 245 (0 awake at tick 3600); escapes 0; highest centre 1.208 m
-                    toy: every dynamic body asleep from tick 245; deepest point -0.173039 m (tick 60, bodies 91 116), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00929189 m (tick 195, bodies 48 202); threads agree, saturations 0
-  pile200-s2     D  every body asleep from tick 211 (0 awake at tick 3600); escapes 0; highest centre 1.261 m
-                    toy: every dynamic body asleep from tick 211; deepest point -0.172941 m (tick 60, bodies 91 116), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00794366 m (tick 151, bodies 111 171); threads agree, saturations 0
-  pile200-s3     F  every body asleep from tick 278 (0 awake at tick 3600); escapes 0; highest centre 1.835 m
-                    toy: every dynamic body asleep from tick 278; deepest point -0.176036 m (tick 63, bodies 124 149), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00874932 m (tick 218, bodies 38 63); threads agree, saturations 0
-  pile200-s3     V4 every body asleep from tick 328 (0 awake at tick 3600); escapes 0; highest centre 1.831 m
-                    toy: every dynamic body asleep from tick 328; deepest point -0.175446 m (tick 63, bodies 124 149), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00861764 m (tick 289, bodies 16 41); threads agree, saturations 0
-  pile200-s3     D  every body asleep from tick 254 (0 awake at tick 3600); escapes 0; highest centre 1.836 m
-                    toy: every dynamic body asleep from tick 254; deepest point -0.175956 m (tick 63, bodies 124 149), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0150627 m (tick 198, bodies 167 192); threads agree, saturations 0
-  pile200-s4     F  every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.348 m
-                    toy: every dynamic body asleep from tick 290; deepest point -0.183702 m (tick 62, bodies 111 136), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00844603 m (tick 258, bodies 32 57); threads agree, saturations 0
-  pile200-s4     V4 every body asleep from tick 231 (0 awake at tick 3600); escapes 0; highest centre 1.869 m
-                    toy: every dynamic body asleep from tick 231; deepest point -0.18368 m (tick 62, bodies 111 136), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0107503 m (tick 193, bodies 17 42); threads agree, saturations 0
-  pile200-s4     D  every body asleep from tick 243 (0 awake at tick 3600); escapes 0; highest centre 1.865 m
-                    toy: every dynamic body asleep from tick 243; deepest point -0.183709 m (tick 62, bodies 111 136), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0150998 m (tick 197, bodies 45 195); threads agree, saturations 0
-  pile200-s5     F  every body asleep from tick 288 (0 awake at tick 3600); escapes 0; highest centre 1.729 m
-                    toy: every dynamic body asleep from tick 288; deepest point -0.167747 m (tick 69, bodies 144 169), at rest (the 60 ticks before every body sleeps, or the last 60) -0.012712 m (tick 228, bodies 56 180); threads agree, saturations 0
-  pile200-s5     V4 every body asleep from tick 324 (0 awake at tick 3600); escapes 0; highest centre 1.749 m
-                    toy: every dynamic body asleep from tick 324; deepest point -0.167861 m (tick 69, bodies 144 169), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0232141 m (tick 268, bodies 5 130); threads agree, saturations 0
-  pile200-s5     D  every body asleep from tick 265 (0 awake at tick 3600); escapes 0; highest centre 1.718 m
-                    toy: every dynamic body asleep from tick 265; deepest point -0.16777 m (tick 69, bodies 144 169), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0144367 m (tick 220, bodies 55 80); threads agree, saturations 0
-  pile200-s6     F  every body asleep from tick 273 (0 awake at tick 3600); escapes 0; highest centre 1.822 m
-                    toy: every dynamic body asleep from tick 273; deepest point -0.18141 m (tick 63, bodies 136 161), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00958116 m (tick 215, bodies 80 111); threads agree, saturations 0
-  pile200-s6     V4 every body asleep from tick 251 (0 awake at tick 3600); escapes 0; highest centre 1.801 m
-                    toy: every dynamic body asleep from tick 251; deepest point -0.181155 m (tick 63, bodies 136 161), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0228746 m (tick 205, bodies 30 161); threads agree, saturations 0
-  pile200-s6     D  every body asleep from tick 273 (0 awake at tick 3600); escapes 0; highest centre 1.523 m
-                    toy: every dynamic body asleep from tick 273; deepest point -0.181355 m (tick 63, bodies 136 161), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0169789 m (tick 225, bodies 22 47); threads agree, saturations 0
-  pile200-s7     F  every body asleep from tick 236 (0 awake at tick 3600); escapes 0; highest centre 1.785 m
-                    toy: every dynamic body asleep from tick 236; deepest point -0.206966 m (tick 69, bodies 144 169), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0191279 m (tick 202, bodies 168 169); threads agree, saturations 0
-  pile200-s7     V4 every body asleep from tick 268 (0 awake at tick 3600); escapes 0; highest centre 1.783 m
-                    toy: every dynamic body asleep from tick 268; deepest point -0.185652 m (tick 69, bodies 144 169), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0123582 m (tick 267, bodies 7 32); threads agree, saturations 0
-  pile200-s7     D  every body asleep from tick 233 (0 awake at tick 3600); escapes 0; highest centre 1.780 m
-                    toy: every dynamic body asleep from tick 233; deepest point -0.188738 m (tick 67, bodies 168 193), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0119106 m (tick 183, bodies 57 183); threads agree, saturations 0
-  pile200-s8     F  every body asleep from tick 251 (0 awake at tick 3600); escapes 0; highest centre 1.753 m
-                    toy: every dynamic body asleep from tick 251; deepest point -0.17917 m (tick 63, bodies 138 163), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00782802 m (tick 209, bodies 26 76); threads agree, saturations 0
-  pile200-s8     V4 every body asleep from tick 250 (0 awake at tick 3600); escapes 0; highest centre 1.757 m
-                    toy: every dynamic body asleep from tick 250; deepest point -0.179181 m (tick 63, bodies 138 163), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00818539 m (tick 190, bodies 10 35); threads agree, saturations 0
-  pile200-s8     D  every body asleep from tick 230 (0 awake at tick 3600); escapes 0; highest centre 1.226 m
-                    toy: every dynamic body asleep from tick 230; deepest point -0.179155 m (tick 63, bodies 138 163), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0124452 m (tick 171, bodies 151 177); threads agree, saturations 0
-  bounce         F  impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
-                    toy: every dynamic body asleep from tick 128; deepest point -0.0624999 m (tick 37, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0125857 m (tick 90, bodies 0 1); threads agree, saturations 0
-  bounce         V4 impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
-                    toy: every dynamic body asleep from tick 128; deepest point -0.0625033 m (tick 37, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0125732 m (tick 90, bodies 0 1); threads agree, saturations 0
-  bounce         D  impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
-                    toy: every dynamic body asleep from tick 128; deepest point -0.0625 m (tick 37, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.0125878 m (tick 90, bodies 0 1); threads agree, saturations 0
-  ramp           F  friction 0.6 (body 2): travel 0.0007151 m by tick 600, at tick 150 0.0007151 m, acceleration (ticks 30-150) -2.997e-17 m/s^2; friction 0.2 (body 3): travel 7.913 m by tick 600, at tick 150 3.447 m, acceleration (ticks 30-150) 1.087 m/s^2 (sliding analytic 1.087, holding 0)
-                    toy: every dynamic body asleep from tick 311; deepest point -0.0278911 m (tick 219, bodies 0 3), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000171393 m (tick 280, bodies 0 3); threads agree, saturations 0
-  ramp           V4 friction 0.6 (body 2): travel 0.0007152 m by tick 600, at tick 150 0.0007152 m, acceleration (ticks 30-150) -2.997e-09 m/s^2; friction 0.2 (body 3): travel 8.019 m by tick 600, at tick 150 3.446 m, acceleration (ticks 30-150) 1.087 m/s^2 (sliding analytic 1.087, holding 0)
-                    toy: every dynamic body asleep from tick 298; deepest point -0.0277867 m (tick 219, bodies 0 3), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000233889 m (tick 268, bodies 0 3); threads agree, saturations 0
-  ramp           D  friction 0.6 (body 2): travel 0.0007153 m by tick 600, at tick 150 0.0007153 m, acceleration (ticks 30-150) 1.725e-12 m/s^2; friction 0.2 (body 3): travel 7.938 m by tick 600, at tick 150 3.446 m, acceleration (ticks 30-150) 1.087 m/s^2 (sliding analytic 1.087, holding 0)
-                    toy: every dynamic body asleep from tick 309; deepest point -0.0278705 m (tick 219, bodies 0 3), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000141084 m (tick 278, bodies 0 3); threads agree, saturations 0
-  ratio          F  1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.023 mm; plate sink 20.11 mm, drift 0.05492 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); asleep from tick 53
-                    toy: every dynamic body asleep from tick 53; deepest point -0.487079 m (tick 25, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.487079 m (tick 25, bodies 1 2); threads agree, saturations 0
-  ratio          V4 1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.023 mm; plate sink 20.11 mm, drift 0.0602 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); asleep from tick 53
-                    toy: every dynamic body asleep from tick 53; deepest point -0.487079 m (tick 25, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.487079 m (tick 25, bodies 1 2); threads agree, saturations 0
-  ratio          D  1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.023 mm; plate sink 20.11 mm, drift 0.06016 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); asleep from tick 53
-                    toy: every dynamic body asleep from tick 53; deepest point -0.487079 m (tick 25, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.487079 m (tick 25, bodies 1 2); threads agree, saturations 0
-  chip           F  lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
-                    toy: every dynamic body asleep from tick 70; deepest point -0.0238595 m (tick 3, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000268072 m (tick 19, bodies 0 1); threads agree, saturations 0
-  chip           V4 lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
-                    toy: every dynamic body asleep from tick 70; deepest point -0.0238595 m (tick 3, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000203848 m (tick 19, bodies 0 1); threads agree, saturations 0
-  chip           D  lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
-                    toy: every dynamic body asleep from tick 70; deepest point -0.0238594 m (tick 3, bodies 0 1), at rest (the 60 ticks before every body sleeps, or the last 60) -0.000270335 m (tick 19, bodies 0 1); threads agree, saturations 0
+gate 4: decision point 1's runs (accept.py) on the twins of gcc, 1 and 8 threads
+ran 111 runs in /home/consulear/lpf-m11/lab/gpu/results/spark-gb10/toy/accept
+- **Under DESIGN.md's rules as written** (every judged row but the post-hoc ones): **Box3D 17 of 18, D 17 of 18, F 24 of 27, V4 24 of 28**.
+- **With the post-hoc rows** (each in place of the row it relaxes: the rms of chip, ratio and pile200 judged by their outcome rows, pile200's penetration after every body sleeps): Box3D 18 of 18, D 18 of 18, F 26 of 27, V4 27 of 28.
+
+- Box3D fails (as written): pile200, 8 seeds, sleep on, 3,600 ticks: penetration: the deepest point in the 60 ticks before every body sleeps (the solve line's window: the original one), worst seed (cm)
+- D fails (as written): pile200, 8 seeds, sleep on, 3,600 ticks: penetration: the deepest point in the 60 ticks before every body sleeps (the solve line's window: the original one), worst seed (cm)
+- F fails (as written): position rms against D, ticks 1-120 (m), every scene (DESIGN.md): chip; not chaotic (D moved 1e-9 m moves under 1e-6 m): a miss is arithmetic; position rms against D, ticks 1-120 (m), every scene (DESIGN.md): arm; the stack (reached near tick 245) parts from D's at tick 1 on its face-on ties, the links agree (the details); position rms against D, ticks 1-120 (m), every scene (DESIGN.md): pile200, 8 seeds pooled (worst seed); chaotic: D moved 1e-9 m moves 0.0165 m
+- V4 fails (as written): position rms against D, ticks 1-120 (m), every scene (DESIGN.md): chip; not chaotic (D moved 1e-9 m moves under 1e-6 m): a miss is arithmetic; position rms against D, ticks 1-120 (m), every scene (DESIGN.md): ratio; not chaotic (D moved 1e-9 m moves under 1e-6 m): a miss is arithmetic; position rms against D, ticks 1-120 (m), every scene (DESIGN.md): arm; the stack (reached near tick 245) parts from D's at tick 1 on its face-on ties, the links agree (the details); position rms against D, ticks 1-120 (m), every scene (DESIGN.md): pile200, 8 seeds pooled (worst seed); chaotic: D moved 1e-9 m moves 0.0165 m
+- F fails (with the post-hoc rows): position rms against D, ticks 1-120 (m), every scene (DESIGN.md): arm; the stack (reached near tick 245) parts from D's at tick 1 on its face-on ties, the links agree (the details)
+- V4 fails (with the post-hoc rows): position rms against D, ticks 1-120 (m), every scene (DESIGN.md): arm; the stack (reached near tick 245) parts from D's at tick 1 on its face-on ties, the links agree (the details)
+  stack-off  Box3D top cube (body 10) after tick 3600: drift 0.5516 mm (from tick 600 0.0081), sink 26.03 mm, yaw -7.986e-05 deg, tilt 6.777e-06 deg; the last second's largest speed 0.002368 mm/s, spin 9.77e-07 rad/s; asleep from never
+  stack-off  D     top cube (body 10) after tick 3600: drift 0.2261 mm (from tick 600 0.008), sink 26.03 mm, yaw 6.622e-05 deg, tilt 0 deg; the last second's largest speed 1.426e-12 mm/s, spin 2.67e-15 rad/s; asleep from never
+  stack-off  F     top cube (body 10) after tick 3600: drift 0.2247 mm (from tick 600 0.0091), sink 26.03 mm, yaw 6.606e-05 deg, tilt 9.697e-06 deg; the last second's largest speed 0.001048 mm/s, spin 7.79e-07 rad/s; asleep from never
+  stack-off  V4    top cube (body 10) after tick 3600: drift 0.2255 mm (from tick 600 0.0168), sink 26.03 mm, yaw 6.467e-05 deg, tilt 1.636e-05 deg; the last second's largest speed 0.009175 mm/s, spin 2.51e-05 rad/s; asleep from never
+  stack-on   Box3D top cube (body 10) after tick 3600: drift 7.1 mm (from tick 600 0), sink 25.05 mm, yaw -5.439e-05 deg, tilt 0.1157 deg; the last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
+  stack-on   D     top cube (body 10) after tick 3600: drift 5.675 mm (from tick 600 0), sink 25.21 mm, yaw 2.758e-05 deg, tilt 0.103 deg; the last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
+  stack-on   F     top cube (body 10) after tick 3600: drift 5.675 mm (from tick 600 0), sink 25.21 mm, yaw 2.744e-05 deg, tilt 0.103 deg; the last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
+  stack-on   V4    top cube (body 10) after tick 3600: drift 5.676 mm (from tick 600 0), sink 25.21 mm, yaw 2.732e-05 deg, tilt 0.103 deg; the last second's largest speed 0 mm/s, spin 0 rad/s; asleep from tick 42
+  bounce     Box3D impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
+  bounce     D     impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
+  bounce     F     impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
+  bounce     V4    impact near tick 36 (lowest centre 0.1875 m, fastest fall -6.0000 m/s; analytic -5.916), first apex 0.6574 m at tick 55 (analytic 0.6875 m: 93.1% of the rise)
+  ramp       Box3D friction 0.6 (body 2): travel 0.0004777 m by tick 600, acceleration (ticks 30-150) 2.497e-18 m/s^2; friction 0.2 (body 3): 4.926 m at tick 180, 8.25 m by tick 600, acceleration 1.088 m/s^2 (analytic 1.087)
+  ramp       D     friction 0.6 (body 2): travel 0.0007157 m by tick 600, acceleration (ticks 30-150) 1.737e-12 m/s^2; friction 0.2 (body 3): 4.951 m at tick 180, 7.909 m by tick 600, acceleration 1.087 m/s^2 (analytic 1.087)
+  ramp       F     friction 0.6 (body 2): travel 0.0007151 m by tick 600, acceleration (ticks 30-150) -2.997e-17 m/s^2; friction 0.2 (body 3): 4.951 m at tick 180, 7.913 m by tick 600, acceleration 1.087 m/s^2 (analytic 1.087)
+  ramp       V4    friction 0.6 (body 2): travel 0.0007154 m by tick 600, acceleration (ticks 30-150) 3.854e-09 m/s^2; friction 0.2 (body 3): 4.951 m at tick 180, 7.996 m by tick 600, acceleration 1.087 m/s^2 (analytic 1.087)
+  ratio      Box3D 1 kg box sink 122.1 mm, drift 14.66 mm; 3 t box sink 500 mm, drift 5.1 mm; plate sink 20.11 mm, drift 0.0787 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); crushed through, sinks through; asleep from tick 79
+  ratio      D     1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.023 mm; plate sink 20.11 mm, drift 0.05509 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); crushed through, sinks through; asleep from tick 53
+  ratio      F     1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.023 mm; plate sink 20.11 mm, drift 0.05492 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); crushed through, sinks through; asleep from tick 53
+  ratio      V4    1 kg box sink 91.78 mm, drift 28.01 mm; 3 t box sink 500 mm, drift 2.024 mm; plate sink 20.11 mm, drift 0.06012 mm; chips' centres 0.0059, 0.0059, 0.0059, 0.0059 m (start 0.01); crushed through, sinks through; asleep from tick 53
+  chip       Box3D lowest centre 0.0099 m (half thickness 0.01), at rest from tick 43, asleep from tick 73, ends at (-1.368, 0.0099, -0.010)
+  chip       D     lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
+  chip       F     lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
+  chip       V4    lowest centre 0.0099 m (half thickness 0.01), at rest from tick 40, asleep from tick 70, ends at (-1.611, 0.0099, -0.001)
+  arm        Box3D joint 0: gap 0.62 mm, overshoot 0 mrad, axis error 9 mrad, angles -0.946 to 0.946; joint 1: gap 0.94 mm, overshoot 2.35 mrad, axis error 8.3 mrad, angles -0.502 to 0.502
+  arm        D     joint 0: gap 0.654 mm, overshoot 0 mrad, axis error 10.3 mrad, angles -0.946 to 0.946; joint 1: gap 0.953 mm, overshoot 1.71 mrad, axis error 9.44 mrad, angles -0.501 to 0.502
+  arm        F     joint 0: gap 0.655 mm, overshoot 0 mrad, axis error 10.5 mrad, angles -0.946 to 0.946; joint 1: gap 0.994 mm, overshoot 1.99 mrad, axis error 10.6 mrad, angles -0.502 to 0.502
+  arm        V4    joint 0: gap 0.655 mm, overshoot 0 mrad, axis error 10.7 mrad, angles -0.946 to 0.946; joint 1: gap 0.96 mm, overshoot 2.21 mrad, axis error 11.3 mrad, angles -0.502 to 0.502
+  pile-s1    Box3D every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 1.537 m
+  pile-s1    D     every body asleep from tick 300 (0 awake at tick 3600); escapes 0; highest centre 2.356 m
+  pile-s1    F     every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 2.357 m
+  pile-s1    V4    every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 2.354 m
+  pile-s2    Box3D every body asleep from tick 630 (0 awake at tick 3600); escapes 0; highest centre 1.539 m
+  pile-s2    D     every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.266 m
+  pile-s2    F     every body asleep from tick 260 (0 awake at tick 3600); escapes 0; highest centre 1.271 m
+  pile-s2    V4    every body asleep from tick 220 (0 awake at tick 3600); escapes 0; highest centre 1.268 m
+  pile-s3    Box3D every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 1.658 m
+  pile-s3    D     every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.835 m
+  pile-s3    F     every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 1.834 m
+  pile-s3    V4    every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.837 m
+  pile-s4    Box3D every body asleep from tick 230 (0 awake at tick 3600); escapes 0; highest centre 1.399 m
+  pile-s4    D     every body asleep from tick 260 (0 awake at tick 3600); escapes 0; highest centre 1.859 m
+  pile-s4    F     every body asleep from tick 230 (0 awake at tick 3600); escapes 0; highest centre 1.847 m
+  pile-s4    V4    every body asleep from tick 310 (0 awake at tick 3600); escapes 0; highest centre 1.098 m
+  pile-s5    Box3D every body asleep from tick 300 (0 awake at tick 3600); escapes 0; highest centre 1.751 m
+  pile-s5    D     every body asleep from tick 360 (0 awake at tick 3600); escapes 0; highest centre 1.728 m
+  pile-s5    F     every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.729 m
+  pile-s5    V4    every body asleep from tick 310 (0 awake at tick 3600); escapes 0; highest centre 1.721 m
+  pile-s6    Box3D every body asleep from tick 260 (0 awake at tick 3600); escapes 0; highest centre 1.366 m
+  pile-s6    D     every body asleep from tick 240 (0 awake at tick 3600); escapes 0; highest centre 1.521 m
+  pile-s6    F     every body asleep from tick 280 (0 awake at tick 3600); escapes 0; highest centre 1.822 m
+  pile-s6    V4    every body asleep from tick 290 (0 awake at tick 3600); escapes 0; highest centre 1.802 m
+  pile-s7    Box3D every body asleep from tick 280 (0 awake at tick 3600); escapes 0; highest centre 1.282 m
+  pile-s7    D     every body asleep from tick 250 (0 awake at tick 3600); escapes 0; highest centre 1.780 m
+  pile-s7    F     every body asleep from tick 240 (0 awake at tick 3600); escapes 0; highest centre 1.785 m
+  pile-s7    V4    every body asleep from tick 270 (0 awake at tick 3600); escapes 0; highest centre 1.783 m
+  pile-s8    Box3D every body asleep from tick 310 (0 awake at tick 3600); escapes 0; highest centre 2.105 m
+  pile-s8    D     every body asleep from tick 240 (0 awake at tick 3600); escapes 0; highest centre 1.219 m
+  pile-s8    F     every body asleep from tick 260 (0 awake at tick 3600); escapes 0; highest centre 1.753 m
+  pile-s8    V4    every body asleep from tick 250 (0 awake at tick 3600); escapes 0; highest centre 1.758 m
+gate 5: decision point 2 (the whole tick on the GPUs against the twin; the twins against the reference files; the full-buffer traces)
+  stack10-sleep0 F  gcc       run hash 36ba76c96aab06c4 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10-sleep0 F  clang     run hash 36ba76c96aab06c4 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 V4 gcc       run hash 6f69c34bd79e4213 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10-sleep0 V4 clang     run hash 6f69c34bd79e4213 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 D  gcc       run hash 916691cd4af93abc threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 D  clang     run hash 916691cd4af93abc threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        F  gcc       run hash 15684d87ff1d68b1 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10        F  clang     run hash 15684d87ff1d68b1 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        V4 gcc       run hash 3896097ca8de26ff threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10        V4 clang     run hash 3896097ca8de26ff threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        D  gcc       run hash 036b2bfa93e1b928 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        D  clang     run hash 036b2bfa93e1b928 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     F  gcc       run hash 0d16219f3a673fe1 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s1     F  clang     run hash 0d16219f3a673fe1 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     V4 gcc       run hash 14758a25bb1fe4ac threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s1     V4 clang     run hash 14758a25bb1fe4ac threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     D  gcc       run hash 41432c2559a772ef threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     D  clang     run hash 41432c2559a772ef threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     F  gcc       run hash fc6b37998c62d11e threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s2     F  clang     run hash fc6b37998c62d11e threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     V4 gcc       run hash a273e69e4717b7c7 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s2     V4 clang     run hash a273e69e4717b7c7 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     D  gcc       run hash 78065ce54582e208 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     D  clang     run hash 78065ce54582e208 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     F  gcc       run hash 5e44386f88f61cb3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s3     F  clang     run hash 5e44386f88f61cb3 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     V4 gcc       run hash a26348b258116dd3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s3     V4 clang     run hash a26348b258116dd3 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     D  gcc       run hash d01c265625097bff threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     D  clang     run hash d01c265625097bff threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     F  gcc       run hash cd66607a712be9fc threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s4     F  clang     run hash cd66607a712be9fc threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     V4 gcc       run hash 41bc195468d33954 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s4     V4 clang     run hash 41bc195468d33954 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     D  gcc       run hash ff3d8251a0b34d18 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     D  clang     run hash ff3d8251a0b34d18 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     F  gcc       run hash 34e0b350828c1c5b threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s5     F  clang     run hash 34e0b350828c1c5b threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     V4 gcc       run hash c9578bef51c9cfd2 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s5     V4 clang     run hash c9578bef51c9cfd2 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     D  gcc       run hash 4952570453f565d4 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     D  clang     run hash 4952570453f565d4 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     F  gcc       run hash 86d7ef793851bd8b threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s6     F  clang     run hash 86d7ef793851bd8b threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     V4 gcc       run hash a714aa3ea8cede32 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s6     V4 clang     run hash a714aa3ea8cede32 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     D  gcc       run hash 253c9bef197d09d2 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     D  clang     run hash 253c9bef197d09d2 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     F  gcc       run hash 5c2b0722d3db957f threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s7     F  clang     run hash 5c2b0722d3db957f threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     V4 gcc       run hash b73a0ebbde7fe615 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s7     V4 clang     run hash b73a0ebbde7fe615 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     D  gcc       run hash bb7fbddb229fa3c9 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     D  clang     run hash bb7fbddb229fa3c9 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     F  gcc       run hash 3d2c23cb6937e5cc threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s8     F  clang     run hash 3d2c23cb6937e5cc threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     V4 gcc       run hash 3f898622e8023507 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s8     V4 clang     run hash 3f898622e8023507 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     D  gcc       run hash 0ceebd0046b28aa6 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     D  clang     run hash 0ceebd0046b28aa6 threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         F  gcc       run hash 5a472a3b03339b86 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  bounce         F  clang     run hash 5a472a3b03339b86 threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         V4 gcc       run hash bd0624b07e8cefaf threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  bounce         V4 clang     run hash bd0624b07e8cefaf threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         D  gcc       run hash b1d611cc0f697635 threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         D  clang     run hash b1d611cc0f697635 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           F  gcc       run hash cc7d156d0e35c9f7 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ramp           F  clang     run hash cc7d156d0e35c9f7 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           V4 gcc       run hash 251330e7e0643146 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ramp           V4 clang     run hash 251330e7e0643146 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           D  gcc       run hash 4c94be0151e3537f threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           D  clang     run hash 4c94be0151e3537f threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          F  gcc       run hash c2bc875f4967a9ee threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ratio          F  clang     run hash c2bc875f4967a9ee threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          V4 gcc       run hash d0b69b314f19d00d threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ratio          V4 clang     run hash d0b69b314f19d00d threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          D  gcc       run hash 67b7e59404194816 threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          D  clang     run hash 67b7e59404194816 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           F  gcc       run hash 22308826aec57c83 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  chip           F  clang     run hash 22308826aec57c83 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           V4 gcc       run hash 19bd156226d3b1f4 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  chip           V4 clang     run hash 19bd156226d3b1f4 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           D  gcc       run hash 35cac36b6d7121e2 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           D  clang     run hash 35cac36b6d7121e2 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm            F  gcc       run hash 3aac45a38810f555 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  arm            F  clang     run hash 3aac45a38810f555 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm            V4 gcc       run hash ee7c37b7e15e2ef3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  arm            V4 clang     run hash ee7c37b7e15e2ef3 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm            D  gcc       run hash d0aa4985d2d6f1a3 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm            D  clang     run hash d0aa4985d2d6f1a3 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm-sleep0     F  gcc       run hash 2c318aad1b3f5233 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  arm-sleep0     F  clang     run hash 2c318aad1b3f5233 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm-sleep0     V4 gcc       run hash 45cfc897272f746e threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  arm-sleep0     V4 clang     run hash 45cfc897272f746e threads agree saturations 0 exit 0; twins vs reference: identical
+  arm-sleep0     D  gcc       run hash 49ff930e829b5f61 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm-sleep0     D  clang     run hash 49ff930e829b5f61 threads agree saturations 0 exit 0; twins vs reference: identical
+  decision point 2, per GPU and dialect: runs whose every tick's hashes equal the twin's (saturations 0)
+    gpu 0 nvidia     F : 16 of 16
+    gpu 0 nvidia     V4: 16 of 16
+    gpu 1 llvmpipe   F : 16 of 16
+    gpu 1 llvmpipe   V4: 16 of 16
+  full-buffer traces (every buffer the kernels write, word by word, after every tick's prepare and after its end):
+    pile200-s1   F  120 ticks, exit 0: gpu 0 nvidia: no difference in 120 ticks; gpu 1 llvmpipe: no difference in 120 ticks
+    pile200-s1   V4 120 ticks, exit 0: gpu 0 nvidia: no difference in 120 ticks; gpu 1 llvmpipe: no difference in 120 ticks
+    arm          F  300 ticks, exit 0: gpu 0 nvidia: no difference in 300 ticks; gpu 1 llvmpipe: no difference in 300 ticks
+    arm          V4 300 ticks, exit 0: gpu 0 nvidia: no difference in 300 ticks; gpu 1 llvmpipe: no difference in 300 ticks
+  GPU costs (informative): scene, dialect, gpu: wall and kernel ms per tick over the run; the busiest tick after the first: tick, kernels, wall (ms); the most dispatches in a tick
+    stack10-sleep0 F  gpu 0:   1.182   0.408; tick 1843:   0.808   1.621; 40
+    stack10-sleep0 F  gpu 1:  34.740  28.909; tick 2062:  62.111  74.546; 40
+    stack10-sleep0 V4 gpu 0:   2.694   1.204; tick  181:   1.705   2.952; 40
+    stack10-sleep0 V4 gpu 1:  37.799  31.776; tick 1576:  61.616  71.179; 40
+    stack10        F  gpu 0:   0.466   0.052; tick   39:   0.420   0.828; 40
+    stack10        F  gpu 1:   9.141   2.992; tick    8:  41.476  50.277; 40
+    stack10        V4 gpu 0:   0.368   0.061; tick   35:   1.299   2.584; 40
+    stack10        V4 gpu 1:   8.591   2.798; tick   16:  43.284  47.975; 40
+    pile200-s1     F  gpu 0:   2.360   0.695; tick  248:   4.763   6.551; 305
+    pile200-s1     F  gpu 1:  42.216  35.365; tick  128: 330.911 340.960; 305
+    pile200-s1     V4 gpu 0:   3.173   1.528; tick  157:   9.586  12.490; 305
+    pile200-s1     V4 gpu 1:  47.223  40.375; tick  124: 322.655 330.131; 305
+    pile200-s2     F  gpu 0:   1.714   0.610; tick  142:   4.611   6.316; 305
+    pile200-s2     F  gpu 1:  39.265  32.533; tick  124: 300.467 306.609; 305
+    pile200-s2     V4 gpu 0:   2.816   1.209; tick  155:   9.727  11.942; 317
+    pile200-s2     V4 gpu 1:  39.000  32.132; tick  189: 357.336 366.538; 317
+    pile200-s3     F  gpu 0:   1.910   0.750; tick  175:   4.748   7.102; 329
+    pile200-s3     F  gpu 1:  46.759  39.898; tick  170: 344.355 355.830; 329
+    pile200-s3     V4 gpu 0:   3.087   1.776; tick  202:  10.227  12.413; 329
+    pile200-s3     V4 gpu 1:  53.225  46.127; tick  210: 342.316 352.384; 329
+    pile200-s4     F  gpu 0:   1.830   0.579; tick  117:   4.542   6.647; 318
+    pile200-s4     F  gpu 1:  38.830  31.828; tick  162: 336.242 345.624; 318
+    pile200-s4     V4 gpu 0:   3.798   2.017; tick  202:  10.010  12.477; 305
+    pile200-s4     V4 gpu 1:  58.833  51.656; tick  286: 363.658 370.373; 305
+    pile200-s5     F  gpu 0:   2.530   0.781; tick  213:   4.699   7.267; 329
+    pile200-s5     F  gpu 1:  48.050  41.219; tick  276: 332.217 340.618; 329
+    pile200-s5     V4 gpu 0:   3.092   1.808; tick  154:   9.789  12.427; 293
+    pile200-s5     V4 gpu 1:  51.499  44.570; tick  174: 302.779 311.610; 293
+    pile200-s6     F  gpu 0:   1.833   0.657; tick  221:   4.144   5.845; 293
+    pile200-s6     F  gpu 1:  41.751  34.942; tick  237: 310.880 318.304; 293
+    pile200-s6     V4 gpu 0:   2.920   1.641; tick  196:   9.126  12.038; 281
+    pile200-s6     V4 gpu 1:  48.259  41.330; tick  203: 321.997 329.053; 281
+    pile200-s7     F  gpu 0:   1.797   0.563; tick  153:   3.979   6.124; 293
+    pile200-s7     F  gpu 1:  35.841  29.022; tick  162: 264.011 270.784; 293
+    pile200-s7     V4 gpu 0:   2.752   1.462; tick  172:   9.018  12.212; 281
+    pile200-s7     V4 gpu 1:  44.230  37.273; tick  248: 305.218 315.446; 281
+    pile200-s8     F  gpu 0:   1.819   0.690; tick  200:   4.719   6.603; 316
+    pile200-s8     F  gpu 1:  42.043  35.149; tick  212: 321.986 330.280; 316
+    pile200-s8     V4 gpu 0:   2.939   1.590; tick  164:  10.801  12.236; 329
+    pile200-s8     V4 gpu 1:  48.527  41.456; tick  213: 357.991 367.464; 329
+    bounce         F  gpu 0:   0.446   0.075; tick   73:   0.388   1.451; 30
+    bounce         F  gpu 1:  11.444   5.478; tick   36: 270.862 275.818; 30
+    bounce         V4 gpu 0:   0.493   0.128; tick   39:   1.102   1.880; 30
+    bounce         V4 gpu 1:  13.391   7.177; tick   36: 1058.971 1064.870; 30
+    ramp           F  gpu 0:   1.302   0.186; tick  106:   0.696   1.255; 29
+    ramp           F  gpu 1:  17.811  12.092; tick  289:  36.322  43.006; 29
+    ramp           V4 gpu 0:   1.638   0.434; tick  220:   1.004   4.103; 29
+    ramp           V4 gpu 1:  18.530  12.378; tick  136:  39.849  50.651; 29
+    ratio          F  gpu 0:   1.100   0.107; tick   13:   1.258   2.230; 76
+    ratio          F  gpu 1:  12.815   6.481; tick   36:  72.529  78.571; 76
+    ratio          V4 gpu 0:   0.736   0.217; tick   12:   2.628   4.209; 76
+    ratio          V4 gpu 1:  13.254   6.950; tick    3:  83.005  90.559; 76
+    chip           F  gpu 0:   0.292   0.081; tick   21:   0.603   2.244; 28
+    chip           F  gpu 1:  10.704   4.599; tick   47:  28.864  37.512; 28
+    chip           V4 gpu 0:   1.149   0.138; tick    4:   0.975   1.744; 28
+    chip           V4 gpu 1:   9.951   4.426; tick    3:  35.863  41.855; 28
+    arm            F  gpu 0:   1.147   0.369; tick  280:   0.990   1.994; 114
+    arm            F  gpu 1:  38.117  32.265; tick  255:  91.267  99.956; 114
+    arm            V4 gpu 0:   2.622   1.064; tick  294:   2.927   4.476; 114
+    arm            V4 gpu 1:  41.205  35.206; tick  275: 119.637 128.176; 114
+    arm-sleep0     F  gpu 0:   1.519   0.689; tick  375:   1.108   2.535; 114
+    arm-sleep0     F  gpu 1:  57.786  51.989; tick  215: 102.208 109.021; 114
+    arm-sleep0     V4 gpu 0:   2.846   1.736; tick  300:   3.024   4.588; 114
+    arm-sleep0     V4 gpu 1:  60.756  54.809; tick  283: 106.567 113.357; 114
 
 PASS

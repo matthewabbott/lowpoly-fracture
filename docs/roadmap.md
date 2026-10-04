@@ -715,6 +715,11 @@ Exit: the arithmetic chosen by the rule in multiplayer-research.md §10, provisi
 **The gate before milestone 12:** E11's binaries and the toy on a Pascal GPU (GTX 1060: no full-rate int32
 multiply) and an AMD GPU, when the owner's low-end box exists.
 
+**Status (2026-10-04, overnight):** the lab, E11 on the Spark and the toy's seven steps are done; both decision
+points passed for both dialects on every device to hand (research/m11-gpu-lab.md), and the reviews (Fable and the
+Codex reviewer) are applied. Claude recommends block-scaled integers (multiplayer-research.md §10), for the owner to
+confirm. Left: the MacBook's runs (the record lists them), the owner's verdict, then the push.
+
 ## 11a. Exact fracture geometry
 
 The old milestone 11's L2 item, unchanged: integer sites and bisector planes, exact classification, hulls from exact

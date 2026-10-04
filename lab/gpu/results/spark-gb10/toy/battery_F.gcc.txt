@@ -1,10 +1,11 @@
 toy battery, dialect F, 4096 vectors per helper, seed 20261004
 twin: gcc 13.3.0, aarch64, contraction off
 layout sizes C/twin: BatIn 32/32 BatOut 24/24
-inputs: 90112 vectors, hash e94786b32359fd41
+inputs: 98304 vectors, hash b70d2b7da863fbc3
 accuracy (twin): recip max rel 8.78e-08 (3131), rsqrt max rel 8.93e-08 (3274), atan2 max abs 2.77e-05 rad (4096), |quatNormalize| - 1 max 1.25e-07 (3092), divClamp max rel 1.3e-07 (1372)
 accuracy (twin): |unit3| - 1 max 1.3e-07 (2301)
 accuracy (twin): sqrtT max rel 1.17e-07 (3286), recipE max rel 8.39e-08 (1563), discScale max rel 1.31e-07 (1214 clamped), 0 not exactly 1 inside
+accuracy (twin): twistAngle max abs 5.4e-05 rad (8192), invertSym max error relative to the largest entry 0.000466 (4096; 0 near V4's limit left out)
 gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; float controls: denorm preserve/ftz 0/0, RTE 1, SZINP 1 (F-plain: none declared)
 gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305; float controls: denorm preserve/ftz 0/0, RTE 1, SZINP 1 (F-plain: none declared)
 helper mul            n   4096  hash c8f9d4a20c582d2e  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
@@ -30,5 +31,7 @@ helper msb/shiftOf    n   4096  hash c6ba2821652f0383  sat      0  fp none      
 helper recipE         n   4096  hash 1126bd6dcfef2feb  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
 helper sqrtT          n   4096  hash 0424442e414176f2  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
 helper discScale      n   4096  hash 4c592536952b57b1  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
-battery F hash 5add7392dc064a30 (twin: gcc 13.3.0, aarch64, contraction off)
+helper twistAngle     n   4096  hash e94b46d9c4792309  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+helper invertSym      n   4096  hash cc581c215f3f0341  sat      0  fp none                     | nvidia 0 differ, sat 0 | llvmpipe 0 differ, sat 0
+battery F hash f7006e1c8f347ba5 (twin: gcc 13.3.0, aarch64, contraction off)
 PASS: 2 GPU(s) against the twin, every word identical

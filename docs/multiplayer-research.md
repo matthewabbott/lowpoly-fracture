@@ -350,10 +350,13 @@ and multiply":
   `-a`, Slang folds `x + 0`;
 - NaN bits differ by machine.
 
-**Two candidates, both bit-exact so far.** The float dialect F (fp32, NoContraction, only add, subtract and multiply
-on the GPU, software reciprocals, every select written out, no float-control modes) and block-scaled int32 V4 both
-matched their CPU twins on four GPUs (RTX 3060, Intel UHD 630, GB10, llvmpipe) and four twin compilers on two ISAs
-([research/m11-gpu-lab.md](research/m11-gpu-lab.md)); V4 costs 1.25 to 1.36 times F per step. The asymmetry between
+**Two candidates, both bit-exact.** The float dialect F (fp32, NoContraction, only add, subtract and multiply on the
+GPU, software reciprocals, every select written out and snapped, no float-control modes) and block-scaled int32 V4
+both matched their CPU twins on four GPUs (RTX 3060, Intel UHD 630, GB10, llvmpipe) and four twin compilers on two
+ISAs ([research/m11-gpu-lab.md](research/m11-gpu-lab.md)): E11's single solve (except E11's one signed zero in F on
+the UHD at 100k contacts, a select rewritten into min/max, which F's snap now absorbs) and then the toy's whole tick,
+every word of it, for thousands of ticks. V4 costs 1.25 to 1.36 times F for E11's solve; for the toy's whole tick
+1.7 times at one pile (dispatch-bound) and the same as F per body at 64. The asymmetry between
 them: an integer driver bug is deterministic, local and loud (a startup battery catches it, and it can be reported);
 a float driver that returns a legal but different result fails late, remotely and silently. Astra leaned float, Fable
 and Claude integers.
@@ -364,3 +367,23 @@ promise; prefer float if V4's outcomes fail (stacks creep, piles do not sleep) a
 11's toy supplies the evidence: decision point 1 (outcomes on the F, V4 and double twins against Box3D) and decision
 point 2 (bit-exact on every device in both dialects). The Pascal rows (no full-rate int32 multiply) and AMD close the
 gate before milestone 12. The verdict is recorded here when the toy has answered.
+
+**What the toy answered (2026-10-04, overnight):**
+- *Bits:* both dialects pass decision point 2 on every device to hand, with no driver mode the spec does not promise.
+- *Outcomes:* both pass DESIGN.md's acceptance table on outcomes. Under its rules as written both miss the 120-tick
+  position rms against the double reference on impact scenes (F three rows, V4 four), and D and Box3D miss one bar
+  each; nothing separates the dialects on physics.
+- *Tools:* each dialect met one bug that only it could meet: gcc 13 miscompiled a float comparison (F's twin), and
+  V4's matrix inversion overflowed int32 on near-singular inputs (UBSan). Both were loud: the cross-compiler twins
+  and the sanitizer caught them the first time they ran.
+- *Cost:* V4 is dearer where the tick is dispatch-bound (1.7 times at one pile) and level at scale.
+
+**Claude's recommendation, for the owner to confirm: block-scaled integers (V4)**, provisional on the Pascal and AMD
+gate. The deciding difference is the one the rule names: F is bit-exact because no subnormal ever arises in a step
+(snapped at every select and store, watched by the x64 twin's sentinel), but nothing a driver promises keeps an
+intermediate inside an expression from going subnormal in content nobody tested, and NVIDIA flushes them by
+default. That failure would be silent and remote. V4's arithmetic is exact by the spec; its risks (saturation,
+formats, a joint block's condition number) are counted where they happen. The strongest case against: F met every
+bar V4 met, keeps Box3D's formulas and float's culture, and is cheaper on small scenes; if the Pascal rows exceed the
+gate, F (or dropping Pascal, Fable's rule) is the answer, and milestone 12's core is built so the dialect is a
+compile-time choice for as long as that stays cheap.
