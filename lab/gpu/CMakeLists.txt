@@ -131,3 +131,8 @@ if(LAB_BOX3D AND EXISTS "${LAB_BOX3D_DIR}/CMakeLists.txt")
 	target_link_libraries(b3ref PRIVATE box3d)
 	lab_no_contract(b3ref)
 endif()
+
+# The dual-dialect toy (toy/DESIGN.md), when gen_toy.py has generated its kernels and twins
+if(EXISTS "${LAB_GEN}/toy")
+	add_subdirectory(toy)
+endif()

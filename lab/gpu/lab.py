@@ -203,6 +203,11 @@ def cmd_gen(a):
     with open(os.path.join(GEN, "manifest.json"), "w") as f:
         json.dump({"slangc": version, "sdk": sdk_bin()}, f, indent=1)
     print("gen done: slangc", version)
+    # the dual-dialect toy (toy/DESIGN.md): its kernels and twins into gen/toy, when toy/ is here
+    if os.path.exists(os.path.join(LAB, "toy", "gen_toy.py")):
+        sys.path.insert(0, os.path.join(LAB, "toy"))
+        import gen_toy
+        gen_toy.gen_toy(LAB, tool, run)
 
 
 # ----------------------------------------------------------------------------------------------------------------------

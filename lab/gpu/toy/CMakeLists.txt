@@ -1,0 +1,50 @@
+# The dual-dialect toy (DESIGN.md), from the kernels and twins that `lab.py gen` (gen_toy.py) wrote to gen/toy: per
+# dialect F, V4 and D, the helper battery (battery_<d>) and the twin driver (toy_<d>). Included by the lab's
+# CMakeLists.txt when gen/toy exists; reuses its lab_no_contract, lab_quiet and vk_util. Run the binaries from lab/gpu.
+set(TOY_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
+set(TOY_GEN "${LAB_GEN}/toy")
+
+# A twin object library: the glue includes the generated C++ named by TWIN_GEN (a wrapper file carries the define, as
+# the lab's lab_twin does).
+function(toy_twin name glue generated)
+	set(wrapper "${CMAKE_BINARY_DIR}/twins/toy_${name}.cpp")
+	file(WRITE "${wrapper}.tmp" "#define TWIN_GEN \"${generated}\"\n#include \"${TOY_SRC}/${glue}\"\n")
+	file(COPY_FILE "${wrapper}.tmp" "${wrapper}" ONLY_IF_DIFFERENT)
+	add_library(toytwin_${name} OBJECT "${wrapper}")
+	target_include_directories(toytwin_${name} PRIVATE "${TOY_SRC}" "${LAB_SRC}")
+	set_source_files_properties("${wrapper}" PROPERTIES OBJECT_DEPENDS "${generated};${TOY_SRC}/${glue}")
+	lab_quiet(toytwin_${name})
+	lab_no_contract(toytwin_${name})
+endfunction()
+
+function(toy_c17 target)
+	set_property(TARGET ${target} PROPERTY C_STANDARD 17)
+	target_include_directories(${target} PRIVATE "${TOY_SRC}")
+	lab_no_contract(${target})
+endfunction()
+
+# Dialect-free C: the scene generator (double) and the CPU stages (integers)
+if(EXISTS "${TOY_SRC}/scene.c" AND EXISTS "${TOY_SRC}/stages.c")
+	add_library(toy_common STATIC "${TOY_SRC}/scene.c" "${TOY_SRC}/stages.c")
+	toy_c17(toy_common)
+	if(NOT WIN32)
+		target_link_libraries(toy_common PUBLIC m)
+	endif()
+endif()
+
+foreach(d F V4 D)
+	if(EXISTS "${TOY_GEN}/${d}/battery.cpp")
+		toy_twin(battery_${d} battery_glue.cpp "${TOY_GEN}/${d}/battery.cpp")
+		add_executable(battery_${d} "${TOY_SRC}/battery.c" $<TARGET_OBJECTS:toytwin_battery_${d}>)
+		target_compile_definitions(battery_${d} PRIVATE DIALECT_${d})
+		target_link_libraries(battery_${d} PRIVATE vk_util)
+		toy_c17(battery_${d})
+	endif()
+	if(EXISTS "${TOY_GEN}/${d}/kernels.cpp" AND TARGET toy_common)
+		toy_twin(kernels_${d} kernels_glue.cpp "${TOY_GEN}/${d}/kernels.cpp")
+		add_executable(toy_${d} "${TOY_SRC}/toy.c" "${TOY_SRC}/quant.c" $<TARGET_OBJECTS:toytwin_kernels_${d}>)
+		target_compile_definitions(toy_${d} PRIVATE DIALECT_${d})
+		target_link_libraries(toy_${d} PRIVATE toy_common vk_util)
+		toy_c17(toy_${d})
+	endif()
+endforeach()

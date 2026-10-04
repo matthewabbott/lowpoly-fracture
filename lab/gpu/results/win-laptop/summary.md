@@ -14,7 +14,7 @@ its own run. Positive controls must differ. ms/step at the largest N.
 
 | log | twin | twin vs reference | threads agree | GPUs (mismatching words; ms/step) |
 |---|---|---|---|---|
-| control_F_fast | MSVC 194234435, x64, contraction off | 10000: ok | yes | nvidia: 54048 (1.10 ms); intel: 54800 (3.06 ms) |
+| control_F_fast | MSVC 194234435, x64, contraction off | 1000: ok, 10000: ok, 100000: ok | yes | nvidia: 5310/54048/534154 (5.57 ms); intel: 5344/54800/539943 (31.66 ms) |
 | control_F_fma | MSVC 194234435, x64, contraction ON (pos | 10000: differs (control ok) | yes | - |
 | control_rows_V1_fast | MSVC 194234435, x64, contraction off | ok | | nvidia: 664175 rows (1.52 ns/row); intel: 770171 rows (41.03 ns/row) |
 | control_rows_V1_fma | MSVC 194234435, x64, contraction ON (pos | differs (control ok) | | - |
