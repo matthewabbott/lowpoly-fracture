@@ -1,0 +1,85 @@
+E11 harness, variant F (label Fdisc), T 4 bytes, TP 4 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 28/28 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: gcc 13.3.0, aarch64, contraction off
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=185; Binary Size=16768; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=183; Binary Size=20224; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=168; Binary Size=11648; Stack Size=0; Local Memory Size=68719476752; Shared Memory Size=1280;
+  spirv gen/Fdisc/*.spv
+gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  spirv gen/Fdisc/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 0.5639 ms/step, final hash cd345950d5be583d, range counter 0
+  census: 0 subnormal and 8022 zero words of 12016 in the final CPU state
+  gpu nvidia: 0.8746 ms/step (timestamps, median of 3 reps; fastest step 0.8612), 1.5833 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 15523 mismatches 4222 (signed-zero 0, subnormal 0, nan 0, 1ulp 549, 2-16ulp 1527, larger 2146, max 2128836678 ulp)
+    first mismatches: body[1].word0: -2.70194077 (0xc02cec99) vs -2.70194125 (0xc02cec9b), 2 ulp
+    first mismatches: body[1].word2: 0.553845167 (0x3f0dc8cc) vs 0.553845108 (0x3f0dc8cb), 1 ulp
+    first mismatches: body[1].word3: 2.91172624 (0x403a59b9) vs 2.91172695 (0x403a59bc), 3 ulp
+    first mismatches: body[1].word4: 3.40791488 (0x405a1b47) vs 3.40791464 (0x405a1b46), 1 ulp
+    first mismatches: body[1].word5: -3.75558233 (0xc0705b76) vs -3.75558114 (0xc0705b71), 5 ulp
+    first mismatches: pose.q[1].word0: -0.361904025 (0xbeb94b7c) vs -0.361903846 (0xbeb94b76), 6 ulp
+    first mismatches: pose.q[1].word1: 0.349764019 (0x3eb31445) vs 0.349763751 (0x3eb3143c), 9 ulp
+    first mismatches: pose.q[1].word2: -0.67601186 (0xbf2d0f1d) vs -0.67601198 (0xbf2d0f1f), 2 ulp
+  gpu llvmpipe: 5.3233 ms/step (timestamps, median of 3 reps; fastest step 4.2115), 18.4410 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 15523 mismatches 0
+  compare nvidia vs llvmpipe         words 15523 mismatches 4222 (signed-zero 0, subnormal 0, nan 0, 1ulp 549, 2-16ulp 1527, larger 2146, max 2128836678 ulp)
+    first mismatches: body[1].word0: -2.70194125 (0xc02cec9b) vs -2.70194077 (0xc02cec99), 2 ulp
+    first mismatches: body[1].word2: 0.553845108 (0x3f0dc8cb) vs 0.553845167 (0x3f0dc8cc), 1 ulp
+    first mismatches: body[1].word3: 2.91172695 (0x403a59bc) vs 2.91172624 (0x403a59b9), 3 ulp
+    first mismatches: body[1].word4: 3.40791464 (0x405a1b46) vs 3.40791488 (0x405a1b47), 1 ulp
+    first mismatches: body[1].word5: -3.75558114 (0xc0705b71) vs -3.75558233 (0xc0705b76), 5 ulp
+    first mismatches: pose.q[1].word0: -0.361903846 (0xbeb94b76) vs -0.361904025 (0xbeb94b7c), 6 ulp
+    first mismatches: pose.q[1].word1: 0.349763751 (0x3eb3143c) vs 0.349764019 (0x3eb31445), 9 ulp
+    first mismatches: pose.q[1].word2: -0.67601198 (0xbf2d0f1f) vs -0.67601186 (0xbf2d0f1d), 2 ulp
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 6.3392 ms/step, final hash 5c897a3fee272fcd, range counter 0
+  census: 0 subnormal and 79140 zero words of 120016 in the final CPU state
+  gpu nvidia: 1.0645 ms/step (timestamps, median of 3 reps; fastest step 1.0534), 1.8010 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 155023 mismatches 44465 (signed-zero 8, subnormal 0, nan 0, 1ulp 5350, 2-16ulp 15773, larger 23334, max 2256458884 ulp)
+    first mismatches: body[1].word0: -1.25620186 (0xbfa0cb39) vs -1.2562021 (0xbfa0cb3b), 2 ulp
+    first mismatches: body[2].word1: -7.70659447 (0xc0f69c6c) vs -7.70659494 (0xc0f69c6d), 1 ulp
+    first mismatches: body[2].word2: -0.572438002 (0xbf128b4c) vs -0.572437942 (0xbf128b4b), 1 ulp
+    first mismatches: body[2].word3: -5.22557926 (0xc0a737f2) vs -5.22557783 (0xc0a737ef), 3 ulp
+    first mismatches: body[2].word4: 6.73510361 (0x40d785f8) vs 6.73509979 (0x40d785f0), 8 ulp
+    first mismatches: pose.q[2].word0: -0.168488339 (0xbe2c8835) vs -0.168488875 (0xbe2c8859), 36 ulp
+    first mismatches: pose.q[2].word1: 0.881358087 (0x3f61a0af) vs 0.881357551 (0x3f61a0a6), 9 ulp
+    first mismatches: pose.q[2].word2: 0.435030073 (0x3edebc43) vs 0.435031056 (0x3edebc64), 33 ulp
+  gpu llvmpipe: 9.6023 ms/step (timestamps, median of 3 reps; fastest step 5.5553), 7.5227 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 155023 mismatches 0
+  compare nvidia vs llvmpipe         words 155023 mismatches 44465 (signed-zero 8, subnormal 0, nan 0, 1ulp 5350, 2-16ulp 15773, larger 23334, max 2256458884 ulp)
+    first mismatches: body[1].word0: -1.2562021 (0xbfa0cb3b) vs -1.25620186 (0xbfa0cb39), 2 ulp
+    first mismatches: body[2].word1: -7.70659494 (0xc0f69c6d) vs -7.70659447 (0xc0f69c6c), 1 ulp
+    first mismatches: body[2].word2: -0.572437942 (0xbf128b4b) vs -0.572438002 (0xbf128b4c), 1 ulp
+    first mismatches: body[2].word3: -5.22557783 (0xc0a737ef) vs -5.22557926 (0xc0a737f2), 3 ulp
+    first mismatches: body[2].word4: 6.73509979 (0x40d785f0) vs 6.73510361 (0x40d785f8), 8 ulp
+    first mismatches: pose.q[2].word0: -0.168488875 (0xbe2c8859) vs -0.168488339 (0xbe2c8835), 36 ulp
+    first mismatches: pose.q[2].word1: 0.881357551 (0x3f61a0a6) vs 0.881358087 (0x3f61a0af), 9 ulp
+    first mismatches: pose.q[2].word2: 0.435031056 (0x3edebc64) vs 0.435030073 (0x3edebc43), 33 ulp
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 66.9613 ms/step, final hash eb57534f8029f0b6, range counter 0
+  census: 0 subnormal and 797082 zero words of 1200016 in the final CPU state
+  gpu nvidia: 4.7403 ms/step (timestamps, median of 3 reps; fastest step 4.7012), 6.0655 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 1550023 mismatches 432644 (signed-zero 29, subnormal 0, nan 0, 1ulp 56018, 2-16ulp 156191, larger 220406, max 2197096520 ulp)
+    first mismatches: body[2].word0: 3.31195998 (0x4053f727) vs 3.30968785 (0x4053d1ed), 9530 ulp
+    first mismatches: body[2].word1: -3.10525727 (0xc046bc89) vs -3.11779332 (0xc04789ed), 52580 ulp
+    first mismatches: body[2].word2: -4.02412367 (0xc080c59f) vs -4.02227259 (0xc080b675), 3882 ulp
+    first mismatches: body[2].word3: -9.74920464 (0xc11bfcbe) vs -9.76990795 (0xc11c518b), 21709 ulp
+    first mismatches: body[2].word4: -8.62001896 (0xc109eb99) vs -8.54966164 (0xc108cb6a), 73775 ulp
+    first mismatches: body[2].word5: 4.91967964 (0x409d6e04) vs 5.01160908 (0x40a05f1a), 192790 ulp
+    first mismatches: pose.p[2].word0: 31.7819233 (0x41fe4161) vs 31.7821312 (0x41fe41ce), 109 ulp
+    first mismatches: pose.p[2].word1: 27.3360386 (0x41dab035) vs 27.3372288 (0x41dab2a5), 624 ulp
+  gpu llvmpipe: 49.7448 ms/step (timestamps, median of 3 reps; fastest step 18.9610), 55.6817 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 1550023 mismatches 0
+  compare nvidia vs llvmpipe         words 1550023 mismatches 432644 (signed-zero 29, subnormal 0, nan 0, 1ulp 56018, 2-16ulp 156191, larger 220406, max 2197096520 ulp)
+    first mismatches: body[2].word0: 3.30968785 (0x4053d1ed) vs 3.31195998 (0x4053f727), 9530 ulp
+    first mismatches: body[2].word1: -3.11779332 (0xc04789ed) vs -3.10525727 (0xc046bc89), 52580 ulp
+    first mismatches: body[2].word2: -4.02227259 (0xc080b675) vs -4.02412367 (0xc080c59f), 3882 ulp
+    first mismatches: body[2].word3: -9.76990795 (0xc11c518b) vs -9.74920464 (0xc11bfcbe), 21709 ulp
+    first mismatches: body[2].word4: -8.54966164 (0xc108cb6a) vs -8.62001896 (0xc109eb99), 73775 ulp
+    first mismatches: body[2].word5: 5.01160908 (0x40a05f1a) vs 4.91967964 (0x409d6e04), 192790 ulp
+    first mismatches: pose.p[2].word0: 31.7821312 (0x41fe41ce) vs 31.7819233 (0x41fe4161), 109 ulp
+    first mismatches: pose.p[2].word1: 27.3372288 (0x41dab2a5) vs 27.3360386 (0x41dab035), 624 ulp

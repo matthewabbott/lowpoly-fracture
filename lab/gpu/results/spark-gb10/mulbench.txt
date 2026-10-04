@@ -1,0 +1,20 @@
+
+NVIDIA Tegra NVIDIA GB10 (nvidia): 1048576 threads x 4 chains x 256 steps per dispatch, median of 5
+  fp32 fma                         12700.39 G steps/s  (1.00x the fp32 fma rate, 0.085 ms)
+  int32 mul-add                     7166.69 G steps/s  (1.77x the fp32 fma rate, 0.150 ms)
+  i32*i32->i64 (sext) >>20          1575.77 G steps/s  (8.06x the fp32 fma rate, 0.681 ms)
+  int64*int64 (full)                1661.27 G steps/s  (7.64x the fp32 fma rate, 0.646 ms)
+  imulExtended hi/lo                1727.65 G steps/s  (7.35x the fp32 fma rate, 0.622 ms)
+  umulExtended hi/lo                1728.10 G steps/s  (7.35x the fp32 fma rate, 0.621 ms)
+  Q32.32 qmul (limbs)                419.80 G steps/s  (30.25x the fp32 fma rate, 2.558 ms)
+  i32*i32->i64 round+var shift      1128.41 G steps/s  (11.26x the fp32 fma rate, 0.952 ms)
+
+llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe): 1048576 threads x 4 chains x 256 steps per dispatch, median of 5
+  fp32 fma                            64.71 G steps/s  (1.00x the fp32 fma rate, 16.593 ms)
+  int32 mul-add                       76.22 G steps/s  (0.85x the fp32 fma rate, 14.088 ms)
+  i32*i32->i64 (sext) >>20            41.40 G steps/s  (1.56x the fp32 fma rate, 25.934 ms)
+  int64*int64 (full)                  53.07 G steps/s  (1.22x the fp32 fma rate, 20.232 ms)
+  imulExtended hi/lo                  28.15 G steps/s  (2.30x the fp32 fma rate, 38.137 ms)
+  umulExtended hi/lo                  29.63 G steps/s  (2.18x the fp32 fma rate, 36.242 ms)
+  Q32.32 qmul (limbs)                 17.58 G steps/s  (3.68x the fp32 fma rate, 61.083 ms)
+  i32*i32->i64 round+var shift        49.46 G steps/s  (1.31x the fp32 fma rate, 21.708 ms)

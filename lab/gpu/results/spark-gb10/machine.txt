@@ -1,0 +1,12 @@
+machine spark-gb10
+platform Linux-6.11.0-1014-nvidia-aarch64-with-glibc2.39
+processor aarch64
+primary compiler gcc
+twin compilers clang
+quick False
+machine spark-gb10
+platform Linux-6.11.0-1014-nvidia-aarch64-with-glibc2.39
+processor aarch64
+primary compiler gcc
+twin compilers -
+quick False

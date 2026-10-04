@@ -1,0 +1,4 @@
+E11 harness, variant F (label F-ieee), T 4 bytes, TP 4 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 28/28 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: gcc 13.3.0, aarch64, contraction off
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns

@@ -1,0 +1,40 @@
+E11 harness, variant I64 (label I64), T 8 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 128/128 Pose 56/56 Constraint 456/456 Impulse 32/32 Params 136/136
+twin: gcc 13.3.0, aarch64, contraction off
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=255; Binary Size=104960; Stack Size=0; Local Memory Size=68719476752; Shared Memory Size=7424;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=255; Binary Size=139648; Stack Size=0; Local Memory Size=68719476752; Shared Memory Size=5632;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=240; Binary Size=49664; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  spirv gen/I64/*.spv
+gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  spirv gen/I64/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 2.6142 ms/step, final hash ac217ddf3b57db96, range counter 0
+  cpu twin 8 thread(s): 1.8280 ms/step, final hash ac217ddf3b57db96, range counter 0
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+  gpu nvidia: 1.7958 ms/step (timestamps, median of 3 reps; fastest step 1.7779), 2.4328 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 15523 mismatches 0
+  gpu llvmpipe: 32.1501 ms/step (timestamps, median of 3 reps; fastest step 7.1944), 30.6405 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 15523 mismatches 0
+  compare nvidia vs llvmpipe         words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 27.6645 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  cpu twin 8 thread(s): 5.7971 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+  gpu nvidia: 1.9774 ms/step (timestamps, median of 3 reps; fastest step 1.9497), 3.2937 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 155023 mismatches 0
+  gpu llvmpipe: 41.7269 ms/step (timestamps, median of 3 reps; fastest step 9.4582), 40.3229 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 155023 mismatches 0
+  compare nvidia vs llvmpipe         words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 301.8182 ms/step, final hash bfc67079360763ad, range counter 0
+  cpu twin 8 thread(s): 41.9922 ms/step, final hash bfc67079360763ad, range counter 0
+  compare cpu1 vs cpu8               words 1550023 mismatches 0
+  gpu nvidia: 8.6467 ms/step (timestamps, median of 3 reps; fastest step 8.5688), 10.4427 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 1550023 mismatches 0
+  gpu llvmpipe: 88.1026 ms/step (timestamps, median of 3 reps; fastest step 56.6048), 90.8020 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 1550023 mismatches 0
+  compare nvidia vs llvmpipe         words 1550023 mismatches 0

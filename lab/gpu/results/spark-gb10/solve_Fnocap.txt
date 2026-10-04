@@ -1,0 +1,60 @@
+E11 harness, variant F (label Fnocap), T 4 bytes, TP 4 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 28/28 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: gcc 13.3.0, aarch64, contraction off
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=185; Binary Size=16768; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=181; Binary Size=20096; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=168; Binary Size=11648; Stack Size=0; Local Memory Size=68719476752; Shared Memory Size=1280;
+  spirv gen/Fnocap/*.spv
+gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  spirv gen/Fnocap/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 0.5370 ms/step, final hash df91b8435c187de2, range counter 0
+  census: 0 subnormal and 8253 zero words of 12016 in the final CPU state
+  gpu nvidia: 0.8692 ms/step (timestamps, median of 3 reps; fastest step 0.8628), 1.7302 ms/step with per-step submit+readback; first divergent step 3; range counter 0
+  compare cpu vs nvidia              words 15523 mismatches 12 (signed-zero 0, subnormal 0, nan 12, 1ulp 0, 2-16ulp 0, larger 0, max 4194303 ulp)
+    first mismatches: pose.q[355].word0: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[355].word1: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[355].word2: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[355].word3: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[378].word0: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[378].word1: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[378].word2: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[378].word3: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+  gpu llvmpipe: 8.5028 ms/step (timestamps, median of 3 reps; fastest step 4.3490), 4.9913 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 15523 mismatches 0
+  compare nvidia vs llvmpipe         words 15523 mismatches 12 (signed-zero 0, subnormal 0, nan 12, 1ulp 0, 2-16ulp 0, larger 0, max 4194303 ulp)
+    first mismatches: pose.q[355].word0: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[355].word1: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[355].word2: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[355].word3: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[378].word0: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[378].word1: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[378].word2: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[378].word3: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 6.2903 ms/step, final hash 730cd168a11af787, range counter 0
+  census: 0 subnormal and 82292 zero words of 120016 in the final CPU state
+  gpu nvidia: 1.0656 ms/step (timestamps, median of 3 reps; fastest step 1.0533), 1.7566 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 155023 mismatches 228 (signed-zero 0, subnormal 0, nan 228, 1ulp 0, 2-16ulp 0, larger 0, max 4194303 ulp)
+    first mismatches: pose.q[18].word0: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[18].word1: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[18].word2: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[18].word3: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[69].word0: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[69].word1: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[69].word2: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+    first mismatches: pose.q[69].word3: nan (0x7fc00000) vs nan (0x7fffffff), 4194303 ulp
+  gpu llvmpipe: 7.1040 ms/step (timestamps, median of 3 reps; fastest step 5.5986), 8.2343 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs llvmpipe            words 155023 mismatches 0
+  compare nvidia vs llvmpipe         words 155023 mismatches 228 (signed-zero 0, subnormal 0, nan 228, 1ulp 0, 2-16ulp 0, larger 0, max 4194303 ulp)
+    first mismatches: pose.q[18].word0: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[18].word1: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[18].word2: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[18].word3: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[69].word0: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[69].word1: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[69].word2: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
+    first mismatches: pose.q[69].word3: nan (0x7fffffff) vs nan (0x7fc00000), 4194303 ulp
