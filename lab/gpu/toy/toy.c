@@ -7,12 +7,15 @@
 // floating-point sentinel after every dispatch. Built once per dialect (toy_F, toy_V4, toy_D).
 //
 //   toy_F --scene pile200 --ticks 600 --threads 1,8 [--seed S] [--gravity G] [--sleep 0|1] [--recycle 0|1]
-//         [--push BODY,VX,VY,VZ]
+//         [--push BODY,VX,VY,VZ] [--perturb EPS] [--start-float]
 //         [--pos-out FILE] [--pos-ref FILE] [--traj FILE [--traj-every N]] [--log FILE] [--quiet]
 //
 // --pos-out writes every body's pose per tick (double); --pos-ref reads another dialect's (D's) and reports the
 // differences (rms, max) of the dynamic bodies' positions and orientations. --traj writes the first run's trajectory
-// (traj.h's LPTRAJ1: tick 0, then every Nth tick). TOY_DUMP_AABBS=T prints every body's AABB at tick T (1-thread runs).
+// (traj.h's LPTRAJ1: tick 0, then every Nth tick). --perturb moves every dynamic body's start by EPS m along x and
+// along y (in the scene's doubles, before quantisation: step 4b's measure of how much a scene amplifies a tiny
+// difference); --start-float rounds every body's start (position, orientation, velocities) to float first, the start F
+// stores (D from F's start). TOY_DUMP_AABBS=T prints every body's AABB at tick T (1-thread runs).
 // The dispatch list is a plain array, so step 5 can replay it on a GPU.
 #include "fpflags.h"
 #include "layout.h"
@@ -262,6 +265,9 @@ typedef struct RunResult
 	int fpFailures;
 	char firstFp[160];
 	int dispatches; // the most in one tick
+	// after the last tick, over every touching pair (sleeping ones too, their manifolds carried): the deepest point
+	double finalSep;
+	int finalA, finalB, finalTouching;
 } RunResult;
 
 static void push_dispatch( Dispatch* list, int* n, int entry, uint32_t start, uint32_t count )
@@ -648,6 +654,26 @@ static RunResult run_toy( const ToyData* init, int ticks, int threads, int keepP
 	pool_stop();
 	r.msPerTick = total / ticks;
 	r.saturations = toy_saturations();
+	{
+		const Manifold* last = mf[ticks & 1];
+		r.finalSep = 1e30;
+		r.finalA = -1;
+		r.finalB = -1;
+		for ( int k = 0; k < st.pairCount; ++k )
+		{
+			r.finalTouching += last[k].pointCount > 0;
+			for ( int i = 0; i < last[k].pointCount; ++i )
+			{
+				double sep = toy_val( last[k].points[i].separation, S_S );
+				if ( sep < r.finalSep )
+				{
+					r.finalSep = sep;
+					r.finalA = last[k].bodyA;
+					r.finalB = last[k].bodyB;
+				}
+			}
+		}
+	}
 	stages_free( &st );
 	free( list );
 	free( isStatic );
@@ -757,6 +783,8 @@ int main( int argc, char** argv )
 	toy_default_settings( &settings );
 	int pushBody = -1;
 	double pushV[3] = { 0.0, 0.0, 0.0 };
+	double perturb = 0.0;
+	int startFloat = 0;
 	for ( int i = 1; i < argc; ++i )
 	{
 		const char* a = argv[i];
@@ -786,6 +814,10 @@ int main( int argc, char** argv )
 			}
 			++i;
 		}
+		else if ( strcmp( a, "--perturb" ) == 0 )
+			perturb = atof( v ), ++i;
+		else if ( strcmp( a, "--start-float" ) == 0 )
+			startFloat = 1;
 		else if ( strcmp( a, "--pos-out" ) == 0 )
 			posOut = v, ++i;
 		else if ( strcmp( a, "--pos-ref" ) == 0 )
@@ -830,6 +862,25 @@ int main( int argc, char** argv )
 		sc.bodies[pushBody].v[1] = pushV[1];
 		sc.bodies[pushBody].v[2] = pushV[2];
 	}
+	for ( int i = 0; i < sc.bodyCount && perturb != 0.0; ++i )
+	{
+		sc.bodies[i].p[0] += sc.bodies[i].isStatic ? 0.0 : perturb;
+		sc.bodies[i].p[1] += sc.bodies[i].isStatic ? 0.0 : perturb;
+	}
+	for ( int i = 0; i < sc.bodyCount && startFloat; ++i )
+	{
+		SceneBody* b = sc.bodies + i;
+		for ( int k = 0; k < 3; ++k )
+		{
+			b->p[k] = (double)(float)b->p[k];
+			b->v[k] = (double)(float)b->v[k];
+			b->w[k] = (double)(float)b->w[k];
+		}
+		for ( int k = 0; k < 4; ++k )
+		{
+			b->q[k] = (double)(float)b->q[k];
+		}
+	}
 	ToyData d;
 	toy_quantize( &sc, &settings, &d );
 	say( "toy %s, dialect %s, %d ticks, threads", sceneName, DIALECT_NAME, ticks );
@@ -837,8 +888,17 @@ int main( int argc, char** argv )
 	{
 		say( " %d", threads[i] );
 	}
-	say( "; gravity %g, sleep %s, contact recycling %s%s\n", settings.gravity, settings.enableSleep ? "on" : "off", settings.recycle ? "on" : "off",
+	say( "; gravity %g, sleep %s, contact recycling %s%s", settings.gravity, settings.enableSleep ? "on" : "off", settings.recycle ? "on" : "off",
 		 pushBody >= 0 ? ", one body pushed" : "" );
+	if ( perturb != 0.0 )
+	{
+		say( ", every dynamic body moved %g m along x and along y", perturb );
+	}
+	if ( startFloat )
+	{
+		say( ", the start rounded to float" );
+	}
+	say( "\n" );
 	say( "twin: %s\n", toy_twin_info() );
 	size_t cs[14] = { sizeof( Hull ),  sizeof( HullFace ), sizeof( BodyState ), sizeof( BodyPose ), sizeof( BodyMass ),
 					  sizeof( Aabb ),  sizeof( Params ),   sizeof( Hash2 ),		sizeof( V3 ),		sizeof( Pair ),
@@ -933,7 +993,7 @@ int main( int argc, char** argv )
 		}
 		int restEnd = asleepFrom > 0 ? asleepFrom - 1 : ticks;
 		double deep = 1e30, deepLate = 1e30;
-		int deepAt = 0, deepA = -1, deepB = -1;
+		int deepAt = 0, deepA = -1, deepB = -1, lateAt = 0, lateA = -1, lateB = -1;
 		for ( int t = 1; t <= ticks; ++t )
 		{
 			const TickRecord* k = r0->ticks + t;
@@ -947,6 +1007,9 @@ int main( int argc, char** argv )
 			if ( t > restEnd - 60 && t <= restEnd && k->minSep < deepLate )
 			{
 				deepLate = k->minSep;
+				lateAt = t;
+				lateA = k->minSepA;
+				lateB = k->minSepB;
 			}
 		}
 		if ( asleepFrom > 0 )
@@ -957,8 +1020,11 @@ int main( int argc, char** argv )
 		{
 			say( "solve: %d bodies awake at the end", r0->ticks[ticks].awake );
 		}
-		say( "; deepest point %.6g m (tick %d, bodies %d %d), at rest (the 60 ticks before every body sleeps, or the last 60) %.6g m; at most %d dispatches a tick\n", deep < 1e29 ? deep : 0.0,
-			 deepAt, deepA, deepB, deepLate < 1e29 ? deepLate : 0.0, r0->dispatches );
+		say( "; deepest point %.6g m (tick %d, bodies %d %d), at rest (the 60 ticks before every body sleeps, or the last 60) %.6g m (tick %d, "
+			 "bodies %d %d); at most %d dispatches a tick\n",
+			 deep < 1e29 ? deep : 0.0, deepAt, deepA, deepB, deepLate < 1e29 ? deepLate : 0.0, lateAt, lateA, lateB, r0->dispatches );
+		say( "rest: after tick %d, over every touching pair (sleeping ones too): deepest point %.6g m (bodies %d %d), %d touching pairs\n", ticks,
+			 r0->finalSep < 1e29 ? r0->finalSep : 0.0, r0->finalA, r0->finalB, r0->finalTouching );
 	}
 
 	// positions: out, and against a reference (D)

@@ -472,3 +472,146 @@ metrics: `traj.py`'s summaries grown into DESIGN's acceptance table, toy against
 ratios, sleep-time ratios and pile200's medians over the eight seeds, apex and slide within 5% and 2%, outcome classes
 for ratio and chip), and decision point 1. The scratch programs' numbers above (stack10 with and without recycling,
 ratio, bounce) are what b3ref2 should reproduce first.
+
+## 2026-10-04: step 4b (b3ref2, the metrics, the acceptance table: decision point 1)
+
+**What landed** (lines): `b3ref2.c` 493 (new: Box3D on the toy's scenes, from `scene_build`, writing LPTRAJ1 and the toy's
+solve line), `metrics.py` 245 (new: the acceptance table's measurements from trajectories and logs), `accept.py` 422 (new:
+runs everything, measures, prints the table and writes `results/decision1.md`), `results/decision1.md` (generated: the
+table, the details, how each number is measured, the commands), `toy.c` 1,139 (+72: `--perturb EPS`, `--start-float`, a
+`rest:` line, the solve line's at-rest point with its tick and bodies), `CMakeLists.txt` 79 (the `b3ref2` target:
+`box3d` and `toy_common`). No kernel, layout, Params or scene changed: gates 1 to 4 give step 4's hashes.
+
+```
+python lab/gpu/toy/gen_toy.py && python lab/gpu/lab.py build --compiler msvc
+python lab/gpu/toy/accept.py      # 119 runs (8 at a time, about 25 s) into build/toy-scratch/4b, then the table (about 15 s)
+build/msvc/bin/b3ref2.exe --scene pile200 --seed 5 --ticks 3600 --traj build/toy-scratch/b.traj   # from lab/gpu
+python toy/metrics.py build/toy-scratch/b.traj --scene pile200
+```
+
+**b3ref2** builds each scene from the generator's doubles: boxes through `b3MakeBoxHull` (their half extents), the
+chunks through `b3CreateHull` from the scene's points (vertex, face and half-edge counts equal the scene's on every hull
+of every seed); poses, velocities, friction and restitution as given; mass: Box3D's own from the shapes (at the scene's
+density) is within 3.2e-7 (mass) and 2e-6 (inertia, relative Frobenius) of the scene's, and the scene's values are set
+with `b3Body_SetMassData` (centre at the origin), so both programs integrate the same bodies. Settings: 60 Hz, 4
+substeps, gravity -10, hertz 30, damping 10, push 3 m/s, restitution threshold 1 m/s, two restitution iterations, max
+speed 400 m/s, one worker, contact recycling at Box3D's default (50 mm; `--recycle 0` sets 0), continuous off
+(`--continuous 1` for the chip). "Awake" in its trajectories and solve line means stepped this tick (awake before the
+step or after it), the toy's meaning: Box3D sleeps an island at the end of the step that crossed the threshold, the toy
+at the start of the next tick, so the two read the same tick (`box3d:` prints Box3D's own reading, one less). The
+deepest point is Box3D's manifold separation (the narrowphase's, before the solve; `b3World_VisitContactState`, our
+patch) among the contacts with a body stepped that tick; the `rest:` line, every touching contact after the last tick.
+It reproduces step 4's scratch programs: stack10 sleep off, top drift 0.5516 mm, sink 26.03 mm, last second's largest
+speed 0.00237 mm/s; sleep on, asleep after step 41 (Box3D's reading; tick 42 in the toy's, the toy's own 42); with
+recycling 0, 45.9 mm at 51.5 mm/s (scratch: 46, 51), and the toy with `--recycle 0` slides likewise (D 54.1 mm at 85.8
+mm/s, F 58.2 at 49.7, V4 18.8 at 47.3); bounce's apex 0.6574 m; ratio's chips at 0.0059 m.
+
+**Decision point 1** (`results/decision1.md`, MSVC, one thread). Judged rows: **Box3D 16 of 16, D 16 of 16, F 18 of 19
+(fails the ramp's 120-tick rms), V4 20 of 20.**
+
+| criterion (threshold) | Box3D | D | F | V4 |
+|---|---|---|---|---|
+| stack10 off: top drift, tick 60 to 3,600 (<= 8.86 mm) | 4.43 mm | 2.89 | 2.89 | 2.82 |
+| stack10 off: top drift, tick 600 to 3,600 (<= 2 mm) | 0.0081 mm | 0.0080 | 0.0091 | **0.093** |
+| stack10 off: yaw at 60 s (<= 0.5 deg) | 8e-5 deg | 6.6e-5 | 6.6e-5 | 6.4e-5 |
+| stack10 off: top's mean speed, last 10 s (<= 1 mm/s) | 0.0019 mm/s | 1.3e-11 | 0.00069 | 0.0057 |
+| stack10 on: asleep from tick (<= 63, stays) | 42 | 42 | 42 | 42 |
+| pile200: seeds asleep by 3,600; median (max) tick (<= 406) | 8; 271 (350) | 8; 249 (332) | 8; 276 (295) | 8; 251 (328) |
+| pile200: escapes (0) | 0 | 0 | 0 | 0 |
+| pile200: deepest at rest, every pair once all sleep, worst seed (<= 2 cm) | 1.13 cm | 1.70 | 1.03 | 1.24 |
+| pile200: the solve line's 60 ticks before sleep (reported) | 2.07 cm | 1.70 | 1.91 | 2.32 |
+| pile200: deepest during the drop (reported) | 22.5 cm | 18.9 | 20.7 | 18.6 |
+| ratio: 3 t on 1 kg; plate on chips (Box3D's class) | crushed through; sinks through | same | same | same |
+| bounce: first apex (within 5% of 0.6875) | 0.6574 (-4.4%) | same | same | same |
+| ramp: 0.6 box travel by 600; creep after 60 (holds) | 0.48 mm; 0 | 0.72; 0 | 0.72; 0 | 0.72; 0 |
+| ramp: 0.2 box at tick 180 (within 2% of Box3D's) | 4.926 m | +0.51% | +0.51% | +0.50% |
+| chip: lowest; last centre (above the ground) | 0.00987; 0.00988 | 0.00988 | 0.00988 | 0.00988 |
+| chip: asleep from (sleeps, stays) | 73 | 70 | 70 | 70 |
+| V4 saturations, every run (0) | | | | 0 |
+| rms vs D, ticks 1-120: stack10 / bounce / ramp (F 1e-5, V4 1e-4) | | | 2.5e-7 / 1.3e-6 / **1.34e-5** | 1.5e-5 / 4.5e-6 / 8.9e-6 |
+| rms vs D: chip / ratio / pile200 pooled (by outcome) | | | 4.1e-5 / 1.4e-4 / 0.080 | 1.4e-4 / 3.0e-7 / 0.11 |
+
+Chaos yardstick (D with every dynamic body moved 1e-9 m along x and y, against D, ticks 1-120): stack10 1.4e-6 (the
+stack's first seconds' sway amplifies 1,400 times), bounce 1.2e-9, ramp 4.0e-8, chip 4.9e-8, ratio 6.9e-7, pile200 0.018
+m pooled (chaos: the piles diverge at the first impacts). The chip, ratio and pile200 rms are judged by outcome (the
+lead's note); V4's chip (1.4e-4) would miss the 1e-4 bar and F's ratio (1.4e-4) the 1e-5 one if they were judged.
+
+**Each failure, diagnosed.**
+- **F, the ramp's 120-tick rms, 1.34e-5 m against 1e-5.** Not the per-tick rounding of float positions (that, emulated on
+  D's motion, gives 4.4e-7 for the sliding box). The sliding box's error is a velocity offset of 1.5e-5 m/s down the
+  slope set in ticks 1 and 2, its landing (it starts 1 mm above the ramp), then held, so the error grows linearly (3.1e-5
+  m at tick 120). D started from F's start (`--start-float`: every position, orientation and velocity rounded to float,
+  what F stores; the boxes sit at 2 to 3.5 m, where a float's step is 2.4e-7 m) is 8.8e-6 from D, and F against that D is
+  4.9e-6: two thirds of F's number is the scene's start, which F cannot represent, amplified about 70 times by the
+  landing; F's arithmetic alone is under the bar. The same split explains F's ratio (1.43e-4, all start: 2.1e-7 against D
+  from F's start); the chip's 4.1e-5 is F's arithmetic (4.05e-5 against D from F's start), amplified by the impacts. Not a
+  solver bug; the lead's options: start the scenes on a grid every dialect holds exactly (positions rounded to float in
+  the generator are exact in V4's 32 fractional bits and in D; every hash changes), or two-word positions for F (step 2's
+  open issue), or accept it as F's cost.
+- **The pile200 penetration bar on the solve line's window** (V4 2.32 cm on seed 5, 2.29 on 6; Box3D 2.07 on 5, 2.04 on
+  3; D 1.70, F 1.91). The window is not rest: each pile sleeps as one island, so 195 to 199 of the 200 bodies are awake in
+  it, and its deep points are late slides and falls (of the points over 1.5 cm but one, the faster body of the pair moves at 0.07
+  to 1.2 m/s within 10 ticks; the four over 2 cm at 0.36 to 1.2 m/s: V4's seed 6 is body 161, which fell at 3.8 m/s at
+  tick 191, landing on body 30 at about 1 m/s, seed 5 body 130 sliding at 0.48 m/s, Box3D's at 0.36 and 0.47 m/s). The
+  one deep point there that is at rest is D's seed 6 (1.70 cm between bodies 22 and 47 at 0.9 mm/s), and it is still there
+  in the final pile. So the bar is judged on the pile at rest (every touching pair once every body
+  sleeps, the `rest:` line): worst Box3D 1.13 cm, D 1.70, F 1.03, V4 1.24, all under 2 cm; the window stays in the table,
+  reported. Judged on the window, Box3D would fail too.
+
+**V4's stack creeps (within the bar; diagnosed).** Between ticks 600 and 3,600 V4's top cube drifts 0.093 mm (Box3D
+0.008, D 0.008, F 0.009, the bar 2 mm): the whole stack slides on the ground at 1 um/s in a fixed direction (the bottom
+cube 50 um in 50 s, linear in time) and leans (the top's tilt 6.2e-4 deg; Box3D's 7e-6); D and Box3D stop after the
+sway, F wanders a few um. The cause is `mas`'s rounding, half up for negative values too: the aligned stack's anchors are
+exact binary values (+-0.25 m), so products such as r x P land on exact halves often, and -x rounds to a magnitude other
+than x's, a bias of a fraction of an lsb with a sign the geometry fixes. An experiment (reverted: `num.slang`, `gen/toy`
+and both builds are byte for byte step 4's again), `mas` rounding half away from zero: the bottom cube 0.7 um, the top 16.8
+um over the same 50 s, tilt 1.6e-5 deg; the jitter unchanged (top's mean speed 0.0056 mm/s); stack10's 120-tick rms
+against D 2.5e-6 (from 1.5e-5); pile200 still sleeps on every seed (median 249.5, max 320; at rest at most 1.42 cm;
+saturations 0); the ramp unchanged (V4's slide 1.2e-4 m behind D at tick 180: a separate, small friction bias, not
+diagnosed). Not kept: it changes every V4 hash and the battery's (mul64 relies on half up, but only for non-negative
+products; lpDivQ31's exactness and gate 1 were not rerun under it). **Recommendation:** symmetric rounding in `mas` (half
+away from zero, or half to even) before step 5's reference hashes. The kill-early note's clz-narrowed r x P was not
+needed: V4's stacks rest and its piles sleep.
+
+**Judgement calls.**
+- `b3ref2.c` lives in `toy/` (the brief: edit only `toy/`), not `src/` as step 4's note proposed.
+- stack10's drift: the brief's "from the settled position after the first second" is judged as written (tick 60), but the
+  stack still sways there (up to 6 to 7 mm for about 5 s, every program), so that row measures the sway's return; a second
+  judged row starts at tick 600, when the sway has died: the creep. Yaw: the top cube at tick 3,600 against the start.
+  Resting speed: the top cube's mean linear speed over the last 600 ticks.
+- pile200: the sleep tick per seed from the solve line (every tick; the trajectories keep every 10th); the median and
+  max over the eight seeds; escapes, a dynamic body's centre outside |x|, |z| <= 2 m (the walls' inner faces) or below the
+  floor's top in any record. Penetration as above.
+- ratio's classes from the last record (metrics.py's `ratio`: rests, partly sunk, crushed through, pushed aside; the plate
+  rests, partly sunk, sinks through, chips squeezed out). Every program: the 3 t box crushes through the 1 kg box (ends on
+  the ground, the small box inside it) and the plate sinks through the chips.
+- bounce: the apex height against the analytic (-4.4% in all four, Box3D identical to four digits). Read as the rise above
+  the resting centre it is 93.1% of the analytic in all four, so "5% of the rise" would fail Box3D too (the box is 6.25
+  cm into the ground before the contact pushes: the time step).
+- ramp: holds = at most 1 cm down the slope by tick 600 and 1 mm after tick 60 (it starts 1 mm above the ramp); slides =
+  the distance at tick 180 (3 s, still on the 6.5 m ramp) against Box3D's (4.926 m; the toy 4.951 m in every dialect;
+  the acceleration 1.087 m/s^2 in both, the analytic 1.0866).
+- chip: no tunnelling = its lowest and last centres above the ground. Box3D with continuous collision on: lowest 0.009878
+  m, asleep from 79 (off: 73).
+- The chaos yardstick moves the bodies along x and y: along x alone it is an exact symmetry of every scene but the ramp
+  and the pile (the first runs gave 1e-9 flat on chip, ratio, bounce and stack10).
+- The rms against D is computed from the trajectories (every tick to 120), as `--pos-ref` does; it equals gate 2's.
+
+**Box3D beside the toy, beyond the table.** Every outcome agrees. Box3D's ratio sleeps at 79 (the toy 53) with its 1 kg
+box 30 mm deeper; the chip at 73 (70); the 0.2 box slides 0.5% less far; pile200's sleep median 271 against 249 to 276
+and its drop 22.5 cm deep against 18.6 to 20.7. bounce's face-on landing sends the box sideways (about 0.2 m/s) and
+spinning in both, as mirror images (the four points' solve order differs with the hulls' vertex order), so Box3D's first-120-tick
+rms against D is 0.18 m there; across programs the rms says nothing.
+
+**Gates 1 to 4: passed** (`gate.py`, MSVC 19.42.34435 and clang-cl 23.1.2; logs in `build/toy-scratch/gate4b`): battery
+hashes F 5add7392dc064a30, V4 6cddc843b7bf4f72, D 17fdc03440fd6596 and every gate 2 run hash as step 4's, the corpus
+hashes as step 4's, the sentinel clean, V4's saturations 0.
+
+**Open issues.**
+- The two calls above for the lead: the scenes' starts (F's ramp and ratio rms) and V4's rounding.
+- V4's small friction bias on the ramp (the sliding box 2.5e-5 slower, relative), not diagnosed; F's chip error (4e-5 in
+  120 ticks, its arithmetic amplified by the impacts) not taken apart.
+- DESIGN's arm row is step 6's (with the joint), grid:K step 7's.
+- Box3D still differs in its gyroscopic term, continuous collision (the chip behaves the same with it), its sleep test
+  (a position term) and waking in the step; none shows in the table.
+- accept.py runs only the MSVC twins and one thread (gate 2 covers the rest); the Spark has not run 4b.

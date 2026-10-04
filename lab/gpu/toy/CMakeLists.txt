@@ -47,6 +47,13 @@ if(EXISTS "${TOY_SRC}/scene.c" AND EXISTS "${TOY_SRC}/stages.c")
 	endif()
 endif()
 
+# Box3D on the toy's scenes (step 4b's reference): the same scene generator and trajectory files, Box3D's solver
+if(TARGET box3d AND TARGET toy_common AND EXISTS "${TOY_SRC}/b3ref2.c")
+	add_executable(b3ref2 "${TOY_SRC}/b3ref2.c")
+	target_link_libraries(b3ref2 PRIVATE box3d toy_common)
+	toy_c17(b3ref2)
+endif()
+
 foreach(d F V4 D)
 	if(EXISTS "${TOY_GEN}/${d}/battery.cpp")
 		toy_twin(battery_${d} battery_glue.cpp "${TOY_GEN}/${d}/battery.cpp")
