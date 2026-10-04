@@ -282,9 +282,12 @@ int main( int argc, char** argv )
 	int maxDebris = 400;
 	const char* jsonPath = NULL;
 	lpPairDef pair = { 0 }; // --host / --join: a lockstep session (pair.c)
+	pair.hostPort = -1;
 	pair.peers = 1;
 	pair.delay = 4;
 	pair.injectTick = -1;
+	pair.stallTick = -1;
+	pair.leaveTick = -1;
 	const char* twin = NULL; // --twin: two worlds and an injected desync (twin.c)
 	const char* repair = NULL;
 	const char* conePath = NULL;
@@ -359,7 +362,28 @@ int main( int argc, char** argv )
 		}
 		else if ( strcmp( a, "--host" ) == 0 )
 		{
-			pair.hostPort = atoi( v );
+			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port listens on loopback only
+			pair.hostPort = atoi( colon != NULL ? colon + 1 : v );
+			pair.loopback = colon != NULL;
+			++i;
+		}
+		else if ( strcmp( a, "--net-delay" ) == 0 )
+		{
+			const char* comma = strchr( v, ',' );
+			pair.netDelay = atoi( v );
+			pair.netJitter = comma != NULL ? atoi( comma + 1 ) : 0;
+			++i;
+		}
+		else if ( strcmp( a, "--net-stall" ) == 0 )
+		{
+			const char* comma = strchr( v, ',' );
+			pair.stallTick = atoll( v );
+			pair.stallMs = comma != NULL ? atoi( comma + 1 ) : 1000;
+			++i;
+		}
+		else if ( strcmp( a, "--leave-at" ) == 0 )
+		{
+			pair.leaveTick = atoll( v );
 			++i;
 		}
 		else if ( strcmp( a, "--join" ) == 0 )
@@ -434,7 +458,8 @@ int main( int argc, char** argv )
 					"                 [--period N] [--fragment-scale F] [--max-debris N] [--stress-work total,perStructure] [--json path]\n"
 					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json] [--check-hash]\n"
 					"                 [--session path] [--twin velocity|warm:tick[:ulps] [--repair motion,warm,sleep[@delay]] [--cone path]]\n"
-					"                 [--host port [--peers N] | --join host:port] [--input-delay N] [--inject-desync tick]\n" );
+					"                 [--host [127.0.0.1:]port [--peers N] | --join host:port] [--input-delay N] [--inject-desync tick]\n"
+					"                 [--net-delay ms[,jitter]] [--net-stall tick,ms] [--leave-at tick]\n" );
 			return 1;
 		}
 	}
@@ -443,7 +468,7 @@ int main( int argc, char** argv )
 	{
 		return lpBenchTwin( scene, period, ticks, workers[0], &s_script, twin, repair, conePath );
 	}
-	if ( pair.hostPort > 0 || pair.joinHost != NULL )
+	if ( pair.hostPort >= 0 || pair.joinHost != NULL )
 	{
 		pair.scene = scene;
 		pair.period = period;

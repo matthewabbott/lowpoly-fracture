@@ -105,32 +105,39 @@ jobs:
           cat out/test.txt
           exit $code
 
-      # One leg runs the kept hash against a full one every tick, and two processes in lockstep over localhost: in sync
-      # to the end (both exit 0), and with a desync injected into the peer (the host names the body and exits 4)
+      # One leg runs the kept hash against a full one every tick, and processes in lockstep over localhost: in sync to
+      # the end (every machine exits 0), with a desync injected into the peer (every machine names the body and exits
+      # 4), with the peer's link slow (80 ms and up to 40 more each way) or stalled for 2 s (in sync all the same), and
+      # three machines of which one leaves (the other two are told, and exit 6)
       - name: Lockstep pair and the kept hash
         if: matrix.pair
         shell: bash
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           bench=build/default/$BIN_SUB/lpf_bench$EXE
           $bench --scene town --period 3 --ticks 300 --workers 1,8 --check-hash > out/check_hash.txt 2>&1
-          $bench --scene town --period 12 --ticks 300 --host 7777 > out/pair_host.txt 2>&1 &
-          host=$!
-          peer=0
-          $bench --scene town --period 12 --ticks 300 --join 127.0.0.1:7777 --script scripts/walls_demo.txt > out/pair_peer.txt 2>&1 || peer=$?
-          code=0
-          wait $host || code=$?
-          echo "in sync: host exit $code, peer exit $peer"
-          tail -n 1 out/pair_host.txt out/pair_peer.txt
-          [ $code -eq 0 ] && [ $peer -eq 0 ]
-          $bench --scene town --period 12 --ticks 300 --host 7778 > out/desync_host.txt 2>&1 &
-          host=$!
-          $bench --scene town --period 12 --ticks 300 --join 127.0.0.1:7778 --inject-desync 150 > out/desync_peer.txt 2>&1 || true
-          code=0
-          wait $host || code=$?
-          echo "injected desync: host exit $code"
-          tail -n 1 out/desync_host.txt
-          [ $code -eq 4 ] && grep -q "bodies element" out/desync_host.txt
+          town="--scene town --period 12 --ticks 300"
+          # pair <name> <port> <host's extra flags> <peer's extra flags> [<second peer's flags>]: sets codes to the exit codes
+          pair() {
+            local name=$1 port=$2 pids=() k=0
+            $bench $town --host 127.0.0.1:$port $3 > out/${name}_host.txt 2>&1 & pids+=($!)
+            $bench $town --join 127.0.0.1:$port $4 > out/${name}_peer.txt 2>&1 & pids+=($!)
+            if [ $# -ge 5 ]; then sleep 1; $bench $town --join 127.0.0.1:$port $5 > out/${name}_peer2.txt 2>&1 & pids+=($!); fi
+            codes=""
+            for pid in "${pids[@]}"; do c=0; wait $pid || c=$?; codes="$codes $c"; done
+            echo "$name: exit codes (host, peers):$codes"
+            tail -n 1 out/${name}_*.txt
+          }
+          pair sync 7777 "" "--script scripts/walls_demo.txt"
+          [ "$codes" = " 0 0" ]
+          pair desync 7778 "" "--inject-desync 150"
+          [ "$codes" = " 4 4" ] && grep -q "bodies element" out/desync_host.txt && grep -q "bodies element" out/desync_peer.txt
+          pair slow 7779 "" "--script scripts/walls_demo.txt --net-delay 80,40"
+          [ "$codes" = " 0 0" ]
+          pair stall 7780 "" "--net-stall 100,2000"
+          [ "$codes" = " 0 0" ]
+          pair leave 7781 "--peers 2" "" "--leave-at 150"
+          [ "$codes" = " 6 6 0" ] && grep -q "peer 2 left" out/leave_host.txt && grep -q "peer 2 left" out/leave_peer.txt
 
       - name: Keep the x64 binaries for the emulators
         if: matrix.keepbin

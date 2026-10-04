@@ -82,6 +82,20 @@ void lpNet_Sleep( int milliseconds )
 #endif
 }
 
+uint64_t lpNet_Milliseconds( void )
+{
+#if defined( _WIN32 )
+	LARGE_INTEGER count, frequency;
+	QueryPerformanceCounter( &count );
+	QueryPerformanceFrequency( &frequency );
+	return (uint64_t)( count.QuadPart / ( frequency.QuadPart / 1000 ) );
+#else
+	struct timespec t;
+	clock_gettime( CLOCK_MONOTONIC, &t );
+	return (uint64_t)t.tv_sec * 1000u + (uint64_t)t.tv_nsec / 1000000u;
+#endif
+}
+
 // ---- TCP ----
 
 struct lpTcp
@@ -148,7 +162,7 @@ static lpTcp* lpTcpWrap( lpSocket s, bool listening )
 	return t;
 }
 
-lpTcp* lpTcp_Listen( int port )
+lpTcp* lpTcp_Listen( int port, bool loopback )
 {
 	if ( lpNetStart() == false )
 	{
@@ -161,11 +175,16 @@ lpTcp* lpTcp_Listen( int port )
 		return NULL;
 	}
 	int on = 1;
+#if defined( _WIN32 )
+	// Winsock's SO_REUSEADDR would let a second listener share a busy port (a joiner could reach a stale process)
+	setsockopt( s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&on, sizeof( on ) );
+#else
 	setsockopt( s, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof( on ) );
+#endif
 	struct sockaddr_in address;
 	memset( &address, 0, sizeof( address ) );
 	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = htonl( INADDR_ANY );
+	address.sin_addr.s_addr = htonl( loopback ? INADDR_LOOPBACK : INADDR_ANY );
 	address.sin_port = htons( (unsigned short)port );
 	if ( bind( s, (struct sockaddr*)&address, sizeof( address ) ) != 0 || listen( s, 8 ) != 0 )
 	{
@@ -174,6 +193,18 @@ lpTcp* lpTcp_Listen( int port )
 		return NULL;
 	}
 	return lpTcpWrap( s, true );
+}
+
+int lpTcp_Port( const lpTcp* listener )
+{
+	struct sockaddr_in address;
+	socklen_t length = sizeof( address );
+	memset( &address, 0, sizeof( address ) );
+	if ( getsockname( listener->socket, (struct sockaddr*)&address, &length ) != 0 )
+	{
+		return 0;
+	}
+	return (int)ntohs( address.sin_port );
 }
 
 lpTcp* lpTcp_Accept( lpTcp* listener )
@@ -324,6 +355,7 @@ struct lpMemoryLink
 	lpBytes wire[2];   // bytes on their way to each end
 	lpBytes line[2];
 	lpMemoryEnd ends[2];
+	bool hungUp[2]; // that end closed
 };
 
 static void lpMemorySend( void* context, const char* line )
@@ -337,7 +369,10 @@ static void lpMemoryFlush( void* context )
 {
 	lpMemoryEnd* e = context;
 	lpBytes* from = &e->link->queued[e->end];
-	lpBytes_Append( &e->link->wire[1 - e->end], from->data != NULL ? from->data : "", from->count );
+	if ( e->link->hungUp[0] == false && e->link->hungUp[1] == false )
+	{
+		lpBytes_Append( &e->link->wire[1 - e->end], from->data != NULL ? from->data : "", from->count );
+	}
 	from->count = 0;
 }
 
@@ -349,8 +384,8 @@ static const char* lpMemoryReceive( void* context )
 
 static bool lpMemoryClosed( void* context )
 {
-	(void)context;
-	return false;
+	const lpMemoryEnd* e = context;
+	return e->link->hungUp[1 - e->end];
 }
 
 lpMemoryLink* lpMemoryLink_Create( void )
@@ -370,6 +405,11 @@ lpTransport lpMemoryLink_End( lpMemoryLink* link, int end )
 	return transport;
 }
 
+void lpMemoryLink_Close( lpMemoryLink* link, int end )
+{
+	link->hungUp[end] = true;
+}
+
 void lpMemoryLink_Destroy( lpMemoryLink* link )
 {
 	for ( int k = 0; k < 2; ++k )
@@ -379,4 +419,157 @@ void lpMemoryLink_Destroy( lpMemoryLink* link )
 		free( link->line[k].data );
 	}
 	free( link );
+}
+
+// ---- faults ----
+
+typedef struct lpHeldLine
+{
+	char* text;
+	uint64_t due; // when it may pass
+} lpHeldLine;
+
+// Lines in order, each held until its time
+typedef struct lpHeld
+{
+	lpHeldLine* data;
+	int head, count, capacity;
+	uint64_t last; // the latest due time given: no line passes the one before it
+} lpHeld;
+
+struct lpFault
+{
+	lpTransport inner;
+	int delay, jitter;
+	uint64_t stallUntil;
+	uint32_t random;
+	lpHeld out, in;
+	char* line; // the line receive returned last
+};
+
+static void lpHeld_Push( lpHeld* h, const char* text, uint64_t due )
+{
+	if ( h->head > 0 && h->head >= h->count / 2 )
+	{
+		memmove( h->data, h->data + h->head, sizeof( lpHeldLine ) * (size_t)( h->count - h->head ) );
+		h->count -= h->head;
+		h->head = 0;
+	}
+	if ( h->count == h->capacity )
+	{
+		h->capacity = h->capacity < 16 ? 16 : 2 * h->capacity;
+		h->data = realloc( h->data, sizeof( lpHeldLine ) * (size_t)h->capacity );
+	}
+	size_t n = strlen( text ) + 1;
+	lpHeldLine* l = h->data + h->count++;
+	l->text = malloc( n );
+	memcpy( l->text, text, n );
+	l->due = due > h->last ? due : h->last;
+	h->last = l->due;
+}
+
+// The first line if its time has come (the caller frees it), else NULL
+static char* lpHeld_Pop( lpHeld* h, uint64_t now )
+{
+	if ( h->head == h->count || h->data[h->head].due > now )
+	{
+		return NULL;
+	}
+	return h->data[h->head++].text;
+}
+
+static uint64_t lpFaultDue( lpFault* f, uint64_t now )
+{
+	f->random ^= f->random << 13;
+	f->random ^= f->random >> 17;
+	f->random ^= f->random << 5;
+	uint64_t jitter = f->jitter > 0 ? f->random % (uint32_t)f->jitter : 0;
+	return now + (uint64_t)f->delay + jitter;
+}
+
+static void lpFaultSend( void* context, const char* line )
+{
+	lpFault* f = context;
+	lpHeld_Push( &f->out, line, lpFaultDue( f, lpNet_Milliseconds() ) );
+}
+
+static void lpFaultFlush( void* context )
+{
+	lpFault* f = context;
+	uint64_t now = lpNet_Milliseconds();
+	char* text;
+	while ( now >= f->stallUntil && ( text = lpHeld_Pop( &f->out, now ) ) != NULL )
+	{
+		f->inner.send( f->inner.context, text );
+		free( text );
+	}
+	f->inner.flush( f->inner.context );
+}
+
+static const char* lpFaultReceive( void* context )
+{
+	lpFault* f = context;
+	uint64_t now = lpNet_Milliseconds();
+	const char* arrived;
+	while ( ( arrived = f->inner.receive( f->inner.context ) ) != NULL )
+	{
+		lpHeld_Push( &f->in, arrived, lpFaultDue( f, now ) );
+	}
+	free( f->line );
+	f->line = now >= f->stallUntil ? lpHeld_Pop( &f->in, now ) : NULL;
+	return f->line;
+}
+
+static bool lpFaultClosed( void* context )
+{
+	lpFault* f = context;
+	return f->inner.closed( f->inner.context ) && f->in.head == f->in.count; // closed once what arrived has passed
+}
+
+lpFault* lpFault_Create( lpTransport inner )
+{
+	lpFault* f = calloc( 1, sizeof( lpFault ) );
+	f->inner = inner;
+	f->random = 0x9e3779b9u;
+	return f;
+}
+
+lpTransport lpFault_Transport( lpFault* f )
+{
+	lpTransport transport = { f, lpFaultSend, lpFaultFlush, lpFaultReceive, lpFaultClosed };
+	return transport;
+}
+
+void lpFault_SetDelay( lpFault* f, int delayMs, int jitterMs )
+{
+	f->delay = delayMs > 0 ? delayMs : 0;
+	f->jitter = jitterMs > 0 ? jitterMs : 0;
+}
+
+void lpFault_Stall( lpFault* f, int milliseconds )
+{
+	f->stallUntil = lpNet_Milliseconds() + (uint64_t)( milliseconds > 0 ? milliseconds : 0 );
+}
+
+void lpFault_Destroy( lpFault* f )
+{
+	if ( f == NULL )
+	{
+		return;
+	}
+	char* text;
+	while ( ( text = lpHeld_Pop( &f->out, UINT64_MAX ) ) != NULL )
+	{
+		f->inner.send( f->inner.context, text );
+		free( text );
+	}
+	f->inner.flush( f->inner.context );
+	while ( ( text = lpHeld_Pop( &f->in, UINT64_MAX ) ) != NULL )
+	{
+		free( text );
+	}
+	free( f->out.data );
+	free( f->in.data );
+	free( f->line );
+	free( f );
 }

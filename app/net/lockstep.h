@@ -18,7 +18,7 @@
 //   host -> all    tick <tick> <count>, then <count> lines: cmd <seq> <script line>
 //   host -> peer   sums | buckets <category> | elements <category> <bucket>   (following a mismatch down)
 //   peer -> host   sums <c0> .. <c10> | buckets <category> <count> <b0> .. | elements <category> <bucket> <e0> ..
-//   host -> all    stop <reason>
+//   host -> all    stop <report>   (every machine ends with the host's report: "done", "peer 2 left", a desync's element)
 #pragma once
 
 #include "lpf/lpf.h"
@@ -73,6 +73,7 @@ lpLockstepState lpLockstep_GetState( const lpLockstep* lockstep );
 int lpLockstep_GetPeer( const lpLockstep* lockstep );			 // 0 for the host, then 1, 2, ...
 int64_t lpLockstep_GetClosed( const lpLockstep* lockstep );		 // the host: ticks sent; a peer: ticks received
 int lpLockstep_GetPeerCount( const lpLockstep* lockstep );		 // the host: welcome peers
+int lpLockstep_GetDelay( const lpLockstep* lockstep );			 // the session's input delay (a peer's from its welcome)
 const char* lpLockstep_GetReport( const lpLockstep* lockstep ); // what stopped it ("" while running)
 // The host: the first tick a peer's hash differed from its own (-1: none)
 int64_t lpLockstep_GetDesyncTick( const lpLockstep* lockstep );

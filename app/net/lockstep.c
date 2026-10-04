@@ -260,6 +260,15 @@ static void lpBroadcast( lpLockstep* ls, const char* line )
 	}
 }
 
+// The host stops, and every peer with it, with the same report
+static void lpStopAll( lpLockstep* ls, lpLockstepState state, const char* report )
+{
+	char line[600];
+	snprintf( line, sizeof( line ), "stop %s", report );
+	lpStop( ls, state, report );
+	lpBroadcast( ls, line );
+}
+
 // A peer's hash for tick t against the host's own, once both are known
 static void lpCheckHash( lpLockstep* ls, int index, int64_t t )
 {
@@ -296,8 +305,7 @@ static void lpNameElement( lpLockstep* ls, int category, int slot )
 	snprintf( report, sizeof( report ), "desync: first at tick %lld (peer %d); at tick %llu the %s element %d differs%s",
 			  (long long)ls->desyncTick, ls->peers[ls->desyncPeer]->peer, (unsigned long long)lpWorld_GetTick( ls->world ),
 			  lpHashCategoryName( category ), slot, what );
-	lpStop( ls, lp_lockstepDesync, report );
-	lpBroadcast( ls, "stop desync" );
+	lpStopAll( ls, lp_lockstepDesync, report );
 }
 
 // The descent's replies: categories, then the buckets of the first that differs, then that bucket's elements
@@ -323,8 +331,7 @@ static void lpDescend( lpLockstep* ls, const char* line )
 				return;
 			}
 		}
-		lpStop( ls, lp_lockstepDesync, "desync: the hashes differ, but no category does (a hash past the categories?)" );
-		lpBroadcast( ls, "stop desync" );
+		lpStopAll( ls, lp_lockstepDesync, "desync: the hashes differ, but no category does (a hash past the categories?)" );
 	}
 	else if ( ls->descent == 3 && strncmp( line, "buckets ", 8 ) == 0 )
 	{
@@ -343,8 +350,7 @@ static void lpDescend( lpLockstep* ls, const char* line )
 				return;
 			}
 		}
-		lpStop( ls, lp_lockstepDesync, "desync: a category differs, but none of its buckets does" );
-		lpBroadcast( ls, "stop desync" );
+		lpStopAll( ls, lp_lockstepDesync, "desync: a category differs, but none of its buckets does" );
 	}
 	else if ( ls->descent == 4 && strncmp( line, "elements ", 9 ) == 0 )
 	{
@@ -359,8 +365,7 @@ static void lpDescend( lpLockstep* ls, const char* line )
 				return;
 			}
 		}
-		lpStop( ls, lp_lockstepDesync, "desync: a bucket differs, but none of its elements does" );
-		lpBroadcast( ls, "stop desync" );
+		lpStopAll( ls, lp_lockstepDesync, "desync: a bucket differs, but none of its elements does" );
 	}
 }
 
@@ -410,8 +415,7 @@ static void lpHostRead( lpLockstep* ls, int index )
 				// machines, so the session stops and says so
 				char report[128];
 				snprintf( report, sizeof( report ), "peer %d sent a command for tick %lld, already sent", p->peer, (long long)c.tick );
-				lpStop( ls, lp_lockstepStopped, report );
-				lpBroadcast( ls, "stop a late command" );
+				lpStopAll( ls, lp_lockstepStopped, report );
 				return;
 			}
 			lpPush( &ls->pending, &c );
@@ -436,9 +440,10 @@ static void lpHostRead( lpLockstep* ls, int index )
 	}
 	else if ( t->closed( t->context ) && ( ls->state == lp_lockstepRunning || ls->state == lp_lockstepJoining ) )
 	{
+		// No one can step on without it: everyone stops, and is told why
 		char report[64];
 		snprintf( report, sizeof( report ), "peer %d left", p->peer );
-		lpStop( ls, lp_lockstepStopped, report );
+		lpStopAll( ls, lp_lockstepStopped, report );
 	}
 }
 
@@ -539,7 +544,14 @@ static void lpPeerRead( lpLockstep* ls )
 		else if ( strncmp( line, "refuse ", 7 ) == 0 )
 		{
 			char report[256];
-			snprintf( report, sizeof( report ), "refused: its '%s' differs from the host's", line + 7 );
+			if ( strcmp( line + 7, "late" ) == 0 || strcmp( line + 7, "full" ) == 0 )
+			{
+				snprintf( report, sizeof( report ), "refused: %s", line[7] == 'l' ? "late (the session had started)" : "the session is full" );
+			}
+			else
+			{
+				snprintf( report, sizeof( report ), "refused: its '%s' differs from the host's", line + 7 );
+			}
 			lpStop( ls, lp_lockstepRefused, report );
 		}
 		else if ( strncmp( line, "tick ", 5 ) == 0 )
@@ -557,8 +569,8 @@ static void lpPeerRead( lpLockstep* ls )
 		}
 		else if ( strncmp( line, "stop ", 5 ) == 0 )
 		{
-			bool desync = strncmp( line + 5, "desync", 6 ) == 0;
-			lpStop( ls, desync ? lp_lockstepDesync : lp_lockstepStopped, desync ? "desync: the host stopped the session" : line );
+			// The host's own report: what stopped it, the element a desync names
+			lpStop( ls, strncmp( line + 5, "desync", 6 ) == 0 ? lp_lockstepDesync : lp_lockstepStopped, line + 5 );
 		}
 		else
 		{
@@ -730,12 +742,14 @@ int64_t lpLockstep_GetConfirmed( const lpLockstep* ls )
 
 void lpLockstep_Stop( lpLockstep* ls, const char* reason )
 {
-	char line[256];
-	snprintf( line, sizeof( line ), "stop %s", reason );
-	lpBroadcast( ls, line );
+	lpStopAll( ls, lp_lockstepStopped, reason );
 	for ( int i = 0; i < ls->peerCount; ++i )
 	{
 		ls->peers[i]->transport.flush( ls->peers[i]->transport.context );
 	}
-	lpStop( ls, lp_lockstepStopped, reason );
+}
+
+int lpLockstep_GetDelay( const lpLockstep* ls )
+{
+	return ls->delay;
 }

@@ -77,7 +77,8 @@ struct Options
 	bool vsync = true;
 	bool hideUi = false;
 	int inputDelay = -1; // ticks every command of this player's waits before it applies (-1: 0 alone, 4 in co-op)
-	int hostPort = 0;	 // co-op: host on this port
+	int hostPort = -1;	 // co-op: host on this port (0: any free one)
+	bool hostLoopback = false; // --host 127.0.0.1:port: listen on loopback only
 	std::string joinHost; // co-op: join this host
 	int joinPort = 7777;
 	int peers = 1; // co-op: the players to wait for (the host's)
@@ -952,18 +953,19 @@ void Init()
 	LoadScene( app.opt.scene );
 
 	// Co-op: host or join (the description must match the host's: scene, bombardment, settings, build)
-	bool coop = app.opt.hostPort > 0 || !app.opt.joinHost.empty();
+	bool coop = app.opt.hostPort >= 0 || !app.opt.joinHost.empty();
 	app.opt.inputDelay = app.opt.inputDelay >= 0 ? app.opt.inputDelay : ( coop ? 4 : 0 );
 	if ( coop )
 	{
 		static char session[8192];
 		lpSceneDescribeSession( app.world, app.opt.scene, app.opt.bombard, 1.0f / 60.0f, 4, session, (int)sizeof( session ) );
 		lpLockstepDef def = { app.world, session, app.opt.inputDelay > 0 ? app.opt.inputDelay : 1, app.opt.peers, 1.0f / 60.0f, 4 };
-		if ( app.opt.hostPort > 0 )
+		if ( app.opt.hostPort >= 0 )
 		{
-			app.listener = lpTcp_Listen( app.opt.hostPort );
+			app.listener = lpTcp_Listen( app.opt.hostPort, app.opt.hostLoopback );
 			app.lockstep = app.listener != nullptr ? lpLockstep_CreateHost( &def ) : nullptr;
-			printf( "co-op: hosting %s on port %d for %d player(s)\n", lpSceneName( app.opt.scene ), app.opt.hostPort, app.opt.peers );
+			printf( "co-op: hosting %s on port %d for %d player(s)\n", lpSceneName( app.opt.scene ),
+					app.listener != nullptr ? lpTcp_Port( app.listener ) : app.opt.hostPort, app.opt.peers );
 		}
 		else
 		{
@@ -1309,7 +1311,11 @@ int main( int argc, char** argv )
 		else if ( strcmp( a, "--input-delay" ) == 0 )
 			o.inputDelay = atoi( v ) < 0 ? 0 : atoi( v );
 		else if ( strcmp( a, "--host" ) == 0 )
-			o.hostPort = atoi( v );
+		{
+			const char* colon = strrchr( v, ':' ); // 127.0.0.1:port listens on loopback only
+			o.hostPort = atoi( colon != nullptr ? colon + 1 : v );
+			o.hostLoopback = colon != nullptr;
+		}
 		else if ( strcmp( a, "--join" ) == 0 )
 		{
 			o.joinHost = v;

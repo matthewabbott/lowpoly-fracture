@@ -1202,6 +1202,85 @@ static int TestLockstepPair( void )
 	return 0;
 }
 
+// Three machines over in-memory links (app/net), peer 1 delayed both ways (net.h's faults) and still in agreement with
+// the host; when peer 2 hangs up at tick 60 the host stops, and tells peer 1 why, so nobody waits for ever
+static int TestLockstepLeave( void )
+{
+	Sim sims[3];
+	char sessions[3][4096];
+	lpMemoryLink* links[2];
+	lpLockstep* machines[3];
+	PairMachine pm[3];
+	for ( int k = 0; k < 3; ++k )
+	{
+		sims[k] = CreateSim( lp_sceneWall );
+		lpSceneDescribeSession( sims[k].world, lp_sceneWall, 12, 1.0f / 60.0f, 4, sessions[k], (int)sizeof( sessions[k] ) );
+		pm[k] = (PairMachine){ sims[k].world, k == 1, 0 };
+	}
+	lpLockstepDef def = { sims[0].world, sessions[0], 3, 2, 1.0f / 60.0f, 4 };
+	machines[0] = lpLockstep_CreateHost( &def );
+	lpFault* fault = NULL;
+	for ( int k = 1; k < 3; ++k )
+	{
+		links[k - 1] = lpMemoryLink_Create();
+		lpTransport end = lpMemoryLink_End( links[k - 1], 1 );
+		if ( k == 1 )
+		{
+			fault = lpFault_Create( end ); // peer 1 is 2 ms (and up to 3 more) away, each way
+			lpFault_SetDelay( fault, 2, 3 );
+			end = lpFault_Transport( fault );
+		}
+		lpLockstepDef peerDef = { sims[k].world, sessions[k], 3, 0, 1.0f / 60.0f, 4 };
+		machines[k] = lpLockstep_CreatePeer( &peerDef, end );
+		lpLockstep_AddPeer( machines[0], lpMemoryLink_End( links[k - 1], 0 ) );
+		for ( int wait = 0; wait < 1000 && lpLockstep_GetPeer( machines[k] ) != k; ++wait )
+		{
+			// Welcome before the next one asks, so the peer ids follow k
+			lpLockstep_Pump( machines[0], PairStep, pm, 0, 0 );
+			lpLockstep_Pump( machines[k], PairStep, pm + k, 0, 0 );
+			lpNet_Sleep( 1 );
+		}
+		ENSURE( lpLockstep_GetPeer( machines[k] ) == k );
+	}
+	bool hungUp = false;
+	for ( int round = 0; round < 200000; ++round )
+	{
+		lpLockstep_Pump( machines[0], PairStep, pm + 0, lpLockstep_GetClosed( machines[0] ) < 120 ? 1 : 0, 8 );
+		lpLockstep_Pump( machines[1], PairStep, pm + 1, 0, 8 );
+		if ( hungUp == false )
+		{
+			lpLockstep_Pump( machines[2], PairStep, pm + 2, 0, 8 );
+		}
+		if ( hungUp == false && lpWorld_GetTick( sims[2].world ) >= 60 )
+		{
+			// Peer 2's player is gone: the host and peer 1 have both stepped some of it, and agreed so far
+			ENSURE( lpLockstep_GetPeer( machines[2] ) == 2 && lpLockstep_GetDesyncTick( machines[0] ) < 0 );
+			lpMemoryLink_Close( links[1], 1 );
+			hungUp = true;
+		}
+		if ( lpLockstep_GetState( machines[0] ) > lp_lockstepRunning && lpLockstep_GetState( machines[1] ) > lp_lockstepRunning )
+		{
+			break;
+		}
+		lpNet_Sleep( round % 64 == 0 ? 1 : 0 );
+	}
+	printf( "  host: %s (tick %llu); peer 1: %s (tick %llu)\n", lpLockstep_GetReport( machines[0] ), (unsigned long long)lpWorld_GetTick( sims[0].world ),
+			lpLockstep_GetReport( machines[1] ), (unsigned long long)lpWorld_GetTick( sims[1].world ) );
+	ENSURE( hungUp );
+	ENSURE( lpLockstep_GetState( machines[0] ) == lp_lockstepStopped && strcmp( lpLockstep_GetReport( machines[0] ), "peer 2 left" ) == 0 );
+	ENSURE( lpLockstep_GetState( machines[1] ) == lp_lockstepStopped && strcmp( lpLockstep_GetReport( machines[1] ), "peer 2 left" ) == 0 );
+	ENSURE( lpLockstep_GetDesyncTick( machines[0] ) < 0 && pm[0].applied > 0 );
+	for ( int k = 0; k < 3; ++k )
+	{
+		lpLockstep_Destroy( machines[k] );
+		DestroySim( sims + k );
+	}
+	lpFault_Destroy( fault );
+	lpMemoryLink_Destroy( links[0] );
+	lpMemoryLink_Destroy( links[1] );
+	return 0;
+}
+
 // How far one step's queries reach: an impact asked for with a 10 m radius acts within maxImpactRadius, and a command's
 // ray finds a wall 200 m away but not one 300 m away (past maxRayRange), whatever range it asked for
 static int TestQueryBounds( void )
@@ -1590,6 +1669,7 @@ int WorldTest( void )
 	RUN_TEST( TestFpGuard, DETERMINISM );
 	RUN_TEST( TestDeterminismSelfTest, DETERMINISM );
 	RUN_TEST( TestSessionHandshake, MECHANISM );
+	RUN_TEST( TestLockstepLeave, MECHANISM );
 	RUN_TEST( TestHouseCollapse, OUTCOME );
 	RUN_TEST( TestFragmentColours, OUTCOME );
 	RUN_TEST( TestBuildingGoesQuiet, OUTCOME );

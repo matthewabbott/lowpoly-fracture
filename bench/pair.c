@@ -7,8 +7,12 @@
 //   lpf_bench --scene town --period 12 --ticks 300 --host 7777 --peers 1
 //   lpf_bench --scene town --period 12 --ticks 300 --join 127.0.0.1:7777 [--inject-desync 150]
 //
-// Exit codes: 0 in sync to the end, 4 a desync (the host names the element and the first tick), 5 refused (the
-// session's descriptions differ: the key is named), 1 anything else (a connection lost, a timeout).
+// Faults (a joiner's link, net.h): --net-delay ms[,jitter] each way, --net-stall tick,ms, and --leave-at tick (this
+// machine hangs up). --host 127.0.0.1:port listens on loopback only.
+//
+// Exit codes: 0 in sync to the end (or this machine left as asked), 4 a desync (every machine reports the element and
+// the first tick), 5 refused (the session's descriptions differ: the key is named), 6 another machine left, 1 anything
+// else (a timeout, a late command).
 
 #include "pair.h"
 
@@ -70,16 +74,19 @@ int lpBenchLockstep( const lpPairDef* def )
 	lpTcp* connections[LP_LOCKSTEP_MAX_PEERS] = { 0 };
 	int connected = 0;
 	lpLockstep* lockstep = NULL;
-	if ( def->hostPort > 0 )
+	lpFault* fault = NULL;
+	bool hosting = def->hostPort >= 0;
+	if ( hosting )
 	{
-		listener = lpTcp_Listen( def->hostPort );
+		listener = lpTcp_Listen( def->hostPort, def->loopback );
 		if ( listener == NULL )
 		{
 			lpDestroyWorld( world );
 			return 1;
 		}
 		lockstep = lpLockstep_CreateHost( &ls );
-		printf( "hosting %s on port %d for %d peer(s), input delay %d\n", lpSceneName( def->scene ), def->hostPort, def->peers, def->delay );
+		printf( "hosting %s on port %d for %d peer(s), input delay %d\n", lpSceneName( def->scene ), lpTcp_Port( listener ), def->peers,
+				def->delay );
 	}
 	else
 	{
@@ -90,15 +97,32 @@ int lpBenchLockstep( const lpPairDef* def )
 			return 1;
 		}
 		connections[connected++] = host;
-		lockstep = lpLockstep_CreatePeer( &ls, lpTcp_Transport( host ) );
+		fault = lpFault_Create( lpTcp_Transport( host ) );
+		lpFault_SetDelay( fault, def->netDelay, def->netJitter );
+		lockstep = lpLockstep_CreatePeer( &ls, lpFault_Transport( fault ) );
 		printf( "joined %s:%d\n", def->joinHost, def->joinPort );
 	}
 	fflush( stdout );
 
 	int code = 1;
 	int idle = 0;
+	bool stalled = false;
 	for ( ;; )
 	{
+		int64_t tick = (int64_t)lpWorld_GetTick( world );
+		if ( def->leaveTick >= 0 && tick >= def->leaveTick )
+		{
+			printf( "leaving at tick %lld\n", (long long)tick );
+			code = 0;
+			break;
+		}
+		if ( fault != NULL && def->stallTick >= 0 && tick >= def->stallTick && stalled == false )
+		{
+			lpFault_Stall( fault, def->stallMs );
+			printf( "stalled for %d ms at tick %lld\n", def->stallMs, (long long)tick );
+			fflush( stdout );
+			stalled = true;
+		}
 		if ( listener != NULL && connected < LP_LOCKSTEP_MAX_PEERS )
 		{
 			lpTcp* c = lpTcp_Accept( listener );
@@ -108,8 +132,10 @@ int lpBenchLockstep( const lpPairDef* def )
 				lpLockstep_AddPeer( lockstep, lpTcp_Transport( c ) );
 			}
 		}
-		bool sending = def->hostPort > 0 && lpLockstep_GetClosed( lockstep ) < def->ticks;
-		int steps = lpLockstep_Pump( lockstep, lpPairStep, &machine, sending ? 64 : 0, 64 );
+		bool sending = hosting && lpLockstep_GetClosed( lockstep ) < def->ticks;
+		int64_t next = def->leaveTick >= 0 ? def->leaveTick : def->stallTick >= 0 && stalled == false ? def->stallTick : tick + 64;
+		int room = next - tick < 64 ? (int)( next - tick ) : 64; // stop on the tick a fault is due at
+		int steps = lpLockstep_Pump( lockstep, lpPairStep, &machine, sending ? 64 : 0, room > 0 ? room : 64 );
 		lpLockstepState state = lpLockstep_GetState( lockstep );
 		if ( state == lp_lockstepDesync )
 		{
@@ -123,10 +149,11 @@ int lpBenchLockstep( const lpPairDef* def )
 		}
 		if ( state == lp_lockstepStopped )
 		{
-			code = strcmp( lpLockstep_GetReport( lockstep ), "stop done" ) == 0 ? 0 : 1;
+			const char* report = lpLockstep_GetReport( lockstep );
+			code = strcmp( report, "done" ) == 0 ? 0 : strstr( report, " left" ) != NULL ? 6 : 1;
 			break;
 		}
-		if ( def->hostPort > 0 && sending == false && (int64_t)lpWorld_GetTick( world ) == def->ticks &&
+		if ( hosting && sending == false && (int64_t)lpWorld_GetTick( world ) == def->ticks &&
 			 lpLockstep_GetConfirmed( lockstep ) == def->ticks - 1 && lpLockstep_GetDesyncTick( lockstep ) < 0 )
 		{
 			lpLockstep_Stop( lockstep, "done" );
@@ -144,10 +171,12 @@ int lpBenchLockstep( const lpPairDef* def )
 			break;
 		}
 	}
-	printf( "%s at tick %llu, hash %016llx%s%s\n", code == 0 ? "in sync" : "stopped", (unsigned long long)lpWorld_GetTick( world ),
+	bool left = def->leaveTick >= 0 && code == 0 && lpLockstep_GetState( lockstep ) == lp_lockstepRunning;
+	printf( "%s at tick %llu, hash %016llx%s%s\n", left ? "left" : code == 0 ? "in sync" : "stopped", (unsigned long long)lpWorld_GetTick( world ),
 			(unsigned long long)lpWorld_Hash( world ), lpLockstep_GetReport( lockstep )[0] != 0 ? ": " : "",
 			lpLockstep_GetReport( lockstep ) );
 	lpLockstep_Destroy( lockstep );
+	lpFault_Destroy( fault );
 	for ( int i = 0; i < connected; ++i )
 	{
 		lpTcp_Close( connections[i] );
