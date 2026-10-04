@@ -1,0 +1,149 @@
+gate 5: decision point 2 (the whole tick on the GPUs against the twin; the twins against the reference files)
+  stack10-sleep0 F  gcc       run hash e6633eb6de2f6986 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10-sleep0 F  clang     run hash e6633eb6de2f6986 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 V4 gcc       run hash d3b4d0580ec6f22c threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10-sleep0 V4 clang     run hash d3b4d0580ec6f22c threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 D  gcc       run hash 27217aee58268485 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 D  clang     run hash 27217aee58268485 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        F  gcc       run hash 89a398f70995181a threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10        F  clang     run hash 89a398f70995181a threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        V4 gcc       run hash 8c47516f5358f97a threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  stack10        V4 clang     run hash 8c47516f5358f97a threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        D  gcc       run hash a58bdc3f2f075f6a threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        D  clang     run hash a58bdc3f2f075f6a threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     F  gcc       run hash bbdf449a2f898d7c threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s1     F  clang     run hash bbdf449a2f898d7c threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     V4 gcc       run hash 0d00672e56320956 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s1     V4 clang     run hash 0d00672e56320956 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     D  gcc       run hash 12d07dc5d8c2f105 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     D  clang     run hash 12d07dc5d8c2f105 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     F  gcc       run hash e0107f7f75a0c32a threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s2     F  clang     run hash e0107f7f75a0c32a threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     V4 gcc       run hash 8ffcece0645c18bc threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s2     V4 clang     run hash 8ffcece0645c18bc threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     D  gcc       run hash d738a795204015a4 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     D  clang     run hash d738a795204015a4 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     F  gcc       run hash 282a5b44d0de9284 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s3     F  clang     run hash 282a5b44d0de9284 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     V4 gcc       run hash ed6aa75b97b33000 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s3     V4 clang     run hash ed6aa75b97b33000 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     D  gcc       run hash 0c26a0a1d115d38a threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     D  clang     run hash 0c26a0a1d115d38a threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     F  gcc       run hash fddb063a5ffbb726 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s4     F  clang     run hash fddb063a5ffbb726 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     V4 gcc       run hash ab78b2be4daa5804 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s4     V4 clang     run hash ab78b2be4daa5804 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     D  gcc       run hash 4255c94690b63f79 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     D  clang     run hash 4255c94690b63f79 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     F  gcc       run hash fad126891b9299a8 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s5     F  clang     run hash fad126891b9299a8 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     V4 gcc       run hash cbf93a74a3e81961 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s5     V4 clang     run hash cbf93a74a3e81961 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     D  gcc       run hash acc5c986fad70771 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     D  clang     run hash acc5c986fad70771 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     F  gcc       run hash 664786a43fc4c2ce threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s6     F  clang     run hash 664786a43fc4c2ce threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     V4 gcc       run hash e34cda67baf21d09 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s6     V4 clang     run hash e34cda67baf21d09 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     D  gcc       run hash 6bc4121051da5d65 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     D  clang     run hash 6bc4121051da5d65 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     F  gcc       run hash 2de40992733dc3b8 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s7     F  clang     run hash 2de40992733dc3b8 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     V4 gcc       run hash 4187863f3b991720 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s7     V4 clang     run hash 4187863f3b991720 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     D  gcc       run hash e35f4b17e66cbbff threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     D  clang     run hash e35f4b17e66cbbff threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     F  gcc       run hash 6103810873aa1d6c threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s8     F  clang     run hash 6103810873aa1d6c threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     V4 gcc       run hash 80b3cef6641ae128 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  pile200-s8     V4 clang     run hash 80b3cef6641ae128 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     D  gcc       run hash c814615d9a818dbd threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     D  clang     run hash c814615d9a818dbd threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         F  gcc       run hash 694b4d84adf7e4fa threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  bounce         F  clang     run hash 694b4d84adf7e4fa threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         V4 gcc       run hash b0af3f647a8ee84c threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  bounce         V4 clang     run hash b0af3f647a8ee84c threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         D  gcc       run hash 3fd13858e9d1f9fa threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         D  clang     run hash 3fd13858e9d1f9fa threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           F  gcc       run hash 9fa8eac59c80fee5 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ramp           F  clang     run hash 9fa8eac59c80fee5 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           V4 gcc       run hash 88a9bf253b0c28db threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ramp           V4 clang     run hash 88a9bf253b0c28db threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           D  gcc       run hash 7aa34cf634c31dc3 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           D  clang     run hash 7aa34cf634c31dc3 threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          F  gcc       run hash 8771b095410fd3f2 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ratio          F  clang     run hash 8771b095410fd3f2 threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          V4 gcc       run hash 64b0b2b3a538be00 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  ratio          V4 clang     run hash 64b0b2b3a538be00 threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          D  gcc       run hash cd540394c778a0cc threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          D  clang     run hash cd540394c778a0cc threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           F  gcc       run hash 16cbc151b1c07471 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  chip           F  clang     run hash 16cbc151b1c07471 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           V4 gcc       run hash 2b4686ff5dc8fa82 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 nvidia: identical; gpu 1 llvmpipe: identical
+  chip           V4 clang     run hash 2b4686ff5dc8fa82 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           D  gcc       run hash 7e10e560cf31c9e0 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           D  clang     run hash 7e10e560cf31c9e0 threads agree saturations 0 exit 0; twins vs reference: identical
+  decision point 2, per GPU and dialect: runs whose every tick's hashes equal the twin's (saturations 0)
+    gpu 0 nvidia     F : 14 of 14
+    gpu 0 nvidia     V4: 14 of 14
+    gpu 1 llvmpipe   F : 14 of 14
+    gpu 1 llvmpipe   V4: 14 of 14
+  GPU costs (informative): scene, dialect, gpu: wall and kernel ms per tick over the run; the busiest tick after the first: tick, kernels, wall (ms); the most dispatches in a tick
+    stack10-sleep0 F  gpu 0:   1.201   0.387; tick 2166:   0.776   1.823; 40
+    stack10-sleep0 F  gpu 1:  29.861  27.666; tick  351:  64.680  68.604; 40
+    stack10-sleep0 V4 gpu 0:   2.236   1.174; tick 2178:   1.671   2.818; 40
+    stack10-sleep0 V4 gpu 1:  34.788  32.536; tick  730:  60.186  65.047; 40
+    stack10        F  gpu 0:   0.342   0.029; tick    5:   0.690   1.049; 40
+    stack10        F  gpu 1:   6.373   3.068; tick   42: 224.765 226.971; 40
+    stack10        V4 gpu 0:   0.651   0.039; tick   40:   1.612   3.479; 40
+    stack10        V4 gpu 1:   6.734   3.252; tick   42: 222.870 225.291; 40
+    pile200-s1     F  gpu 0:   1.823   0.677; tick  120:   4.550   6.236; 305
+    pile200-s1     F  gpu 1:  38.595  35.140; tick  146: 297.767 301.598; 305
+    pile200-s1     V4 gpu 0:   2.817   1.565; tick  182:   9.740  12.661; 293
+    pile200-s1     V4 gpu 1:  44.061  40.534; tick  154: 306.721 310.641; 293
+    pile200-s2     F  gpu 0:   1.743   0.584; tick  113:   4.435   6.198; 305
+    pile200-s2     F  gpu 1:  35.312  31.973; tick  161: 299.926 306.627; 305
+    pile200-s2     V4 gpu 0:   2.653   1.484; tick  119:   9.768  11.267; 316
+    pile200-s2     V4 gpu 1:  41.597  38.196; tick  255: 327.748 331.541; 316
+    pile200-s3     F  gpu 0:   1.924   0.719; tick  197:   4.644   6.628; 329
+    pile200-s3     F  gpu 1:  42.349  38.984; tick  157: 336.579 340.948; 329
+    pile200-s3     V4 gpu 0:   3.557   2.202; tick  194:  10.439  12.449; 329
+    pile200-s3     V4 gpu 1:  59.981  56.489; tick  169: 351.728 355.874; 329
+    pile200-s4     F  gpu 0:   1.901   0.556; tick  116:   4.385   6.285; 318
+    pile200-s4     F  gpu 1:  34.785  31.470; tick  161: 366.628 371.596; 318
+    pile200-s4     V4 gpu 0:   3.117   1.860; tick  138:   9.828  12.775; 293
+    pile200-s4     V4 gpu 1:  51.469  48.040; tick  274: 339.473 344.123; 293
+    pile200-s5     F  gpu 0:   1.846   0.765; tick  241:   4.747   6.108; 329
+    pile200-s5     F  gpu 1:  44.033  40.762; tick  218: 331.461 335.045; 329
+    pile200-s5     V4 gpu 0:   2.528   1.375; tick  152:   9.795  11.059; 293
+    pile200-s5     V4 gpu 1:  38.618  35.170; tick  136: 371.026 375.270; 293
+    pile200-s6     F  gpu 0:   1.712   0.631; tick  207:   4.410   6.649; 293
+    pile200-s6     F  gpu 1:  36.731  33.514; tick  255: 305.430 310.076; 293
+    pile200-s6     V4 gpu 0:   3.106   1.555; tick  186:   9.093  11.193; 270
+    pile200-s6     V4 gpu 1:  43.101  39.595; tick  268: 306.373 311.328; 270
+    pile200-s7     F  gpu 0:   1.822   0.539; tick  157:   3.919   5.401; 293
+    pile200-s7     F  gpu 1:  32.391  29.060; tick  188: 306.127 310.824; 293
+    pile200-s7     V4 gpu 0:   2.361   1.216; tick  155:   8.853  10.751; 269
+    pile200-s7     V4 gpu 1:  34.718  31.384; tick  229: 287.941 290.747; 269
+    pile200-s8     F  gpu 0:   1.980   0.659; tick  124:   4.866   6.426; 316
+    pile200-s8     F  gpu 1:  38.475  35.086; tick  105: 319.724 323.471; 316
+    pile200-s8     V4 gpu 0:   3.111   1.746; tick  161:  10.746  13.866; 329
+    pile200-s8     V4 gpu 1:  47.720  44.303; tick  160: 338.211 339.692; 329
+    bounce         F  gpu 0:   0.367   0.053; tick   37:   0.753   0.910; 30
+    bounce         F  gpu 1:   8.588   5.617; tick   36: 293.115 295.569; 30
+    bounce         V4 gpu 0:   0.423   0.104; tick   73:   1.071   1.925; 30
+    bounce         V4 gpu 1:  10.129   7.092; tick   36: 1146.224 1149.744; 30
+    ramp           F  gpu 0:   0.608   0.162; tick  155:   0.495   0.949; 29
+    ramp           F  gpu 1:  14.824  12.123; tick   72:  38.589  43.050; 29
+    ramp           V4 gpu 0:   1.248   0.408; tick  142:   1.161   1.510; 29
+    ramp           V4 gpu 1:  14.312  11.570; tick  166:  33.734  36.667; 29
+    ratio          F  gpu 0:   0.635   0.083; tick   23:   1.214   2.129; 76
+    ratio          F  gpu 1:   9.459   6.292; tick   35:  78.505  81.799; 76
+    ratio          V4 gpu 0:   0.636   0.193; tick    5:   2.459   3.031; 76
+    ratio          V4 gpu 1:   8.878   5.720; tick    4:  65.343  68.592; 76
+    chip           F  gpu 0:   0.254   0.055; tick    6:   0.337   0.470; 28
+    chip           F  gpu 1:   7.776   4.731; tick   16:  33.854  36.964; 28
+    chip           V4 gpu 0:   0.588   0.114; tick   29:   0.971   1.551; 28
+    chip           V4 gpu 1:   8.122   4.846; tick    3:  40.803  42.113; 28
+
+PASS

@@ -1,0 +1,160 @@
+toy pile200, dialect F, 1200 ticks, threads 1 8; gravity 10, sleep on, contact recycling on
+twin: gcc 13.3.0, aarch64, contraction off
+layout sizes C/twin: Hull 68/68 HullFace 24/24 BodyState 60/60 BodyPose 28/28 BodyMass 80/80 Aabb 32/32 Params 184/184 Hash2 8/8 V3 12/12 Pair 24/24 Manifold 348/348 SatAxis 72/72 NarrowDiag 64/64 Constraint 460/460
+scene pile200 (seed 6): 205 bodies (5 static), 203 hulls (40 irregular chunks, 30 redrawn), largest hull 14 vertices 9 faces 42 half-edges; mass 6.773 to 49.39 kg; quantisation range errors 0
+  hull 0 (box 12 x 1 x 12 m): volume 144 (8abc 144), Ixx/density 1740 (V(b^2+c^2)/3 1740), Ixy -0
+start: every position, orientation and velocity exact in F (the grid moved 4 values off their float)
+tick  bodies-hash       manifolds-hash    stages-hash       awake pairs active touching points colours(ovf) islands(largest) slept woken
+   1  6c6c879477795829  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   2  47c4b44a946825f0  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   3  e026c013c44f24d1  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   4  69800ae69c20795c  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   5  3185c62232edca51  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   6  e27aefbdbf9a0c84  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   7  26a4da4c4e297e1d  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   8  d557f12ebd6f3e49  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+   9  cc93887da69f1540  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  10  69fd14124d049d1a  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  11  3bb811f7598d1967  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  12  c6ef5fe57a50fdc4  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  13  8e75bcc16df9a4fe  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  14  3b33664d9e04c82e  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  15  ea4208c4ce0583cc  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  16  3dddafee113eb1cd  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  17  fb5771b4dca8b5b4  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  18  fdd475dbf8566c44  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  19  30cbd9e3f34736de  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  20  5ed258457aa8b856  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  21  4ddcd13d0cf56115  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  22  7c55f9821be12801  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  23  4a02fb9e5dfe3745  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  24  b010a00f04f3bfac  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  25  4979f274e4f40448  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  26  7d61b573752af0a5  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  27  3b2f055d7132b484  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  28  c181be7f34371037  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  29  ceff3a0adc087666  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  30  e6bfeb8037337c7a  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  31  5f23816ac154dfbf  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  32  e5012883889eeaf5  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  33  caa2adb2aaf8a5f4  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  34  c0916964a65d2ed8  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  35  f156a808ceda0c18  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  36  fe8ee195658923e6  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  37  27a5d2fadcae22a3  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  38  4eb8b27d5e0aa740  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  39  b4102c37e0f975d7  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  40  f03a279bacde4455  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  41  10c459832ebea31f  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  42  e1ea97195a6982db  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  43  69fcb261251042f2  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  44  3160134d9cd457d6  0000000000000000  946e2557b1056391    200     0      0        0      0    0(0)    200(1)     0     0
+  45  262a80b84b75a678  6d959f6043a148a2  8df6602fa9e08fbe    200    17     17        1      4    1(0)    200(1)     0     0
+  46  03e56e797f7a5786  b653c3d1819b398f  c19cf2e7d18f4f98    200    25     25       22     88    1(0)    200(1)     0     0
+  47  60e01fc9e6f7389a  6eefb01a0f5c85d2  24de125d4de69634    200    29     29       24     96    3(0)    200(1)     0     0
+  48  ca8ea2cb240c9953  b6f0e8641fc15197  cbb0fa104baef2f9    200    44     44       30    119    4(0)    200(1)     0     0
+  49  7501fb1ef160fcf9  ec4ac243c9111134  2735d9ec930adafa    200    53     53       44    172    4(0)    194(2)     0     0
+  50  5c5fb6cee3d72028  2fd92e20d1fc9ed3  d0a689a8962c8685    200    63     63       50    198    4(0)    181(2)     0     0
+  51  319f5303df0797dc  c8d5da37628a1833  70edd63a50d02b6d    200    76     76       54    210    4(0)    175(4)     0     0
+  52  8e982319f87114eb  bbac2b5154fc561c  99192f5fe1ee9c78    200    89     89       66    257    4(0)    169(4)     0     0
+  53  971dc6a9211b59c5  8bca9535b2e28ccc  5958a63ed9b49455    200    94     94       77    302    5(0)    158(3)     0     0
+  54  6630601751e69de2  4a591e1b953fb892  1df1cff717002800    200   114    114       81    323    6(0)    149(4)     0     0
+  55  73ab89b3a8a1f5a9  b658f3998b76dfc2  10e22ee29aea36f0    200   127    127       95    378    6(0)    145(4)     0     0
+  56  c73906cca11bdf3d  3c68da757cfb1139  a11414eeb1883627    200   141    141      105    416    6(0)    133(5)     0     0
+  57  14e8df235cc16696  2b3b1b3ce7d16e0b  52b42f8eec0a61f2    200   164    164      111    436    7(0)    125(8)     0     0
+  58  9eb4bc96f7848d2e  38de9081cb8b0684  c7ba866a595a003d    200   181    181      122    485    7(0)    117(9)     0     0
+  59  0cd9ae3a83b78967  d35b4ce5e4d98053  32686afdf2204dc3    200   204    204      132    515    8(0)    107(9)     0     0
+  60  082238f13443df56  560fda5628f6f11c  4f4d3d1cf60758cb    200   225    225      144    562    9(0)     99(10)     0     0
+  61  f6d578bd6999d7c1  a2d3374fc74d579a  7d743d8235e44f58    200   248    248      153    599   11(0)     89(11)     0     0
+  62  a7c2ddc840ae102e  97659b38396edce9  b1ec876405e12290    200   279    279      159    624   11(0)     79(12)     0     0
+  63  31f271bc8ff7368a  07ded5db70223c31  b64aa6e5ed9de0c9    200   305    305      169    663   12(0)     74(12)     0     0
+  64  ee718dba8c3d1a4d  578dd565f5e1d7dd  715873b2b8b6bf89    200   331    331      184    717   12(0)     63(20)     0     0
+  65  9337efe3333b9284  bdfb29d1767c03d3  45eb101fca111e41    200   354    354      196    760   12(0)     52(21)     0     0
+  66  abd62a84c8f9a48c  65d930f8d4521c83  f9168fb6c6fe1ffa    200   384    384      210    817   13(0)     42(21)     0     0
+  67  b9dd13ae3f544f93  cffff7e98cdbc826  b5562e75b7737142    200   414    414      210    822   15(0)     29(27)     0     0
+  68  a21217ceda81ebdf  df123ce12da2106f  544c44d7efbcfd41    200   445    445      216    839   15(0)     31(27)     0     0
+  69  db3ee207760f1a4b  bd5aea56347d57be  7132d8d30c29e21f    200   476    476      219    856   14(0)     28(30)     0     0
+  70  a8d0364ef19fc79a  3be81978a4728f84  76c40322154aab0f    200   505    505      225    879   16(0)     27(49)     0     0
+  71  d7f889f47302163d  5bd7189edd7fb8c3  9af9434cfa871587    200   531    531      230    901   17(0)     22(65)     0     0
+  72  0880b23f971270e8  162a8e4c673333cc  08edff797a317fac    200   554    554      228    896   17(0)     24(40)     0     0
+  73  90081472729e00a0  409aadd754eca9b5  173c47ea4499e0b0    200   587    587      232    914   17(0)     29(34)     0     0
+  74  38dc1457df0f38a7  a634188744353b4e  452edfa2dbecfa5a    200   606    606      231    903   17(0)     26(68)     0     0
+  75  4e66985d042c117a  fc136e5b0f2fbe63  44c0e770398ff2a6    200   634    634      229    894   17(0)     31(66)     0     0
+  76  6eadabe241ec972c  d6c5127cdef2705b  b695eb4609ab22a2    200   648    648      226    881   18(0)     32(104)     0     0
+  77  4ad9f62a04748cf6  c357800eefa732e1  9157b18256788da7    200   661    661      230    893   18(0)     35(103)     0     0
+  78  4ed69b8bd844c188  e68f8ff6707ffb35  d81ed503c05182df    200   665    665      244    938   17(0)     36(78)     0     0
+  79  475b586cc57a6003  37d91fc207ccc6c7  71aa6797284f6072    200   676    676      248    955   16(0)     29(125)     0     0
+  80  75111a14af995ee2  3e48d44dabee36b6  95cc1c543aebea2a    200   690    690      250    962   17(0)     30(89)     0     0
+  81  ac53ec993c7bb3f8  89f0ea989cab5bbe  1b16b422c7b58663    200   710    710      242    940   18(0)     28(130)     0     0
+  82  5124976582f74881  c416fc2d0b9e267d  842cab1c368af875    200   728    728      243    940   17(0)     33(128)     0     0
+  83  0538cbfc458a2bc2  a999290a99a2e260  8e17053e5337bc98    200   752    752      240    923   18(0)     34(127)     0     0
+  84  c649eff9897163cb  4d588f4690215524  9529e480240e8dcb    200   777    777      245    951   17(0)     38(136)     0     0
+  85  c7e98d1b7dac389d  d8283e03a3afe873  b0a2a60f0235dc65    200   786    786      251    982   17(0)     34(139)     0     0
+  86  2fbac34a20e34254  736c305326a35b9a  bf92a8ed66de7595    200   798    798      264   1027   18(0)     33(130)     0     0
+  87  1f7e4d6df2b3d803  471b14dfcf2dd292  d53aa464f4021789    200   811    811      276   1071   17(0)     32(124)     0     0
+  88  aedefd2024d52abe  9d0f51f545d78057  1b88d2ddcf969201    200   812    812      283   1099   18(0)     27(145)     0     0
+  89  21b29f94732998f2  30ff294b77b8ee1a  0bf2a0346af0b64a    200   825    825      290   1127   19(0)     24(155)     0     0
+  90  1fa459dbfcf73584  0b44d09ef1f3e6e9  3d147d064d3bafed    200   838    838      291   1126   18(0)     23(157)     0     0
+  91  863911bde9604bfa  14a278c9f9d9eba9  f583de61be434ab6    200   846    846      294   1144   19(0)     24(153)     0     0
+  92  d71c35d1900c2544  4d2e1d5bcc9fb6f1  0bcb364e56812d4d    200   866    866      298   1158   19(0)     22(158)     0     0
+  93  d3fc7c35d0461158  61fca583e8f876c0  a345890cafc253d4    200   868    868      295   1151   19(0)     23(157)     0     0
+  94  5ca7ba2c8cfe6fda  c81f91688f205849  64c9e82716b5590a    200   889    889      303   1173   20(0)     27(154)     0     0
+  95  8170886926b99cd9  83e3fe4cb75a69bd  54f9f70c174c910f    200   901    901      301   1170   20(0)     24(157)     0     0
+  96  89e4efe877a07d20  daa2c0578c4cad55  bfefc021f21651c6    200   908    908      301   1177   19(0)     25(156)     0     0
+  97  b1495a616579777d  2ab2ab0e9992b674  0de467bda95521d3    200   909    909      301   1169   19(0)     25(156)     0     0
+  98  245311cb5749c96c  8fcd4a4b6be317af  3ae264728ccfd9be    200   913    913      302   1177   19(0)     25(162)     0     0
+  99  36c03f9d03e4519c  9182653ab84c3505  42a921e22574adf8    200   924    924      309   1198   19(0)     24(161)     0     0
+ 100  d09f69dd55b2f986  3b1c98c814d8a71a  f462716bd778bf91    200   944    944      319   1226   20(0)     24(153)     0     0
+ 101  0761871b126596ff  966e2c6fbc857c69  d030a6d6a6142482    200   960    960      327   1258   19(0)     21(157)     0     0
+ 102  f3205ad9311bd899  f9fb205ab28dcd99  076c9f72b950ae1f    200   964    964      334   1278   19(0)     19(161)     0     0
+ 103  6ad528842e43a69a  985301f8e9146e9b  cba8bf2d4503e769    200   962    962      340   1302   20(0)     18(161)     0     0
+ 104  59895cbee5d09228  7e36b5b022b0c051  44fac8edfa5bf422    200   960    960      338   1294   19(0)     15(162)     0     0
+ 105  d8b13e9f692dd647  7a66156dba119686  fd4a43b2ddbdc3db    200   967    967      334   1278   19(0)     13(164)     0     0
+ 106  a0aab00806c2b8d4  8673eeba1bb18c10  fd2e978fdd5ac36b    200   978    978      333   1270   20(0)     13(162)     0     0
+ 107  1b048e82cea638d0  d7a18ebf28d0c6ce  ff6511b2265de93f    200   997    997      330   1258   20(0)     15(178)     0     0
+ 108  31325787fafe85d9  48cca931962c054a  37cab3aa2504b1e5    200  1000   1000      339   1291   21(0)     17(174)     0     0
+ 109  cc948a3c5c043143  2521e434fd02592e  00f00dbad1441f94    200  1005   1005      349   1333   21(0)     14(179)     0     0
+ 110  33a2cf3e545895bf  1047041d2cdb2508  c7ebdc5a6eb985b1    200  1016   1016      348   1336   21(0)     10(186)     0     0
+ 111  a295f0e5a1f7853b  9a3dd097b2ec5d7f  15e6a8067417ab46    200  1017   1017      355   1367   21(0)     10(185)     0     0
+ 112  33b8ef30a63e1835  249cce53709540eb  99c5e9975e740f8f    200  1034   1034      360   1394   21(0)      8(187)     0     0
+ 113  3b493e8ccc8891d2  e9e57b6d06fae983  83d4dc1eeb053c34    200  1037   1037      361   1401   21(0)      7(187)     0     0
+ 114  8f3ca7475e91341d  87661c85c4617b9c  47d770ed65604416    200  1031   1031      367   1425   20(0)      8(185)     0     0
+ 115  9d0d945d5989a08d  93d9dfb4d33aed0d  0e847d6f6552dc47    200  1046   1046      369   1430   20(0)      7(186)     0     0
+ 116  b4cadcdeec7f4c97  343570f49be325d5  3e64ed683613fbf6    200  1058   1058      368   1431   21(0)      7(188)     0     0
+ 117  c2a0c07f370e2f39  dc61f1bb3a44b6b2  bd142c08d126c90f    200  1061   1061      364   1412   22(0)      7(193)     0     0
+ 118  856e9db8744435e6  7e84b5b368b28a6c  b33f237b3f617859    200  1064   1064      363   1405   22(0)      8(192)     0     0
+ 119  cb2b598872f2b9ab  d0abc157ababd1a5  98e6d1aae8d3c8f4    200  1060   1060      360   1387   22(0)     10(190)     0     0
+ 120  fe9a4a056a94f6f3  608183f7aedd6a1b  cf0aca6f2e190a02    200  1064   1064      362   1398   21(0)     10(190)     0     0
+ 180  a0da9879555fb801  952c921e19a957a4  5466801104020fd2    197  1169   1165      429   1651   22(0)      4(194)     0     0
+ 240  635da7f11363aad6  bdb8928ecfb39e8a  389a700ecce5200c    197  1166   1161      449   1718   22(0)      2(195)     0     0
+ 300  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 360  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 420  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 480  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 540  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 600  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 660  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 720  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 780  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 840  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 900  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+ 960  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+1020  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+1080  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+1140  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+1200  df496db5176181c7  e91eb6e24dc8aec4  3884d16ece9de4b2      0  1166      0      449   1718    0(0)      0(0)     0     0
+threads 1: 0.668 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes (reference)
+threads 8: 0.422 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes identical
+solve: every dynamic body asleep from tick 273; deepest point -0.18141 m (tick 63, bodies 136 161), at rest (the 60 ticks before every body sleeps, or the last 60) -0.00958116 m (tick 215, bodies 80 111); at most 293 dispatches a tick
+rest: after tick 1200, over every touching pair (sleeping ones too): deepest point -0.00674293 m (bodies 24 174), 449 touching pairs
+ref: twin (threads 1) identical to the reference (138 tick lines and the run hash; the reference's twin: MSVC 194234435, x64, contraction off)
+ref: twin (threads 8) identical to the reference (138 tick lines and the run hash; the reference's twin: MSVC 194234435, x64, contraction off)
+gpu 0: NVIDIA Tegra NVIDIA GB10 (nvidia), driver 0x91148240, api 1.4.312 (F-plain: no float-control modes declared)
+gpu 0 nvidia: per-tick hashes identical to the twin's over 1200 ticks; run hash 664786a43fc4c2ce; saturations 0 (twin 0)
+ref: gpu 0 nvidia identical to the reference (138 tick lines and the run hash; the reference's twin: MSVC 194234435, x64, contraction off)
+gpu 0 costs: wall 1.712 ms/tick (two submits, the readbacks and the CPU stages' 0.203 ms), kernels 0.631 ms/tick; the busiest tick after the first (207): kernels 4.410 ms, wall 6.649 ms; at most 293 dispatches a tick; per stage (ms/tick, dispatches/tick): prepareBodies 0.0018 (0.2) integrateVelocities 0.0041 (0.9) integratePositions 0.0048 (0.9) finalizeBodies 0.0018 (0.2) wakeBodies 0.0000 (0.0) hashElements 0.0062 (1.0) narrowSat 0.0179 (0.2) narrowClip 0.0078 (0.2) copyManifolds 0.0142 (0.9) hashManifolds 0.0081 (1.0) prepareContacts 0.0055 (0.2) warmStart 0.0888 (14.2) pushContacts 0.2573 (14.2) relaxContacts 0.2104 (14.2) storeImpulses 0.0026 (0.2)
+gpu 1: llvmpipe (LLVM 20.1.2, 128 bits) (llvmpipe), driver 0x1, api 1.4.305 (F-plain: no float-control modes declared)
+gpu 1 llvmpipe: per-tick hashes identical to the twin's over 1200 ticks; run hash 664786a43fc4c2ce; saturations 0 (twin 0)
+ref: gpu 1 llvmpipe identical to the reference (138 tick lines and the run hash; the reference's twin: MSVC 194234435, x64, contraction off)
+gpu 1 costs: wall 36.731 ms/tick (two submits, the readbacks and the CPU stages' 0.182 ms), kernels 33.514 ms/tick; the busiest tick after the first (255): kernels 305.430 ms, wall 310.076 ms; at most 293 dispatches a tick; per stage (ms/tick, dispatches/tick): prepareBodies 0.1879 (0.2) integrateVelocities 0.6326 (0.9) integratePositions 0.5969 (0.9) finalizeBodies 0.1534 (0.2) wakeBodies 0.0014 (0.0) hashElements 0.8532 (1.0) narrowSat 0.2196 (0.2) narrowClip 0.2042 (0.2) copyManifolds 0.9393 (0.9) hashManifolds 0.8264 (1.0) prepareContacts 0.1743 (0.2) warmStart 9.5553 (14.2) pushContacts 9.4937 (14.2) relaxContacts 9.5440 (14.2) storeImpulses 0.1320 (0.2)
+toy F pile200: run hash 664786a43fc4c2ce, final bodies df496db5176181c7 manifolds e91eb6e24dc8aec4 stages 3884d16ece9de4b2, threads agree, saturations 0 (twin: gcc 13.3.0, aarch64, contraction off)
