@@ -1,0 +1,113 @@
+#version 460
+// mulbench.comp: throughput of multiply shapes, 4 independent chains per thread, ITER steps each.
+// MODE 0 fp32 fma, 1 int32 mul-add, 2 int64(int32)*int64(int32) (sign-extended), 3 full int64*int64,
+// 4 imulExtended (32x32 -> hi, lo), 5 umulExtended, 6 Q32.32 product from 32-bit limbs,
+// 7 int32 mul + variable shift of a 64-bit product (the V4 inner operation).
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout( local_size_x = 64 ) in;
+layout( std430, binding = 0 ) buffer Out { uint64_t sink[]; };
+layout( push_constant ) uniform P { uint seed; uint shiftA; uint pad0; uint pad1; } pc;
+#define ITER 256
+
+int64_t qmul( int64_t a, int64_t b )
+{
+	uint64_t ua = uint64_t( a ), ub = uint64_t( b );
+	uint al = uint( ua ), ah = uint( ua >> 32 ), bl = uint( ub ), bh = uint( ub >> 32 );
+	uint64_t ll = uint64_t( al ) * uint64_t( bl );
+	uint64_t lh = uint64_t( al ) * uint64_t( bh );
+	uint64_t hl = uint64_t( ah ) * uint64_t( bl );
+	uint hh = ah * bh;
+	uint64_t mid = ( ll >> 32 ) + ( lh & 0xffffffffUL ) + ( hl & 0xffffffffUL ) + ( ( ll >> 31 ) & 1UL );
+	uint hi = uint( lh >> 32 ) + uint( hl >> 32 ) + hh + uint( mid >> 32 );
+	hi = a < 0 ? hi - bl : hi;
+	hi = b < 0 ? hi - al : hi;
+	return int64_t( ( uint64_t( hi ) << 32 ) | ( mid & 0xffffffffUL ) );
+}
+
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	uint s = i * 2654435761u + pc.seed;
+#if MODE == 0
+	float x0 = float( s & 1023u ) * 1e-3, x1 = x0 + 1.0, x2 = x0 + 2.0, x3 = x0 + 3.0;
+	float a = 0.9999 + float( s & 7u ) * 1e-6, b = float( s >> 20 ) * 1e-7; // per-thread operands
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = fma( x0, a, b ); x1 = fma( x1, a, b ); x2 = fma( x2, a, b ); x3 = fma( x3, a, b );
+	}
+	sink[i] = uint64_t( floatBitsToUint( x0 + x1 + x2 + x3 ) );
+#elif MODE == 1
+	int x0 = int( s ), x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int a = int( s | 1u ) * 3 + 1, b = int( s >> 3 );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = x0 * a + b; x1 = x1 * a + b; x2 = x2 * a + b; x3 = x3 * a + b;
+	}
+	sink[i] = uint64_t( uint( x0 + x1 + x2 + x3 ) );
+#elif MODE == 2
+	int x0 = int( s ), x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int a = int( s | 1u ) * 3 + 1, b = int( s >> 3 );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = int( ( int64_t( x0 ) * int64_t( a ) ) >> 20 ) + b;
+		x1 = int( ( int64_t( x1 ) * int64_t( a ) ) >> 20 ) + b;
+		x2 = int( ( int64_t( x2 ) * int64_t( a ) ) >> 20 ) + b;
+		x3 = int( ( int64_t( x3 ) * int64_t( a ) ) >> 20 ) + b;
+	}
+	sink[i] = uint64_t( uint( x0 + x1 + x2 + x3 ) );
+#elif MODE == 3
+	int64_t x0 = int64_t( s ) * 12345, x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int64_t a = int64_t( s | 1u ) * 0x100000001L + 1, b = int64_t( s >> 3 );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = x0 * a + b; x1 = x1 * a + b; x2 = x2 * a + b; x3 = x3 * a + b;
+	}
+	sink[i] = uint64_t( x0 + x1 + x2 + x3 );
+#elif MODE == 4
+	int x0 = int( s ), x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int a = int( s | 1u ) * 3 + 1, b = int( s >> 3 );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		int h0, l0, h1, l1, h2, l2, h3, l3;
+		imulExtended( x0, a, h0, l0 ); imulExtended( x1, a, h1, l1 ); imulExtended( x2, a, h2, l2 ); imulExtended( x3, a, h3, l3 );
+		x0 = ( h0 << 12 ) + int( uint( l0 ) >> 20 ) + b;
+		x1 = ( h1 << 12 ) + int( uint( l1 ) >> 20 ) + b;
+		x2 = ( h2 << 12 ) + int( uint( l2 ) >> 20 ) + b;
+		x3 = ( h3 << 12 ) + int( uint( l3 ) >> 20 ) + b;
+	}
+	sink[i] = uint64_t( uint( x0 + x1 + x2 + x3 ) );
+#elif MODE == 5
+	uint x0 = s, x1 = x0 ^ 1u, x2 = x0 ^ 2u, x3 = x0 ^ 3u;
+	uint a = ( s | 1u ) * 3u + 1u, b = s >> 3;
+	for ( int k = 0; k < ITER; ++k )
+	{
+		uint h0, l0, h1, l1, h2, l2, h3, l3;
+		umulExtended( x0, a, h0, l0 ); umulExtended( x1, a, h1, l1 ); umulExtended( x2, a, h2, l2 ); umulExtended( x3, a, h3, l3 );
+		x0 = ( h0 << 12 ) + ( l0 >> 20 ) + b;
+		x1 = ( h1 << 12 ) + ( l1 >> 20 ) + b;
+		x2 = ( h2 << 12 ) + ( l2 >> 20 ) + b;
+		x3 = ( h3 << 12 ) + ( l3 >> 20 ) + b;
+	}
+	sink[i] = uint64_t( x0 + x1 + x2 + x3 );
+#elif MODE == 6
+	int64_t x0 = int64_t( s ) << 12, x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int64_t a = 0xFFFF0000L + int64_t( s & 255u ), b = int64_t( s >> 3 );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = qmul( x0, a ) + b; x1 = qmul( x1, a ) + b; x2 = qmul( x2, a ) + b; x3 = qmul( x3, a ) + b;
+	}
+	sink[i] = uint64_t( x0 + x1 + x2 + x3 );
+#else
+	int x0 = int( s ), x1 = x0 ^ 1, x2 = x0 ^ 2, x3 = x0 ^ 3;
+	int a = int( s | 1u ) * 3 + 1, b = int( s >> 3 );
+	int sh = int( pc.shiftA ) + int( s & 3u );
+	for ( int k = 0; k < ITER; ++k )
+	{
+		x0 = int( ( int64_t( x0 ) * int64_t( a ) + ( int64_t( 1 ) << ( sh - 1 ) ) ) >> sh ) + b;
+		x1 = int( ( int64_t( x1 ) * int64_t( a ) + ( int64_t( 1 ) << ( sh - 1 ) ) ) >> sh ) + b;
+		x2 = int( ( int64_t( x2 ) * int64_t( a ) + ( int64_t( 1 ) << ( sh - 1 ) ) ) >> sh ) + b;
+		x3 = int( ( int64_t( x3 ) * int64_t( a ) + ( int64_t( 1 ) << ( sh - 1 ) ) ) >> sh ) + b;
+	}
+	sink[i] = uint64_t( uint( x0 + x1 + x2 + x3 ) );
+#endif
+}

@@ -1,0 +1,7 @@
+E11 harness, variant F (label F-fma), T 4 bytes, TP 4 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 28/28 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: MSVC 194234435, x64, contraction ON (positive control)
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 8.6587 ms/step, final hash 4b438447cbe45e27, range counter 0
+  census: 0 subnormal and 79231 zero words of 120016 in the final CPU state

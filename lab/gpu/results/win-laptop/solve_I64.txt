@@ -1,0 +1,91 @@
+E11 harness, variant I64 (label I64), T 8 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 128/128 Pose 56/56 Constraint 456/456 Impulse 32/32 Params 136/136
+twin: MSVC 194234435, x64, contraction off
+gpu 0: NVIDIA GeForce RTX 3060 Laptop GPU (nvidia), driver 0x988f0000, api 1.4.341; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=168; Binary Size=60928; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=5376;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=168; Binary Size=79872; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=3328;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=128; Binary Size=29312; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=9472;
+  spirv gen/I64/*.spv
+gpu 1: Intel(R) UHD Graphics (intel), driver 0x194859, api 1.3.215; denorm preserve/ftz fp32 1/1, RTE fp32 1, timestampPeriod 83.333 ns
+  stats push       intel [compute, subgroup 8]: Instruction Count=8630; Basic Block Count=13; Scratch Memory Size=9984; Loop Count=0; Spill Count=218; Fill Count=657; SEND Count=937; Cycle Count=13308; Workgroup Memory Size=0;
+  stats relax      intel [compute, subgroup 8]: Instruction Count=11151; Basic Block Count=14; Scratch Memory Size=8576; Loop Count=0; Spill Count=187; Fill Count=554; SEND Count=822; Cycle Count=18111; Workgroup Memory Size=0;
+  stats warmStart  intel [compute, subgroup 8]: Instruction Count=3369; Basic Block Count=14; Scratch Memory Size=1344; Loop Count=0; Spill Count=18; Fill Count=16; SEND Count=94; Cycle Count=7599; Workgroup Memory Size=0;
+  spirv gen/I64/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 6.6083 ms/step, final hash ac217ddf3b57db96, range counter 0
+  cpu twin 8 thread(s): 4.2884 ms/step, final hash ac217ddf3b57db96, range counter 0
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+  gpu nvidia: 1.3221 ms/step (timestamps, median of 3 reps; fastest step 1.2439), 1.5756 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 15523 mismatches 0
+  gpu intel: 26.3402 ms/step (timestamps, median of 3 reps; fastest step 25.4190), 26.5898 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 15523 mismatches 5911 (1lsb 53, larger 5858, max 500398123697 lsb)
+    first mismatches: body[1].word0: -10752656952 vs -12683820697, 1931163745 lsb
+    first mismatches: body[1].word1: -49179588559 vs -46947234645, 2232353914 lsb
+    first mismatches: body[1].word2: 2314195450 vs 1144880919, 1169314531 lsb
+    first mismatches: body[1].word3: 15009661061 vs 12070757843, 2938903218 lsb
+    first mismatches: body[1].word4: 14580409515 vs 11969221109, 2611188406 lsb
+    first mismatches: body[1].word5: -13572598230 vs -16509500348, 2936902118 lsb
+    first mismatches: pose.p[1].word0: -364246197760 vs -365121989463, 875791703 lsb
+    first mismatches: pose.p[1].word1: -296966086220 vs -296299045496, 667040724 lsb
+  compare nvidia vs intel            words 15523 mismatches 5911 (1lsb 53, larger 5858, max 500398123697 lsb)
+    first mismatches: body[1].word0: -10752656952 vs -12683820697, 1931163745 lsb
+    first mismatches: body[1].word1: -49179588559 vs -46947234645, 2232353914 lsb
+    first mismatches: body[1].word2: 2314195450 vs 1144880919, 1169314531 lsb
+    first mismatches: body[1].word3: 15009661061 vs 12070757843, 2938903218 lsb
+    first mismatches: body[1].word4: 14580409515 vs 11969221109, 2611188406 lsb
+    first mismatches: body[1].word5: -13572598230 vs -16509500348, 2936902118 lsb
+    first mismatches: pose.p[1].word0: -364246197760 vs -365121989463, 875791703 lsb
+    first mismatches: pose.p[1].word1: -296966086220 vs -296299045496, 667040724 lsb
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 68.5537 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  cpu twin 8 thread(s): 17.7481 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+  gpu nvidia: 2.1306 ms/step (timestamps, median of 3 reps; fastest step 2.0644), 2.7239 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 155023 mismatches 0
+  gpu intel: 44.6604 ms/step (timestamps, median of 3 reps; fastest step 42.7964), 45.3099 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 155023 mismatches 89650 (1lsb 28, larger 89622, max 9223112124178629632 lsb)
+    first mismatches: body[1].word0: -5289715583 vs -908700444787404695, 908700439497689088 lsb
+    first mismatches: body[1].word1: -54964538056 vs -11919350653904757, 11919295689366700 lsb
+    first mismatches: body[1].word2: -8320601733 vs -138391465422830804, 138391457102229072 lsb
+    first mismatches: body[1].word3: -2828569131 vs 32535357772282, 32538186341413 lsb
+    first mismatches: body[1].word4: 25169341283 vs -64980426800281, 65005596141564 lsb
+    first mismatches: body[1].word5: -13893042073 vs -59396354617179, 59382461575106 lsb
+    first mismatches: pose.p[1].word0: -357642997178 vs -322252742533033011, 322252384890035840 lsb
+    first mismatches: pose.p[1].word1: -304461646644 vs -33068087130222476, 33067782668575832 lsb
+  compare nvidia vs intel            words 155023 mismatches 89650 (1lsb 28, larger 89622, max 9223112124178629632 lsb)
+    first mismatches: body[1].word0: -5289715583 vs -908700444787404695, 908700439497689088 lsb
+    first mismatches: body[1].word1: -54964538056 vs -11919350653904757, 11919295689366700 lsb
+    first mismatches: body[1].word2: -8320601733 vs -138391465422830804, 138391457102229072 lsb
+    first mismatches: body[1].word3: -2828569131 vs 32535357772282, 32538186341413 lsb
+    first mismatches: body[1].word4: 25169341283 vs -64980426800281, 65005596141564 lsb
+    first mismatches: body[1].word5: -13893042073 vs -59396354617179, 59382461575106 lsb
+    first mismatches: pose.p[1].word0: -357642997178 vs -322252742533033011, 322252384890035840 lsb
+    first mismatches: pose.p[1].word1: -304461646644 vs -33068087130222476, 33067782668575832 lsb
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 739.6827 ms/step, final hash bfc67079360763ad, range counter 0
+  cpu twin 8 thread(s): 166.4966 ms/step, final hash bfc67079360763ad, range counter 0
+  compare cpu1 vs cpu8               words 1550023 mismatches 0
+  gpu nvidia: 9.7347 ms/step (timestamps, median of 3 reps; fastest step 9.6398), 12.4439 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs nvidia              words 1550023 mismatches 0
+  gpu intel: 316.9453 ms/step (timestamps, median of 3 reps; fastest step 303.1755), 319.6039 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 1550023 mismatches 899797 (1lsb 195, larger 899602, max 9223364984439417856 lsb)
+    first mismatches: body[1].word0: 1996395918 vs -299556153465908927, 299556155462304832 lsb
+    first mismatches: body[1].word1: -43288461437 vs -606404606168509293, 606404562880047872 lsb
+    first mismatches: body[1].word2: 1423215911 vs 433872144217079979, 433872142793864064 lsb
+    first mismatches: body[1].word3: -891991981 vs 3680305590578474, 3680306482570455 lsb
+    first mismatches: body[1].word4: 32370014251 vs 2807342234908004, 2807309864893753 lsb
+    first mismatches: body[1].word5: -24931666905 vs 9684607289916700, 9684632221583604 lsb
+    first mismatches: pose.p[1].word0: -350390058730 vs -143302751895022846, 143302401504964112 lsb
+    first mismatches: pose.p[1].word1: -292766448542 vs -228114602379595993, 228114309613147456 lsb
+  compare nvidia vs intel            words 1550023 mismatches 899797 (1lsb 195, larger 899602, max 9223364984439417856 lsb)
+    first mismatches: body[1].word0: 1996395918 vs -299556153465908927, 299556155462304832 lsb
+    first mismatches: body[1].word1: -43288461437 vs -606404606168509293, 606404562880047872 lsb
+    first mismatches: body[1].word2: 1423215911 vs 433872144217079979, 433872142793864064 lsb
+    first mismatches: body[1].word3: -891991981 vs 3680305590578474, 3680306482570455 lsb
+    first mismatches: body[1].word4: 32370014251 vs 2807342234908004, 2807309864893753 lsb
+    first mismatches: body[1].word5: -24931666905 vs 9684607289916700, 9684632221583604 lsb
+    first mismatches: pose.p[1].word0: -350390058730 vs -143302751895022846, 143302401504964112 lsb
+    first mismatches: pose.p[1].word1: -292766448542 vs -228114602379595993, 228114309613147456 lsb

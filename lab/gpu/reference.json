@@ -1,0 +1,51 @@
+{
+	"about": "E11's CPU-twin hashes (build/m7/gpu, 2026-09-30; MSVC /fp:precise and clang-cl -ffp-contract=off agreed). Seed 20260930, 60 steps for the solves; 2^20 + 1024 rows (rows_quick: 65536 + 1024, lab.py run --quick). Every twin on every compiler and ISA must reproduce these; a GPU must match the twin of its own run. The positive controls (FMA contraction on the twin, fast math on the GPU) must not.",
+	"solve": {
+		"F": {
+			"1000": "6d10edf9b8f38a95",
+			"10000": "e6ae38a69d096603",
+			"100000": "f19a70871aec1bcb"
+		},
+		"Fdisc": {
+			"1000": "cd345950d5be583d",
+			"10000": "5c897a3fee272fcd",
+			"100000": "eb57534f8029f0b6"
+		},
+		"Fnocap": {
+			"1000": "9fcd5f6b4550c2e2",
+			"10000": "a46324b8fb321087"
+		},
+		"I64": {
+			"1000": "ac217ddf3b57db96",
+			"10000": "e47aa8efa37a96dd",
+			"100000": "bfc67079360763ad"
+		},
+		"I32": {
+			"1000": "44d64c779ff41505",
+			"10000": "fabb52e7964f732a",
+			"100000": "c8a1b7dd8520f2a6"
+		},
+		"V4": {
+			"1000": "7b75af48e4c4c01b",
+			"10000": "69490a6639762b62",
+			"100000": "83f32634d79973d2"
+		}
+	},
+	"rows": {
+		"V1": "ab5661ac89d3d2de",
+		"V2": "64a34bdbc001aa50",
+		"V3": "8dbf59a0f05e9857",
+		"V4": "dee0c00ab61307a0",
+		"V4b": "8dcefcdc4110e7b6"
+	},
+	"rows_quick": {
+		"V1": "2e4d641aae350a05",
+		"V2": "76e9ddf5e1389b33",
+		"V3": "970f8122df93ecac",
+		"V4": "d57e510195368c30",
+		"V4b": "7476a4b0088a0054"
+	},
+	"nan_variants": {
+		"Fnocap": "F without the speed cap: bodies blow up and NaNs appear, whose bits are each machine's own (x64 0xffc00000, ARM 0x7fc00000, NVIDIA GPUs 0x7fffffff), so its hashes hold on x64 only. Kept as the counter-example: a float core must never make a NaN."
+	}
+}

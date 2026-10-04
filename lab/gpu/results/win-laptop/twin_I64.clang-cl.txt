@@ -1,0 +1,18 @@
+E11 harness, variant I64 (label I64-clang-cl), T 8 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 128/128 Pose 56/56 Constraint 456/456 Impulse 32/32 Params 136/136
+twin: clang 23.1.2 (https://github.com/llvm/llvm-project 85ac560262434c9ccfc0c183ec22d4138ed647fb), x64, contraction off
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 5.6107 ms/step, final hash ac217ddf3b57db96, range counter 0
+  cpu twin 8 thread(s): 3.5380 ms/step, final hash ac217ddf3b57db96, range counter 0
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 58.5385 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  cpu twin 8 thread(s): 17.1991 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 700.2648 ms/step, final hash bfc67079360763ad, range counter 0
+  cpu twin 8 thread(s): 162.7973 ms/step, final hash bfc67079360763ad, range counter 0
+  compare cpu1 vs cpu8               words 1550023 mismatches 0

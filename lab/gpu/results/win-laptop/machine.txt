@@ -1,0 +1,6 @@
+machine win-laptop
+platform Windows-11-10.0.22621-SP0
+processor AMD64
+primary compiler msvc
+twin compilers clang-cl
+quick False

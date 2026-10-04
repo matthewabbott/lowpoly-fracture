@@ -1,0 +1,112 @@
+E11 harness, variant F (label Fdisc), T 4 bytes, TP 4 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 28/28 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: MSVC 194234435, x64, contraction off
+gpu 0: NVIDIA GeForce RTX 3060 Laptop GPU (nvidia), driver 0x988f0000, api 1.4.341; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=113; Binary Size=12032; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=128; Binary Size=16512; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=80; Binary Size=8064; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=0;
+  spirv gen/Fdisc/*.spv
+gpu 1: Intel(R) UHD Graphics (intel), driver 0x194859, api 1.3.215; denorm preserve/ftz fp32 1/1, RTE fp32 1, timestampPeriod 83.333 ns
+  stats push       intel [compute, subgroup 8]: Instruction Count=447; Basic Block Count=13; Scratch Memory Size=0; Loop Count=0; Spill Count=0; Fill Count=0; SEND Count=33; Cycle Count=989; Workgroup Memory Size=0;
+  stats relax      intel [compute, subgroup 8]: Instruction Count=597; Basic Block Count=15; Scratch Memory Size=0; Loop Count=0; Spill Count=0; Fill Count=0; SEND Count=43; Cycle Count=1324; Workgroup Memory Size=0;
+  stats warmStart  intel [compute, subgroup 8]: Instruction Count=229; Basic Block Count=14; Scratch Memory Size=0; Loop Count=0; Spill Count=0; Fill Count=0; SEND Count=35; Cycle Count=579; Workgroup Memory Size=0;
+  spirv gen/Fdisc/*.preserve.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 1.1464 ms/step, final hash cd345950d5be583d, range counter 0
+  census: 0 subnormal and 8022 zero words of 12016 in the final CPU state
+  gpu nvidia: 0.6789 ms/step (timestamps, median of 3 reps; fastest step 0.6119), 0.7568 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 15523 mismatches 4222 (signed-zero 0, subnormal 0, nan 0, 1ulp 549, 2-16ulp 1527, larger 2146, max 2128836678 ulp)
+    first mismatches: body[1].word0: -2.70194077 (0xc02cec99) vs -2.70194125 (0xc02cec9b), 2 ulp
+    first mismatches: body[1].word2: 0.553845167 (0x3f0dc8cc) vs 0.553845108 (0x3f0dc8cb), 1 ulp
+    first mismatches: body[1].word3: 2.91172624 (0x403a59b9) vs 2.91172695 (0x403a59bc), 3 ulp
+    first mismatches: body[1].word4: 3.40791488 (0x405a1b47) vs 3.40791464 (0x405a1b46), 1 ulp
+    first mismatches: body[1].word5: -3.75558233 (0xc0705b76) vs -3.75558114 (0xc0705b71), 5 ulp
+    first mismatches: pose.q[1].word0: -0.361904025 (0xbeb94b7c) vs -0.361903846 (0xbeb94b76), 6 ulp
+    first mismatches: pose.q[1].word1: 0.349764019 (0x3eb31445) vs 0.349763751 (0x3eb3143c), 9 ulp
+    first mismatches: pose.q[1].word2: -0.67601186 (0xbf2d0f1d) vs -0.67601198 (0xbf2d0f1f), 2 ulp
+  gpu intel: 0.7794 ms/step (timestamps, median of 3 reps; fastest step 0.7162), 1.0526 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 15523 mismatches 4114 (signed-zero 0, subnormal 0, nan 0, 1ulp 547, 2-16ulp 1535, larger 2032, max 2128791692 ulp)
+    first mismatches: body[1].word0: -2.70194077 (0xc02cec99) vs -2.70194125 (0xc02cec9b), 2 ulp
+    first mismatches: body[1].word2: 0.553845167 (0x3f0dc8cc) vs 0.553845048 (0x3f0dc8ca), 2 ulp
+    first mismatches: body[1].word3: 2.91172624 (0x403a59b9) vs 2.91172528 (0x403a59b5), 4 ulp
+    first mismatches: body[1].word4: 3.40791488 (0x405a1b47) vs 3.4079144 (0x405a1b45), 2 ulp
+    first mismatches: body[1].word5: -3.75558233 (0xc0705b76) vs -3.75558138 (0xc0705b72), 4 ulp
+    first mismatches: pose.q[1].word0: -0.361904025 (0xbeb94b7c) vs -0.361904085 (0xbeb94b7e), 2 ulp
+    first mismatches: pose.q[1].word1: 0.349764019 (0x3eb31445) vs 0.349763572 (0x3eb31436), 15 ulp
+    first mismatches: pose.q[1].word2: -0.67601186 (0xbf2d0f1d) vs -0.67601192 (0xbf2d0f1e), 1 ulp
+  compare nvidia vs intel            words 15523 mismatches 4016 (signed-zero 0, subnormal 0, nan 0, 1ulp 531, 2-16ulp 1455, larger 2030, max 2050624750 ulp)
+    first mismatches: body[1].word2: 0.553845108 (0x3f0dc8cb) vs 0.553845048 (0x3f0dc8ca), 1 ulp
+    first mismatches: body[1].word3: 2.91172695 (0x403a59bc) vs 2.91172528 (0x403a59b5), 7 ulp
+    first mismatches: body[1].word4: 3.40791464 (0x405a1b46) vs 3.4079144 (0x405a1b45), 1 ulp
+    first mismatches: body[1].word5: -3.75558114 (0xc0705b71) vs -3.75558138 (0xc0705b72), 1 ulp
+    first mismatches: pose.q[1].word0: -0.361903846 (0xbeb94b76) vs -0.361904085 (0xbeb94b7e), 8 ulp
+    first mismatches: pose.q[1].word1: 0.349763751 (0x3eb3143c) vs 0.349763572 (0x3eb31436), 6 ulp
+    first mismatches: pose.q[1].word2: -0.67601198 (0xbf2d0f1f) vs -0.67601192 (0xbf2d0f1e), 1 ulp
+    first mismatches: pose.q[1].word3: 0.538236558 (0x3f09c9df) vs 0.538236678 (0x3f09c9e1), 2 ulp
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 12.1225 ms/step, final hash 5c897a3fee272fcd, range counter 0
+  census: 0 subnormal and 79140 zero words of 120016 in the final CPU state
+  gpu nvidia: 0.9528 ms/step (timestamps, median of 3 reps; fastest step 0.8590), 1.2409 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 155023 mismatches 44465 (signed-zero 8, subnormal 0, nan 0, 1ulp 5350, 2-16ulp 15773, larger 23334, max 2256458884 ulp)
+    first mismatches: body[1].word0: -1.25620186 (0xbfa0cb39) vs -1.2562021 (0xbfa0cb3b), 2 ulp
+    first mismatches: body[2].word1: -7.70659447 (0xc0f69c6c) vs -7.70659494 (0xc0f69c6d), 1 ulp
+    first mismatches: body[2].word2: -0.572438002 (0xbf128b4c) vs -0.572437942 (0xbf128b4b), 1 ulp
+    first mismatches: body[2].word3: -5.22557926 (0xc0a737f2) vs -5.22557783 (0xc0a737ef), 3 ulp
+    first mismatches: body[2].word4: 6.73510361 (0x40d785f8) vs 6.73509979 (0x40d785f0), 8 ulp
+    first mismatches: pose.q[2].word0: -0.168488339 (0xbe2c8835) vs -0.168488875 (0xbe2c8859), 36 ulp
+    first mismatches: pose.q[2].word1: 0.881358087 (0x3f61a0af) vs 0.881357551 (0x3f61a0a6), 9 ulp
+    first mismatches: pose.q[2].word2: 0.435030073 (0x3edebc43) vs 0.435031056 (0x3edebc64), 33 ulp
+  gpu intel: 2.8830 ms/step (timestamps, median of 3 reps; fastest step 2.6843), 3.2919 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 155023 mismatches 43975 (signed-zero 6, subnormal 0, nan 0, 1ulp 5156, 2-16ulp 15313, larger 23500, max 2151724102 ulp)
+    first mismatches: body[1].word0: -1.25620186 (0xbfa0cb39) vs -1.25620198 (0xbfa0cb3a), 1 ulp
+    first mismatches: body[2].word0: 1.08253717 (0x3f8a9094) vs 1.08253574 (0x3f8a9088), 12 ulp
+    first mismatches: body[2].word1: -7.70659447 (0xc0f69c6c) vs -7.70659494 (0xc0f69c6d), 1 ulp
+    first mismatches: body[2].word2: -0.572438002 (0xbf128b4c) vs -0.572438121 (0xbf128b4e), 2 ulp
+    first mismatches: body[2].word3: -5.22557926 (0xc0a737f2) vs -5.22558117 (0xc0a737f6), 4 ulp
+    first mismatches: body[2].word4: 6.73510361 (0x40d785f8) vs 6.73511314 (0x40d7860c), 20 ulp
+    first mismatches: body[2].word5: 0.925689697 (0x3f6cfa00) vs 0.92568785 (0x3f6cf9e1), 31 ulp
+    first mismatches: pose.q[2].word0: -0.168488339 (0xbe2c8835) vs -0.168486476 (0xbe2c87b8), 125 ulp
+  compare nvidia vs intel            words 155023 mismatches 42934 (signed-zero 5, subnormal 0, nan 0, 1ulp 4981, 2-16ulp 14873, larger 23075, max 2268506053 ulp)
+    first mismatches: body[1].word0: -1.2562021 (0xbfa0cb3b) vs -1.25620198 (0xbfa0cb3a), 1 ulp
+    first mismatches: body[2].word0: 1.08253717 (0x3f8a9094) vs 1.08253574 (0x3f8a9088), 12 ulp
+    first mismatches: body[2].word2: -0.572437942 (0xbf128b4b) vs -0.572438121 (0xbf128b4e), 3 ulp
+    first mismatches: body[2].word3: -5.22557783 (0xc0a737ef) vs -5.22558117 (0xc0a737f6), 7 ulp
+    first mismatches: body[2].word4: 6.73509979 (0x40d785f0) vs 6.73511314 (0x40d7860c), 28 ulp
+    first mismatches: body[2].word5: 0.925689697 (0x3f6cfa00) vs 0.92568785 (0x3f6cf9e1), 31 ulp
+    first mismatches: pose.q[2].word0: -0.168488875 (0xbe2c8859) vs -0.168486476 (0xbe2c87b8), 161 ulp
+    first mismatches: pose.q[2].word1: 0.881357551 (0x3f61a0a6) vs 0.881358922 (0x3f61a0bd), 23 ulp
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 144.6955 ms/step, final hash eb57534f8029f0b6, range counter 0
+  census: 0 subnormal and 797082 zero words of 1200016 in the final CPU state
+  gpu nvidia: 5.6664 ms/step (timestamps, median of 3 reps; fastest step 5.1364), 7.2996 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs nvidia              words 1550023 mismatches 432644 (signed-zero 29, subnormal 0, nan 0, 1ulp 56018, 2-16ulp 156191, larger 220406, max 2197096520 ulp)
+    first mismatches: body[2].word0: 3.31195998 (0x4053f727) vs 3.30968785 (0x4053d1ed), 9530 ulp
+    first mismatches: body[2].word1: -3.10525727 (0xc046bc89) vs -3.11779332 (0xc04789ed), 52580 ulp
+    first mismatches: body[2].word2: -4.02412367 (0xc080c59f) vs -4.02227259 (0xc080b675), 3882 ulp
+    first mismatches: body[2].word3: -9.74920464 (0xc11bfcbe) vs -9.76990795 (0xc11c518b), 21709 ulp
+    first mismatches: body[2].word4: -8.62001896 (0xc109eb99) vs -8.54966164 (0xc108cb6a), 73775 ulp
+    first mismatches: body[2].word5: 4.91967964 (0x409d6e04) vs 5.01160908 (0x40a05f1a), 192790 ulp
+    first mismatches: pose.p[2].word0: 31.7819233 (0x41fe4161) vs 31.7821312 (0x41fe41ce), 109 ulp
+    first mismatches: pose.p[2].word1: 27.3360386 (0x41dab035) vs 27.3372288 (0x41dab2a5), 624 ulp
+  gpu intel: 34.0823 ms/step (timestamps, median of 3 reps; fastest step 32.5965), 36.7143 ms/step with per-step submit+readback; first divergent step 0; range counter 0
+  compare cpu vs intel               words 1550023 mismatches 426541 (signed-zero 28, subnormal 0, nan 0, 1ulp 54937, 2-16ulp 154299, larger 217277, max 2198750860 ulp)
+    first mismatches: body[2].word0: 3.31195998 (0x4053f727) vs 3.30863667 (0x4053c0b4), 13939 ulp
+    first mismatches: body[2].word1: -3.10525727 (0xc046bc89) vs -3.11544394 (0xc047636f), 42726 ulp
+    first mismatches: body[2].word2: -4.02412367 (0xc080c59f) vs -4.01976347 (0xc080a1e7), 9144 ulp
+    first mismatches: body[2].word3: -9.74920464 (0xc11bfcbe) vs -9.76806736 (0xc11c4a01), 19779 ulp
+    first mismatches: body[2].word4: -8.62001896 (0xc109eb99) vs -8.57015705 (0xc1091f5d), 52284 ulp
+    first mismatches: body[2].word5: 4.91967964 (0x409d6e04) vs 4.97772455 (0x409f4985), 121729 ulp
+    first mismatches: pose.p[2].word0: 31.7819233 (0x41fe4161) vs 31.7826023 (0x41fe42c5), 356 ulp
+    first mismatches: pose.p[2].word1: 27.3360386 (0x41dab035) vs 27.3382587 (0x41dab4c1), 1164 ulp
+  compare nvidia vs intel            words 1550023 mismatches 414274 (signed-zero 26, subnormal 0, nan 0, 1ulp 52221, 2-16ulp 148428, larger 213599, max 2178459373 ulp)
+    first mismatches: body[2].word0: 3.30968785 (0x4053d1ed) vs 3.30863667 (0x4053c0b4), 4409 ulp
+    first mismatches: body[2].word1: -3.11779332 (0xc04789ed) vs -3.11544394 (0xc047636f), 9854 ulp
+    first mismatches: body[2].word2: -4.02227259 (0xc080b675) vs -4.01976347 (0xc080a1e7), 5262 ulp
+    first mismatches: body[2].word3: -9.76990795 (0xc11c518b) vs -9.76806736 (0xc11c4a01), 1930 ulp
+    first mismatches: body[2].word4: -8.54966164 (0xc108cb6a) vs -8.57015705 (0xc1091f5d), 21491 ulp
+    first mismatches: body[2].word5: 5.01160908 (0x40a05f1a) vs 4.97772455 (0x409f4985), 71061 ulp
+    first mismatches: pose.p[2].word0: 31.7821312 (0x41fe41ce) vs 31.7826023 (0x41fe42c5), 247 ulp
+    first mismatches: pose.p[2].word1: 27.3372288 (0x41dab2a5) vs 27.3382587 (0x41dab4c1), 540 ulp

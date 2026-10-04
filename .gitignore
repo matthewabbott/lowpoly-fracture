@@ -20,3 +20,6 @@ screenshot_*.png
 # agent worktrees and local Claude state
 .claude/
 __pycache__/
+
+# the GPU lab: generated kernels and twins (lab/gpu/lab.py gen)
+lab/gpu/gen/

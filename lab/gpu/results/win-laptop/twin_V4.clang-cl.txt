@@ -1,0 +1,18 @@
+E11 harness, variant V4 (label V4-clang-cl), T 4 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 40/40 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: clang 23.1.2 (https://github.com/llvm/llvm-project 85ac560262434c9ccfc0c183ec22d4138ed647fb), x64, contraction off
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 1.3572 ms/step, final hash 7b75af48e4c4c01b, range counter 8068
+  cpu twin 8 thread(s): 1.0189 ms/step, final hash 7b75af48e4c4c01b, range counter 8002
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 14.3870 ms/step, final hash 69490a6639762b62, range counter 155326
+  cpu twin 8 thread(s): 4.7377 ms/step, final hash 69490a6639762b62, range counter 144661
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 174.9982 ms/step, final hash 83f32634d79973d2, range counter 1460705
+  cpu twin 8 thread(s): 41.9945 ms/step, final hash 83f32634d79973d2, range counter 1376355
+  compare cpu1 vs cpu8               words 1550023 mismatches 0

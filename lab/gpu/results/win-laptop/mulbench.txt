@@ -1,0 +1,20 @@
+
+NVIDIA GeForce RTX 3060 Laptop GPU (nvidia): 1048576 threads x 4 chains x 256 steps per dispatch, median of 5
+  fp32 fma                          7073.03 G steps/s  (1.00x the fp32 fma rate, 0.152 ms)
+  int32 mul-add                     3708.90 G steps/s  (1.91x the fp32 fma rate, 0.290 ms)
+  i32*i32->i64 (sext) >>20          1233.07 G steps/s  (5.74x the fp32 fma rate, 0.871 ms)
+  int64*int64 (full)                 884.24 G steps/s  (8.00x the fp32 fma rate, 1.214 ms)
+  imulExtended hi/lo                1805.75 G steps/s  (3.92x the fp32 fma rate, 0.595 ms)
+  umulExtended hi/lo                1788.14 G steps/s  (3.96x the fp32 fma rate, 0.600 ms)
+  Q32.32 qmul (limbs)                271.52 G steps/s  (26.05x the fp32 fma rate, 3.955 ms)
+  i32*i32->i64 round+var shift      1053.85 G steps/s  (6.71x the fp32 fma rate, 1.019 ms)
+
+Intel(R) UHD Graphics (intel): 1048576 threads x 4 chains x 256 steps per dispatch, median of 5
+  fp32 fma                           113.99 G steps/s  (1.00x the fp32 fma rate, 9.420 ms)
+  int32 mul-add                       48.16 G steps/s  (2.37x the fp32 fma rate, 22.296 ms)
+  i32*i32->i64 (sext) >>20            14.14 G steps/s  (8.06x the fp32 fma rate, 75.954 ms)
+  int64*int64 (full)                   5.47 G steps/s  (20.85x the fp32 fma rate, 196.422 ms)
+  imulExtended hi/lo                  17.18 G steps/s  (6.63x the fp32 fma rate, 62.495 ms)
+  umulExtended hi/lo                  17.23 G steps/s  (6.62x the fp32 fma rate, 62.330 ms)
+  Q32.32 qmul (limbs)                  1.61 G steps/s  (70.84x the fp32 fma rate, 667.296 ms)
+  i32*i32->i64 round+var shift        12.77 G steps/s  (8.92x the fp32 fma rate, 84.053 ms)

@@ -1,0 +1,10 @@
+E11 rows V1 (label V1-fma): 1049600 rows (262144 per quarter + 1024 hand-made), RRow 316 bytes, ROut 56 bytes, spv gen/rows/V1.spv
+prepare per quarter (town, chip vs mech, car crash, adversarial, hand-made): quantisation range errors 0 0 0 0 0; shift clamps 0 0 0 0 0
+corpus hashes: rows eadfe81d7419fa04 (double) 51ae1d21261f7d5c (quantised)
+twin (MSVC 194234435, x64, contraction ON (positive control); 1 thread): 102.93 ns/row, hash a44ff956c6feb7ed, counters: saturations 0, kernel shift clamps 0
+accuracy against float64 (relative error of the velocity deltas; clamp decisions newImpulse == 0):
+  town          rows  262144  max rel 8.396e-03  rms rel 6.839e-05  max abs 1.315e-04  (996276 vectors)  clamp flips push 0 relax 0  saturations 0
+  chip vs mech  rows  262144  max rel 1.679e-02  rms rel 1.677e-04  max abs 2.087e-03  (1048576 vectors)  clamp flips push 0 relax 0  saturations 0
+  car crash     rows  262144  max rel 9.718e-03  rms rel 2.020e-05  max abs 3.704e-05  (524288 vectors)  clamp flips push 0 relax 0  saturations 0
+  adversarial   rows  262144  max rel 4.207e-02  rms rel 1.854e-04  max abs 2.408e+26  (1048576 vectors)  clamp flips push 0 relax 13  saturations 0
+  hand-made     rows    1024  max rel 0.000e+00  rms rel 0.000e+00  max abs 0.000e+00  (3584 vectors)  clamp flips push 0 relax 0  saturations 0

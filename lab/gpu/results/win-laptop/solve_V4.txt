@@ -1,0 +1,43 @@
+E11 harness, variant V4 (label V4), T 4 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 40/40 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: MSVC 194234435, x64, contraction off
+gpu 0: NVIDIA GeForce RTX 3060 Laptop GPU (nvidia), driver 0x988f0000, api 1.4.341; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  stats push       nvidia [CS, subgroup 32]: Register Count=96; Binary Size=47104; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=2304;
+  stats relax      nvidia [CS, subgroup 32]: Register Count=80; Binary Size=61568; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=3840;
+  stats warmStart  nvidia [CS, subgroup 32]: Register Count=80; Binary Size=25984; Stack Size=0; Local Memory Size=68719476736; Shared Memory Size=1792;
+  spirv gen/V4/*.spv
+gpu 1: Intel(R) UHD Graphics (intel), driver 0x194859, api 1.3.215; denorm preserve/ftz fp32 1/1, RTE fp32 1, timestampPeriod 83.333 ns
+  stats push       intel [compute, subgroup 8]: Instruction Count=2131; Basic Block Count=276; Scratch Memory Size=0; Loop Count=0; Spill Count=0; Fill Count=0; SEND Count=135; Cycle Count=4829; Workgroup Memory Size=0;
+  stats relax      intel [compute, subgroup 8]: Instruction Count=2764; Basic Block Count=356; Scratch Memory Size=0; Loop Count=0; Spill Count=0; Fill Count=0; SEND Count=174; Cycle Count=6371; Workgroup Memory Size=0;
+  stats warmStart  intel [compute, subgroup 16]: Instruction Count=1489; Basic Block Count=149; Scratch Memory Size=576; Loop Count=0; Spill Count=6; Fill Count=6; SEND Count=96; Cycle Count=4250; Workgroup Memory Size=0;
+  spirv gen/V4/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 2.4961 ms/step, final hash 7b75af48e4c4c01b, range counter 8068
+  cpu twin 8 thread(s): 1.8824 ms/step, final hash 7b75af48e4c4c01b, range counter 8040
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+  gpu nvidia: 1.2114 ms/step (timestamps, median of 3 reps; fastest step 0.9841), 1.2439 ms/step with per-step submit+readback; first divergent step -1; range counter 8068
+  compare cpu vs nvidia              words 15523 mismatches 0
+  gpu intel: 2.8163 ms/step (timestamps, median of 3 reps; fastest step 2.6492), 3.1573 ms/step with per-step submit+readback; first divergent step -1; range counter 8068
+  compare cpu vs intel               words 15523 mismatches 0
+  compare nvidia vs intel            words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 25.2997 ms/step, final hash 69490a6639762b62, range counter 155326
+  cpu twin 8 thread(s): 6.7208 ms/step, final hash 69490a6639762b62, range counter 147604
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+  gpu nvidia: 1.5789 ms/step (timestamps, median of 3 reps; fastest step 1.4047), 2.0126 ms/step with per-step submit+readback; first divergent step -1; range counter 155326
+  compare cpu vs nvidia              words 155023 mismatches 0
+  gpu intel: 5.1956 ms/step (timestamps, median of 3 reps; fastest step 4.8949), 5.6795 ms/step with per-step submit+readback; first divergent step -1; range counter 155326
+  compare cpu vs intel               words 155023 mismatches 0
+  compare nvidia vs intel            words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 293.0542 ms/step, final hash 83f32634d79973d2, range counter 1460705
+  cpu twin 8 thread(s): 61.6468 ms/step, final hash 83f32634d79973d2, range counter 1390493
+  compare cpu1 vs cpu8               words 1550023 mismatches 0
+  gpu nvidia: 7.0436 ms/step (timestamps, median of 3 reps; fastest step 6.5530), 9.0175 ms/step with per-step submit+readback; first divergent step -1; range counter 1460705
+  compare cpu vs nvidia              words 1550023 mismatches 0
+  gpu intel: 42.6632 ms/step (timestamps, median of 3 reps; fastest step 40.8262), 44.1849 ms/step with per-step submit+readback; first divergent step -1; range counter 1460705
+  compare cpu vs intel               words 1550023 mismatches 0
+  compare nvidia vs intel            words 1550023 mismatches 0
