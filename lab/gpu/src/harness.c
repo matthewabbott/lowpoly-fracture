@@ -6,22 +6,15 @@
 //
 // The scenario is generated in double with + - * / sqrt only (no libm), so it is the same bits on
 // any IEEE machine; quantisation to each format is exact-rounded from those doubles.
+#include "hash.h"
 #include "layout.h"
+#include "pool.h"
 #include "vk_util.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined( _WIN32 )
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <sched.h>
-#include <stdatomic.h>
-#endif
 
 #if defined( VAR_F )
 #define VARIANT_NAME "F"
@@ -835,22 +828,11 @@ static int make_dispatches( const Coloring* col, int bodyCount, Dispatch* out )
 // Hashing and comparison
 // ------------------------------------------------------------------------------------------------
 
-static uint64_t fnv( uint64_t h, const void* p, size_t n )
-{
-	const uint8_t* b = (const uint8_t*)p;
-	for ( size_t i = 0; i < n; ++i )
-	{
-		h ^= b[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
-
 static uint64_t hash_state( const Body* b, const Pose* p, int bodyCount )
 {
-	uint64_t h = 1469598103934665603ULL;
-	h = fnv( h, b, (size_t)bodyCount * sizeof( Body ) );
-	h = fnv( h, p, (size_t)bodyCount * sizeof( Pose ) );
+	uint64_t h = LAB_FNV0;
+	h = lab_fnv( h, b, (size_t)bodyCount * sizeof( Body ) );
+	h = lab_fnv( h, p, (size_t)bodyCount * sizeof( Pose ) );
 	return h;
 }
 
@@ -1067,125 +1049,24 @@ static void subnormal_census( FILE* log, const Snapshot* s, const Data* d )
 }
 
 // ------------------------------------------------------------------------------------------------
-// CPU twin runner: 1 thread, or a spin pool with one barrier per dispatch
+// CPU twin runner: 1 thread, or the lab's spin pool (src/pool.h) with one barrier per dispatch
 // ------------------------------------------------------------------------------------------------
 
-// The pool's shared words: a generation the workers wait on, a count of finished workers, quit.
-// Loads acquire and increments release, so a worker that sees a new generation sees its job, and the
-// caller that sees every worker done sees their writes (x86 ordered these for free; ARM does not).
-#if defined( _WIN32 )
-typedef volatile LONG PoolWord; // MSVC's volatile reads acquire and writes release on x64 (/volatile:ms)
-#define POOL_LOAD( w ) ( *( w ) )
-#define POOL_STORE( w, v ) InterlockedExchange( ( w ), ( v ) )
-#define POOL_INC( w ) InterlockedIncrement( w )
-#define POOL_PAUSE() YieldProcessor()
-typedef HANDLE PoolThread;
-#else
-typedef atomic_long PoolWord;
-#define POOL_LOAD( w ) atomic_load_explicit( ( w ), memory_order_acquire )
-#define POOL_STORE( w, v ) atomic_store_explicit( ( w ), ( v ), memory_order_release )
-#define POOL_INC( w ) atomic_fetch_add_explicit( ( w ), 1, memory_order_acq_rel )
-#define POOL_PAUSE() sched_yield()
-typedef pthread_t PoolThread;
-#endif
-
-typedef struct Pool
-{
-	int threads;
-	PoolThread handles[64];
-	PoolWord generation;
-	PoolWord done;
-	PoolWord quit;
-	Dispatch job;
-} Pool;
-
-static Pool g_pool;
+static LabPool g_pool;
 
 static void run_chunk( const Dispatch* d, int t, int threads )
 {
-	uint32_t groups = ( d->count + 63 ) / 64;
-	uint32_t g0 = (uint32_t)( ( (uint64_t)groups * (uint64_t)t ) / (uint64_t)threads );
-	uint32_t g1 = (uint32_t)( ( (uint64_t)groups * (uint64_t)( t + 1 ) ) / (uint64_t)threads );
+	uint32_t g0, g1;
+	lab_pool_groups( d->count, t, threads, &g0, &g1 );
 	if ( g1 > g0 )
 	{
 		twin_run( d->entry, d->start, d->count, g0, g1 );
 	}
 }
 
-static void pool_work( int t )
-{
-	long seen = 0;
-	for ( ;; )
-	{
-		long g;
-		while ( ( g = POOL_LOAD( &g_pool.generation ) ) == seen )
-		{
-			if ( POOL_LOAD( &g_pool.quit ) )
-			{
-				return;
-			}
-			POOL_PAUSE();
-		}
-		seen = g;
-		Dispatch d = g_pool.job;
-		run_chunk( &d, t, g_pool.threads );
-		POOL_INC( &g_pool.done );
-	}
-}
+static void chunk_job( void* ctx, int t, int threads ) { run_chunk( (const Dispatch*)ctx, t, threads ); }
 
-#if defined( _WIN32 )
-static DWORD WINAPI pool_worker( LPVOID arg )
-{
-	pool_work( (int)(intptr_t)arg );
-	return 0;
-}
-#else
-static void* pool_worker( void* arg )
-{
-	pool_work( (int)(intptr_t)arg );
-	return NULL;
-}
-#endif
-
-static void pool_start( int threads )
-{
-	memset( &g_pool, 0, sizeof( g_pool ) );
-	g_pool.threads = threads;
-	for ( int t = 1; t < threads; ++t )
-	{
-#if defined( _WIN32 )
-		g_pool.handles[t] = CreateThread( NULL, 0, pool_worker, (LPVOID)(intptr_t)t, 0, NULL );
-#else
-		pthread_create( &g_pool.handles[t], NULL, pool_worker, (void*)(intptr_t)t );
-#endif
-	}
-}
-
-static void pool_stop( void )
-{
-	POOL_STORE( &g_pool.quit, 1 );
-	for ( int t = 1; t < g_pool.threads; ++t )
-	{
-#if defined( _WIN32 )
-		WaitForSingleObject( g_pool.handles[t], INFINITE );
-		CloseHandle( g_pool.handles[t] );
-#else
-		pthread_join( g_pool.handles[t], NULL );
-#endif
-	}
-}
-
-static void pool_dispatch( const Dispatch* d )
-{
-	g_pool.job = *d;
-	POOL_STORE( &g_pool.done, 0 );
-	POOL_INC( &g_pool.generation ); // releases the job and the reset count
-	run_chunk( d, 0, g_pool.threads );
-	while ( POOL_LOAD( &g_pool.done ) < g_pool.threads - 1 )
-	{
-		POOL_PAUSE();
-	}
-}
+static void pool_dispatch( const Dispatch* d ) { lab_pool_run( &g_pool, chunk_job, (void*)d ); }
 
 typedef struct CpuResult
 {
@@ -1209,7 +1090,7 @@ static CpuResult run_cpu( const Data* d, const Dispatch* list, int dispatchCount
 	r.stepHash = (uint64_t*)malloc( (size_t)steps * sizeof( uint64_t ) );
 	if ( threads > 1 )
 	{
-		pool_start( threads );
+		lab_pool_start( &g_pool, threads );
 	}
 	double total = 0.0;
 	for ( int s = 0; s < steps; ++s )
@@ -1231,7 +1112,7 @@ static CpuResult run_cpu( const Data* d, const Dispatch* list, int dispatchCount
 	}
 	if ( threads > 1 )
 	{
-		pool_stop();
+		lab_pool_stop( &g_pool );
 	}
 	r.msPerStep = total / steps;
 	return r;

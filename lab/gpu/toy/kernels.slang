@@ -28,12 +28,16 @@
 [[vk::binding( 19, 0 )]] RWStructuredBuffer<Joint> joints;			 // the revolute joints (step 6), by joint
 [[vk::binding( 20, 0 )]] RWStructuredBuffer<Hash2> jointHashes;		 // by joint
 [[vk::binding( 21, 0 )]] StructuredBuffer<JointCommand> jointCommands; // this tick's targets and decisions, by joint
+[[vk::binding( 22, 0 )]] RWStructuredBuffer<Hash2> bodyPrepHashes;	// by body: its mass (the world inertia) and AABB
+[[vk::binding( 23, 0 )]] RWStructuredBuffer<Hash2> pairWorkHashes;	// by pair: its SAT record and constraint
 [[vk::push_constant]] ConstantBuffer<Push> pc;
 
-// hash categories
-#define CAT_BODY 1u
-#define CAT_MANIFOLD 2u
-#define CAT_JOINT 3u
+// hash categories: every word a tick writes is in one (the saturation counters and the corpus's diagnostics aside)
+#define CAT_BODY 1u		// state and pose
+#define CAT_MANIFOLD 2u // the manifold, its pads aside
+#define CAT_JOINT 3u	// every field
+#define CAT_BODYPREP 4u // the mass (with prepareBodies' world inertia) and the AABB, every field
+#define CAT_PAIRWORK 5u // the SAT record and the constraint, every field, and the manifold's pads
 
 #include "narrow.slang"
 #include "solve.slang"
@@ -192,7 +196,9 @@ void wakeBodies( uint3 tid : SV_DispatchThreadID )
 }
 
 // One 64-bit hash per element, no atomics; the CPU sums them per category, order-free (as src/hash.c does).
-// Bodies: state and pose, field by field.
+// Bodies: state and pose, field by field (category 1); and the body's prepared data, its mass with the world inertia
+// and its AABB, every field (category 4: a GPU that rounds an AABB or a world inertia differently fails here even when
+// nothing downstream moves).
 [shader( "compute" )]
 [numthreads( 64, 1, 1 )]
 void hashElements( uint3 tid : SV_DispatchThreadID )
@@ -212,6 +218,16 @@ void hashElements( uint3 tid : SV_DispatchThreadID )
 	h = hashPos( h, pose.p );
 	h = hashQ4( h, pose.q );
 	hashes[i] = hashEnd( h );
+	BodyMass m = bodyMass[i];
+	Aabb b = aabbs[i];
+	H2 g = hashStart( CAT_BODYPREP, i );
+	g = hashSym( g, m.invIl );
+	g = hashSym( g, m.invIw );
+	g = hashT( hashT( hashT( hashT( g, m.invMass ), m.friction ), m.restitution ), m.pad );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( m.eM ) ), uint( m.eI ) ), uint( m.hull ) ), uint( m.flags ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( b.minx ) ), uint( b.miny ) ), uint( b.minz ) ), uint( b.maxx ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( b.maxy ) ), uint( b.maxz ) ), uint( b.pad0 ) ), uint( b.pad1 ) );
+	bodyPrepHashes[i] = hashEnd( g );
 }
 
 // Manifolds: every field (unused point slots are zero), the pair's bodies seeding the element (order-free sums tell
@@ -254,4 +270,37 @@ void hashManifolds( uint3 tid : SV_DispatchThreadID )
 	h = hashV3( h, m.cachedPoseP );
 	h = hashQ4( h, m.cachedPoseQ );
 	manifoldHashes[k] = hashEnd( h );
+	// the pair's working records (category 5): the SAT record and the constraint, every field (an inactive pair's slot
+	// keeps what an earlier tick wrote there: hashed again, the same on every machine), and the manifold's pads
+	SatAxis a = satAxes[k];
+	Constraint c = constraints[k];
+	H2 g = hashStart( CAT_PAIRWORK, uint( m.bodyA ) );
+	g = hashWord( g, uint( m.bodyB ) );
+	g = hashT( hashT( hashT( hashT( g, a.faceASep ), a.faceBSep ), a.edgeSep ), a.sepSep );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( a.kind ) ), uint( a.type ) ), uint( a.sepA ) ), uint( a.sepB ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( a.cacheType ) ), uint( a.cacheA ) ), uint( a.cacheB ) ), uint( a.faceA ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( a.vertexB ) ), uint( a.faceB ) ), uint( a.vertexA ) ), uint( a.edgeA ) );
+	g = hashWord( hashWord( g, uint( a.edgeB ) ), uint( a.pad ) );
+	[ForceUnroll]
+	for ( int i = 0; i < MANIFOLD_POINTS; ++i )
+	{
+		ConstraintPoint p = c.points[i];
+		g = hashV3( g, p.anchorA );
+		g = hashV3( g, p.anchorB );
+		g = hashT( hashT( hashT( hashT( g, p.baseSeparation ), p.normalImpulse ), p.totalNormalImpulse ), p.restitutionImpulse );
+		g = hashT( hashT( hashT( hashT( g, p.normalMass ), p.leverArm ), p.relativeVelocity ), p.pad );
+		g = hashWord( hashWord( g, uint( p.shN ) ), uint( p.pad1 ) );
+		g = hashT( g, m.points[i].pad );
+	}
+	g = hashV3( hashV3( hashV3( g, c.normal ), c.tangent1 ), c.tangent2 );
+	g = hashV3( hashV3( g, c.centerA ), c.centerB );
+	g = hashSym( hashSym( g, c.invIA ), c.invIB );
+	g = hashT( hashT( g, c.invMassA ), c.invMassB );
+	g = hashT( hashT( hashT( hashT( g, c.tangentMassXX ), c.tangentMassXY ), c.tangentMassYY ), c.twistMass );
+	g = hashT( hashT( hashT( g, c.frictionImpulse1 ), c.frictionImpulse2 ), c.twistImpulse );
+	g = hashT( hashT( hashT( g, c.friction ), c.restitution ), c.pad );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( c.bodyA ) ), uint( c.bodyB ) ), uint( c.pointCount ) ), uint( c.flags ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( c.eP ) ), uint( c.shMA ) ), uint( c.shMB ) ), uint( c.shIA ) );
+	g = hashWord( hashWord( hashWord( hashWord( g, uint( c.shIB ) ), uint( c.shT ) ), uint( c.shTw ) ), uint( c.pad1 ) );
+	pairWorkHashes[k] = hashEnd( g );
 }

@@ -2,9 +2,12 @@
 """accept.py: decision point 1 (DESIGN.md "Scenes and acceptance"): runs the toy's twins (D, F, V4; one thread) and
 b3ref2 (Box3D) on every scene and seed, measures each trajectory (metrics.py) and prints the acceptance table: one row
 per criterion with the values of Box3D, D, F and V4, and PASS or FAIL against DESIGN.md's thresholds (for every
-program; the decision is F's and V4's). Writes the table to lab/gpu/toy/results/decision1.md.
+program; the decision is F's and V4's). Every rule is judged as DESIGN.md wrote it; a judgement chosen after the results
+were seen is a separate row marked post hoc, and the summary counts the passes both ways (as written; with the post-hoc
+rows in place of the rows they relax). Writes the table to lab/gpu/toy/results/decision1.md. gate.py's gate 4 runs the
+same jobs (gate(): at 1 and 8 threads, every run's health checked, no file written).
 
-  python lab/gpu/toy/accept.py [--compiler msvc] [--out lab/gpu/build/toy-scratch/4b] [--jobs 8] [--no-run]
+  python lab/gpu/toy/accept.py [--compiler msvc] [--out lab/gpu/build/toy-scratch/4b] [--jobs 8] [--threads 1] [--no-run]
 
 Runs (trajectories and logs in --out; --no-run measures what is there): stack10 for 3,600 ticks with sleep off, with
 sleep on, and with sleep and contact recycling off; pile200 for 3,600 ticks over seeds 1 to 8 (every 10th tick
@@ -73,7 +76,7 @@ def run_all(a):
         tr, log = paths(a.out, name, prog)
         args = ["--scene", scene, "--ticks", str(ticks), "--quiet", "--traj", tr, "--traj-every", str(every), "--log", log, *extra]
         if prog != "Box3D":
-            args += ["--threads", "1"]
+            args += ["--threads", a.threads]
         r = subprocess.run([exe(a.compiler, "D" if prog == "Dp" else prog), *args], cwd=LAB, capture_output=True, text=True)
         return task, r.returncode
 
@@ -123,6 +126,39 @@ def measure(a):
     return M
 
 
+def health(M):
+    """Every toy run's log: its threads agree, its floating-point sentinel stayed clean (no flushing mode either), its
+    saturation counters are 0. Returns the problems."""
+    out = []
+    for prog in ("D", "F", "V4", "Dp"):
+        for name, e in M.get(prog, {}).items():
+            lg = e["log"]
+            if lg.get("threads") != "agree" or not lg.get("sentinel") or lg.get("saturations", -1) != 0:
+                out.append(f"{name} {prog}: threads {lg.get('threads', '?')}, sentinel {'clean' if lg.get('sentinel') else 'TRIPPED'}, "
+                           f"saturations {lg.get('saturations', '?')}")
+    return out
+
+
+def scene_lines(M):
+    """Each scene's numbers in one line per program (metrics.py's summary): gate 4's report."""
+    out = []
+    for name, scene in (("stack-off", "stack10"), ("stack-on", "stack10"), ("bounce", "bounce"), ("ramp", "ramp"), ("ratio", "ratio"),
+                        ("chip", "chip"), ("arm", "arm")) + tuple((f"pile-s{k}", "pile200") for k in SEEDS):
+        for prog in PROGS:
+            e = M[prog][name]
+            out.append(f"{name:10} {prog:5} {metrics.summary(scene, e['m'])}")
+    return out
+
+
+def gate(compiler, out, jobs, threads):
+    """gate.py's gate 4: the jobs on one compiler's twins at the given thread counts, measured; returns (problems, rows, M)."""
+    a = argparse.Namespace(compiler=compiler, out=os.path.abspath(out), jobs=jobs, threads=threads)
+    os.makedirs(a.out, exist_ok=True)
+    bad = run_all(a)
+    M = measure(a)
+    return bad + health(M), build_table(M), M
+
+
 def rms_of(M, prog, name, ref="D"):
     return metrics.rms(M[prog][name]["traj"], M[ref][name]["traj"])
 
@@ -157,10 +193,14 @@ def verdict(ok):
 
 
 def build_table(M):
-    rows = []  # (group, criterion, threshold, {prog: value text}, {prog: ok or None})
+    """The rows: (group, criterion, threshold, {prog: value text}, {prog: ok or None}, rule). rule "" is DESIGN.md's rule as
+    written and counts in both headlines; "design" is a rule as written that a post-hoc row relaxes (counted only under
+    DESIGN's rules); "post hoc" is a judgement chosen after the results were seen (counted only in the second headline,
+    in place of the "design" row it names)."""
+    rows = []
 
-    def add(group, crit, thr, vals, oks):
-        rows.append((group, crit, thr, vals, oks))
+    def add(group, crit, thr, vals, oks, rule=""):
+        rows.append((group, crit, thr, vals, oks, rule))
 
     P = PROGS
     # stack10, sleep off
@@ -188,29 +228,38 @@ def build_table(M):
     # pile200
     pl = {p: [M[p][f"pile-s{k}"] for k in SEEDS] for p in P}
     asl = {p: [e["log"].get("asleep") for e in pl[p]] for p in P}
+    outcome = {"pile200": [], "chip": [], "ratio": []}  # each impact scene's outcome rows (the post-hoc rms rows' verdicts)
+    oks = {p: all(x is not None for x in asl[p]) for p in P}
+    outcome["pile200"].append(oks)
     add("pile200, 8 seeds, sleep on, 3,600 ticks", "seeds with every body asleep by tick 3,600", "8 of 8",
-        {p: f"{sum(x is not None for x in asl[p])} of 8" for p in P}, {p: all(x is not None for x in asl[p]) for p in P})
+        {p: f"{sum(x is not None for x in asl[p])} of 8" for p in P}, oks)
     med = {p: statistics.median([x if x is not None else 3601 for x in asl[p]]) for p in P}
     lim = 1.5 * med["Box3D"]
+    oks = {p: med[p] <= lim for p in P}
+    outcome["pile200"].append(oks)
     add("", "tick every body asleep: median (max)", f"median <= 1.5 x Box3D's = {fmt(lim)}",
-        {p: f"{fmt(med[p])} ({fmt(max(x if x is not None else 3601 for x in asl[p]))})" for p in P}, {p: med[p] <= lim for p in P})
+        {p: f"{fmt(med[p])} ({fmt(max(x if x is not None else 3601 for x in asl[p]))})" for p in P}, oks)
     esc = {p: sum(len(e["m"]["escapes"]) for e in pl[p]) for p in P}
-    add("", "escapes (bodies outside the pit, any record)", "0", {p: str(esc[p]) for p in P}, {p: esc[p] == 0 for p in P})
-    fin = {p: min(e["log"]["final"] for e in pl[p]) for p in P}
-    finSeed = {p: min(SEEDS, key=lambda k: pl[p][k - 1]["log"]["final"]) for p in P}
-    add("", "deepest point at rest: every touching pair once every body sleeps (tick 3,600), worst seed (cm)", "<= 2 cm",
-        {p: f"{fmt(-fin[p] * 100, 3)} (seed {finSeed[p]})" for p in P}, {p: -fin[p] <= 0.02 for p in P})
+    oks = {p: esc[p] == 0 for p in P}
+    outcome["pile200"].append(oks)
+    add("", "escapes (bodies outside the pit, any record)", "0", {p: str(esc[p]) for p in P}, oks)
     rest = {p: min(e["log"]["deep_rest"] for e in pl[p]) for p in P}
     restSeed = {p: min(SEEDS, key=lambda k: pl[p][k - 1]["log"]["deep_rest"]) for p in P}
-    add("", "deepest point in the 60 ticks before every body sleeps (the solve line's \"at rest\"), worst seed (cm)",
-        "reported: not at rest (late impacts, see the details); 2 cm would fail Box3D",
-        {p: f"{fmt(-rest[p] * 100, 3)} (seed {restSeed[p]})" for p in P}, {p: None for p in P})
+    add("", "penetration: the deepest point in the 60 ticks before every body sleeps (the solve line's window: the original one), worst "
+        "seed (cm)", "<= 2 cm (DESIGN.md)",
+        {p: f"{fmt(-rest[p] * 100, 3)} (seed {restSeed[p]})" for p in P}, {p: -rest[p] <= 0.02 for p in P}, "design")
+    fin = {p: min(e["log"]["final"] for e in pl[p]) for p in P}
+    finSeed = {p: min(SEEDS, key=lambda k: pl[p][k - 1]["log"]["final"]) for p in P}
+    add("", "post hoc (window): penetration at rest, every touching pair once every body sleeps (tick 3,600), worst seed (cm); in place of "
+        "the row above", "<= 2 cm", {p: f"{fmt(-fin[p] * 100, 3)} (seed {finSeed[p]})" for p in P}, {p: -fin[p] <= 0.02 for p in P}, "post hoc")
     drop = {p: min(e["log"]["deep"] for e in pl[p]) for p in P}
     add("", "deepest point during the drop, worst seed (cm)", "(reported)", {p: fmt(-drop[p] * 100, 3) for p in P}, {p: None for p in P})
     # ratio
     m = {p: M[p]["ratio"]["m"] for p in P}
     for key, crit in (("heavy", "3 t box on the 1 kg box: outcome"), ("plate", "100 kg plate on four 0.05 kg chips: outcome")):
-        add("ratio" if key == "heavy" else "", crit, "Box3D's class", {p: m[p][key] for p in P}, {p: m[p][key] == m["Box3D"][key] for p in P})
+        oks = {p: m[p][key] == m["Box3D"][key] for p in P}
+        outcome["ratio"].append(oks)
+        add("ratio" if key == "heavy" else "", crit, "Box3D's class", {p: m[p][key] for p in P}, oks)
     # bounce
     m = {p: M[p]["bounce"]["m"] for p in P}
     add("bounce", "first apex (m), analytic 0.6875", "within 5% of the analytic",
@@ -227,11 +276,14 @@ def build_table(M):
         {p: abs(m[p]["slide"] - bsl) <= 0.02 * abs(bsl) for p in P})
     # chip
     m = {p: M[p]["chip"]["m"] for p in P}
+    oks = {p: m[p]["lowest"] > 0.0 and m[p]["final_y"] > 0.005 for p in P}
+    outcome["chip"].append(oks)
     add("chip", "lowest centre; last centre (m), half thickness 0.01", "no tunnelling: both above the ground",
-        {p: f"{fmt(m[p]['lowest'])}; {fmt(m[p]['final_y'])}" for p in P},
-        {p: m[p]["lowest"] > 0.0 and m[p]["final_y"] > 0.005 for p in P})
+        {p: f"{fmt(m[p]['lowest'])}; {fmt(m[p]['final_y'])}" for p in P}, oks)
+    oks = {p: m[p]["asleep"] is not None and m[p]["stays"] for p in P}
+    outcome["chip"].append(oks)
     add("", "asleep from tick (stays asleep)", "sleeps and stays asleep",
-        {p: f"{fmt(m[p]['asleep'])} ({'stays' if m[p]['stays'] else 'wakes'})" for p in P}, {p: m[p]["asleep"] is not None and m[p]["stays"] for p in P})
+        {p: f"{fmt(m[p]['asleep'])} ({'stays' if m[p]['stays'] else 'wakes'})" for p in P}, oks)
     # arm (step 6): the servo joint (0) and the limited joint (1)
     m = {p: M[p]["arm"]["m"] for p in P}
     dp = M["Dp"]["arm"]["m"]
@@ -247,45 +299,84 @@ def build_table(M):
     add("", "limited joint: overshoot beyond its limits (+-0.5 rad), largest over the run (mrad)", "<= 10 mrad (0.01 rad)",
         {p: fmt(m[p][1]["overshoot"] * 1e3, 3) for p in P}, {p: m[p][1]["overshoot"] <= 0.01 for p in P})
     sat = {p: sum(e["log"].get("saturations", 0) for e in M[p].values()) for p in ("D", "F", "V4")}
-    add("every run", "saturation counters, summed over every run", "V4: 0", {"Box3D": "-", **{p: str(sat[p]) for p in sat}},
-        {"Box3D": None, "D": None, "F": None, "V4": sat["V4"] == 0})
-    # the first 120 ticks against D
-    for name, label, judged in (("stack-off", "stack10 (sleep off)", True), ("bounce", "bounce", True), ("ramp", "ramp", True),
-                                ("chip", "chip", False), ("ratio", "ratio", False)):
+    oks = {"Box3D": None, "D": None, "F": None, "V4": sat["V4"] == 0}
+    outcome["chip"].append(oks)  # DESIGN's chip row: "V4 saturation counters at 0"
+    add("every run", "saturation counters, summed over every run", "V4: 0", {"Box3D": "-", **{p: str(sat[p]) for p in sat}}, oks)
+    # the first 120 ticks against D, every scene (DESIGN.md: "position rms against D <= 1e-5 m for F and <= 1e-4 m for V4")
+    chaos = {}
+    for name, label, scene, rule in (("stack-off", "stack10 (sleep off)", None, ""), ("bounce", "bounce", None, ""), ("ramp", "ramp", None, ""),
+                                      ("chip", "chip", "chip", "design"), ("ratio", "ratio", "ratio", "design"), ("arm", "arm", None, "")):
         r = {p: rms_of(M, p, name)["rms"] for p in ("Box3D", "F", "V4", "Dp")}
-        thr = "F <= 1e-5 m, V4 <= 1e-4 m" if judged else "reported (impacts: judged by outcome)"
-        add("position rms against D, ticks 1-120 (m)" if name == "stack-off" else "", label, thr,
+        chaos[name] = r["Dp"]
+        note = ""
+        if scene:  # chip and ratio: D moved 1e-9 m moves under 1e-6 m, so a miss is the dialect's arithmetic (NOTES.md)
+            note = "; not chaotic (D moved 1e-9 m moves under 1e-6 m): a miss is arithmetic"
+        elif name == "arm":
+            note = "; the stack (reached near tick 245) parts from D's at tick 1 on its face-on ties, the links agree (the details)"
+        add("position rms against D, ticks 1-120 (m), every scene (DESIGN.md)" if name == "stack-off" else "", label + note,
+            "F <= 1e-5 m, V4 <= 1e-4 m",
             {"Box3D": fmt(r["Box3D"], 3), "D": f"moved 1e-9 m: {fmt(r['Dp'], 3)}", "F": fmt(r["F"], 3), "V4": fmt(r["V4"], 3)},
-            {"Box3D": None, "D": None, "F": r["F"] <= 1e-5 if judged else None, "V4": r["V4"] <= 1e-4 if judged else None})
+            {"Box3D": None, "D": None, "F": r["F"] <= 1e-5, "V4": r["V4"] <= 1e-4}, rule)
     pr = {p: pooled_rms(M, p) for p in ("Box3D", "F", "V4", "Dp")}
-    add("", "pile200, 8 seeds pooled (worst seed)", "reported (impacts: judged by outcome)",
+    add("", f"pile200, 8 seeds pooled (worst seed); chaotic: D moved 1e-9 m moves {fmt(pr['Dp'][0], 3)} m", "F <= 1e-5 m, V4 <= 1e-4 m",
         {"Box3D": f"{fmt(pr['Box3D'][0], 3)} ({fmt(pr['Box3D'][1], 3)})",
          "D": f"moved 1e-9 m: {fmt(pr['Dp'][0], 3)} ({fmt(pr['Dp'][1], 3)})",
          "F": f"{fmt(pr['F'][0], 3)} ({fmt(pr['F'][1], 3)})",
          "V4": f"{fmt(pr['V4'][0], 3)} ({fmt(pr['V4'][1], 3)})"},
-        {p: None for p in P})
+        {"Box3D": None, "D": None, "F": pr["F"][0] <= 1e-5, "V4": pr["V4"][0] <= 1e-4}, "design")
+    # the post-hoc judgement of the impact scenes (step 4b): by their outcome rows instead of the rms
+    for scene, label in (("chip", "chip"), ("ratio", "ratio"), ("pile200", "pile200")):
+        rowsOk = outcome[scene]
+        vals, oks = {}, {}
+        for p in P:
+            judged = [o[p] for o in rowsOk if o[p] is not None]
+            vals[p] = f"{sum(judged)} of {len(judged)} outcome rows pass" if p in ("F", "V4") else "-"
+            oks[p] = all(judged) if p in ("F", "V4") else None
+        add("", f"post hoc (impacts): {label} judged by its outcome rows above, in place of its rms row", "every outcome row passes", vals, oks,
+            "post hoc")
     return rows
 
 
 def table_md(rows):
-    out = ["| scene | criterion | threshold | Box3D | D | F | V4 | Box3D: verdict | D: verdict | F: verdict | V4: verdict |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
-    for group, crit, thr, vals, oks in rows:
-        out.append(f"| {group} | {crit} | {thr} | " + " | ".join(vals[p] for p in PROGS) + " | " +
+    out = ["| scene | criterion | rule | threshold | Box3D | D | F | V4 | Box3D: verdict | D: verdict | F: verdict | V4: verdict |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    rule_text = {"": "as written", "design": "as written (relaxed post hoc)", "post hoc": "**post hoc**"}
+    for group, crit, thr, vals, oks, rule in rows:
+        out.append(f"| {group} | {crit} | {rule_text[rule]} | {thr} | " + " | ".join(vals[p] for p in PROGS) + " | " +
                    " | ".join(verdict(oks[p]) for p in PROGS) + " |")
     return "\n".join(out)
 
 
-def summary(rows):
-    lines = []
+def counts(rows, posthoc):
+    """Per program: (passes, judged, failing rows) under DESIGN's rules as written (posthoc False: every row but the post-hoc
+    ones) or with the post-hoc rows in place of the rows they relax (posthoc True)."""
     groups, g = [], ""
     for row in rows:
         g = row[0] or g
         groups.append(g)
+    out = {}
     for p in PROGS:
-        judged = [(g, c, oks[p]) for g, (_, c, _, _, oks) in zip(groups, rows) if oks[p] is not None]
+        judged = [(g, c, oks[p]) for g, (_, c, _, _, oks, rule) in zip(groups, rows)
+                  if oks[p] is not None and (rule == "" or rule == ("post hoc" if posthoc else "design"))]
         fails = [f"{g}: {c}" for g, c, ok in judged if not ok]
-        lines.append(f"- **{p}**: {len(judged) - len(fails)} of {len(judged)} pass" + (f"; fails: {'; '.join(fails)}" if fails else ""))
+        out[p] = (len(judged) - len(fails), len(judged), fails)
+    return out
+
+
+def headline(rows, posthoc):
+    c = counts(rows, posthoc)
+    return ", ".join(f"{p} {c[p][0]} of {c[p][1]}" for p in PROGS)
+
+
+def summary(rows):
+    lines = [f"- **Under DESIGN.md's rules as written** (every judged row but the post-hoc ones): **{headline(rows, False)}**.",
+             f"- **With the post-hoc rows** (each in place of the row it relaxes: the rms of chip, ratio and pile200 judged by their outcome "
+             f"rows, pile200's penetration after every body sleeps): {headline(rows, True)}.", ""]
+    for posthoc, label in ((False, "as written"), (True, "with the post-hoc rows")):
+        c = counts(rows, posthoc)
+        for p in PROGS:
+            if c[p][2]:
+                lines.append(f"- {p} fails ({label}): " + "; ".join(c[p][2]))
     return "\n".join(lines)
 
 
@@ -358,6 +449,11 @@ def details_md(M):
     out.append("| arm: the servo's largest lag behind its target (rad) | " + " | ".join(fmt(m[p][0]["track"], 3) for p in P) + " |")
     out.append("| arm: the limited joint's records at a limit (within 1 mrad or beyond), of 1,200; its angles' range (rad) | " + " | ".join(
         f"{m[p][1]['atLimit']}; {fmt(m[p][1]['range'][0], 4)} to {fmt(m[p][1]['range'][1], 4)}" for p in P) + " |")
+    sp = {p: [metrics.rms(M[p]["arm"]["traj"], M["D"]["arm"]["traj"], bodies=s)["rms"] for s in ([2, 3], [4, 5, 6, 7])] for p in ("Box3D", "F", "V4", "Dp")}
+    out.append("| arm: position rms against D, ticks 1-120 (m): the links (bodies 2 and 3); the stack (bodies 4 to 7, not yet reached: its "
+               "face-on contacts are ties from tick 1, NOTES.md step 6) | " + " | ".join(
+                   f"{fmt(sp[p][0], 3)}; {fmt(sp[p][1], 3)}" for p in ("Box3D",)) + " | moved 1e-9 m: " + f"{fmt(sp['Dp'][0], 3)}; {fmt(sp['Dp'][1], 3)}" +
+               " | " + " | ".join(f"{fmt(sp[p][0], 3)}; {fmt(sp[p][1], 3)}" for p in ("F", "V4")) + " |")
     out.append("| arm: the gap over ticks 30 to 90 (the sweep, the limited link resting on a limit, before the arm turns), largest (mm): "
                "servo joint; limited joint | " + " | ".join(
                    f"{fmt(m[p][0]['gapSweep'] * 1e3, 3)}; {fmt(m[p][1]['gapSweep'] * 1e3, 3)}" for p in P) + " |")
@@ -378,6 +474,7 @@ def main():
     p.add_argument("--compiler", default="msvc")
     p.add_argument("--out", default=os.path.join(LAB, "build", "toy-scratch", "4b"))
     p.add_argument("--jobs", type=int, default=8)
+    p.add_argument("--threads", default="1", help="the twins' thread counts (1,8: they must agree; fewer jobs then)")
     p.add_argument("--no-run", action="store_true")
     p.add_argument("--md", default=os.path.join(TOY, "results", "decision1.md"))
     a = p.parse_args()
@@ -389,8 +486,13 @@ def main():
             sys.exit(1)
     M = measure(a)
     rows = build_table(M)
+    problems = health(M)
+    for x in problems:
+        print("PROBLEM: " + x)
     text = ["# Decision point 1: the acceptance table", "",
-            "Generated by `lab/gpu/toy/accept.py` (step 4b, rerun after step 5a's two corrections; step 6 added the arm's rows; DESIGN.md \"Scenes and acceptance\", NOTES.md steps 4b, 5 and 6). Values: Box3D "
+            "Generated by `lab/gpu/toy/accept.py` (step 4b, rerun after step 5a's two corrections; step 6 added the arm's rows; the reviews "
+            "made every rule as DESIGN.md wrote it a judged row and marked the later judgements post hoc; DESIGN.md \"Scenes and acceptance\", "
+            "NOTES.md steps 4b, 5, 6 and the reviews' entry). Values: Box3D "
             "(`b3ref2`, Box3D's own solver on the toy's scenes), the toy's twins D (double), F (float) and V4 (block-scaled int32), "
             f"{a.compiler}, one thread. The last four columns: PASS or FAIL of each program against the threshold (the decision "
             "is F's and V4's; Box3D's and D's verdicts say whether the bar is fair). Each FAIL's diagnosis, the judgement calls "
@@ -402,6 +504,14 @@ def main():
             "python lab/gpu/toy/accept.py        # about a minute; trajectories and logs in lab/gpu/build/toy-scratch/4b",
             "```", "",
             "## Summary", "", summary(rows), "",
+            "The rule column: *as written* is DESIGN.md's rule, counted in both headlines; *as written (relaxed post hoc)* is one a "
+            "post-hoc row replaces in the second headline; **post hoc** marks a judgement chosen after the results were seen (step 4b: the "
+            "impact scenes' rms judged by their outcome rows; pile200's penetration measured once every body sleeps, after the original "
+            "window failed Box3D too). chip and ratio are not chaotic (D moved 1e-9 m moves 5e-8 and 7e-7 m), so F's and V4's misses there "
+            "are their arithmetic (NOTES.md, the reviews' entry: the chip's impact turns a spin error into a resting place, and a velocity "
+            "difference moves it far more than a position one; V4's ratio parts at tick 1 in two chips under the 2,000:1 plate); pile200 is "
+            "(D against itself moved 1e-9 m: about 0.017 m). The yardstick moves every body alike, so it keeps a stack's ties: the arm's "
+            "stack parts from D's at tick 1 in F and V4 alike (step 6's finding) while D moved 1e-9 m stays within 1e-9 m.", "",
             "## The table", "", table_md(rows), "",
             "## Details", "", details_md(M), "",
             "## How each number is measured", "",
@@ -415,11 +525,12 @@ def main():
             "Resting speed: the mean of its linear speed over the last 600 ticks.",
             "- pile200: escapes are dynamic bodies whose centre is ever outside |x|, |z| <= 2 m (the walls' inner faces) or below "
             "the floor's top (y < 0) in any record. Penetration: the deepest manifold point (the narrowphase's separation at the "
-            "start of a tick, before the solve; the same quantity in both programs). At rest (judged): over every touching pair "
-            "after tick 3,600, when every body sleeps (the sleeping pairs' manifolds as they fell asleep; the rest line). The "
-            "solve line's two (reported): among the pairs with a body stepped that tick, over the run (\"during the drop\") and "
-            "over the 60 ticks before every body sleeps; that window is not rest (the pile sleeps as one island, so 195 to 198 of "
-            "200 bodies are still awake in it, and its deepest points are late slides and falls at 0.1 to 4 m/s).",
+            "start of a tick, before the solve; the same quantity in both programs). The original window (judged as written): the "
+            "solve line's, among the pairs with a body stepped that tick, over the 60 ticks before every body sleeps; it is not rest "
+            "(the pile sleeps as one island, so 195 to 198 of 200 bodies are still awake in it, and its deepest points are late "
+            "slides and falls at 0.1 to 4 m/s). At rest (post hoc): over every touching pair after tick 3,600, when every body "
+            "sleeps (the sleeping pairs' manifolds as they fell asleep; the rest line). During the drop (reported): the solve "
+            "line's over the run.",
             "- ratio: outcome classes from the last record (metrics.py's `ratio`): the 3 t box rests (centre >= 0.95 m), is partly "
             "sunk, or ends on the ground (<= 0.55 m) crushed through the 1 kg box (still under it) or having pushed it aside; the "
             "plate rests (centre >= 0.04 m), is partly sunk, or sinks through the chips (<= 0.03 m), or the chips are squeezed out.",
@@ -438,10 +549,10 @@ def main():
             "includes Box3D's soft joint's sag under the links' weight, about 0.5 mm in every program). The overshoot: how far "
             "the limited joint's angle went beyond -0.5 or 0.5 rad, largest over the run. The axis misalignment: the angle "
             "between the two hinge axes.",
-            "- Position rms against D over ticks 1 to 120: the dynamic bodies' centres, as toy.c's --pos-ref. D moved 1e-9 m: D "
-            "with every dynamic body's start moved 1e-9 m along x and along y (`--perturb`), against D: how much the scene "
-            "amplifies a tiny difference. Every program starts from the same values (step 5a), so F's and V4's differences are "
-            "their arithmetic's.",
+            "- Position rms against D over ticks 1 to 120, every scene: the dynamic bodies' centres (metrics.py's rms); pile200 "
+            "pooled over its eight seeds. D moved 1e-9 m: D with every dynamic body's start moved 1e-9 m along x and along y "
+            "(`--perturb`), against D: how much the scene amplifies a tiny difference. Every program starts from the same values "
+            "(step 5a), so F's and V4's differences are their arithmetic's.",
             ""]
     md = "\n".join(text)
     os.makedirs(os.path.dirname(a.md), exist_ok=True)

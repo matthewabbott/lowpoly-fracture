@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
-"""metrics.py: decision point 1's measurements (DESIGN.md "Scenes and acceptance") from trajectory files (traj.h's
-LPTRAJ1, written by the toy and by b3ref2) and from their logs' solve and rest lines.
+"""metrics.py: the toy's measurements, each computed once (DESIGN.md "Scenes and acceptance"), from trajectory files
+(traj.h's LPTRAJ1, written by the toy and by b3ref2; traj.py reads them) and from their logs' solve and rest lines.
+accept.py builds decision point 1's table from them (gate.py's gate 4 runs it), gate 2 compares the dialects with
+`rms`, and `summary` prints a scene's numbers in one line.
 
-  python lab/gpu/toy/metrics.py FILE --scene stack10|pile200|bounce|ramp|ratio|chip [--ref D.traj] [--log LOG]
+  python lab/gpu/toy/metrics.py FILE --scene stack10|pile200|bounce|ramp|ratio|chip|arm [--ref D.traj] [--log LOG]
 
-Each function takes a traj.Traj and returns a dict (accept.py builds the acceptance table from them):
+Each function takes a traj.Traj and returns a dict:
 - stack: the top cube's drift (horizontal, from its position at tick 60 to the end, as the brief has it; from tick 600,
   once the first seconds' sway (`sway`, the largest excursion over the first 10 s) has died; from the start), sink,
-  yaw (the end against the start, and the largest over the run), tilt, its mean speed over the last 10 s and the largest
-  in the last second; the cubes' mean speed over the last 10 s; when every cube sleeps and whether it stays asleep.
+  yaw (the end against the start, and the largest over the run), tilt, its mean speed over the last 10 s and its
+  largest speed and spin in the last second; the cubes' mean speed over the last 10 s; when every cube sleeps and
+  whether it stays asleep.
 - pile: escapes (a dynamic body's centre outside the pit, |x| or |z| over 2 m (the walls' inner faces), or below the
-  floor's top, in any record), when every body sleeps.
-- ratio: the outcome class of each half (the 3 t box on the 1 kg box; the plate on the chips).
-- bounce: the first apex against the analytic 0.6875 m.
-- ramp: the 0.6 box's travel down the slope (from the start; and its creep from tick 60) and its speed at the end; the
-  0.2 box's distance down the slope at tick 180 (3 s, still on the ramp).
-- chip: its lowest and last centre, when it sleeps and whether it stays asleep.
-- rms: position rms against a reference trajectory over ticks 1 to 120 (dynamic bodies), as toy.c's --pos-ref.
+  floor's top, in any record), when every body sleeps, the bodies awake and the highest centre at the end.
+- ratio: the outcome class of each half (the 3 t box on the 1 kg box; the plate on the chips); the boxes' and the
+  plate's sink and drift.
+- bounce: the impact (the lowest centre, the fastest fall) and the first apex against the analytic 0.6875 m.
+- ramp: the 0.6 box's travel down the slope (from the start; its creep from tick 60) and its speed at the end; the 0.2
+  box's distance down the slope at tick 180 (3 s, still on the ramp) and at the end; both boxes' accelerations down the
+  slope (a least-squares parabola over ticks 30 to 150; the sliding one's analytic g (sin - mu cos)).
+- chip: its lowest and last centre, when it stops (under 0.05 m/s from then on), when it sleeps and whether it stays
+  asleep.
+- arm: per joint, the largest gap, overshoot, axis misalignment and servo tracking error, and the angle track
+  (angle_diff compares two runs').
+- rms: position rms against a reference trajectory over ticks lo to hi (dynamic bodies), the largest difference and
+  where, and the orientations' rms and largest angle (gate 2's dialects against D).
 - parse_log: the solve line (when every body sleeps, the deepest point over the run and at rest) and the rest line (the
   deepest point over every touching pair after the last tick), the toy's saturations, threads and sentinel.
 """
@@ -32,6 +41,7 @@ from traj import Traj, dynamic, norm, qconj, qmul, rel_angles  # noqa: E402
 PIT = 2.0  # the walls' inner faces (pile200: walls at +-2.25, 0.25 thick)
 SLOPE = math.radians(25.0)
 DOWN = (-math.cos(SLOPE), -math.sin(SLOPE), 0.0)  # down the ramp (scene.c's ramp rises along +x)
+MU_SLIDE = math.sqrt(0.12)  # the 0.2 box on the 0.6 ramp, Box3D's mixing sqrt( fA fB )
 
 
 def index_at(t, tick):
@@ -73,6 +83,8 @@ def stack(t):
     last1 = [k for k in range(len(t.ticks)) if t.ticks[k] > end - 60]
     first, stay, stays = sleep_info(t, dyn)
     return {
+        "top": top,
+        "end": end,
         "drift": math.hypot(p1[0] - p60[0], p1[2] - p60[2]),
         "drift0": math.hypot(p1[0] - p0[0], p1[2] - p0[2]),
         "drift600": math.hypot(p1[0] - p600[0], p1[2] - p600[2]),
@@ -84,6 +96,7 @@ def stack(t):
         "speed": sum(norm(t.rec[k][top][2]) for k in last10) / max(1, len(last10)),
         "speedall": sum(norm(t.rec[k][i][2]) for k in last10 for i in dyn) / max(1, len(last10) * len(dyn)),
         "speedmax1": max(norm(t.rec[k][top][2]) for k in last1),
+        "spinmax1": max(norm(t.rec[k][top][3]) for k in last1),
         "asleep": first,
         "asleepstay": stay,
         "stays": stays,
@@ -99,7 +112,7 @@ def pile(t):
             if abs(p[0]) > PIT or abs(p[2]) > PIT or p[1] < 0.0:
                 out.add(i)
     first, stay, stays = sleep_info(t, dyn)
-    return {"escapes": sorted(out), "asleep": first, "asleepstay": stay, "stays": stays,
+    return {"escapes": sorted(out), "asleep": first, "asleepstay": stay, "stays": stays, "end": t.ticks[-1],
             "awake_end": sum(1 for i in dyn if t.rec[-1][i][4]), "top": max(t.rec[-1][i][0][1] for i in dyn)}
 
 
@@ -130,8 +143,10 @@ def ratio(t):
     else:
         b = "partly sunk"
     first, stay, stays = sleep_info(t, dynamic(t))
+    sink = {i: t.rec[0][i][0][1] - last[i][0][1] for i in (1, 2, 7)}
+    drift = {i: math.hypot(last[i][0][0] - t.rec[0][i][0][0], last[i][0][2] - t.rec[0][i][0][2]) for i in (1, 2, 7)}
     return {"heavy": a, "plate": b, "big_y": big[1], "small_y": small[1], "plate_y": plate[1],
-            "chips_y": [last[i][0][1] for i in range(3, 7)], "asleep": stay}
+            "chips_y": [last[i][0][1] for i in range(3, 7)], "asleep": stay, "sink": sink, "drift": drift}
 
 
 def bounce(t):
@@ -141,25 +156,59 @@ def bounce(t):
     apex = max(ys[k:])
     want = 0.25 + 0.25 * 1.75
     return {"apex": apex, "analytic": want, "error": (apex - want) / want, "rise": (apex - 0.25) / (want - 0.25),
-            "lowest": ys[k], "apex_tick": t.ticks[k + ys[k:].index(apex)]}
+            "lowest": ys[k], "impact_tick": t.ticks[k], "vmin": min(r[2][1] for r in s), "apex_tick": t.ticks[k + ys[k:].index(apex)]}
+
+
+def fit_accel(pts):
+    """d = a + b t + c t^2 by least squares; the acceleration 2c."""
+    S = [[0.0] * 3 for _ in range(3)]
+    r = [0.0] * 3
+    for x, y in pts:
+        b = (1.0, x, x * x)
+        for i in range(3):
+            r[i] += b[i] * y
+            for j in range(3):
+                S[i][j] += b[i] * b[j]
+    for i in range(3):  # Gaussian elimination
+        p = S[i][i]
+        for j in range(i + 1, 3):
+            f = S[j][i] / p
+            for k in range(3):
+                S[j][k] -= f * S[i][k]
+            r[j] -= f * r[i]
+    c = [0.0] * 3
+    for i in (2, 1, 0):
+        c[i] = (r[i] - sum(S[i][k] * c[k] for k in range(i + 1, 3))) / S[i][i]
+    return 2.0 * c[2]
 
 
 def ramp(t, at=180):
     def along(i, k):
         s = t.track(i)
         return sum((s[k][0][j] - s[0][0][j]) * DOWN[j] for j in range(3))
+
+    def accel(i):
+        pts = [(t.ticks[k] * t.dt, along(i, k)) for k in range(len(t.ticks)) if 30 <= t.ticks[k] <= 150]
+        return fit_accel(pts) if len(pts) > 5 else float("nan")
     k60, kat, end = index_at(t, 60), index_at(t, at), len(t.ticks) - 1
     last1 = [k for k in range(len(t.ticks)) if t.ticks[k] > t.ticks[-1] - 60]
     return {"hold_travel": along(2, end), "hold_creep": along(2, end) - along(2, k60),
-            "hold_speed": max(norm(t.rec[k][2][2]) for k in last1),
-            "slide": along(3, kat), "slide_tick": t.ticks[kat]}
+            "hold_speed": max(norm(t.rec[k][2][2]) for k in last1), "hold_accel": accel(2),
+            "slide": along(3, kat), "slide_tick": t.ticks[kat], "slide_end": along(3, end), "slide_accel": accel(3),
+            "slide_analytic": 10.0 * (math.sin(SLOPE) - MU_SLIDE * math.cos(SLOPE)), "end": t.ticks[-1]}
 
 
 def chip(t):
     s = t.track(1)
     first, stay, stays = sleep_info(t, [1])
+    rest = None
+    for k in range(len(s)):
+        if norm(s[k][2]) < 0.05:
+            rest = t.ticks[k] if rest is None else rest
+        else:
+            rest = None
     return {"lowest": min(r[0][1] for r in s), "final_y": s[-1][0][1], "asleep": first, "asleepstay": stay, "stays": stays,
-            "end": s[-1][0]}
+            "end": s[-1][0], "rest": rest}
 
 
 JOINT = re.compile(r"^joint (\d+): bodies (\d+) (\d+) anchorA (\S+) (\S+) (\S+) anchorB (\S+) (\S+) (\S+) frameA (\S+) (\S+) (\S+) (\S+) "
@@ -256,13 +305,14 @@ def angle_diff(x, ref, lo=1, hi=120):
     return d, at
 
 
-def rms(t, ref, lo=1, hi=120):
-    """Position rms (m) of the dynamic bodies over ticks lo..hi against ref (both need those ticks recorded), and the
-    largest single difference."""
+def rms(t, ref, lo=1, hi=120, bodies=None):
+    """Over ticks lo..hi (both trajectories must record them), the dynamic bodies (or the listed ones): the position rms
+    (m), the largest position difference and its tick and body, and the orientations' rms and largest angle (rad; the
+    angle between two unit quaternions, 2 sqrt(1 - c^2) for small angles, c their normalised dot)."""
     a = {x: k for k, x in enumerate(t.ticks)}
     b = {x: k for k, x in enumerate(ref.ticks)}
-    dyn = dynamic(t)
-    s, n, mx = 0.0, 0, 0.0
+    dyn = dynamic(t) if bodies is None else bodies
+    s, n, mx, at, atBody, rs, rmx = 0.0, 0, 0.0, None, None, 0.0, 0.0
     for tick in range(lo, hi + 1):
         if tick not in a or tick not in b:
             raise ValueError(f"tick {tick} is not recorded in both trajectories")
@@ -271,8 +321,16 @@ def rms(t, ref, lo=1, hi=120):
             e = sum((ra[i][0][j] - rb[i][0][j]) ** 2 for j in range(3))
             s += e
             n += 1
-            mx = max(mx, e)
-    return {"rms": math.sqrt(s / max(1, n)), "max": math.sqrt(mx), "n": n, "sq": s}
+            if e > mx:
+                mx, at, atBody = e, tick, i
+            x, y = ra[i][1], rb[i][1]
+            dq = sum(x[j] * y[j] for j in range(4))
+            c2 = dq * dq / (sum(v * v for v in x) * sum(v * v for v in y))
+            ang2 = 4.0 * (1.0 - c2) if c2 < 1.0 else 0.0
+            rs += ang2
+            rmx = max(rmx, ang2)
+    return {"rms": math.sqrt(s / max(1, n)), "max": math.sqrt(mx), "at": at, "body": atBody, "n": n, "sq": s,
+            "rot_rms": math.sqrt(rs / max(1, n)), "rot_max": math.sqrt(rmx)}
 
 
 SOLVE = re.compile(r"^solve: (?:every dynamic body asleep from tick (\d+)|(\d+) bodies awake at the end); deepest point (\S+) m "
@@ -303,7 +361,7 @@ def parse_log(text):
     if m:
         out["threads"] = m.group(1)
         out["saturations"] = int(m.group(2))
-    out["sentinel"] = "TRIPPED" not in text
+    out["sentinel"] = "TRIPPED" not in text and "flushes subnormals" not in text
     m = re.search(r"^box3d: every dynamic body asleep after step (\d+)", text, re.M)
     if m:
         out["box3d_asleep"] = int(m.group(1))
@@ -314,6 +372,44 @@ def parse_log(text):
     if m:
         out["hull_differ"] = int(m.group(1))
     return out
+
+
+def tick_text(x):
+    return "never" if x is None else f"tick {x}"
+
+
+def summary(scene, m):
+    """One line of a scene's numbers from its measurement dict (for arm: the list of joints)."""
+    if scene == "stack10":
+        return (f"top cube (body {m['top']}) after tick {m['end']}: drift {m['drift0'] * 1e3:.4g} mm (from tick 600 {m['drift600'] * 1e3:.3g}), "
+                f"sink {m['sink'] * 1e3:.4g} mm, yaw {m['yaw']:.4g} deg, tilt {m['tilt']:.4g} deg; the last second's largest speed "
+                f"{m['speedmax1'] * 1e3:.4g} mm/s, spin {m['spinmax1']:.3g} rad/s; asleep from {tick_text(m['asleepstay'])}")
+    if scene == "pile200":
+        return (f"every body asleep from {tick_text(m['asleepstay'])} ({m['awake_end']} awake at tick {m['end']}); escapes "
+                f"{len(m['escapes'])}{' ' + str(m['escapes'][:8]) if m['escapes'] else ''}; highest centre {m['top']:.3f} m")
+    if scene == "bounce":
+        return (f"impact near tick {m['impact_tick']} (lowest centre {m['lowest']:.4f} m, fastest fall {m['vmin']:.4f} m/s; analytic -5.916), "
+                f"first apex {m['apex']:.4f} m at tick {m['apex_tick']} (analytic 0.6875 m: {100.0 * m['rise']:.1f}% of the rise)")
+    if scene == "ramp":
+        return (f"friction 0.6 (body 2): travel {m['hold_travel']:.4g} m by tick {m['end']}, acceleration (ticks 30-150) "
+                f"{m['hold_accel']:.4g} m/s^2; friction 0.2 (body 3): {m['slide']:.4g} m at tick {m['slide_tick']}, {m['slide_end']:.4g} m by "
+                f"tick {m['end']}, acceleration {m['slide_accel']:.4g} m/s^2 (analytic {m['slide_analytic']:.4g})")
+    if scene == "ratio":
+        names = {1: "1 kg box", 2: "3 t box", 7: "plate"}
+        return ("; ".join(f"{names[i]} sink {m['sink'][i] * 1e3:.4g} mm, drift {m['drift'][i] * 1e3:.4g} mm" for i in (1, 2, 7)) +
+                f"; chips' centres {', '.join(f'{y:.4f}' for y in m['chips_y'])} m (start 0.01); {m['heavy']}, {m['plate']}; asleep from "
+                f"{tick_text(m['asleep'])}")
+    if scene == "chip":
+        p = m["end"]
+        return (f"lowest centre {m['lowest']:.4f} m (half thickness 0.01), at rest from {tick_text(m['rest'])}, asleep from "
+                f"{tick_text(m['asleepstay'])}, ends at ({p[0]:.3f}, {p[1]:.4f}, {p[2]:.3f})")
+    if scene == "arm":
+        return "; ".join(f"joint {k}: gap {r['gap'] * 1e3:.3g} mm, overshoot {r['overshoot'] * 1e3:.3g} mrad, axis error "
+                         f"{r['swing'] * 1e3:.3g} mrad, angles {r['range'][0]:.3f} to {r['range'][1]:.3f}" for k, r in enumerate(m))
+    raise ValueError(f"no summary for scene {scene}")
+
+
+FNS = {"stack10": stack, "pile200": pile, "bounce": bounce, "ramp": ramp, "ratio": ratio, "chip": chip}
 
 
 def main():
@@ -339,12 +435,14 @@ def main():
                 line += f"; angle vs ref, ticks 1-120: {d * 1e3:.4g} mrad (tick {at})"
             print(line)
         return
-    fn = {"stack10": stack, "pile200": pile, "bounce": bounce, "ramp": ramp, "ratio": ratio, "chip": chip}[a.scene]
-    for k, v in fn(t).items():
+    m = FNS[a.scene](t)
+    print(f"{a.scene}: {summary(a.scene, m)}")
+    for k, v in m.items():
         print(f"{k}: {v}")
     if a.ref:
         r = rms(t, Traj(a.ref))
-        print(f"position rms against {a.ref}, ticks 1-120: {r['rms']:.3g} m (max {r['max']:.3g} m)")
+        print(f"position rms against {a.ref}, ticks 1-120: {r['rms']:.3g} m (max {r['max']:.3g} m, tick {r['at']}, body {r['body']}); "
+              f"rotation rms {r['rot_rms']:.3g} rad, max {r['rot_max']:.3g} rad")
     if a.log:
         for k, v in parse_log(open(a.log, errors="replace").read()).items():
             print(f"{k}: {v}")

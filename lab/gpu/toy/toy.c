@@ -1,15 +1,17 @@
 // toy.c: the toy's driver (DESIGN.md "Pipeline per tick" and "Comparing bits", steps 2 to 5). Builds a scene (double),
-// quantises it into the dialect and runs N ticks: the GPU stages as the kernels' C++ twin on a thread pool (E11's) and,
+// quantises it into the dialect and runs N ticks: the GPU stages as the kernels' C++ twin on the lab's thread pool and,
 // with --gpus, as their SPIR-V on each Vulkan GPU; the CPU stages between them (stages.c) on one readback (the AABBs, the
 // sleep counters, last tick's touching pairs); the narrowphase over the active pairs (manifolds ping-ponged, an inactive
 // pair's carried); the contact solve (prepare; per substep integrate velocities, warm start, push, integrate positions,
-// relax, per colour; restitution; the impulses stored back); a per-tick hash (the bodies' and the manifolds' element
-// hashes, read back and summed order-free per category, and the stages' decisions); on the twin, the floating-point
-// sentinel after every dispatch. Built once per dialect (toy_F, toy_V4, toy_D; D has no GPU kernels).
+// relax, per colour; restitution; the impulses stored back); a per-tick hash per category (the element hashes of the
+// bodies' state and pose, the manifolds, the joints, the bodies' prepared data (mass, world inertia, AABB) and the pairs'
+// working records (SAT record, constraint), read back and summed order-free, and the stages' decisions: every word a
+// tick writes is in one); on the twin, the floating-point sentinel after every dispatch (and a flushing mode at start
+// fails the run). Built once per dialect (toy_F, toy_V4, toy_D; D has no GPU kernels).
 //
 //   toy_F --scene pile200 --ticks 600 --threads 1,8 [--seed S] [--gravity G] [--sleep 0|1] [--recycle 0|1]
 //         [--push BODY,VX,VY,VZ] [--perturb EPS] [--gpus MASK | --gpu N] [--trace T] [--dispatch-hashes FILE]
-//         [--ref FILE] [--ref-out FILE] [--pos-out FILE] [--pos-ref FILE] [--traj FILE [--traj-every N]] [--log FILE]
+//         [--ref FILE] [--ref-out FILE] [--traj FILE [--traj-every N]] [--log FILE]
 //         [--quiet]                                                                       (run from lab/gpu)
 //
 // --gpus MASK (or --gpu N) runs the scene on each Vulkan GPU in the mask beside the twin and compares the per-tick
@@ -20,14 +22,15 @@
 // twin's buffers after every dispatch of the first run (to compare twins across machines). --ref-out FILE writes the
 // reference hashes (the config, every tick to 120 then every 60th, the run hash over every tick); --ref FILE checks the
 // twin's runs and every GPU's against them (so another machine is judged without Windows).
-// --pos-out writes every body's pose per tick (double); --pos-ref reads another dialect's (D's) and reports the
-// differences (rms, max) of the dynamic bodies' positions and orientations. --traj writes the first run's trajectory
-// (traj.h's LPTRAJ1: tick 0, then every Nth tick). --perturb moves every dynamic body's start by EPS m along x and
+// --traj writes the first run's trajectory (traj.h's LPTRAJ1: tick 0, then every Nth tick; metrics.py measures it, and
+// compares two dialects' positions and orientations). --perturb moves every dynamic body's start by EPS m along x and
 // along y (in the scene's doubles, before quantisation: step 4b's measure of how much a scene amplifies a tiny
 // difference; D keeps it, F and V4 round it away). Every scene starts from values every dialect holds exactly (scene.h's
 // scene_round_start; the start line checks it). TOY_DUMP_AABBS=T prints every body's AABB at tick T (1-thread runs).
 #include "fpflags.h"
+#include "hash.h"
 #include "layout.h"
+#include "pool.h"
 #include "quant.h"
 #include "scene.h"
 #include "stages.h"
@@ -41,15 +44,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined( _WIN32 )
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <sched.h>
-#include <stdatomic.h>
-#endif
-
 #if defined( DIALECT_F )
 #define DIALECT_NAME "F"
 #define HAS_GPU 1
@@ -61,7 +55,7 @@
 #define HAS_GPU 0
 #endif
 
-#define TOY_BUFFERS 22 // kernels.slang's bindings 0..21 (11, the counters, is the glue's)
+#define TOY_BUFFERS 24 // kernels.slang's bindings 0..23 (11, the counters, is the glue's)
 void toy_bind( void* const* bufs, const size_t* counts );
 const char* toy_twin_info( void );
 size_t toy_sizeof( int which );
@@ -121,19 +115,8 @@ static void say( const char* fmt, ... )
 	}
 }
 
-static uint64_t fnv( uint64_t h, const void* p, size_t n )
-{
-	const uint8_t* b = (const uint8_t*)p;
-	for ( size_t i = 0; i < n; ++i )
-	{
-		h ^= b[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
-
 // ---------------------------------------------------------------------------------------------------------------------
-// The dispatch list and the twin's thread pool (E11's: one barrier per dispatch)
+// The dispatch list and the twin's thread pool (the lab's, src/pool.h: one barrier per dispatch)
 // ---------------------------------------------------------------------------------------------------------------------
 
 typedef struct Dispatch
@@ -142,133 +125,36 @@ typedef struct Dispatch
 	uint32_t start, count, aux; // start and count into the list buffer
 } Dispatch;
 
-#if defined( _WIN32 )
-typedef volatile LONG PoolWord;
-#define POOL_LOAD( w ) ( *( w ) )
-#define POOL_STORE( w, v ) InterlockedExchange( ( w ), ( v ) )
-#define POOL_INC( w ) InterlockedIncrement( w )
-#define POOL_PAUSE() YieldProcessor()
-typedef HANDLE PoolThread;
-#else
-typedef atomic_long PoolWord;
-#define POOL_LOAD( w ) atomic_load_explicit( ( w ), memory_order_acquire )
-#define POOL_STORE( w, v ) atomic_store_explicit( ( w ), ( v ), memory_order_release )
-#define POOL_INC( w ) atomic_fetch_add_explicit( ( w ), 1, memory_order_acq_rel )
-#define POOL_PAUSE() sched_yield()
-typedef pthread_t PoolThread;
-#endif
+#define MAX_THREADS LAB_POOL_MAX
 
-#define MAX_THREADS 64
+static LabPool g_pool;
+static int g_fpFlags[MAX_THREADS]; // each thread's floating-point status after its chunk
 
-typedef struct Pool
+static void run_chunk( void* ctx, int t, int threads )
 {
-	int threads;
-	PoolThread handles[MAX_THREADS];
-	PoolWord generation;
-	PoolWord done;
-	PoolWord quit;
-	Dispatch job;
-	int fpFlags[MAX_THREADS]; // each thread's floating-point status after its chunk
-} Pool;
-
-static Pool g_pool;
-
-static void run_chunk( const Dispatch* d, int t, int threads )
-{
-	uint32_t groups = ( d->count + 63 ) / 64;
-	uint32_t g0 = (uint32_t)( ( (uint64_t)groups * (uint64_t)t ) / (uint64_t)threads );
-	uint32_t g1 = (uint32_t)( ( (uint64_t)groups * (uint64_t)( t + 1 ) ) / (uint64_t)threads );
+	const Dispatch* d = (const Dispatch*)ctx;
+	uint32_t g0, g1;
+	lab_pool_groups( d->count, t, threads, &g0, &g1 );
 	fp_clear();
 	if ( g1 > g0 )
 	{
 		toy_run( d->entry, d->start, d->count, d->aux, g0, g1, t );
 	}
-	g_pool.fpFlags[t] = fp_flags();
+	g_fpFlags[t] = fp_flags();
 }
 
-static void pool_work( int t )
-{
-	long seen = 0;
-	for ( ;; )
-	{
-		long g;
-		while ( ( g = POOL_LOAD( &g_pool.generation ) ) == seen )
-		{
-			if ( POOL_LOAD( &g_pool.quit ) )
-			{
-				return;
-			}
-			POOL_PAUSE();
-		}
-		seen = g;
-		Dispatch d = g_pool.job;
-		run_chunk( &d, t, g_pool.threads );
-		POOL_INC( &g_pool.done );
-	}
-}
-
-#if defined( _WIN32 )
-static DWORD WINAPI pool_worker( LPVOID arg )
-{
-	pool_work( (int)(intptr_t)arg );
-	return 0;
-}
-#else
-static void* pool_worker( void* arg )
-{
-	pool_work( (int)(intptr_t)arg );
-	return NULL;
-}
-#endif
-
-static void pool_start( int threads )
-{
-	memset( &g_pool, 0, sizeof( g_pool ) );
-	g_pool.threads = threads;
-	for ( int t = 1; t < threads; ++t )
-	{
-#if defined( _WIN32 )
-		g_pool.handles[t] = CreateThread( NULL, 0, pool_worker, (LPVOID)(intptr_t)t, 0, NULL );
-#else
-		pthread_create( &g_pool.handles[t], NULL, pool_worker, (void*)(intptr_t)t );
-#endif
-	}
-}
-
-static void pool_stop( void )
-{
-	POOL_STORE( &g_pool.quit, 1 );
-	for ( int t = 1; t < g_pool.threads; ++t )
-	{
-#if defined( _WIN32 )
-		WaitForSingleObject( g_pool.handles[t], INFINITE );
-		CloseHandle( g_pool.handles[t] );
-#else
-		pthread_join( g_pool.handles[t], NULL );
-#endif
-	}
-}
+static void pool_start( int threads ) { lab_pool_start( &g_pool, threads ); }
+static void pool_stop( void ) { lab_pool_stop( &g_pool ); }
 
 // Runs one dispatch on every pool thread; returns the threads' floating-point status, OR-ed
 static int pool_dispatch( const Dispatch* d )
 {
-	if ( g_pool.threads <= 1 )
-	{
-		run_chunk( d, 0, 1 );
-		return g_pool.fpFlags[0];
-	}
-	g_pool.job = *d;
-	POOL_STORE( &g_pool.done, 0 );
-	POOL_INC( &g_pool.generation ); // releases the job and the reset count
-	run_chunk( d, 0, g_pool.threads );
-	while ( POOL_LOAD( &g_pool.done ) < g_pool.threads - 1 )
-	{
-		POOL_PAUSE();
-	}
+	int threads = g_pool.threads > 1 ? g_pool.threads : 1;
+	lab_pool_run( &g_pool, run_chunk, (void*)d );
 	int m = 0;
-	for ( int t = 0; t < g_pool.threads; ++t )
+	for ( int t = 0; t < threads; ++t )
 	{
-		m |= g_pool.fpFlags[t];
+		m |= g_fpFlags[t];
 	}
 	return m;
 }
@@ -322,6 +208,8 @@ typedef struct TickRecord
 	uint64_t manifolds; // the manifolds' element hashes, summed
 	uint64_t stages;	// the CPU stages' decisions
 	uint64_t joints;	// the joints' element hashes, summed (0 without joints)
+	uint64_t bodyprep;	// the bodies' prepared data (mass with the world inertia, AABB), summed
+	uint64_t pairwork;	// the pairs' working records (SAT record, constraint, the manifold's pads), summed
 	int awake, pairs, active, colours, overflow, islands, largest, slept, woken, touching, points;
 	double minSep; // the deepest manifold point this tick (the narrowphase's separation, before the solve), m
 	int minSepA, minSepB;
@@ -337,6 +225,7 @@ typedef struct Sim
 	BodyMass* mass;
 	Aabb* aabbs;
 	Hash2* hashes;
+	Hash2* phashes; // the bodies' prepared data's hashes (category 4)
 	// the list buffer: [prepare (last tick's awake)] [awake] [woken] [all] then, per pair, [active] [inactive] [all]
 	// [by colour], pcap entries each
 	uint32_t* lists;
@@ -346,6 +235,7 @@ typedef struct Sim
 	Manifold* mf[2];
 	SatAxis* sat;
 	Hash2* mhashes;
+	Hash2* whashes; // the pairs' working records' hashes (category 5)
 	Constraint* cons;
 	NarrowDiag diag; // Params.narrowDiag is 0: never written
 	// the joints (fixed for the run): their state, hashes, this tick's commands, their bodies for the stages
@@ -396,6 +286,7 @@ static void sim_init( Sim* s, const ToyData* init )
 	memcpy( s->mass, init->mass, (size_t)n * sizeof( BodyMass ) );
 	s->aabbs = (Aabb*)calloc( (size_t)n, sizeof( Aabb ) );
 	s->hashes = (Hash2*)calloc( (size_t)n, sizeof( Hash2 ) );
+	s->phashes = (Hash2*)calloc( (size_t)n, sizeof( Hash2 ) );
 	s->jc = init->jointCount;
 	size_t jn = (size_t)( s->jc > 0 ? s->jc : 1 );
 	s->joints = (Joint*)calloc( jn, sizeof( Joint ) );
@@ -419,6 +310,7 @@ static void sim_init( Sim* s, const ToyData* init )
 	s->mf[1] = (Manifold*)calloc( (size_t)s->pcap, sizeof( Manifold ) );
 	s->sat = (SatAxis*)calloc( (size_t)s->pcap, sizeof( SatAxis ) );
 	s->mhashes = (Hash2*)calloc( (size_t)s->pcap, sizeof( Hash2 ) );
+	s->whashes = (Hash2*)calloc( (size_t)s->pcap, sizeof( Hash2 ) );
 	s->cons = (Constraint*)calloc( (size_t)s->pcap, sizeof( Constraint ) );
 	s->prevTouching = (uint8_t*)calloc( (size_t)s->pcap, 1 );
 	s->isStatic = (uint8_t*)malloc( (size_t)n );
@@ -453,6 +345,8 @@ static void sim_free( Sim* s )
 	free( s->mf[1] );
 	free( s->sat );
 	free( s->mhashes );
+	free( s->whashes );
+	free( s->phashes );
 	free( s->cons );
 	free( s->prevTouching );
 	free( s->isStatic );
@@ -472,12 +366,13 @@ static void sim_bind( Sim* s, int t )
 	const ToyData* d = s->init;
 	void* bufs[TOY_BUFFERS] = { d->hulls,	 d->points,	  d->faces,	   d->edges,	  s->state,				 s->pose,	s->mass,	s->aabbs,
 								s->lists,	 &s->params,  s->hashes,   NULL,		  s->st.pairs,			 s->mf[t & 1], s->mf[( t & 1 ) ^ 1],
-								s->sat,		 &s->diag,	  s->mhashes,  s->cons,		  s->joints,			 s->jhashes, s->jcmds };
+								s->sat,		 &s->diag,	  s->mhashes,  s->cons,		  s->joints,			 s->jhashes, s->jcmds,
+								s->phashes,	 s->whashes };
 	size_t counts[TOY_BUFFERS] = { (size_t)d->hullCount, (size_t)d->pointCount, (size_t)d->faceCount, (size_t)d->edgeCount, (size_t)s->n,
 								   (size_t)s->n,		 (size_t)s->n,			(size_t)s->n,		  LIST_WORDS( s ),		1,
 								   (size_t)s->n,		 0,						(size_t)s->st.pairCount, (size_t)s->pcap,	(size_t)s->pcap,
 								   (size_t)s->pcap,		 1,						(size_t)s->pcap,	  (size_t)s->pcap,		(size_t)s->jc,
-								   (size_t)s->jc,		 (size_t)s->jc };
+								   (size_t)s->jc,		 (size_t)s->jc,			(size_t)s->n,		  (size_t)s->pcap };
 	toy_bind( bufs, counts );
 }
 
@@ -529,6 +424,7 @@ static int sim_stages( Sim* s, int t )
 		s->mf[1] = (Manifold*)grow_zero( s->mf[1], (size_t)old, (size_t)cap, sizeof( Manifold ) );
 		s->sat = (SatAxis*)grow_zero( s->sat, (size_t)old, (size_t)cap, sizeof( SatAxis ) );
 		s->mhashes = (Hash2*)grow_zero( s->mhashes, (size_t)old, (size_t)cap, sizeof( Hash2 ) );
+		s->whashes = (Hash2*)grow_zero( s->whashes, (size_t)old, (size_t)cap, sizeof( Hash2 ) );
 		s->cons = (Constraint*)grow_zero( s->cons, (size_t)old, (size_t)cap, sizeof( Constraint ) );
 		s->prevTouching = (uint8_t*)grow_zero( s->prevTouching, (size_t)old, (size_t)cap, 1 );
 		size_t words = LIST_WORDS( s );
@@ -630,6 +526,18 @@ static void sim_record( const Sim* s, int t, TickRecord* rec, int full )
 		sum += (uint64_t)s->jhashes[k].lo | ( (uint64_t)s->jhashes[k].hi << 32 );
 	}
 	rec->joints = sum;
+	sum = 0;
+	for ( int i = 0; i < s->n; ++i )
+	{
+		sum += (uint64_t)s->phashes[i].lo | ( (uint64_t)s->phashes[i].hi << 32 );
+	}
+	rec->bodyprep = sum;
+	sum = 0;
+	for ( int k = 0; k < st->pairCount; ++k )
+	{
+		sum += (uint64_t)s->whashes[k].lo | ( (uint64_t)s->whashes[k].hi << 32 );
+	}
+	rec->pairwork = sum;
 	rec->minSep = 1e30;
 	rec->minSepA = -1;
 	rec->minSepB = -1;
@@ -686,9 +594,11 @@ enum
 	V_CONS,
 	V_JOINT,
 	V_JHASH,
+	V_PHASH,
+	V_WHASH,
 	V_COUNT
 };
-static const int g_viewBinding[V_COUNT] = { 4, 5, 6, 7, 10, 13, 14, 15, 17, 18, 19, 20 }; // the GPU's buffer slots (13, 14: mf[0], mf[1])
+static const int g_viewBinding[V_COUNT] = { 4, 5, 6, 7, 10, 13, 14, 15, 17, 18, 19, 20, 22, 23 }; // the GPU's slots (13, 14: mf[0], mf[1])
 
 typedef struct View
 {
@@ -700,10 +610,11 @@ static View sim_view( const Sim* s )
 {
 	View v;
 	size_t n = (size_t)s->n, pc = (size_t)s->pcap, jc = (size_t)s->jc;
-	void* p[V_COUNT] = { s->state, s->pose, s->mass, s->aabbs, s->hashes, s->mf[0], s->mf[1], s->sat, s->mhashes, s->cons, s->joints, s->jhashes };
+	void* p[V_COUNT] = { s->state, s->pose,	   s->mass,	  s->aabbs,	 s->hashes, s->mf[0], s->mf[1],
+						 s->sat,   s->mhashes, s->cons,	  s->joints, s->jhashes, s->phashes, s->whashes };
 	size_t b[V_COUNT] = { n * sizeof( BodyState ), n * sizeof( BodyPose ),	n * sizeof( BodyMass ), n * sizeof( Aabb ),	  n * sizeof( Hash2 ),
 						  pc * sizeof( Manifold ), pc * sizeof( Manifold ), pc * sizeof( SatAxis ), pc * sizeof( Hash2 ), pc * sizeof( Constraint ),
-						  jc * sizeof( Joint ),	   jc * sizeof( Hash2 ) };
+						  jc * sizeof( Joint ),	   jc * sizeof( Hash2 ),	n * sizeof( Hash2 ),	pc * sizeof( Hash2 ) };
 	memcpy( v.p, p, sizeof( p ) );
 	memcpy( v.bytes, b, sizeof( b ) );
 	return v;
@@ -751,15 +662,10 @@ static void snap_free( Snap* s )
 // buffers start zeroed and grow zeroed, pads are written)
 static uint64_t view_hash( const View* v )
 {
-	uint64_t h = 1469598103934665603ULL;
+	uint64_t h = LAB_FNV0;
 	for ( int i = 0; i < V_COUNT; ++i )
 	{
-		const uint32_t* w = (const uint32_t*)v->p[i];
-		for ( size_t k = 0; k < v->bytes[i] / 4; ++k )
-		{
-			h ^= w[k];
-			h *= 1099511628211ULL;
-		}
+		h = lab_fnv_words( h, (const uint32_t*)v->p[i], v->bytes[i] / 4 );
 	}
 	return h;
 }
@@ -890,7 +796,8 @@ static const struct
 					   { "hashes", sizeof( Hash2 ), FIELDS( g_fHash ) },			{ "manifolds[0]", sizeof( Manifold ), FIELDS( g_fManifold ) },
 					   { "manifolds[1]", sizeof( Manifold ), FIELDS( g_fManifold ) }, { "satAxes", sizeof( SatAxis ), FIELDS( g_fSat ) },
 					   { "manifoldHashes", sizeof( Hash2 ), FIELDS( g_fHash ) },	{ "constraints", sizeof( Constraint ), FIELDS( g_fCons ) },
-					   { "joints", sizeof( Joint ), FIELDS( g_fJoint ) },			{ "jointHashes", sizeof( Hash2 ), FIELDS( g_fHash ) } };
+					   { "joints", sizeof( Joint ), FIELDS( g_fJoint ) },			{ "jointHashes", sizeof( Hash2 ), FIELDS( g_fHash ) },
+					   { "bodyPrepHashes", sizeof( Hash2 ), FIELDS( g_fHash ) },	{ "pairWorkHashes", sizeof( Hash2 ), FIELDS( g_fHash ) } };
 
 static const Field* field_at( int view, size_t offset )
 {
@@ -992,7 +899,6 @@ static long long view_compare( const View* a, const View* b, const char* labelA,
 typedef struct RunResult
 {
 	TickRecord* ticks; // [1, ticks]
-	double* pos;	   // per tick, per body, xyz (when kept)
 	double msPerTick;
 	uint32_t saturations;
 	int fpFailures;
@@ -1059,24 +965,6 @@ static void twin_tick( Sim* s, int t, RunResult* r )
 	twin_list( s, s->list, s->listCount, t, 1, r );
 }
 
-// The recorded pose per body per tick: position and quaternion (x, y, z, s), in double
-#define POSW 7
-
-static void record_poses( double* out, const BodyPose* pose, int n )
-{
-	for ( int i = 0; i < n; ++i )
-	{
-		double* p = out + (size_t)i * POSW;
-		p[0] = toy_pos_x( &pose[i].p );
-		p[1] = toy_pos_y( &pose[i].p );
-		p[2] = toy_pos_z( &pose[i].p );
-		p[3] = toy_val( pose[i].q.x, S_Q );
-		p[4] = toy_val( pose[i].q.y, S_Q );
-		p[5] = toy_val( pose[i].q.z, S_Q );
-		p[6] = toy_val( pose[i].q.s, S_Q );
-	}
-}
-
 // One trajectory record: every body's pose and velocities converted exactly to double, awake (stepped this tick), static.
 // A body not stepped this tick (asleep, static) has zero velocities, as Box3D reports them (the toy's state keeps the
 // last ones until the body wakes).
@@ -1110,7 +998,7 @@ static void record_traj( TrajWriter* w, TrajBody* buf, int tick, const BodyState
 	traj_write( w, (uint32_t)tick, buf );
 }
 
-static RunResult run_twin( const ToyData* init, int ticks, int threads, int keepPos, TrajWriter* traj )
+static RunResult run_twin( const ToyData* init, int ticks, int threads, TrajWriter* traj )
 {
 	RunResult r;
 	memset( &r, 0, sizeof( r ) );
@@ -1127,11 +1015,6 @@ static RunResult run_twin( const ToyData* init, int ticks, int threads, int keep
 	TrajBody* trajBuf = traj ? (TrajBody*)calloc( (size_t)n, sizeof( TrajBody ) ) : NULL;
 	int trajEvery = traj ? (int)traj->every : 0;
 	r.ticks = (TickRecord*)calloc( (size_t)ticks + 1, sizeof( TickRecord ) );
-	if ( keepPos )
-	{
-		r.pos = (double*)malloc( (size_t)( ticks + 1 ) * (size_t)n * POSW * sizeof( double ) );
-		record_poses( r.pos, s.pose, n );
-	}
 	if ( traj )
 	{
 		record_traj( traj, trajBuf, 0, s.state, s.pose, s.isStatic, awakeNow, n );
@@ -1186,10 +1069,6 @@ static RunResult run_twin( const ToyData* init, int ticks, int threads, int keep
 			}
 		}
 		sim_record( &s, t, r.ticks + t, 1 );
-		if ( keepPos )
-		{
-			record_poses( r.pos + (size_t)t * (size_t)n * POSW, s.pose, n );
-		}
 		if ( traj && t % trajEvery == 0 )
 		{
 			memset( awakeNow, 0, (size_t)n );
@@ -1261,20 +1140,50 @@ static void cost_line( const char* who, const RunResult* r, int ticks, int bodie
 	say( "\n" );
 }
 
+// The tick's hash categories, in the reference files' order (joints last: a scene without joints has no column)
+#define CATS 6
+static const char* g_catNames[CATS] = { "bodies", "manifolds", "stages", "bodyprep", "pairwork", "joints" };
+
+static void tick_hashes( const TickRecord* k, uint64_t* h )
+{
+	h[0] = k->bodies;
+	h[1] = k->manifolds;
+	h[2] = k->stages;
+	h[3] = k->bodyprep;
+	h[4] = k->pairwork;
+	h[5] = k->joints;
+}
+
+// The categories a run has: every one but the joints' when the scene has none
+static int run_cats( const RunResult* r ) { return r->joints > 0 ? CATS : CATS - 1; }
+
 static uint64_t run_hash( const RunResult* r, int ticks )
 {
-	uint64_t h = 1469598103934665603ULL;
+	uint64_t h = LAB_FNV0;
+	int cats = run_cats( r );
 	for ( int t = 1; t <= ticks; ++t )
 	{
-		h = fnv( h, &r->ticks[t].bodies, 8 );
-		h = fnv( h, &r->ticks[t].manifolds, 8 );
-		h = fnv( h, &r->ticks[t].stages, 8 );
-		if ( r->joints > 0 ) // (a scene without joints hashes as before step 6)
-		{
-			h = fnv( h, &r->ticks[t].joints, 8 );
-		}
+		uint64_t k[CATS];
+		tick_hashes( r->ticks + t, k );
+		h = lab_fnv( h, k, (size_t)cats * 8 );
 	}
 	return h;
+}
+
+// The first category in which two ticks differ (-1: none)
+static int tick_difference( const TickRecord* x, const TickRecord* y )
+{
+	uint64_t a[CATS], b[CATS];
+	tick_hashes( x, a );
+	tick_hashes( y, b );
+	for ( int c = 0; c < CATS; ++c )
+	{
+		if ( a[c] != b[c] )
+		{
+			return c;
+		}
+	}
+	return -1;
 }
 
 // The first tick whose hashes differ (-1: none), and which
@@ -1282,11 +1191,10 @@ static int first_difference( const RunResult* a, const RunResult* b, int ticks, 
 {
 	for ( int t = 1; t <= ticks; ++t )
 	{
-		const TickRecord* x = a->ticks + t;
-		const TickRecord* y = b->ticks + t;
-		if ( x->bodies != y->bodies || x->manifolds != y->manifolds || x->stages != y->stages || x->joints != y->joints )
+		int c = tick_difference( a->ticks + t, b->ticks + t );
+		if ( c >= 0 )
 		{
-			*what = x->bodies != y->bodies ? "bodies" : x->manifolds != y->manifolds ? "manifolds" : x->stages != y->stages ? "stages" : "joints";
+			*what = g_catNames[c];
 			return t;
 		}
 	}
@@ -1303,6 +1211,9 @@ static int ref_kept( int t, int ticks )
 	return t <= 120 || t % 60 == 0 || t == ticks;
 }
 
+// The column line (a file written before the categories bodyprep and pairwork has none, and is refused)
+#define REF_COLUMNS "columns bodies manifolds stages bodyprep pairwork"
+
 static int ref_write( const char* path, const char* config, const RunResult* r, int ticks )
 {
 	FILE* f = fopen( path, "w" );
@@ -1310,21 +1221,22 @@ static int ref_write( const char* path, const char* config, const RunResult* r, 
 	{
 		return 0;
 	}
-	fprintf( f, "# toy reference hashes (toy.c --ref-out): bodies, manifolds and stages per tick to 120, then every 60th; the run hash "
-				"covers every tick%s\n",
-			 r->joints > 0 ? "; a scene with joints adds the joints' hash" : "" );
+	int cats = run_cats( r );
+	fprintf( f, "# toy reference hashes (toy.c --ref-out): per category, every tick to 120, then every 60th and the last; the run hash covers "
+				"every tick\n" );
+	fprintf( f, "%s%s\n", REF_COLUMNS, cats == CATS ? " joints" : "" );
 	fprintf( f, "config %s\n", config );
 	fprintf( f, "twin %s\n", toy_twin_info() );
 	for ( int t = 1; t <= ticks; ++t )
 	{
 		if ( ref_kept( t, ticks ) )
 		{
-			const TickRecord* k = r->ticks + t;
-			fprintf( f, "tick %d %016llx %016llx %016llx", t, (unsigned long long)k->bodies, (unsigned long long)k->manifolds,
-					 (unsigned long long)k->stages );
-			if ( r->joints > 0 )
+			uint64_t k[CATS];
+			tick_hashes( r->ticks + t, k );
+			fprintf( f, "tick %d", t );
+			for ( int c = 0; c < cats; ++c )
 			{
-				fprintf( f, " %016llx", (unsigned long long)k->joints );
+				fprintf( f, " %016llx", (unsigned long long)k[c] );
 			}
 			fprintf( f, "\n" );
 		}
@@ -1336,12 +1248,12 @@ static int ref_write( const char* path, const char* config, const RunResult* r, 
 typedef struct RefFile
 {
 	int ok;
+	int columns; // the column line's categories (0: none, an older file; -1: a tick line of another width)
 	char config[256];
 	char twin[160];
 	int count;
 	int* tick;
-	uint64_t ( *h )[4];
-	int hasJoints; // the tick lines carry the joints' hash
+	uint64_t ( *h )[CATS];
 	uint64_t run;
 } RefFile;
 
@@ -1356,13 +1268,18 @@ static RefFile ref_read( const char* path )
 	}
 	char line[512];
 	int cap = 0;
+	size_t cl = strlen( REF_COLUMNS );
 	while ( fgets( line, sizeof( line ), f ) )
 	{
 		line[strcspn( line, "\r\n" )] = 0;
-		unsigned long long a, b, c, j = 0;
+		unsigned long long h[CATS] = { 0, 0, 0, 0, 0, 0 }, a;
 		int t;
 		int got = 0;
-		if ( strncmp( line, "config ", 7 ) == 0 )
+		if ( strncmp( line, REF_COLUMNS, cl ) == 0 )
+		{
+			ref.columns = line[cl] == 0 ? CATS - 1 : strcmp( line + cl, " joints" ) == 0 ? CATS : -1;
+		}
+		else if ( strncmp( line, "config ", 7 ) == 0 )
 		{
 			snprintf( ref.config, sizeof( ref.config ), "%s", line + 7 );
 		}
@@ -1370,20 +1287,23 @@ static RefFile ref_read( const char* path )
 		{
 			snprintf( ref.twin, sizeof( ref.twin ), "%s", line + 5 );
 		}
-		else if ( ( got = sscanf( line, "tick %d %llx %llx %llx %llx", &t, &a, &b, &c, &j ) ) >= 4 )
+		else if ( ( got = sscanf( line, "tick %d %llx %llx %llx %llx %llx %llx", &t, h, h + 1, h + 2, h + 3, h + 4, h + 5 ) ) >= 2 )
 		{
+			if ( ref.columns > 0 && got - 1 != ref.columns )
+			{
+				ref.columns = -1;
+			}
 			if ( ref.count == cap )
 			{
 				cap = cap ? 2 * cap : 256;
 				ref.tick = (int*)realloc( ref.tick, (size_t)cap * sizeof( int ) );
-				ref.h = (uint64_t( * )[4])realloc( ref.h, (size_t)cap * sizeof( *ref.h ) );
+				ref.h = (uint64_t( * )[CATS])realloc( ref.h, (size_t)cap * sizeof( *ref.h ) );
 			}
 			ref.tick[ref.count] = t;
-			ref.h[ref.count][0] = a;
-			ref.h[ref.count][1] = b;
-			ref.h[ref.count][2] = c;
-			ref.h[ref.count][3] = got == 5 ? j : 0;
-			ref.hasJoints |= got == 5;
+			for ( int c = 0; c < CATS; ++c )
+			{
+				ref.h[ref.count][c] = h[c];
+			}
 			ref.count += 1;
 		}
 		else if ( sscanf( line, "run %llx", &a ) == 1 )
@@ -1396,7 +1316,7 @@ static RefFile ref_read( const char* path )
 	return ref;
 }
 
-// One run against the reference: 1 when identical (the config, every kept tick, the run hash)
+// One run against the reference: 1 when identical (the config, the categories, every kept tick, the run hash)
 static int ref_check( const RefFile* ref, const char* config, const RunResult* r, int ticks, const char* who )
 {
 	if ( !ref->ok || strcmp( ref->config, config ) != 0 )
@@ -1404,9 +1324,11 @@ static int ref_check( const RefFile* ref, const char* config, const RunResult* r
 		say( "ref: %s: the reference file is missing or of another config (file: %s)\n", who, ref->ok ? ref->config : "-" );
 		return 0;
 	}
-	if ( ref->hasJoints != ( r->joints > 0 ) )
+	if ( ref->columns != run_cats( r ) )
 	{
-		say( "ref: %s: the reference file %s the joints' hash, the scene has %d joints\n", who, ref->hasJoints ? "has" : "lacks", r->joints );
+		say( "ref: %s: the reference file's categories (%d; 0: an older file without the column line) are not the run's (%d: the scene has %d "
+			 "joints)\n",
+			 who, ref->columns, run_cats( r ), r->joints );
 		return 0;
 	}
 	int lines = 0;
@@ -1418,15 +1340,15 @@ static int ref_check( const RefFile* ref, const char* config, const RunResult* r
 			say( "ref: %s: the file has tick %d, the run %d ticks\n", who, t, ticks );
 			return 0;
 		}
-		const TickRecord* k = r->ticks + t;
-		if ( k->bodies != ref->h[i][0] || k->manifolds != ref->h[i][1] || k->stages != ref->h[i][2] || k->joints != ref->h[i][3] )
+		uint64_t k[CATS];
+		tick_hashes( r->ticks + t, k );
+		for ( int c = 0; c < run_cats( r ); ++c )
 		{
-			say( "ref: %s DIFFERS from the reference at tick %d (%s)\n", who, t,
-				 k->bodies != ref->h[i][0]		? "bodies"
-				 : k->manifolds != ref->h[i][1] ? "manifolds"
-				 : k->stages != ref->h[i][2]	? "stages"
-												: "joints" );
-			return 0;
+			if ( k[c] != ref->h[i][c] )
+			{
+				say( "ref: %s DIFFERS from the reference at tick %d (%s)\n", who, t, g_catNames[c] );
+				return 0;
+			}
 		}
 		lines += 1;
 	}
@@ -1645,7 +1567,9 @@ static void gpu_sizes( const Sim* s, size_t* b )
 								 pc * sizeof( Constraint ),
 								 (size_t)s->jc * sizeof( Joint ),
 								 (size_t)s->jc * sizeof( Hash2 ),
-								 (size_t)s->jc * sizeof( JointCommand ) };
+								 (size_t)s->jc * sizeof( JointCommand ),
+								 n * sizeof( Hash2 ),
+								 pc * sizeof( Hash2 ) };
 	for ( int i = 0; i < TOY_BUFFERS; ++i )
 	{
 		b[i] = want[i] > 16 ? want[i] : 16;
@@ -1886,6 +1810,7 @@ static void gpu_prepare( Gpu* G, Sim* s, int t )
 static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 {
 	size_t n = (size_t)s->n, hb = n * sizeof( Hash2 ), mb = (size_t)s->st.pairCount * sizeof( Hash2 );
+	size_t ab = n * sizeof( Hash2 ), wb = mb; // the bodies' prepared data's and the pairs' working records' hashes
 	size_t lb = LIST_WORDS( s ) * 4, pb = (size_t)s->st.pairCount * sizeof( Pair );
 	size_t jb = (size_t)s->jc * sizeof( JointCommand ), jhb = (size_t)s->jc * sizeof( Hash2 );
 	size_t pcb = ( (size_t)s->pcap * sizeof( Pair ) + 15 ) & ~(size_t)15; // the commands after the pairs' room
@@ -1893,7 +1818,7 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 	if ( full )
 	{
 		ensure_staging( G, &G->up, lb + pcb + jb );
-		ensure_staging( G, &G->down, hb + (size_t)s->pcap * sizeof( Hash2 ) + jhb );
+		ensure_staging( G, &G->down, hb + 2 * (size_t)s->pcap * sizeof( Hash2 ) + jhb + ab );
 	}
 	VkCommandBuffer cb = gpu_begin( G );
 	vkCmdResetQueryPool( cb, G->query, 0, (uint32_t)count + 3 );
@@ -1921,6 +1846,8 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 		copy( cb, &G->buf[10], 0, &G->down, 0, hb );
 		copy( cb, &G->buf[17], 0, &G->down, hb, mb );
 		copy( cb, &G->buf[20], 0, &G->down, hb + mb, jhb );
+		copy( cb, &G->buf[22], 0, &G->down, hb + mb + jhb, ab );
+		copy( cb, &G->buf[23], 0, &G->down, hb + mb + jhb + ab, wb );
 	}
 	vku_barrier( cb );
 	vkCmdWriteTimestamp( cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G->query, (uint32_t)count + 1 ); // after the readbacks
@@ -1930,6 +1857,8 @@ static void gpu_rest( Gpu* G, Sim* s, int t, int first, int count, int full )
 		memcpy( s->hashes, G->down.mapped, hb );
 		memcpy( s->mhashes, (const uint8_t*)G->down.mapped + hb, mb );
 		memcpy( s->jhashes, (const uint8_t*)G->down.mapped + hb + mb, jhb );
+		memcpy( s->phashes, (const uint8_t*)G->down.mapped + hb + mb + jhb, ab );
+		memcpy( s->whashes, (const uint8_t*)G->down.mapped + hb + mb + jhb + ab, wb );
 	}
 	gpu_times( G, s->list + first, count );
 }
@@ -2291,78 +2220,6 @@ static void scene_summary( const Scene* sc, const ToyData* d )
 	}
 }
 
-// Positions against a reference (D's): rms and max per window, dynamic bodies only
-static int pos_report( const char* posRef, const RunResult* r0, const Scene* sc, int bodyCount, int ticks )
-{
-	FILE* f = fopen( posRef, "rb" );
-	int32_t hdr[3] = { 0, 0, 0 };
-	int failures = 0;
-	if ( f == NULL || fread( hdr, sizeof( hdr ), 1, f ) != 1 || hdr[0] != bodyCount || hdr[1] < ticks || hdr[2] != POSW )
-	{
-		say( "pos-ref %s: missing or a different scene\n", posRef );
-		failures += 1;
-	}
-	else
-	{
-		size_t cnt = (size_t)( hdr[1] + 1 ) * (size_t)hdr[0] * POSW;
-		double* ref = (double*)malloc( cnt * sizeof( double ) );
-		size_t got = fread( ref, sizeof( double ), cnt, f );
-		(void)got;
-		static const int windows[3][2] = { { 1, 120 }, { 121, 600 }, { 1, 600 } };
-		for ( int w = 0; w < 3; ++w )
-		{
-			int a = windows[w][0], b = windows[w][1] < ticks ? windows[w][1] : ticks;
-			if ( a > b )
-			{
-				continue;
-			}
-			double sum = 0.0, mx = 0.0, rsum = 0.0, rmx = 0.0;
-			long long cntw = 0;
-			int at = -1, atBody = -1;
-			for ( int t = a; t <= b; ++t )
-			{
-				const double* p = r0->pos + (size_t)t * (size_t)bodyCount * POSW;
-				const double* q = ref + (size_t)t * (size_t)bodyCount * POSW;
-				for ( int i = 0; i < bodyCount; ++i )
-				{
-					if ( sc->bodies[i].isStatic )
-					{
-						continue;
-					}
-					const double* x = p + (size_t)i * POSW;
-					const double* y = q + (size_t)i * POSW;
-					double dx = x[0] - y[0], dy = x[1] - y[1], dz = x[2] - y[2];
-					double e2 = dx * dx + dy * dy + dz * dz;
-					sum += e2;
-					cntw += 1;
-					if ( e2 > mx )
-					{
-						mx = e2;
-						at = t;
-						atBody = i;
-					}
-					// the angle between the two orientations, 2 sqrt(1 - c^2) for small angles (c: the normalised dot)
-					double dq = x[3] * y[3] + x[4] * y[4] + x[5] * y[5] + x[6] * y[6];
-					double nx = x[3] * x[3] + x[4] * x[4] + x[5] * x[5] + x[6] * x[6];
-					double ny = y[3] * y[3] + y[4] * y[4] + y[5] * y[5] + y[6] * y[6];
-					double c2 = dq * dq / ( nx * ny );
-					double ang2 = c2 < 1.0 ? 4.0 * ( 1.0 - c2 ) : 0.0;
-					rsum += ang2;
-					rmx = ang2 > rmx ? ang2 : rmx;
-				}
-			}
-			say( "pose vs %s, ticks %d-%d: position rms %.3g m, max %.3g m (tick %d, body %d); rotation rms %.3g rad, max %.3g rad\n", posRef, a, b,
-				 sqrt( sum / (double)( cntw ? cntw : 1 ) ), sqrt( mx ), at, atBody, sqrt( rsum / (double)( cntw ? cntw : 1 ) ), sqrt( rmx ) );
-		}
-		free( ref );
-	}
-	if ( f )
-	{
-		fclose( f );
-	}
-	return failures;
-}
-
 // The contact solve at a glance: when every dynamic body is asleep for good, the deepest manifold point (its separation
 // at the start of a tick, before the solve) over the run and at rest: the 60 ticks before everything sleeps (the last
 // 60 when it does not)
@@ -2416,8 +2273,6 @@ int main( int argc, char** argv )
 	int threads[4] = { 1, 8 };
 	int tCount = 2;
 	uint64_t seed = 1;
-	const char* posOut = NULL;
-	const char* posRef = NULL;
 	const char* trajPath = NULL;
 	int trajEvery = 1;
 	const char* logPath = NULL;
@@ -2474,10 +2329,6 @@ int main( int argc, char** argv )
 			refPath = v, ++i;
 		else if ( strcmp( a, "--ref-out" ) == 0 )
 			refOut = v, ++i;
-		else if ( strcmp( a, "--pos-out" ) == 0 )
-			posOut = v, ++i;
-		else if ( strcmp( a, "--pos-ref" ) == 0 )
-			posRef = v, ++i;
 		else if ( strcmp( a, "--traj" ) == 0 )
 			trajPath = v, ++i;
 		else if ( strcmp( a, "--traj-every" ) == 0 )
@@ -2570,6 +2421,11 @@ int main( int argc, char** argv )
 		say( "FAIL: layout sizes differ\n" );
 		return 2;
 	}
+	if ( fp_flush_mode() != 0 )
+	{
+		say( "FAIL: the CPU flushes subnormals (%s): the floating-point sentinel could not see them\n", fp_flush_mode() );
+		return 2;
+	}
 	scene_summary( &sc, &d );
 	start_check( &sc, &d );
 	joint_lines( &sc );
@@ -2593,7 +2449,7 @@ int main( int argc, char** argv )
 	}
 	for ( int ti = 0; ti < tCount; ++ti )
 	{
-		runs[ti] = run_twin( &d, ticks, threads[ti], ti == 0 && ( posOut || posRef ), ti == 0 && trajOk ? &traj : NULL );
+		runs[ti] = run_twin( &d, ticks, threads[ti], ti == 0 && trajOk ? &traj : NULL );
 		if ( g_dispatchHashes )
 		{
 			fclose( g_dispatchHashes );
@@ -2611,8 +2467,8 @@ int main( int argc, char** argv )
 
 	// per-tick hashes: every tick to 120, then every 60th
 	say( "tick  bodies-hash       manifolds-hash    stages-hash       awake pairs active touching points colours(ovf) "
-		 "islands(largest) slept woken%s\n",
-		 d.jointCount > 0 ? " joints-hash" : "" );
+		 "islands(largest) slept woken bodyprep-hash     pairwork-hash%s\n",
+		 d.jointCount > 0 ? "     joints-hash" : "" );
 	for ( int t = 1; t <= ticks; ++t )
 	{
 		if ( ref_kept( t, ticks ) )
@@ -2621,6 +2477,7 @@ int main( int argc, char** argv )
 			say( "%4d  %016llx  %016llx  %016llx  %5d %5d %6d %8d %6d %4d(%d) %6d(%d) %5d %5d", t, (unsigned long long)k->bodies,
 				 (unsigned long long)k->manifolds, (unsigned long long)k->stages, k->awake, k->pairs, k->active, k->touching, k->points, k->colours,
 				 k->overflow, k->islands, k->largest, k->slept, k->woken );
+			say( " %016llx  %016llx", (unsigned long long)k->bodyprep, (unsigned long long)k->pairwork );
 			if ( d.jointCount > 0 )
 			{
 				say( " %016llx", (unsigned long long)k->joints );
@@ -2657,34 +2514,6 @@ int main( int argc, char** argv )
 		cost_line( who, r, ticks, d.bodyCount, r->costWallMs, kernels, r->costCpuMs, 0.0, 0.0, r->stageMs, r->dispatchCount, r->costTicks );
 	}
 	solve_report( r0, ticks );
-	if ( posOut )
-	{
-		FILE* f = fopen( posOut, "wb" );
-		int32_t hdr[3] = { d.bodyCount, ticks, POSW };
-		fwrite( hdr, sizeof( hdr ), 1, f );
-		fwrite( r0->pos, sizeof( double ), (size_t)( ticks + 1 ) * (size_t)d.bodyCount * POSW, f );
-		fclose( f );
-	}
-	if ( posRef )
-	{
-		failures += pos_report( posRef, r0, &sc, d.bodyCount, ticks );
-	}
-	// where the first dynamic body is, as a sanity check of free fall (y0 - g h^2 n (n + 1) / 2 after n substeps)
-	if ( r0->pos )
-	{
-		int body = -1;
-		for ( int i = 0; i < d.bodyCount && body < 0; ++i )
-		{
-			body = sc.bodies[i].isStatic ? -1 : i;
-		}
-		if ( body >= 0 )
-		{
-			double y = r0->pos[( (size_t)ticks * (size_t)d.bodyCount + (size_t)body ) * POSW + 1];
-			double nsub = 4.0 * ticks, h = 1.0 / 240.0;
-			double want = sc.bodies[body].p[1] + sc.bodies[body].v[1] * h * nsub - settings.gravity * h * h * nsub * ( nsub + 1.0 ) / 2.0;
-			say( "body %d at tick %d: y %.9g m (free fall gives %.9g)\n", body, ticks, y, want );
-		}
-	}
 
 	// the reference hashes: written, or checked (the twin's runs; the GPUs' below)
 	if ( refOut )
@@ -2735,11 +2564,19 @@ int main( int argc, char** argv )
 			say( "gpu %d %s: per-tick hashes %s over %d ticks", gi, G.g.vendor, first < 0 ? "identical to the twin's" : "DIFFER from the twin's", ticks );
 			if ( first >= 0 )
 			{
-				const TickRecord* a = gr.ticks + first;
-				const TickRecord* b = r0->ticks + first;
-				say( " from tick %d (%s; gpu %016llx %016llx %016llx, twin %016llx %016llx %016llx)", first, what, (unsigned long long)a->bodies,
-					 (unsigned long long)a->manifolds, (unsigned long long)a->stages, (unsigned long long)b->bodies, (unsigned long long)b->manifolds,
-					 (unsigned long long)b->stages );
+				uint64_t a[CATS], b[CATS];
+				tick_hashes( gr.ticks + first, a );
+				tick_hashes( r0->ticks + first, b );
+				say( " from tick %d (%s;", first, what );
+				for ( int side = 0; side < 2; ++side )
+				{
+					say( " %s", side ? "twin" : "gpu" );
+					for ( int c = 0; c < run_cats( r0 ); ++c )
+					{
+						say( " %016llx", (unsigned long long)( side ? b[c] : a[c] ) );
+					}
+				}
+				say( ")" );
 			}
 			say( "; run hash %016llx; saturations %u (twin %u)\n", (unsigned long long)run_hash( &gr, ticks ), gr.saturations, r0->saturations );
 			failures += first >= 0 || gr.saturations != r0->saturations;
@@ -2778,14 +2615,15 @@ int main( int argc, char** argv )
 	{
 		snprintf( jointText, sizeof( jointText ), " joints %016llx", (unsigned long long)r0->ticks[ticks].joints );
 	}
-	say( "toy %s %s: run hash %016llx, final bodies %016llx manifolds %016llx stages %016llx%s, threads %s, saturations %u (twin: %s)\n",
+	say( "toy %s %s: run hash %016llx, final bodies %016llx manifolds %016llx stages %016llx bodyprep %016llx pairwork %016llx%s, threads %s, "
+		 "saturations %u (twin: %s)\n",
 		 DIALECT_NAME, sceneName, (unsigned long long)runHash, (unsigned long long)r0->ticks[ticks].bodies,
-		 (unsigned long long)r0->ticks[ticks].manifolds, (unsigned long long)r0->ticks[ticks].stages, jointText,
+		 (unsigned long long)r0->ticks[ticks].manifolds, (unsigned long long)r0->ticks[ticks].stages,
+		 (unsigned long long)r0->ticks[ticks].bodyprep, (unsigned long long)r0->ticks[ticks].pairwork, jointText,
 		 twinFailures ? "DISAGREE or sentinel tripped" : "agree", r0->saturations, toy_twin_info() );
 	for ( int ti = 0; ti < tCount; ++ti )
 	{
 		free( runs[ti].ticks );
-		free( runs[ti].pos );
 	}
 	toy_free_data( &d );
 	scene_free( &sc );

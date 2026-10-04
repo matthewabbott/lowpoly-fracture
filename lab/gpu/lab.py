@@ -2,7 +2,8 @@
 """lab.py: the GPU lab's one tool (lab/gpu/README.md). Standard library only.
 
   python lab/gpu/lab.py gen                       # Windows + Vulkan SDK: SPIR-V kernels, C++ twins, gen/variants.cmake
-  python lab/gpu/lab.py build [--compiler C]      # CMake into lab/gpu/build/C; C is msvc or clang-cl (Windows), gcc or clang
+  python lab/gpu/lab.py build [--compiler C] [--ubsan]  # CMake into lab/gpu/build/C; C is msvc or clang-cl (Windows), gcc or clang;
+                                                  # --ubsan (clang, clang-cl): the toy under UBSan into build/C-ubsan
   python lab/gpu/lab.py run [--machine M] [--compiler C] [--twins C2,...] [--quick] [suite ...]
                                                   # suites: probe solve rows controls mulbench twins (default: all)
   python lab/gpu/lab.py check [results/M]         # hashes against reference.json; writes results/M/summary.md
@@ -221,11 +222,13 @@ def default_compiler():
 
 def cmd_build(a):
     comp = a.compiler or default_compiler()
-    bdir = os.path.join(LAB, "build", comp)
+    if a.ubsan and comp not in ("clang", "clang-cl"):
+        raise SystemExit("--ubsan needs clang or clang-cl")
+    bdir = os.path.join(LAB, "build", comp + ("-ubsan" if a.ubsan else ""))
     gen = ["-G", "Ninja"] if shutil.which("ninja") or WINDOWS else []
     cc = {"msvc": ("cl", "cl"), "clang-cl": ("clang-cl", "clang-cl"), "gcc": ("gcc", "g++"), "clang": ("clang", "clang++")}[comp]
     cfg = ["cmake", "-S", LAB, "-B", bdir, *gen, "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_C_COMPILER={cc[0]}",
-           f"-DCMAKE_CXX_COMPILER={cc[1]}"]
+           f"-DCMAKE_CXX_COMPILER={cc[1]}"] + (["-DLAB_UBSAN=ON"] if a.ubsan else [])
     bld = ["cmake", "--build", bdir, "--parallel"]
     if WINDOWS:  # the MSVC environment comes from the repository's devenv.ps1
         q = lambda args: " ".join("'" + x.replace("'", "''") + "'" for x in args)
@@ -529,6 +532,7 @@ def main():
     sub.add_parser("gen")
     b = sub.add_parser("build")
     b.add_argument("--compiler", choices=["msvc", "clang-cl", "gcc", "clang"])
+    b.add_argument("--ubsan", action="store_true", help="the toy's twins and drivers under UBSan (every report fatal), into build/C-ubsan")
     r = sub.add_parser("run")
     r.add_argument("--machine")
     r.add_argument("--compiler", choices=["msvc", "clang-cl", "gcc", "clang"])

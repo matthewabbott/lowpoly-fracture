@@ -16,6 +16,7 @@ function(toy_twin name glue generated)
 	lab_quiet(toytwin_${name})
 	lab_no_contract(toytwin_${name})
 	toy_fp_traps(toytwin_${name})
+	lab_ubsan(toytwin_${name})
 endfunction()
 
 # The floating-point sentinel reads the exception flags the kernels' code raises, so the twins are compiled without
@@ -35,8 +36,9 @@ endfunction()
 
 function(toy_c17 target)
 	set_property(TARGET ${target} PROPERTY C_STANDARD 17)
-	target_include_directories(${target} PRIVATE "${TOY_SRC}")
+	target_include_directories(${target} PRIVATE "${TOY_SRC}" "${LAB_SRC}")
 	lab_no_contract(${target})
+	lab_ubsan(${target})
 endfunction()
 
 # Dialect-free C: the scene generator (double), the CPU stages (integers), the trajectory files

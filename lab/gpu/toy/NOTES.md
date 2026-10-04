@@ -993,3 +993,226 @@ rest (two submits and waits, host copies) 6.2; UHD F 165 = 57.8 + 14.9 + **66** 
 - At pile200's size the GPU tick is about 90% fixed cost: fewer dispatches (several colours or stages per dispatch, a
   persistent solver kernel) would cut the 3060's 1.4 ms of kernels towards its 0.1 ms of work.
 - Not run on the Spark or the Mac (DESIGN's step 7 also names them): `grid.py --compiler gcc` there after `gate.py`.
+
+## 2026-10-04: the reviews applied (gates that prove what they claim, determinism hazards, the acceptance table as written)
+
+Two reviews (Fable; GPT-5.6 Sol through Codex) found the GPU and twin results credible for the state that is hashed, but:
+the acceptance table had been relaxed after the results were seen, some written state was hashed by nothing, and the
+gates could pass vacuously. This entry applies their fourteen items. **Baseline first** (HEAD 3f27319, after steps 6
+and 7): `lab.py gen`, both builds, `gate.py` gates 1 to 5 **PASS** (battery F f7006e1c8f347ba5, V4 b8cc94dd982a448d, D
+e0865a1f66f355ab; corpus D ec5972a1a82de840, F 2ea78ea1cf0bdb32, V4 222bdd55590f1dba; 16 of 16 runs per GPU and dialect,
+the 48 reference files identical on both compilers).
+
+```
+python lab/gpu/lab.py gen && python lab/gpu/lab.py build --compiler msvc && python lab/gpu/lab.py build --compiler clang-cl
+python lab/gpu/toy/gate.py                                  # gates 1 to 5 (about 10 minutes); expects the RTX 3060 and the UHD 630 here
+python lab/gpu/toy/gate.py --gates 5 --write-ref            # after a change meant to move hashes: two compilers must agree first
+python lab/gpu/lab.py build --compiler clang-cl --ubsan     # into build/clang-cl-ubsan
+python lab/gpu/toy/gate.py --compilers clang-cl-ubsan --gates 1,2,3,4 --no-gpu   # the twins under UBSan (about 15 minutes)
+python lab/gpu/toy/accept.py                                # decision point 1's table, both headlines: results/decision1.md
+```
+
+**A. Gates that prove what they claim.**
+1. **Every word a tick writes is hashed.** Two new categories, each an element hash per element summed order-free like
+   the others, computed in the dispatches that already hash (no new dispatch): **bodyprep** (category 4, per body: the
+   whole `BodyMass` with prepareBodies' world inertia `invIw`, and the whole `Aabb`, pads included; written by
+   `hashElements` to binding 22) and **pairwork** (category 5, per pair, seeded by the pair's bodies: the whole `SatAxis`
+   and `Constraint`, and the manifold's point pads, the one manifold word `hashManifolds` left out; written by
+   `hashManifolds` to binding 23; an inactive pair's slot holds what an earlier tick wrote there, the same on every
+   machine, and is hashed again). The joints' hash already covered every field. Not hashed, by design: the saturation
+   counters (compared at the end of every run, as before) and `narrowDiags` (written only by the corpus, gate 3). The
+   tick record, `run_hash`, the first-difference report, the tick table (two columns appended, so gate 2's parsing
+   stands), the final line and the reference files carry the new categories; a reference file now opens with a
+   `columns` line and an older file is refused by name. The trace's views include the two new hash buffers (so
+   `--dispatch-hashes` values changed: they hash every view). **Mandatory full-buffer comparison in gate 5:** `toy
+   --trace` (every buffer the kernels write, word by word, after every tick's prepare and after its end) over pile200
+   seed 1 for 120 ticks and the arm for 300 (past its first contact with the stack near tick 245), on every GPU in F and
+   V4, failing on any differing word: **no difference** on the RTX 3060 and the UHD 630 in either dialect (about 25 s in
+   all). Cost of the wider hashes: on the UHD 630 `hashManifolds` went from 0.11 to 0.36 ms a tick (pile200 seed 1, F;
+   V4 0.06 to 0.21), on the 3060 from 4 to 8 us; the kernels' totals moved within their noise.
+2. **No vacuous pass.** `gate.py --expect-gpus` takes vendor names or a count; the default is `nvidia,intel` on this
+   laptop (by host name, `EXPECTED_GPUS` in gate.py) and `1` elsewhere. Gate 1 (F and V4 batteries, every compiler) and
+   gate 5 (every F and V4 run on the first compiler, and every trace) fail unless the expected GPUs ran. `--no-gpu` runs
+   the twins alone (no GPU run, none expected; the UBSan gate uses it). `battery` now fails with "no GPU ran" when F or V4
+   ran on no GPU unless given `--no-gpu` (D has no GPU kernels and says so). Also fixed: battery's `--gpus` used `atoi`,
+   so `--gpus 0xff` meant 0 GPUs and a PASS; it takes hex now (strtol). Checked: `--gpus 0x1` (NVIDIA only) fails gate 1
+   ("no intel GPU ran"), `battery_F --gpus 0` exits 1.
+3. **Writing the reference files is separate from checking them.** `--write-ref` refuses with fewer than two compilers;
+   it writes the first compiler's files into a scratch directory (`<out>/ref-new`), checks every other compiler's twins
+   (1 and 8 threads) against them, and copies all 48 into `results/ref` only when every config of every compiler
+   agreed; one disagreement writes nothing. A normal run only checks. The files were rewritten this way (MSVC
+   19.42.34435 wrote, clang-cl 23.1.2 agreed on all 48), and a full gate run then checked them.
+
+**B. Determinism hazards.**
+4. **C++20 for every twin** (the lab's `CMAKE_CXX_STANDARD 20`, required: E11's and the toy's): a right shift of a
+   negative value is arithmetic there and a left shift of one is defined. Built and run alone first (the old kernels,
+   with items 6 and 12): **every hash unchanged** (battery, gate 2's run hashes, the corpus, gate 5's run hashes and all
+   48 reference files, both compilers, both GPUs); E11's `lab.py run --machine win-quick --quick` (MSVC, then `--twins
+   clang-cl twins`): every twin hash "ok" against `reference.json`, the threads agree, the controls differ; the GPU
+   mismatches are E11's known ones (Fdisc, Fnocap, I64 on Intel). `results/win-quick` deleted. C code is not covered by
+   C++20 (C17 and C23 leave a negative right shift to the implementation): the one in the C drivers, battery's input
+   generator (`v->a >> 24`), is now `asr32`, a defined floor shift (the battery's input hashes are unchanged).
+5. **UBSan:** `lab.py build --ubsan` (clang or clang-cl; CMake `LAB_UBSAN`) builds the toy's twins and C drivers
+   (toy, battery, narrow, toy_common, b3ref2; not Box3D or vk_util) with `-fsanitize=undefined -fno-sanitize-recover=all`
+   into `build/<compiler>-ubsan`; clang-cl links the runtime from the clang resource directory. `LAB_UBSAN_RECOVER`
+   (CMake only) reports and continues, to list every report in one run. Gates 1 to 4 under it, twins only: **one finding**,
+   V4's `invertSym` on the battery's near-singular matrices: `rp2 + M( m32, r.yz )` and `rp1 + sum2( ... )` overflowed
+   int32 when a reciprocal pivot had already saturated at 2^31 - 1 (undefined in C++, a wrap on a GPU). Fixed with
+   `addSat` / `subSat` (V4: `mas( a, 1, b, +-1, 0, 0, 0 )`, saturated and counted; F and D: plain + and -) for every sum and
+   difference in `invertSym` that may hold a saturated operand. Only the overflowing vectors change (invertSym's
+   battery hash and its saturations, 74 to 107, the same on both GPUs); no scene saturates, so no tick hash moved. The
+   negation of INT_MIN the reviewers suspected (`x < 0 ? -x : x`) never ran: `mas` saturates at +-(2^31 - 1), so an
+   INT_MIN can only come from an add that overflowed, which UBSan now watches; the C drivers, scenes, stages and the
+   corpus raised nothing. After the fix, gates 1 to 4 under UBSan: **PASS**, no report (the battery, corpus and gate 2
+   hashes equal MSVC's and clang-cl's; gate 4's 111 runs at 1 and 8 threads, Box3D's b3ref2 included).
+6. **The sentinel's flushing modes** (`fpflags.h`): every twin (toy, battery, corpus) fails at start when the main thread
+   flushes (x64 MXCSR FTZ, bit 15, or DAZ, bit 6; aarch64 FPCR FZ, bit 24, or FEAT_AFP's FIZ, bit 0), and `fp_flags`
+   reports a flushing mode as `flush-mode`, so every dispatch checks the mode of every pool thread that ran it. On
+   aarch64 (gcc or clang inline asm) the sentinel now reads FPSR itself as well as the C99 flags (IOC, DZC, OFC, UFC and
+   IDC, cleared with the rest). **What an aarch64 sentinel can and cannot see with FZ off:** invalid, divide by zero,
+   overflow, and underflow when a result is tiny and inexact (UFC); not a subnormal input (IDC is set only when an input
+   is flushed, which FZ off never does) and not an exact subnormal result. x64 sees subnormal inputs too (MXCSR DE).
+   The twins compute the same bits everywhere, so the x64 legs see what an aarch64 run would hide. Not yet built on
+   aarch64 (the Spark).
+7. **`posDeltaWord` rounds halves away from zero**, as `mas`: +128 at bit 7 for a difference >= 0, +127 for a negative
+   one, so a - b is exactly -(b - a). V4 only: the battery's posDelta helper, the corpus and 13 of V4's 16 reference
+   configs moved (below); stack10 (sleep on and off) and bounce did not.
+8. **The NoContraction audit counts by result id** (`gen_toy.py`'s `audit`, `spirv-dis --raw-id`): every F `OpFAdd`,
+   `OpFSub` and `OpFMul` result id must carry an `OpDecorate ... NoContraction`, or the generation fails naming the ids;
+   F also fails on any `OpFDiv`, `OpFRem`, `OpFMod`, `OpDot`, vector or matrix product, or extended instruction but
+   FindUMsb; V4 (and its battery) fails on any float add, subtract or multiply at all. Today: every F op decorated
+   (battery 649, narrowClip 2,132, prepareContacts 1,130, ...; more decorations than ops, on other instructions), V4
+   none.
+
+**C. The acceptance table, honestly** (`accept.py`, `results/decision1.md`). Every rule DESIGN.md wrote is a judged row
+in its own words; a judgement chosen after the results were seen is a separate row in **post hoc**, and the summary
+counts the passes both ways. The rows: the 120-tick position rms against D on **every scene** (stack10, bounce, ramp,
+chip, ratio, the arm, pile200 pooled over its seeds), and pile200's penetration on the **original window** (the solve
+line's 60 ticks before every body sleeps); post hoc: chip, ratio and pile200 judged by their outcome rows in place of
+their rms (each such row passes when every outcome row of its scene passes: chip's no tunnelling, sleeping and V4's
+saturations; ratio's two classes; pile200's sleep, median and escapes), and the penetration after every body sleeps in
+place of the original window. Gate 4 (below) prints the same counts.
+
+**Decision point 1, the headline** (MSVC, one thread; the same at 1 and 8 threads in gate 4, and under UBSan):
+
+| | Box3D | D | F | V4 |
+|---|---|---|---|---|
+| under DESIGN.md's rules as written | **17 of 18** | **17 of 18** | **24 of 27** | **24 of 28** |
+| with the post-hoc rows (in place of the rows they relax) | 18 of 18 | 18 of 18 | 26 of 27 | 27 of 28 |
+| the rows they fail as written | penetration, original window (2.04 cm, seed 3) | the same (3.21 cm, seed 2) | rms: chip 4.05e-5, arm 1.6e-3, pile200 0.077 m | rms: chip 1.5e-4, ratio 1.43e-4, arm 1.6e-3, pile200 0.105 m |
+
+(Step 6's "Box3D 18 of 18, D 18 of 18, F 23 of 23, V4 24 of 24" counted the relaxed rules only, and no rms on the chip,
+ratio, pile200 or the arm.) F's and V4's original-window penetration passes (F 1.91 cm, seed 7; V4 now 1.71 cm, seed 2:
+item 7 moved V4's piles; it was 3.11 cm, seed 8). The arm's rms fails in both headlines: no post-hoc rule covers it.
+
+- **chip (not chaotic: arithmetic).** D moved 1e-9 m moves 4.9e-8 m, but the yardstick moves positions only. Where the
+  error comes from (per tick against D, every tick recorded): by the impact at tick 3 (12 m/s into the ground, 40 rad/s
+  of spin) F carries its free fall's rounding, 2.0e-7 m and 2.5e-6 m/s (float positions near 0.3 m, the velocity's
+  half-ulp per substep; V4 4.8e-8 m and 6.4e-7 m/s, its quantised h g). The impact takes the spin from 40 to 11.65
+  rad/s through the friction impulse, and leaves F 1.7e-4 rad/s off D's spin (6e-6 of the change) and V4 6.9e-4 (2.4e-5);
+  D with only its start velocity changed by 3e-6 m/s comes out 5e-5 off, so most of F's spin error, and nearly all of
+  V4's, is the contact solve's own arithmetic at the impact (which of V4's formats, not taken apart). The chip then
+  tumbles on its edge (contacts near ticks 7 and 18) and the spin error grows a hundredfold or more (F 3.1e-3 rad/s at
+  tick 7, 5.0e-2 at tick 18; D with the velocity change 3.6e-3 at tick 18); it lands 1.9e-5 m (F) off, slides to rest
+  at a velocity 1.5e-4 m/s off for 20 ticks, and rests 3.8e-5 m (F) and 1.5e-4 m (V4) from D's
+  chip from tick 40 on, which is the rms. D with the start velocity changed by 3e-6 m/s alone: rms 4.3e-6 m. So: the
+  impact scene amplifies velocity and spin errors about a hundredfold, and F's and V4's arithmetic at the impact feeds
+  it. Not a solver bug: F against D differs by 6e-6 of the impact's change in spin, and the scene multiplies that.
+- **ratio (not chaotic: arithmetic, V4 only).** D moved 1e-9, 1e-8, 1e-7 and 1e-6 m: rms 6.9e-7, 6.9e-7, 7.0e-7 and
+  1.2e-6 m (the outcome never flips; step 5a's "a start difference of 1e-10 m picks the outcome" does not hold for these
+  starts). F: 2.1e-7. V4's 1.43e-4 is born at tick 1 in the two chips solved last under the plate (bodies 5 and 6): after
+  one tick their velocities are 6.9e-4 m/s off D's (F's 1e-7; chips 3 and 4 2e-5 and 7e-6), one chip moves 1 mm
+  differently by tick 7, and the classes stay the same. Under a 2,000:1 mass ratio each chip's velocity is the small
+  difference of the ground's and the plate's impulses (about 1 N s a substep each on 0.05 kg); which V4 format loses
+  the bits is not taken apart.
+- **arm (as written: fails in F and V4 alike).** Its links agree with D (rms 8.4e-8 m in F, 1.7e-5 in V4); its stack of
+  four cubes, not reached before tick 245, parts from D's at tick 1 (6.8e-6 m on body 4, 4e-3 m on the top cube by tick
+  25, F and V4 with the same numbers) on step 6's face-on ties: every clipped point of a face-on contact at the same
+  separation, exactly in D, within rounding in F and V4, so the reduction keeps other points. D moved 1e-9 m moves every
+  body alike, keeps the ties and stays within 1e-9 m: the yardstick cannot see it.
+- **pile200 (chaotic).** D against itself moved 1e-9 m: 0.0165 m pooled (0.031 worst seed); F 0.077, V4 0.105.
+- **penetration.** Original window (as written, judged): Box3D 2.04 cm (seed 3), D 3.21 (seed 2), F 1.91 (seed 7), V4
+  1.71 (seed 2): Box3D and D fail. After every body sleeps (post hoc): Box3D 1.13, D 1.23, F 1.20, V4 1.46 cm.
+
+**D. Simplicity.**
+12. **One pool, one FNV** (`lab/gpu/src/pool.h`, `hash.h`, header-only): E11's harness and the toy's driver use
+    `LabPool` (`lab_pool_start`, `lab_pool_run( fn, ctx )`, `lab_pool_stop`, `lab_pool_groups`); the toy keeps its
+    per-thread floating-point flags beside it. `lab_fnv` (bytes) and `lab_fnv_words` (one step per word, the toy's
+    buffer hashes) replace the copies in harness.c, rows.c, toy.c, battery.c, narrow.c and stages.c. No hash moved
+    (item 4's run).
+13. **Gate 4 is accept.py's runs** (`accept.gate`): every job of decision point 1 (111 runs: the twins and Box3D on every
+    scene and seed, D moved 1e-9 m) on the first compiler's twins at **1 and 8 threads**, two runs at a time; it fails when
+    a run exits badly or its log shows threads that disagree, a tripped sentinel or a saturation (`accept.health`), and
+    prints both headlines and one line per scene and program (`metrics.summary`); it does not judge the table or write
+    decision1.md (accept.py does, at one thread). **traj.py's per-scene analysers are folded into metrics.py**, each
+    quantity computed once: stack (`spinmax1` added), pile, bounce (`impact_tick`, `vmin`), ramp (both boxes'
+    accelerations by the least-squares parabola, `fit_accel`, moved here; `slide_end`), ratio (sinks, drifts), chip
+    (`rest`), with `metrics.summary( scene, m )` for the one-line text; traj.py is the LPTRAJ1 reader, the shared
+    quaternion helpers and the per-body CLI (`--scene` prints metrics' summary).
+14. **`--pos-out` / `--pos-ref` are gone.** Gate 2 writes the first compiler's trajectories (`--traj`, every tick) and
+    compares F and V4 with D through `metrics.rms` (positions: rms, max and where; orientations: rms and max, the same
+    formula), over ticks 1-120, 121-600 and 1-600; the numbers are pos-ref's (chip F 4.05e-5, ramp F 4.9e-6, ...). The
+    free-fall line went with `--pos-out` (with contacts it no longer measured free fall). The trajectories are deleted
+    after each scene (pile200's are 14 MB).
+
+**Every hash that changed, and why** (gates 1 to 5 PASS after; the per-category columns of the old files compared
+tick by tick with the new):
+
+| what | before | after | why |
+|---|---|---|---|
+| battery V4 | b8cc94dd982a448d | **081ff06910407f15** | posDelta 4767e08423e48a02 to 465c5d99d9b34de6 (item 7); invertSym 47bdaa241d9ec4da to 0d887c03aa7692fc, saturations 74 to 107 (item 5); the other 23 helpers unchanged |
+| battery F, D | f7006e1c8f347ba5, e0865a1f66f355ab | unchanged | |
+| battery V4, `--n 65536 --seed 7` | (not recorded at HEAD) | f8915578a21dbb3b | lpDivQ31 equal to C's `/` on 0 of 1,063,016 differing |
+| corpus V4 | 222bdd55590f1dba | **c5d33b47944fc009** | posDelta in the narrowphase (item 7); 0 differ outside ties, both passes, both GPUs every word identical |
+| corpus D, F | ec5972a1a82de840, 2ea78ea1cf0bdb32 | unchanged | |
+| every run hash (gate 2, gate 5, the 48 reference files) | | new | the run hash covers the two new categories (item 1) |
+| the old categories (bodies, manifolds, stages, joints) in the F and D reference files | | unchanged, every kept tick of all 32 | |
+| the same in V4's | | unchanged in stack10, stack10 sleep 0 and bounce; changed in ratio (from tick 1), arm and arm sleep 0 (tick 2, bodies and joints: the joint's `deltaCenter`), chip (9), pile200 seeds 1 to 8 (46 to 47, manifolds), ramp (180) | item 7 (`addSat` / `subSat` change a value only on an overflow, which would count a saturation; no scene saturates) |
+| `--dispatch-hashes` values | | new | they hash every view, now with the two new hash buffers |
+
+Gate 2's run hashes (600 ticks; equal on MSVC, clang-cl and clang-cl under UBSan, 1 and 8 threads):
+
+| scene | D | F | V4 |
+|---|---|---|---|
+| stack10 | 93e8a1b30e072c68 | 75fe3f09ef74fce1 | 99d818cb28a9505f |
+| pile200 | 7977d22cb4b18c9f | 66ad7e5a215d6141 | 80016df1e5c89e4c |
+| pile200, gravity 0, body 112 pushed | 63c7697a4ca9f492 | 452bd6380e46ee6f | 1802ea607b976402 |
+| chip | 35cac36b6d7121e2 | 22308826aec57c83 | 19bd156226d3b1f4 |
+| ramp | 4c94be0151e3537f | cc7d156d0e35c9f7 | 251330e7e0643146 |
+| bounce | b1d611cc0f697635 | 5a472a3b03339b86 | bd0624b07e8cefaf |
+| ratio | 67b7e59404194816 | c2bc875f4967a9ee | d0b69b314f19d00d |
+| arm | 1a2a8b149d83d013 | 04bd8e67c8fa161a | ff9394053976a8db |
+
+Gate 5's reference run hashes (1,200 ticks for the arm and pile200, 3,600 for stack10, 600 for the rest), D / F / V4:
+stack10 036b2bfa93e1b928 / 15684d87ff1d68b1 / 3896097ca8de26ff; stack10 sleep 0 916691cd4af93abc / 36ba76c96aab06c4 /
+6f69c34bd79e4213; arm d0aa4985d2d6f1a3 / 3aac45a38810f555 / ee7c37b7e15e2ef3; arm sleep 0 49ff930e829b5f61 /
+2c318aad1b3f5233 / 45cfc897272f746e; the rest in the files. **Decision point 2 after all this: 16 of 16 runs per GPU and
+dialect** (RTX 3060 0x988f0000, UHD 630 0x194859), every tick's hashes (five categories, six with joints) identical to
+the twin's, saturations 0, and
+the four full-buffer traces clean. (The reference reader's handling of an older file was tidied after that run; rebuilt,
+gate 5 on the twins alone, `--no-gpu`, both compilers: all 48 configs identical, PASS.)
+
+**What the reviews missed (found here).**
+- **The 1e-9 m yardstick is blind twice.** It moves every body alike along x and y, so it keeps a stack's ties (the arm's
+  stack parts from D's at tick 1 in F and V4 while D moved stays within 1e-9 m), and it moves positions only, while an
+  impact amplifies velocity and spin errors (the chip: 1e-9 m moves 5e-8 m, 3e-6 m/s moves 4.3e-6 m). "Not chaotic" by it
+  does not mean insensitive; a velocity perturbation of the dialects' own size would be the better yardstick.
+- **The arm fails DESIGN's rms rule as written** (1.6e-3 m in F and V4: the stack's ties, the links agree), and its
+  stack had already been moved after step 6's first results so that the impacts fall outside the 2 s angle window: a
+  post-hoc change of the scene rather than of a predicate. Its rows are kept as they are (no new predicate).
+- **Step 5a's ratio note is wrong** for these starts: D moved by up to 1e-6 m never flips the outcome; V4's 1.43e-4 is its
+  own arithmetic at tick 1 (above).
+- **C code is outside C++20's fix**: battery's input generator right-shifted a negative int32 (fixed, item 4).
+- **battery's `--gpus` mask was parsed by `atoi`**: any hex mask meant no GPU and a pass (fixed, item 2).
+- **Gate 3's GPU comparison is still "desired, not required"**: a machine without GPUs passes it. Not changed (outside
+  the brief); `--expect-gpus` could cover it the same way.
+- **The manifold hash skipped the point pads** (now in pairwork), and a reference file had no record of its columns (the
+  reader matched lines by count; now a `columns` line, and an older file is refused).
+
+**Open issues.**
+- The Spark: the aarch64 sentinel (FPSR, FZ/FIZ) is unbuilt there, and gcc's and clang's twins are not yet checked against
+  the rewritten references (`gate.py --compilers gcc,clang --gates 5`; `--expect-gpus` defaults to 1 there: `nvidia,llvmpipe`
+  states the GB10 and llvmpipe); a clang UBSan build there too (`lab.py build --compiler clang --ubsan`).
+- V4's ratio miss (which format loses the bits under the 2,000:1 ratio) and the chip's impact precision are diagnosed to the
+  tick, not to the operation.
+- A yardstick for the rms rule that perturbs velocities (or a per-scene bar) is the lead's call; no predicate was changed.

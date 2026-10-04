@@ -3,10 +3,12 @@
 // values around 2^-30, large quotients, divisors near 1 and near the format limits) on the CPU twin and, for F and V4,
 // on every Vulkan GPU; the outputs are compared word by word and hashed per helper. V4's lpDivQ31 and divClamp are
 // also checked against C's integer division on every input. Built once per dialect (DIALECT_F, _V4, _D; D has no GPU
-// kernels). F's SPIR-V is F-plain: no float-control execution modes.
+// kernels). F's SPIR-V is F-plain: no float-control execution modes. F or V4 with no GPU run fails (a pass would say
+// nothing about the GPUs) unless --no-gpu asks for the twin alone.
 //
-//   battery_F [--gpus MASK] [--n N] [--seed S] [--log PATH]      (run from lab/gpu: kernels in gen/toy/<dialect>)
+//   battery_F [--gpus MASK | --no-gpu] [--n N] [--seed S] [--log PATH]   (run from lab/gpu: kernels in gen/toy/<dialect>)
 #include "fpflags.h"
+#include "hash.h"
 #include "layout.h"
 #include "rng.h"
 #include "vk_util.h"
@@ -167,6 +169,13 @@ static double snap_value( Pcg* r )
 			return fd_value( r );
 	}
 	return s ? -v : v;
+}
+
+// x >> k rounded toward -inf, defined for a negative x (C leaves a negative right shift to the implementation; every
+// compiler here shifts arithmetically, which this equals): floor( x / 2^k ) = -1 - floor( (-1 - x) / 2^k ) for x < 0
+static int32_t asr32( int32_t x, int k )
+{
+	return x >= 0 ? x >> k : -1 - ( ( -1 - x ) >> k );
 }
 
 // V4: zero, +-1, +-(2^31 - 1), powers of two and their neighbours, small, medium and full-range values
@@ -542,9 +551,9 @@ static void gen_vec( int h, BatIn* v, Pcg* r )
 			}
 			else if ( c == 3 )
 			{
-				v->a = v->a >> 24;
-				v->b = v->b >> 24;
-				v->c = v->c >> 24;
+				v->a = asr32( v->a, 24 );
+				v->b = asr32( v->b, 24 );
+				v->c = asr32( v->c, 24 );
 			}
 			break;
 		}
@@ -851,18 +860,6 @@ static void make_battery( Battery* b, int n, uint64_t seed )
 // Hashing, comparison, references
 // ---------------------------------------------------------------------------------------------------------------------
 
-static uint64_t fnv( uint64_t h, const void* p, size_t n )
-{
-	const uint8_t* b = (const uint8_t*)p;
-	for ( size_t i = 0; i < n; ++i )
-	{
-		h ^= b[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
-
-#define FNV0 1469598103934665603ULL
 #define OUT_WORDS ( (int)( sizeof( BatOut ) / 4 ) )
 
 static void dump_vec( const char* what, const BatIn* v, const BatOut* a, const BatOut* b )
@@ -1316,6 +1313,7 @@ int main( int argc, char** argv )
 	int n = 4096;
 	uint64_t seed = 20261004;
 	int gpuMask = 0xff;
+	int noGpu = 0;
 	const char* logPath = NULL;
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -1326,7 +1324,9 @@ int main( int argc, char** argv )
 		else if ( strcmp( a, "--seed" ) == 0 )
 			seed = (uint64_t)strtoull( v, NULL, 10 ), ++i;
 		else if ( strcmp( a, "--gpus" ) == 0 )
-			gpuMask = atoi( v ), ++i;
+			gpuMask = (int)strtol( v, NULL, 0 ), ++i;
+		else if ( strcmp( a, "--no-gpu" ) == 0 )
+			noGpu = 1, gpuMask = 0;
 		else if ( strcmp( a, "--log" ) == 0 )
 			logPath = v, ++i;
 		else
@@ -1347,10 +1347,15 @@ int main( int argc, char** argv )
 		say( "FAIL: layout sizes differ\n" );
 		return 2;
 	}
+	if ( fp_flush_mode() != 0 )
+	{
+		say( "FAIL: the CPU flushes subnormals (%s): the floating-point sentinel could not see them\n", fp_flush_mode() );
+		return 2;
+	}
 
 	Battery b;
 	make_battery( &b, n, seed );
-	say( "inputs: %d vectors, hash %016llx\n", b.total, (unsigned long long)fnv( FNV0, b.in, (size_t)b.total * sizeof( BatIn ) ) );
+	say( "inputs: %d vectors, hash %016llx\n", b.total, (unsigned long long)lab_fnv( LAB_FNV0, b.in, (size_t)b.total * sizeof( BatIn ) ) );
 	if ( getenv( "TOY_DUMP_INPUTS" ) != NULL )
 	{
 		FILE* f = fopen( getenv( "TOY_DUMP_INPUTS" ), "wb" );
@@ -1377,7 +1382,7 @@ int main( int argc, char** argv )
 		}
 		twinFlags[h] = fp_flags();
 		twinSat[h] = counters[0];
-		helperHash[h] = fnv( FNV0, twin + b.start[h], (size_t)b.n[h] * sizeof( BatOut ) );
+		helperHash[h] = lab_fnv( LAB_FNV0, twin + b.start[h], (size_t)b.n[h] * sizeof( BatOut ) );
 	}
 
 	accuracy( &b, twin );
@@ -1451,14 +1456,14 @@ int main( int argc, char** argv )
 #endif
 
 	// Per helper: the twin's hash, saturations and floating-point status; each GPU's mismatching vectors
-	uint64_t all = FNV0;
+	uint64_t all = LAB_FNV0;
 	for ( int h = 0; h < H_COUNT; ++h )
 	{
 		char flags[96];
 		say( "helper %-14s n %6d  hash %016llx  sat %6u  fp %-24s", g_names[h], b.n[h], (unsigned long long)helperHash[h], twinSat[h],
 			 fp_names( twinFlags[h], flags, sizeof( flags ) ) );
-		all = fnv( all, &helperHash[h], 8 );
-		all = fnv( all, &twinSat[h], 4 );
+		all = lab_fnv( all, &helperHash[h], 8 );
+		all = lab_fnv( all, &twinSat[h], 4 );
 		int dumps = 0;
 		for ( int gi = 0; gi < gpuCount; ++gi )
 		{
@@ -1476,7 +1481,20 @@ int main( int argc, char** argv )
 		}
 	}
 	say( "battery %s hash %016llx (twin: %s)\n", DIALECT_NAME, (unsigned long long)all, bat_info() );
-	say( "%s: %d GPU(s) against the twin, %s\n", failures ? "FAIL" : "PASS", gpuCount, failures ? "differences above" : "every word identical" );
+	if ( HAS_GPU && gpuCount == 0 && !noGpu )
+	{
+		say( "FAIL: no GPU ran (mask 0x%x; --no-gpu runs the twin alone)\n", (unsigned)gpuMask );
+		failures += 1;
+	}
+	if ( !HAS_GPU || noGpu )
+	{
+		say( "%s: the twin alone (%s), %s\n", failures ? "FAIL" : "PASS", HAS_GPU ? "--no-gpu" : "dialect " DIALECT_NAME " has no GPU kernels",
+			 failures ? "the failures above" : "every helper clean" );
+	}
+	else
+	{
+		say( "%s: %d GPU(s) against the twin, %s\n", failures ? "FAIL" : "PASS", gpuCount, failures ? "the failures above" : "every word identical" );
+	}
 
 #if HAS_GPU
 	for ( int gi = 0; gi < gpuCount; ++gi )

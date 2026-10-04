@@ -1,6 +1,8 @@
 // stages.c: see stages.h. Integers only; every loop in index or key order; every sort a total order.
 #include "stages.h"
 
+#include "hash.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -568,42 +570,32 @@ void stages_tick( Stages* s, const Aabb* aabbs, const int32_t* sleepTicks, const
 	s->prevCount = s->pairCount;
 }
 
-static uint64_t fnv( uint64_t h, const void* p, size_t n )
-{
-	const uint8_t* b = (const uint8_t*)p;
-	for ( size_t i = 0; i < n; ++i )
-	{
-		h ^= b[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
 
 uint64_t stages_hash( const Stages* s )
 {
-	uint64_t h = 1469598103934665603ULL;
-	h = fnv( h, &s->pairCount, sizeof( int ) );
+	uint64_t h = LAB_FNV0;
+	h = lab_fnv( h, &s->pairCount, sizeof( int ) );
 	for ( int k = 0; k < s->pairCount; ++k )
 	{
-		h = fnv( h, s->keys + k, 8 );
-		h = fnv( h, &s->pairs[k].prevIndex, 4 );
-		h = fnv( h, &s->pairs[k].colour, 4 );
-		h = fnv( h, &s->pairs[k].flags, 4 );
-		h = fnv( h, s->active + k, 1 );
+		h = lab_fnv( h, s->keys + k, 8 );
+		h = lab_fnv( h, &s->pairs[k].prevIndex, 4 );
+		h = lab_fnv( h, &s->pairs[k].colour, 4 );
+		h = lab_fnv( h, &s->pairs[k].flags, 4 );
+		h = lab_fnv( h, s->active + k, 1 );
 	}
-	h = fnv( h, s->islandOf, (size_t)s->bodyCount * sizeof( int32_t ) );
-	h = fnv( h, s->asleep, (size_t)s->bodyCount );
-	h = fnv( h, s->sleepIsland, (size_t)s->bodyCount * sizeof( int32_t ) );
-	h = fnv( h, &s->awakeCount, sizeof( int ) );
-	h = fnv( h, s->awake, (size_t)s->awakeCount * sizeof( int32_t ) );
-	h = fnv( h, &s->wokenCount, sizeof( int ) );
-	h = fnv( h, s->woken, (size_t)s->wokenCount * sizeof( int32_t ) );
+	h = lab_fnv( h, s->islandOf, (size_t)s->bodyCount * sizeof( int32_t ) );
+	h = lab_fnv( h, s->asleep, (size_t)s->bodyCount );
+	h = lab_fnv( h, s->sleepIsland, (size_t)s->bodyCount * sizeof( int32_t ) );
+	h = lab_fnv( h, &s->awakeCount, sizeof( int ) );
+	h = lab_fnv( h, s->awake, (size_t)s->awakeCount * sizeof( int32_t ) );
+	h = lab_fnv( h, &s->wokenCount, sizeof( int ) );
+	h = lab_fnv( h, s->woken, (size_t)s->wokenCount * sizeof( int32_t ) );
 	if ( s->jointCount > 0 ) // (so a scene without joints hashes as before step 6)
 	{
-		h = fnv( h, &s->jointCount, sizeof( int ) );
-		h = fnv( h, s->jointActive, (size_t)s->jointCount );
-		h = fnv( h, s->jointColour, (size_t)s->jointCount * sizeof( int32_t ) );
-		h = fnv( h, s->jointFlags, (size_t)s->jointCount * sizeof( int32_t ) );
+		h = lab_fnv( h, &s->jointCount, sizeof( int ) );
+		h = lab_fnv( h, s->jointActive, (size_t)s->jointCount );
+		h = lab_fnv( h, s->jointColour, (size_t)s->jointCount * sizeof( int32_t ) );
+		h = lab_fnv( h, s->jointFlags, (size_t)s->jointCount * sizeof( int32_t ) );
 	}
 	return h;
 }

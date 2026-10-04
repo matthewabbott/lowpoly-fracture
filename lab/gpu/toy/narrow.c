@@ -15,6 +15,7 @@
 // within --tie metres, areas within --tie x 1 m, cosines within --tie / 1 m. An axis tie (axisLen) may change the axis;
 // a clip tie (clipLen, clipArea, clipCos) only the points and their ids.
 #include "fpflags.h"
+#include "hash.h"
 #include "layout.h"
 #include "quant.h"
 #include "rng.h"
@@ -38,7 +39,7 @@
 #define HAS_GPU 0
 #endif
 
-#define TOY_BUFFERS 22 // kernels.slang's bindings 0..21 (the constraints and joints, 18 to 21, unused here)
+#define TOY_BUFFERS 24 // kernels.slang's bindings 0..23 (the constraints, joints and the hashes of 22 and 23 unused here)
 void toy_bind( void* const* bufs, const size_t* counts );
 const char* toy_twin_info( void );
 size_t toy_sizeof( int which );
@@ -691,7 +692,7 @@ static void pass_setup( PassIO* io, int n, int pass )
 static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state, Aabb* aabbs, Hash2* hashes )
 {
 	void* bufs[TOY_BUFFERS] = { d->hulls, d->points, d->faces, d->edges, state,	 d->pose,  d->mass, aabbs,	io->lists,
-								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes, NULL, NULL, NULL, NULL };
+								P,		  hashes,	 NULL,	   io->pairs, io->out, io->prev, io->sat, io->diag, hashes, NULL, NULL, NULL, NULL, NULL, NULL };
 	size_t counts[TOY_BUFFERS] = { (size_t)d->hullCount, (size_t)d->pointCount, (size_t)d->faceCount, (size_t)d->edgeCount,
 								   (size_t)d->bodyCount,
 								   (size_t)d->bodyCount,
@@ -707,6 +708,8 @@ static void bind_all( ToyData* d, Params* P, PassIO* io, int n, BodyState* state
 								   (size_t)n,
 								   (size_t)n,
 								   (size_t)n,
+								   0,
+								   0,
 								   0,
 								   0,
 								   0,
@@ -1360,6 +1363,11 @@ int main( int argc, char** argv )
 		say( "FAIL: layout sizes differ\n" );
 		return 2;
 	}
+	if ( fp_flush_mode() != 0 )
+	{
+		say( "FAIL: the CPU flushes subnormals (%s): the floating-point sentinel could not see them\n", fp_flush_mode() );
+		return 2;
+	}
 
 	Corpus c;
 	make_corpus( &c, n, seed );
@@ -1437,21 +1445,11 @@ int main( int argc, char** argv )
 	}
 	int failures = ( fpFlags[0] | fpFlags[1] ) != 0;
 	failures += ( twinSat[0] | twinSat[1] ) != 0;
-	uint64_t h = 1469598103934665603ULL;
+	uint64_t h = LAB_FNV0;
 	for ( int p = 0; p < 2; ++p )
 	{
-		const uint8_t* b = (const uint8_t*)io[p].out;
-		for ( size_t i = 0; i < (size_t)n * sizeof( Manifold ); ++i )
-		{
-			h ^= b[i];
-			h *= 1099511628211ULL;
-		}
-		b = (const uint8_t*)io[p].sat;
-		for ( size_t i = 0; i < (size_t)n * sizeof( SatAxis ); ++i )
-		{
-			h ^= b[i];
-			h *= 1099511628211ULL;
-		}
+		h = lab_fnv( h, io[p].out, (size_t)n * sizeof( Manifold ) );
+		h = lab_fnv( h, io[p].sat, (size_t)n * sizeof( SatAxis ) );
 	}
 	say( "narrow %s corpus hash %016llx (manifolds and SAT records, both passes; twin: %s)\n", DIALECT_NAME, (unsigned long long)h, toy_twin_info() );
 

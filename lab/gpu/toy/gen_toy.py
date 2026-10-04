@@ -50,20 +50,42 @@ def gen_toy(lab, tool, run):
                     if modes:  # F-plain: no float-control modes in the decision rule (DESIGN.md)
                         raise SystemExit(f"{spv}: float-control execution modes {modes}")
             slangc(src + ".slang", os.path.join(out, src + ".cpp"), defs + ["TWIN_CPP"], "-target", "cpp", "-fp-mode", "precise")
-        if name == "F":  # NoContraction audit of the float kernels
-            for e in ["battery"] + KERNELS:
-                spv = os.path.join(out, e + ".spv")
-                if not os.path.exists(spv):
-                    continue
-                asm = run([tool("spirv-dis"), spv])
-                ops = len(re.findall(r"= Op(FMul|FAdd|FSub)\b", asm))
-                fdiv = len(re.findall(r"= OpFDiv\b", asm))
-                ext = sorted(set(re.findall(r"OpExtInst %\w+ %\w+ (\w+)", asm)))
-                print(f"  toy F/{e}: float mul/add/sub {ops}, NoContraction {asm.count('NoContraction')}, FDiv {fdiv}, "
-                      f"extended {','.join(ext) or '-'}")
-                if fdiv or any(x != "FindUMsb" for x in ext):  # only + - * on floats; FindUMsb is clz
-                    raise SystemExit(f"{spv}: float division or an extended instruction")
+        if gpu:
+            audit(name, out, ["battery"] + KERNELS, tool, run)
         print("gen toy", name)
+
+
+# Float arithmetic a driver could contract or that is not + - * (DESIGN.md: F uses only add, subtract and multiply on
+# the GPU, each decorated NoContraction; V4 uses none)
+FLOAT_OPS = ("FMul", "FAdd", "FSub")
+FORBIDDEN = ("FDiv", "FRem", "FMod", "Dot", "VectorTimesScalar", "MatrixTimesScalar", "VectorTimesMatrix", "MatrixTimesVector",
+             "MatrixTimesMatrix", "OuterProduct")
+
+
+def audit(name, out, entries, tool, run):
+    """The NoContraction audit, by result id: every F float add, subtract and multiply must carry the decoration (a total
+    that matches could hide an undecorated op behind a decorated non-arithmetic one); no float division, no matrix or
+    vector product and no extended instruction but FindUMsb (clz) in F; no float arithmetic at all in V4. Any miss fails
+    the generation."""
+    for e in entries:
+        spv = os.path.join(out, e + ".spv")
+        if not os.path.exists(spv):
+            continue
+        asm = run([tool("spirv-dis"), "--raw-id", spv])
+        decorated = set(re.findall(r"OpDecorate (%\d+) NoContraction\b", asm))
+        ops = re.findall(r"^\s*(%\d+) = Op(" + "|".join(FLOAT_OPS) + r")\b", asm, re.M)
+        missing = [rid for rid, _ in ops if rid not in decorated]
+        bad = sorted(set(re.findall(r"= Op(" + "|".join(FORBIDDEN) + r")\b", asm)))
+        ext = sorted(set(re.findall(r"OpExtInst %\d+ %\d+ (\w+)", asm)))
+        if name == "F":
+            print(f"  toy F/{e}: float mul/add/sub {len(ops)}, each NoContraction ({len(ops) - len(missing)} decorated, "
+                  f"{len(decorated)} decorations), forbidden {','.join(bad) or '-'}, extended {','.join(ext) or '-'}")
+            if missing:
+                raise SystemExit(f"{spv}: {len(missing)} float add/sub/mul without NoContraction (result ids {', '.join(missing[:8])})")
+            if bad or any(x != "FindUMsb" for x in ext):  # only + - * on floats; FindUMsb is clz
+                raise SystemExit(f"{spv}: forbidden float operations {bad} or extended instructions {ext}")
+        elif ops or bad:
+            raise SystemExit(f"{spv}: dialect {name} has float arithmetic ({len(ops)} add/sub/mul, {bad})")
 
 
 if __name__ == "__main__":

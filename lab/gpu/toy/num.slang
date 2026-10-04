@@ -53,6 +53,8 @@ T snap( T x ) { return ( x < SNAP_LIMIT && x > -SNAP_LIMIT ) ? 0.0f : x; }
 T M( T a, T b, int sh ) { return a * b; }
 T sum2( T a, T b, T c, T d, int sh ) { return a * b + c * d; }
 T dif2( T a, T b, T c, T d, int sh ) { return a * b - c * d; }
+T addSat( T a, T b ) { return a + b; }
+T subSat( T a, T b ) { return a - b; }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return a * b + c * d + e * f; }
 T rescale( T x, int sh ) { return x; }
 
@@ -189,6 +191,8 @@ T snap( T x ) { return x == 0.0l ? 0.0l : x; }
 T M( T a, T b, int sh ) { return a * b; }
 T sum2( T a, T b, T c, T d, int sh ) { return a * b + c * d; }
 T dif2( T a, T b, T c, T d, int sh ) { return a * b - c * d; }
+T addSat( T a, T b ) { return a + b; }
+T subSat( T a, T b ) { return a - b; }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return a * b + c * d + e * f; }
 T rescale( T x, int sh ) { return x; }
 
@@ -294,6 +298,10 @@ int mas( int a, int b, int c, int d, int e, int f, int sh )
 T M( T a, T b, int sh ) { return mas( a, b, 0, 0, 0, 0, sh ); }
 T sum2( T a, T b, T c, T d, int sh ) { return mas( a, b, c, d, 0, 0, sh ); }
 T dif2( T a, T b, T c, T d, int sh ) { return mas( a, b, -c, d, 0, 0, sh ); }
+// a + b and a - b saturated at +-(2^31 - 1) and counted, where an operand may already be saturated (a plain int32 add
+// would wrap on a GPU and be undefined in the C++ twin: UBSan found invertSym's)
+T addSat( T a, T b ) { return mas( a, 1, b, 1, 0, 0, 0 ); }
+T subSat( T a, T b ) { return mas( a, 1, b, -1, 0, 0, 0 ); }
 T sum3( T a, T b, T c, T d, T e, T f, int sh ) { return mas( a, b, c, d, e, f, sh ); }
 
 // A format change by sh bits (the value is kept): sh > 0 rounds to nearest, halves away from zero (mas), sh < 0 (to
@@ -777,12 +785,12 @@ Sym3 invertSym( Sym3 a, T one )
 	T rp1 = divClamp( one, a.xx, S_J, lim );
 	T l21 = snap( M( a.xy, rp1, S_Q ) );
 	T l31 = snap( M( a.xz, rp1, S_Q ) );
-	T d2 = snap( a.yy - M( a.xy, l21, S_J ) );
-	T e2 = snap( a.yz - M( a.xz, l21, S_J ) );
-	T f2 = snap( a.zz - M( a.xz, l31, S_J ) );
+	T d2 = snap( subSat( a.yy, M( a.xy, l21, S_J ) ) );
+	T e2 = snap( subSat( a.yz, M( a.xz, l21, S_J ) ) );
+	T f2 = snap( subSat( a.zz, M( a.xz, l31, S_J ) ) );
 	T rp2 = divClamp( one, d2, S_J, lim );
 	T l32 = snap( M( e2, rp2, S_Q ) );
-	T d3 = snap( f2 - M( e2, l32, S_J ) );
+	T d3 = snap( subSat( f2, M( e2, l32, S_J ) ) );
 	T rp3 = divClamp( one, d3, S_J, lim );
 	bool bad = !( a.xx > zero() ) || !( d2 > zero() ) || !( d3 > zero() );
 	bad = bad || !( rp1 < lim ) || !( rp2 < lim ) || !( rp3 < lim );
@@ -793,14 +801,14 @@ Sym3 invertSym( Sym3 a, T one )
 	// L^-1 = [1 0 0; m21 1 0; m31 m32 1]
 	T m21 = -l21;
 	T m32 = -l32;
-	T m31 = snap( M( l21, l32, S_J ) - l31 );
+	T m31 = snap( subSat( M( l21, l32, S_J ), l31 ) );
 	Sym3 r;
 	r.zz = rp3;
 	r.yz = snap( M( m32, rp3, S_J ) );
 	r.xz = snap( M( m31, rp3, S_J ) );
-	r.yy = snap( rp2 + M( m32, r.yz, S_J ) );
+	r.yy = snap( addSat( rp2, M( m32, r.yz, S_J ) ) );
 	r.xy = snap( sum2( m21, rp2, m31, r.yz, S_J ) );
-	r.xx = snap( rp1 + sum2( m21, snap( M( m21, rp2, S_J ) ), m31, r.xz, S_J ) );
+	r.xx = snap( addSat( rp1, sum2( m21, snap( M( m21, rp2, S_J ) ), m31, r.xz, S_J ) ) );
 	return r;
 }
 
@@ -829,13 +837,14 @@ Pos3 posAdd( Pos3 p, V3 d )
 // floor( p 2^10 ) from the two words
 int gridOf( uint lo, int hi ) { return int( uint( hi ) << uint( S_G ) ) | int( lo >> uint( S_P - S_G ) ); }
 
-// b - a for one coordinate, in Q8.24: the two words' difference rounded half up (+128 at bit 7, with the carry);
-// beyond +-127 m it saturates and counts
+// b - a for one coordinate, in Q8.24: the two words' difference rounded to nearest with halves away from zero, as mas
+// (+128 at bit 7 for a difference >= 0, +127 for a negative one, with the carry), so a - b is exactly -(b - a); beyond
+// +-127 m it saturates and counts
 int posDeltaWord( uint alo, int ahi, uint blo, int bhi )
 {
 	uint lo = blo - alo;
 	int hi = bhi - ahi - ( blo < alo ? 1 : 0 );
-	uint lr = lo + 128u;
+	uint lr = lo + ( hi < 0 ? 127u : 128u );
 	hi = hi + ( lr < lo ? 1 : 0 );
 	int r = 0;
 	if ( hi > 127 || hi < -127 )

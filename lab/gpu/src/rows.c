@@ -5,6 +5,7 @@
 // counters.
 //
 //   rows_V4 --n 1048576 --reps 5 --log logs/rows_V4.txt [--spv gen/rows/V4.spv]
+#include "hash.h"
 #include "rowlayout.h"
 #include "vk_util.h"
 
@@ -714,16 +715,6 @@ static void accuracy( Acc* acc, const DRRow* d, const RRow* q, const ROut* o, co
 // GPU
 // ------------------------------------------------------------------------------------------------
 
-static uint64_t fnv( uint64_t h, const void* p, size_t n )
-{
-	const uint8_t* b = (const uint8_t*)p;
-	for ( size_t i = 0; i < n; ++i )
-	{
-		h ^= b[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
 
 static int cmp_d( const void* a, const void* b )
 {
@@ -836,7 +827,7 @@ static GpuRows run_gpu( VkGpu* g, const char* spv, const RRow* rows, int n, int 
 	res.nsMin = best;
 	memcpy( outs, st.mapped, outBytes );
 	memcpy( res.counters, (uint8_t*)st.mapped + outBytes, 16 );
-	res.hash = fnv( fnv( 1469598103934665603ULL, outs, outBytes ), res.counters, 8 );
+	res.hash = lab_fnv( lab_fnv( LAB_FNV0, outs, outBytes ), res.counters, 8 );
 	free( ns );
 
 	vkDestroyQueryPool( g->device, qp, NULL );
@@ -907,8 +898,8 @@ int main( int argc, char** argv )
 			 g_rangeErrorsQ[0], g_rangeErrorsQ[1], g_rangeErrorsQ[2], g_rangeErrorsQ[3], g_rangeErrorsQ[4], g_shiftClampsQ[0], g_shiftClampsQ[1],
 			 g_shiftClampsQ[2], g_shiftClampsQ[3], g_shiftClampsQ[4] );
 	fprintf( log, "corpus hashes: rows %016llx (double) %016llx (quantised)\n",
-			 (unsigned long long)fnv( 1469598103934665603ULL, drows, sizeof( DRRow ) * (size_t)total ),
-			 (unsigned long long)fnv( 1469598103934665603ULL, rows, sizeof( RRow ) * (size_t)total ) );
+			 (unsigned long long)lab_fnv( LAB_FNV0, drows, sizeof( DRRow ) * (size_t)total ),
+			 (unsigned long long)lab_fnv( LAB_FNV0, rows, sizeof( RRow ) * (size_t)total ) );
 
 	// C++ twin, one thread
 	uint32_t tc[4] = { 0 };
@@ -932,7 +923,7 @@ int main( int argc, char** argv )
 		}
 		free( scratch );
 	}
-	uint64_t twinHash = fnv( fnv( 1469598103934665603ULL, twin, sizeof( ROut ) * (size_t)total ), tc, 8 );
+	uint64_t twinHash = lab_fnv( lab_fnv( LAB_FNV0, twin, sizeof( ROut ) * (size_t)total ), tc, 8 );
 	fprintf( log, "twin (%s; 1 thread): %.2f ns/row, hash %016llx, counters: saturations %u, kernel shift clamps %u\n", rtwin_info(), twinNs,
 			 (unsigned long long)twinHash, tc[0], tc[1] );
 	fprintf( csv, "%s,twin,%.3f,,%016llx,%u,%u\n", label, twinNs, (unsigned long long)twinHash, tc[0], tc[1] );

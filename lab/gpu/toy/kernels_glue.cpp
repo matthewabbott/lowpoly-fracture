@@ -9,10 +9,10 @@ static GlobalParams_0 g_base;
 #define TWIN_MAX_THREADS 64
 static uint32_t g_counters[TWIN_MAX_THREADS][4];
 
-// The buffers, in kernels.slang's binding order 0..10 then 12..21 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
+// The buffers, in kernels.slang's binding order 0..10 then 12..23 (hulls, hullPoints, hullFaces, hullEdges, bodyState,
 // bodyPose, bodyMass, aabbs, lists, params, hashes; pairs, manifolds, prevManifolds, satAxes, narrowDiag,
-// manifoldHashes, constraints, joints, jointHashes, jointCommands: TOY_BUFFERS entries, the counters' slot 11 unused)
-// with their element counts
+// manifoldHashes, constraints, joints, jointHashes, jointCommands, bodyPrepHashes, pairWorkHashes: TOY_BUFFERS entries,
+// the counters' slot 11 unused) with their element counts
 extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 {
 	g_base.hulls_0.data = (Hull_0*)bufs[0];
@@ -57,6 +57,10 @@ extern "C" void toy_bind( void* const* bufs, const size_t* counts )
 	g_base.jointHashes_0.count = counts[20];
 	g_base.jointCommands_0.data = (JointCommand_0*)bufs[21];
 	g_base.jointCommands_0.count = counts[21];
+	g_base.bodyPrepHashes_0.data = (Hash2_0*)bufs[22];
+	g_base.bodyPrepHashes_0.count = counts[22];
+	g_base.pairWorkHashes_0.data = (Hash2_0*)bufs[23];
+	g_base.pairWorkHashes_0.count = counts[23];
 }
 
 extern "C" const char* toy_twin_info( void )
