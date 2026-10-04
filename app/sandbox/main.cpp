@@ -158,6 +158,9 @@ struct App
 	lpRigControl walkSent = {};
 	// its arms: the leg F strikes with (-1: none)
 	int striking = -1;
+	// V asks for a car or a rig; the world decides whose it is once that tick applies (another player may ask too)
+	int64_t claimTick = -1;
+	std::string notice; // the last such answer that was no
 
 	// grab tool
 	int grabPiece = -1;
@@ -398,6 +401,22 @@ void QueueWalk( const lpRigControl& control )
 
 void StrikeKey( bool down );
 
+// The tick a command of this player's submitted now applies at
+int64_t ApplyTick()
+{
+	return app.lockstep != nullptr ? (int64_t)lpWorld_GetTick( app.world ) + lpLockstep_GetDelay( app.lockstep ) : app.tick + app.opt.inputDelay;
+}
+
+// Lets go of a vehicle or a rig: anyone may take it then (and the scene's drivers do, until someone does)
+void Release( int vehicle, int rig )
+{
+	lpCommand c = {};
+	c.kind = lp_commandRelease;
+	c.release.vehicle = vehicle;
+	c.release.rig = rig;
+	Submit( c );
+}
+
 // V: get into the nearest vehicle or rig, or out of the one being driven (a car brakes and parks, a rig stands)
 void ToggleDriving()
 {
@@ -407,6 +426,7 @@ void ToggleDriving()
 		park.brake = 1.0f;
 		park.handbrake = true;
 		QueueDrive( park );
+		Release( app.driving, -1 );
 		app.driving = -1;
 		return;
 	}
@@ -414,6 +434,7 @@ void ToggleDriving()
 	{
 		QueueWalk( lpRigControl{} );
 		StrikeKey( false ); // a striking leg steps back; a claw keeps its grip
+		Release( -1, app.walking );
 		app.walking = -1;
 		return;
 	}
@@ -430,6 +451,31 @@ void ToggleDriving()
 		app.walking = rig;
 		QueueWalk( lpRigControl{} );
 	}
+	app.claimTick = ApplyTick();
+	app.notice.clear();
+}
+
+// Once a claim's tick has applied, the world says whose the car or rig is: another player's command for it may have
+// come first on that tick (commands apply in peer order). If so, this window lets go and says so.
+void SettleClaim()
+{
+	if ( (int64_t)lpWorld_GetTick( app.world ) <= app.claimTick )
+	{
+		return;
+	}
+	int owner = app.driving >= 0 ? lpWorld_GetVehicleState( app.world, app.driving ).controller
+								  : ( app.walking >= 0 ? lpWorld_GetRigState( app.world, app.walking ).controller : app.peer );
+	if ( owner != app.peer )
+	{
+		char text[96];
+		snprintf( text, sizeof( text ), "%s %d went to peer %d first", app.driving >= 0 ? "car" : "rig",
+				  app.driving >= 0 ? app.driving : app.walking, owner );
+		app.notice = text;
+		printf( "%s\n", text );
+		app.driving = -1;
+		app.walking = -1;
+	}
+	app.claimTick = INT64_MAX; // settled
 }
 
 void QueueReach( int limb, bool active, V3 point )
@@ -673,6 +719,7 @@ void NetStep( int close )
 
 void PostStep()
 {
+	SettleClaim();
 	app.last = lpWorld_GetStats( app.world );
 	if ( app.recordFile != nullptr )
 	{
@@ -949,6 +996,10 @@ void DrawUi()
 			ImGui::TextColored( ImVec4( 1.0f, 0.35f, 0.3f, 1.0f ), "co-op stopped: %s", lpLockstep_GetReport( app.lockstep ) );
 		}
 	}
+	if ( app.notice.empty() == false )
+	{
+		ImGui::TextColored( ImVec4( 1.0f, 0.8f, 0.3f, 1.0f ), "%s", app.notice.c_str() );
+	}
 	if ( app.control )
 	{
 		ImGui::Text( "agent control: %s%s", app.paused ? "clock held" : "clock running", app.opt.allowInput ? "" : ", keys and mouse ignored" );
@@ -1206,7 +1257,7 @@ std::string StateJson()
 		}
 		j.Raw( "session", s.Done() );
 	}
-	j.Int( "driving", app.driving ).Int( "walking", app.walking );
+	j.Int( "driving", app.driving ).Int( "walking", app.walking ).Str( "notice", app.notice.c_str() );
 	j.Raw( "camera", Json()
 						 .Num( "x", app.camPos.x )
 						 .Num( "y", app.camPos.y )
@@ -1333,8 +1384,7 @@ std::string Request( const ControlRequest& r )
 		{
 			return JsonError( "not a script line (scenes/script.h), or one without its tick" );
 		}
-		int64_t applies = app.lockstep != nullptr ? (int64_t)lpWorld_GetTick( app.world ) + lpLockstep_GetDelay( app.lockstep )
-												  : app.tick + app.opt.inputDelay;
+		int64_t applies = ApplyTick();
 		Submit( c );
 		return Json().Bool( "ok", true ).Int( "applies", applies ).Done();
 	}
