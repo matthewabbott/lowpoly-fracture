@@ -60,5 +60,7 @@ void Renderer_EndFrame();
 
 // Save the last rendered scene (without UI) as PNG. Call after Renderer_EndFrame.
 bool Renderer_Screenshot( const char* path );
+// Save the whole window as drawn, UI included (the swapchain's back buffer), as PNG. Call after Renderer_EndFrame.
+bool Renderer_ScreenshotWindow( const char* path );
 
 const RenderStats& Renderer_GetStats();

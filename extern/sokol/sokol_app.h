@@ -2009,6 +2009,7 @@ typedef struct sapp_win32_desc {
     bool console_utf8;            // if true, set the output console codepage to UTF-8
     bool console_create;          // if true, attach stdout/stderr to a new console window
     bool console_attach;          // if true, attach stdout/stderr to parent process
+    bool no_activate;             // local patch: show the window without taking focus (SW_SHOWNOACTIVATE)
 } sapp_win32_desc;
 
 typedef struct sapp_html5_desc {
@@ -9793,7 +9794,8 @@ _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
         _sapp_win32_set_fullscreen(_sapp.fullscreen, SWP_HIDEWINDOW);
         _sapp_win32_update_dimensions();
     }
-    ShowWindow(_sapp.win32.hwnd, SW_SHOW);
+    // Local patch: a window started in the background (agent-driven tests) does not take focus
+    ShowWindow(_sapp.win32.hwnd, _sapp.desc.win32.no_activate ? SW_SHOWNOACTIVATE : SW_SHOW);
     DragAcceptFiles(_sapp.win32.hwnd, 1);
 }
 

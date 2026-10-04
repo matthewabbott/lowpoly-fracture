@@ -849,14 +849,9 @@ void Renderer_EndFrame()
 	sg_commit();
 }
 
-bool Renderer_Screenshot( const char* path )
+// A texture read back to the CPU and written as an RGB PNG (bgra: the swapchain's channel order)
+static bool SaveTexture( ID3D11Texture2D* tex, bool bgra, const char* path )
 {
-	if ( s.colorImage.id == SG_INVALID_ID )
-	{
-		return false;
-	}
-	sg_d3d11_image_info info = sg_d3d11_query_image_info( s.colorImage );
-	ID3D11Texture2D* tex = (ID3D11Texture2D*)info.tex2d;
 	sapp_environment env = sapp_get_environment();
 	ID3D11Device* device = (ID3D11Device*)env.d3d11.device;
 	ID3D11DeviceContext* context = (ID3D11DeviceContext*)env.d3d11.device_context;
@@ -888,15 +883,49 @@ bool Renderer_Screenshot( const char* path )
 			for ( UINT x = 0; x < desc.Width; ++x )
 			{
 				uint8_t* d = rgb.data() + ( (size_t)y * desc.Width + x ) * 3;
-				d[0] = row[4 * x + 0];
+				d[0] = row[4 * x + ( bgra ? 2 : 0 )];
 				d[1] = row[4 * x + 1];
-				d[2] = row[4 * x + 2];
+				d[2] = row[4 * x + ( bgra ? 0 : 2 )];
 			}
 		}
 		context->Unmap( staging, 0 );
 		ok = WritePng( path, rgb.data(), (int)desc.Width, (int)desc.Height );
 	}
 	staging->Release();
+	return ok;
+}
+
+bool Renderer_Screenshot( const char* path )
+{
+	if ( s.colorImage.id == SG_INVALID_ID )
+	{
+		return false;
+	}
+	sg_d3d11_image_info info = sg_d3d11_query_image_info( s.colorImage );
+	return SaveTexture( (ID3D11Texture2D*)info.tex2d, false, path );
+}
+
+bool Renderer_ScreenshotWindow( const char* path )
+{
+	// The back buffer, as presented next: the swapchain has one sample, so its render view is the buffer itself
+	ID3D11RenderTargetView* view = (ID3D11RenderTargetView*)sapp_get_swapchain().d3d11.render_view;
+	if ( view == nullptr )
+	{
+		return false;
+	}
+	ID3D11Resource* resource = nullptr;
+	view->GetResource( &resource );
+	ID3D11Texture2D* tex = nullptr;
+	bool ok = resource != nullptr && SUCCEEDED( resource->QueryInterface( __uuidof( ID3D11Texture2D ), (void**)&tex ) ) &&
+			  SaveTexture( tex, true, path );
+	if ( tex != nullptr )
+	{
+		tex->Release();
+	}
+	if ( resource != nullptr )
+	{
+		resource->Release();
+	}
 	return ok;
 }
 

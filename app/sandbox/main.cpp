@@ -9,16 +9,22 @@
 //               (lockstep, app/net: the host keeps the clock; each player's commands apply --input-delay ticks later,
 //               4 by default; V takes a free car or mech, or leaves it; a desync stops both and names what differs)
 //
+// Agents:       sandbox --scene track --control 0 --paused --background   (control.h; tools/coop.py launches these)
+//               a loopback port taking one request a line (keys, step, turn, shot, state), answering with JSON
+//
 // The simulation runs at a fixed 60 Hz. With --frames it advances exactly one tick per rendered frame, so scripted
 // runs are independent of machine speed and their hash logs are comparable across runs. In co-op, --frames N runs
-// until the host has sent N ticks and both have stepped them.
+// until the host has sent N ticks and both have stepped them. Under --control the clock is the agent's: held, it
+// steps only what step and turn ask for.
 
+#include "control.h"
 #include "drive.h"
 #include "math3d.h"
 #include "renderer.h"
 
 #include "dump.h"
 #include "lockstep.h"
+#include "lpf/lplab.h"
 #include "scenes.h"
 #include "script.h"
 
@@ -29,11 +35,15 @@
 #include "sokol_imgui.h"
 #include "sokol_log.h"
 
+#include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
 #include <vector>
+
+extern "C" void Sandbox_PlaceWindow( int x, int y ); // sokol_impl.c
 
 namespace
 {
@@ -87,6 +97,35 @@ struct Options
 	float camera[5] = {};
 	int width = 1600;
 	int height = 900;
+	int controlPort = -1;	  // --control: an agent drives this sandbox through a loopback port (control.h); 0: any free one
+	bool startPaused = false; // --paused: the clock starts held
+	bool allowInput = false;  // --allow-input: real keys and mouse still count under --control
+	bool background = false;  // --background: the window opens without taking focus
+	bool haveWindowPos = false;
+	int windowPos[2] = {};
+};
+
+// A control request still waiting (control.h): for ticks to be stepped, or for the next frame's screenshot
+struct Waiting
+{
+	enum Kind
+	{
+		Everyone, // every machine has stepped to `target` (step and turn)
+		Here,	  // this machine has (wait)
+		Shot,
+	} kind;
+	int id;
+	int64_t target;
+	std::string path;
+	bool ui;
+};
+
+// A player's turn: ready for `ticks` more once every player is
+struct Turn
+{
+	int id;
+	int peer;
+	int ticks;
 };
 
 struct App
@@ -134,7 +173,15 @@ struct App
 	lpLockstep* lockstep = nullptr;
 	lpTcp* listener = nullptr;
 	std::vector<lpTcp*> links;
+	lpFault* fault = nullptr; // a joiner's link to the host, delayed or stalled on request (net.h)
 	int peer = 0;
+	bool titled = false; // the window's title names this player
+
+	// agent control (control.h): the ticks a held clock may still step, and the requests waiting
+	bool control = false;
+	int64_t budget = 0;
+	std::vector<Waiting> waits;
+	std::vector<Turn> turns;
 
 	std::vector<Particle> particles;
 	std::vector<Particle> drawn; // particles plus rope segments, rebuilt each frame
@@ -567,6 +614,8 @@ void PreStep( int64_t tick )
 }
 
 void PostStep();
+void UpdateCamera( float dt );
+void UpdateParticles( float dt );
 
 void StepSimulation()
 {
@@ -604,7 +653,7 @@ void NetStep( int close )
 	}
 	uint64_t t0 = lpGetTicks();
 	int steps = 0;
-	for ( int i = 0; i < ( host ? close : 8 ) || i == 0; ++i )
+	for ( int i = 0; i < ( host ? close : ( app.control ? 32 : 8 ) ) || i == 0; ++i )
 	{
 		if ( lpLockstep_Pump( app.lockstep, NetBefore, nullptr, host ? ( close > 0 ? 1 : 0 ) : 0, 1 ) == 0 )
 		{
@@ -672,6 +721,12 @@ void PostStep()
 			fclose( f );
 			printf( "dump %s\n", dump.second.c_str() );
 		}
+	}
+	if ( app.control )
+	{
+		// An agent's clock: the camera (the tools' aim, what V takes) and the particles move per tick, not per frame
+		UpdateCamera( 1.0f / 60.0f );
+		UpdateParticles( 1.0f / 60.0f );
 	}
 	app.tick += 1;
 }
@@ -886,13 +941,17 @@ void DrawUi()
 		else if ( state == lp_lockstepRunning )
 		{
 			ImGui::Text( "co-op: %s%d, %d player(s), input delay %d, %lld tick(s) %s", host ? "host, peer " : "peer ", app.peer,
-						 host ? lpLockstep_GetPeerCount( app.lockstep ) + 1 : 0, app.opt.inputDelay, (long long)ahead,
+						 host ? lpLockstep_GetPeerCount( app.lockstep ) + 1 : 0, lpLockstep_GetDelay( app.lockstep ), (long long)ahead,
 						 host ? "sent ahead" : "received ahead" );
 		}
 		else
 		{
 			ImGui::TextColored( ImVec4( 1.0f, 0.35f, 0.3f, 1.0f ), "co-op stopped: %s", lpLockstep_GetReport( app.lockstep ) );
 		}
+	}
+	if ( app.control )
+	{
+		ImGui::Text( "agent control: %s%s", app.paused ? "clock held" : "clock running", app.opt.allowInput ? "" : ", keys and mouse ignored" );
 	}
 	ImGui::Separator();
 
@@ -966,6 +1025,22 @@ void Init()
 	Renderer_Init();
 	app.rs.renderScale = app.opt.renderScale;
 	app.showUi = !app.opt.hideUi;
+	if ( app.opt.haveWindowPos )
+	{
+		Sandbox_PlaceWindow( app.opt.windowPos[0], app.opt.windowPos[1] );
+	}
+	if ( app.opt.controlPort >= 0 )
+	{
+		// First, so a launcher waiting for the port hears of it while the scene builds
+		app.control = Control_Start( app.opt.controlPort );
+		if ( app.control == false )
+		{
+			app.quitting = true;
+			sapp_request_quit();
+			return;
+		}
+		app.paused = app.opt.startPaused;
+	}
 
 	if ( !app.opt.script.empty() )
 	{
@@ -1006,7 +1081,8 @@ void Init()
 			if ( host != nullptr )
 			{
 				app.links.push_back( host );
-				app.lockstep = lpLockstep_CreatePeer( &def, lpTcp_Transport( host ) );
+				app.fault = lpFault_Create( lpTcp_Transport( host ) ); // passes lines straight on until told otherwise
+				app.lockstep = lpLockstep_CreatePeer( &def, lpFault_Transport( app.fault ) );
 				printf( "co-op: joined %s:%d\n", app.opt.joinHost.c_str(), app.opt.joinPort );
 			}
 		}
@@ -1014,6 +1090,463 @@ void Init()
 		{
 			printf( "co-op: no session; playing alone\n" );
 		}
+	}
+}
+
+// ---- agent control (control.h) ----
+
+void HandleInput( const sapp_event* ev );
+
+const char* kKeyNames[] = { "SPACE", "SHIFT", "F1", "F12" };
+const int kKeyCodes[] = { SAPP_KEYCODE_SPACE, SAPP_KEYCODE_LEFT_SHIFT, SAPP_KEYCODE_F1, SAPP_KEYCODE_F12 };
+
+// A key's code by name (A-Z, 0-9, SPACE, SHIFT, F1, F12, in any case); -1 if none of those
+int KeyCode( std::string name )
+{
+	for ( char& c : name )
+	{
+		c = (char)toupper( (unsigned char)c );
+	}
+	if ( name.size() == 1 && name[0] >= 'A' && name[0] <= 'Z' )
+	{
+		return SAPP_KEYCODE_A + ( name[0] - 'A' );
+	}
+	if ( name.size() == 1 && name[0] >= '0' && name[0] <= '9' )
+	{
+		return SAPP_KEYCODE_0 + ( name[0] - '0' );
+	}
+	for ( int k = 0; k < 4; ++k )
+	{
+		if ( name == kKeyNames[k] )
+		{
+			return kKeyCodes[k];
+		}
+	}
+	return -1;
+}
+
+std::string KeyName( int code )
+{
+	if ( code >= SAPP_KEYCODE_A && code <= SAPP_KEYCODE_Z )
+	{
+		return std::string( 1, (char)( 'A' + code - SAPP_KEYCODE_A ) );
+	}
+	if ( code >= SAPP_KEYCODE_0 && code <= SAPP_KEYCODE_9 )
+	{
+		return std::string( 1, (char)( '0' + code - SAPP_KEYCODE_0 ) );
+	}
+	for ( int k = 0; k < 4; ++k )
+	{
+		if ( code == kKeyCodes[k] )
+		{
+			return kKeyNames[k];
+		}
+	}
+	return std::to_string( code );
+}
+
+// A key pressed or let go, as a person would (a key held already repeats)
+void Press( int code, bool down )
+{
+	sapp_event ev = {};
+	ev.type = down ? SAPP_EVENTTYPE_KEY_DOWN : SAPP_EVENTTYPE_KEY_UP;
+	ev.key_code = (sapp_keycode)code;
+	ev.key_repeat = down && app.keys[code];
+	HandleInput( &ev );
+}
+
+bool Stopped()
+{
+	return app.lockstep != nullptr && lpLockstep_GetState( app.lockstep ) > lp_lockstepRunning;
+}
+
+// What the held clock counts from: the ticks a host has sent, or this machine's own alone
+int64_t Clock()
+{
+	return app.lockstep != nullptr ? lpLockstep_GetClosed( app.lockstep ) : app.tick;
+}
+
+int Players()
+{
+	return app.lockstep != nullptr ? app.opt.peers + 1 : 1;
+}
+
+std::string Ok()
+{
+	return Json().Bool( "ok", true ).Done();
+}
+
+std::string StoppedReply()
+{
+	return Json().Bool( "ok", false ).Str( "error", "stopped" ).Str( "report", lpLockstep_GetReport( app.lockstep ) ).Int( "tick", app.tick ).Done();
+}
+
+std::string Position( lpPos p )
+{
+	return JsonArray( { JsonNumber( p.x ), JsonNumber( p.y ), JsonNumber( p.z ) } );
+}
+
+std::string StateJson()
+{
+	static const char* kStates[] = { "joining", "running", "desync", "refused", "stopped" };
+	const float degrees = 180.0f / 3.14159265f;
+	Json j;
+	j.Bool( "ok", true ).Int( "tick", app.tick ).Int( "frame", app.frame );
+	j.Str( "role", app.lockstep == nullptr ? "solo" : ( app.listener != nullptr ? "host" : "peer" ) ).Int( "peer", app.peer );
+	j.Bool( "held", app.paused ).Int( "budget", app.budget );
+	if ( app.lockstep != nullptr )
+	{
+		Json s;
+		s.Str( "state", kStates[lpLockstep_GetState( app.lockstep )] ).Str( "report", lpLockstep_GetReport( app.lockstep ) );
+		s.Int( "closed", lpLockstep_GetClosed( app.lockstep ) ).Int( "delay", lpLockstep_GetDelay( app.lockstep ) ).Int( "players", Players() );
+		if ( app.listener != nullptr )
+		{
+			s.Int( "welcome", lpLockstep_GetPeerCount( app.lockstep ) ).Int( "confirmed", lpLockstep_GetConfirmed( app.lockstep ) );
+			s.Int( "desyncTick", lpLockstep_GetDesyncTick( app.lockstep ) );
+		}
+		j.Raw( "session", s.Done() );
+	}
+	j.Int( "driving", app.driving ).Int( "walking", app.walking );
+	j.Raw( "camera", Json()
+						 .Num( "x", app.camPos.x )
+						 .Num( "y", app.camPos.y )
+						 .Num( "z", app.camPos.z )
+						 .Num( "yaw", app.yaw * degrees )
+						 .Num( "pitch", app.pitch * degrees )
+						 .Done() );
+	j.Str( "tool", kToolNames[app.tool] ).Int( "toolKey", app.tool + 1 );
+	std::vector<std::string> held;
+	for ( int k = 0; k < 512; ++k )
+	{
+		if ( app.keys[k] )
+		{
+			held.push_back( "\"" + KeyName( k ) + "\"" );
+		}
+	}
+	j.Raw( "keys", JsonArray( held ) );
+	j.Hex( "hash", lpWorld_Hash( app.world ) );
+	std::vector<std::string> vehicles, rigs;
+	char hud[256];
+	for ( int v = 0; v < lpWorld_GetVehicleCapacity( app.world ); ++v )
+	{
+		lpVehicleState st = lpWorld_GetVehicleState( app.world, v );
+		Json e;
+		e.Int( "index", v ).Bool( "alive", st.alive ).Int( "controller", st.controller );
+		if ( st.alive && st.body >= 0 )
+		{
+			Drive_Describe( app.world, v, hud, (int)sizeof( hud ) );
+			e.Raw( "position", Position( st.position ) ).Num( "speed", st.speed ).Int( "wheels", st.attached ).Str( "hud", hud );
+		}
+		vehicles.push_back( e.Done() );
+	}
+	for ( int r = 0; r < lpWorld_GetRigCapacity( app.world ); ++r )
+	{
+		lpRigState st = lpWorld_GetRigState( app.world, r );
+		Json e;
+		e.Int( "index", r ).Bool( "alive", st.alive ).Int( "controller", st.controller );
+		if ( st.alive && st.body >= 0 )
+		{
+			Walk_Describe( app.world, r, hud, (int)sizeof( hud ) );
+			e.Raw( "position", Position( st.position ) ).Num( "speed", st.speed ).Int( "able", st.able ).Str( "hud", hud );
+		}
+		rigs.push_back( e.Done() );
+	}
+	j.Raw( "vehicles", JsonArray( vehicles ) ).Raw( "rigs", JsonArray( rigs ) );
+	return j.Done();
+}
+
+// The text after the verb, and whether it ends with the word `flag` (taken off)
+std::string Rest( const std::string& line, size_t verb, const char* flag, bool* has )
+{
+	std::string rest = line.size() > verb + 1 ? line.substr( verb + 1 ) : "";
+	std::string tail = std::string( " " ) + flag;
+	*has = rest.size() > tail.size() && rest.compare( rest.size() - tail.size(), tail.size(), tail ) == 0;
+	return *has ? rest.substr( 0, rest.size() - tail.size() ) : rest;
+}
+
+// One request: its reply, or "" if it waits (FinishWaits and FinishShots answer it)
+std::string Request( const ControlRequest& r )
+{
+	std::vector<std::string> w;
+	for ( size_t at = 0; at < r.line.size(); )
+	{
+		size_t end = r.line.find( ' ', at );
+		end = end == std::string::npos ? r.line.size() : end;
+		if ( end > at )
+		{
+			w.push_back( r.line.substr( at, end - at ) );
+		}
+		at = end + 1;
+	}
+	const std::string verb = w.empty() ? "" : w[0];
+	bool peerOnly = app.lockstep != nullptr && app.listener == nullptr;
+	if ( verb == "state" )
+	{
+		return StateJson();
+	}
+	if ( verb == "key" && w.size() == 3 && ( w[2] == "down" || w[2] == "up" || w[2] == "tap" ) )
+	{
+		int code = KeyCode( w[1] );
+		if ( code < 0 )
+		{
+			return JsonError( "no such key (A-Z, 0-9, SPACE, SHIFT, F1, F12)" );
+		}
+		if ( w[2] != "up" )
+		{
+			Press( code, true );
+		}
+		if ( w[2] != "down" )
+		{
+			Press( code, false );
+		}
+		return Ok();
+	}
+	if ( verb == "mouse" && w.size() == 2 && ( w[1] == "down" || w[1] == "up" ) )
+	{
+		sapp_event ev = {};
+		ev.type = w[1] == "down" ? SAPP_EVENTTYPE_MOUSE_DOWN : SAPP_EVENTTYPE_MOUSE_UP;
+		ev.mouse_button = SAPP_MOUSEBUTTON_LEFT; // never the right: it would capture the desktop's mouse
+		HandleInput( &ev );
+		return Ok();
+	}
+	if ( verb == "camera" && ( w.size() == 4 || w.size() == 6 || ( w.size() == 8 && w[4] == "at" ) ) )
+	{
+		app.camPos = { (float)atof( w[1].c_str() ), (float)atof( w[2].c_str() ), (float)atof( w[3].c_str() ) };
+		if ( w.size() == 6 )
+		{
+			app.yaw = (float)atof( w[4].c_str() ) * 3.14159265f / 180.0f;
+			app.pitch = (float)atof( w[5].c_str() ) * 3.14159265f / 180.0f;
+		}
+		else if ( w.size() == 8 )
+		{
+			V3 d = V3{ (float)atof( w[5].c_str() ), (float)atof( w[6].c_str() ), (float)atof( w[7].c_str() ) } - app.camPos;
+			app.yaw = atan2f( d.x, -d.z );
+			app.pitch = atan2f( d.y, sqrtf( d.x * d.x + d.z * d.z ) );
+		}
+		return Ok();
+	}
+	if ( verb == "cmd" && w.size() > 1 )
+	{
+		std::string line = "0 " + r.line.substr( 4 ); // a script line wants a tick; this player's commands get their own
+		lpCommand c;
+		if ( lpScriptParseCommand( line.c_str(), &c ) == false )
+		{
+			return JsonError( "not a script line (scenes/script.h), or one without its tick" );
+		}
+		int64_t applies = app.lockstep != nullptr ? (int64_t)lpWorld_GetTick( app.world ) + lpLockstep_GetDelay( app.lockstep )
+												  : app.tick + app.opt.inputDelay;
+		Submit( c );
+		return Json().Bool( "ok", true ).Int( "applies", applies ).Done();
+	}
+	if ( verb == "pause" || verb == "run" )
+	{
+		app.paused = verb == "pause"; // held, it still steps what step and turn allowed already
+		app.budget = app.paused ? app.budget : 0;
+		app.accumulator = 0.0;
+		return Ok();
+	}
+	if ( verb == "step" && w.size() == 2 && atoi( w[1].c_str() ) > 0 )
+	{
+		if ( peerOnly )
+		{
+			return JsonError( "a peer: the host keeps the clock (send step or turn to the host)" );
+		}
+		if ( Stopped() )
+		{
+			return StoppedReply();
+		}
+		app.paused = true;
+		app.budget += atoi( w[1].c_str() );
+		app.waits.push_back( Waiting{ Waiting::Everyone, r.id, Clock() + app.budget, "", false } );
+		return "";
+	}
+	if ( verb == "wait" && w.size() == 2 )
+	{
+		app.waits.push_back( Waiting{ Waiting::Here, r.id, atoll( w[1].c_str() ), "", false } );
+		return "";
+	}
+	if ( verb == "turn" && w.size() == 3 && atoi( w[2].c_str() ) > 0 )
+	{
+		int peer = atoi( w[1].c_str() );
+		if ( peerOnly )
+		{
+			return JsonError( "a peer: turns go to the host, which keeps the clock" );
+		}
+		if ( peer < 0 || peer >= Players() )
+		{
+			return JsonError( "no such player" );
+		}
+		for ( const Turn& t : app.turns )
+		{
+			if ( t.peer == peer )
+			{
+				return JsonError( "that player is waiting for its turn already" );
+			}
+		}
+		app.turns.push_back( Turn{ r.id, peer, atoi( w[2].c_str() ) } );
+		return "";
+	}
+	if ( verb == "shot" && w.size() > 1 )
+	{
+		bool ui = false;
+		std::string path = Rest( r.line, verb.size(), "ui", &ui );
+		app.waits.push_back( Waiting{ Waiting::Shot, r.id, 0, path, ui } );
+		return "";
+	}
+	if ( verb == "dump" && w.size() > 1 )
+	{
+		bool unused = false;
+		std::string path = Rest( r.line, verb.size(), "", &unused );
+		FILE* f = fopen( path.c_str(), "w" );
+		if ( f == nullptr )
+		{
+			return JsonError( "cannot write there" );
+		}
+		lpDumpWorld( f, app.world );
+		fclose( f );
+		return Json().Bool( "ok", true ).Str( "path", path.c_str() ).Int( "tick", app.tick ).Done();
+	}
+	if ( verb == "inject" )
+	{
+		// The first moving debris body, nudged here only (as lpf_bench --inject-desync): the others must find it
+		for ( int i = 0; i < lpWorld_GetBodyCapacity( app.world ); ++i )
+		{
+			lpBodyInfo info = lpWorld_GetBodyInfo( app.world, i );
+			lpVec3 v = info.linearVelocity;
+			if ( info.alive && info.kind == lp_kindDebris && info.awake && v.x * v.x + v.y * v.y + v.z * v.z > 0.01f )
+			{
+				lpLab_NudgeVelocity( app.world, i, 1 );
+				return Json().Bool( "ok", true ).Int( "body", i ).Int( "tick", app.tick ).Done();
+			}
+		}
+		return JsonError( "no moving debris to nudge" );
+	}
+	if ( verb == "net" && w.size() >= 3 && ( w[1] == "delay" || w[1] == "stall" ) )
+	{
+		if ( app.fault == nullptr )
+		{
+			return JsonError( "only a joiner has a link to the host to slow" );
+		}
+		if ( w[1] == "delay" )
+		{
+			lpFault_SetDelay( app.fault, atoi( w[2].c_str() ), w.size() > 3 ? atoi( w[3].c_str() ) : 0 );
+		}
+		else
+		{
+			lpFault_Stall( app.fault, atoi( w[2].c_str() ) );
+		}
+		return Ok();
+	}
+	if ( verb == "quit" )
+	{
+		for ( const Waiting& wait : app.waits )
+		{
+			Control_Reply( wait.id, JsonError( "quit" ) );
+		}
+		for ( const Turn& t : app.turns )
+		{
+			Control_Reply( t.id, JsonError( "quit" ) );
+		}
+		app.waits.clear();
+		app.turns.clear();
+		app.quitting = true;
+		return Ok();
+	}
+	return JsonError( "unknown request (control.h lists them)" );
+}
+
+void Serve()
+{
+	for ( const ControlRequest& r : Control_Poll() )
+	{
+		std::string reply = Request( r );
+		if ( reply.empty() == false )
+		{
+			Control_Reply( r.id, reply );
+		}
+	}
+	if ( app.quitting )
+	{
+		sapp_request_quit();
+	}
+}
+
+// Answers what waited on ticks: turns that every player has taken, steps done, the session stopped, agents gone
+void FinishWaits()
+{
+	for ( size_t i = 0; i < app.turns.size(); )
+	{
+		bool open = Control_Open( app.turns[i].id );
+		if ( open && Stopped() == false )
+		{
+			++i;
+			continue;
+		}
+		Control_Reply( app.turns[i].id, open ? StoppedReply() : JsonError( "gone" ) );
+		app.turns.erase( app.turns.begin() + (long long)i );
+	}
+	if ( (int)app.turns.size() == Players() )
+	{
+		// Every player is ready: the clock moves on by the fewest ticks asked for
+		int ticks = app.turns[0].ticks;
+		for ( const Turn& t : app.turns )
+		{
+			ticks = t.ticks < ticks ? t.ticks : ticks;
+		}
+		app.paused = true;
+		app.budget += ticks;
+		for ( const Turn& t : app.turns )
+		{
+			app.waits.push_back( Waiting{ Waiting::Everyone, t.id, Clock() + app.budget, "", false } );
+		}
+		app.turns.clear();
+	}
+	for ( size_t i = 0; i < app.waits.size(); )
+	{
+		const Waiting& w = app.waits[i];
+		bool everyone = w.kind == Waiting::Everyone && app.lockstep != nullptr;
+		bool done = everyone ? lpLockstep_GetConfirmed( app.lockstep ) >= w.target - 1 : app.tick >= w.target;
+		std::string reply;
+		if ( w.kind == Waiting::Shot )
+		{
+		}
+		else if ( Control_Open( w.id ) == false )
+		{
+			reply = JsonError( "gone" );
+		}
+		else if ( done )
+		{
+			reply = Json().Bool( "ok", true ).Int( "tick", app.tick ).Hex( "hash", lpWorld_Hash( app.world ) ).Done();
+		}
+		else if ( Stopped() )
+		{
+			reply = StoppedReply();
+		}
+		if ( reply.empty() )
+		{
+			++i;
+			continue;
+		}
+		Control_Reply( w.id, reply );
+		app.waits.erase( app.waits.begin() + (long long)i );
+	}
+}
+
+// Answers the screenshots asked for, of the frame just drawn
+void FinishShots()
+{
+	for ( size_t i = 0; i < app.waits.size(); )
+	{
+		const Waiting& w = app.waits[i];
+		if ( w.kind != Waiting::Shot )
+		{
+			++i;
+			continue;
+		}
+		bool ok = w.ui ? Renderer_ScreenshotWindow( w.path.c_str() ) : Renderer_Screenshot( w.path.c_str() );
+		Control_Reply( w.id, ok ? Json().Bool( "ok", true ).Str( "path", w.path.c_str() ).Int( "tick", app.tick ).Done()
+								: JsonError( "the screenshot failed (can the path be written?)" ) );
+		app.waits.erase( app.waits.begin() + (long long)i );
 	}
 }
 
@@ -1028,33 +1561,68 @@ void Frame()
 	dt = dt > 0.1f ? 0.1f : dt;
 	bool automated = app.opt.frames > 0;
 
-	UpdateCamera( automated ? 1.0f / 60.0f : dt );
-
-	if ( !app.paused || app.lockstep != nullptr )
+	if ( app.control )
 	{
-		int steps;
-		if ( automated )
-		{
-			steps = 1;
-		}
-		else
-		{
-			app.accumulator += dt;
-			steps = (int)( app.accumulator * 60.0 );
-			steps = steps > 3 ? 3 : steps;
-			app.accumulator -= (double)steps / 60.0;
-			app.accumulator = app.accumulator > 0.1 ? 0.1 : app.accumulator;
-		}
-		if ( app.lockstep != nullptr )
-		{
-			NetStep( steps );
-		}
-		for ( int i = 0; i < steps && app.lockstep == nullptr; ++i )
+		Serve(); // an agent's requests: keys pressed here act before this frame's steps, as a person's would
+	}
+	else
+	{
+		UpdateCamera( automated ? 1.0f / 60.0f : dt );
+	}
+
+	// Steps: one per frame automated; held, what an agent's step and turn allow (a host's held clock holds everyone);
+	// otherwise 60 Hz. A peer steps whatever the host's packets allow, whatever is asked here.
+	int64_t tickBefore = app.tick;
+	int steps;
+	if ( automated )
+	{
+		steps = 1;
+	}
+	else if ( app.paused )
+	{
+		steps = (int)( app.budget < 16 ? app.budget : 16 );
+	}
+	else
+	{
+		app.accumulator += dt;
+		steps = (int)( app.accumulator * 60.0 );
+		steps = steps > 3 ? 3 : steps;
+		app.accumulator -= (double)steps / 60.0;
+		app.accumulator = app.accumulator > 0.1 ? 0.1 : app.accumulator;
+	}
+	if ( app.lockstep != nullptr )
+	{
+		int64_t closed = lpLockstep_GetClosed( app.lockstep );
+		NetStep( steps );
+		app.budget -= app.paused && app.listener != nullptr ? lpLockstep_GetClosed( app.lockstep ) - closed : 0;
+	}
+	else
+	{
+		for ( int i = 0; i < steps; ++i )
 		{
 			StepSimulation();
 		}
+		app.budget -= app.paused ? steps : 0;
 	}
-	UpdateParticles( automated ? 1.0f / 60.0f : dt );
+	if ( app.control )
+	{
+		FinishWaits();
+		if ( app.tick == tickBefore )
+		{
+			lpNet_Sleep( 4 ); // idle: a window behind others is not held to vsync, and would spin a core
+		}
+	}
+	else
+	{
+		UpdateParticles( automated ? 1.0f / 60.0f : dt );
+	}
+	if ( app.titled == false && app.lockstep != nullptr && lpLockstep_GetState( app.lockstep ) == lp_lockstepRunning )
+	{
+		char title[96]; // which window is whose, side by side
+		snprintf( title, sizeof( title ), "lowpoly-fracture sandbox: %s, peer %d", app.listener != nullptr ? "host" : "joined", app.peer );
+		sapp_set_window_title( title );
+		app.titled = true;
+	}
 
 	uint64_t renderStart = lpGetTicks();
 	Renderer_Sync( app.world );
@@ -1126,6 +1694,10 @@ void Frame()
 		printf( "screenshot %s: %s\n", path.c_str(), ok ? "ok" : "FAILED" );
 		app.wantScreenshot = false;
 	}
+	if ( app.control )
+	{
+		FinishShots();
+	}
 	app.frameMs = lpGetMilliseconds( frameStart );
 	app.sumFrameMs += app.frameMs;
 	app.sumStepMs += app.stepMs;
@@ -1148,6 +1720,12 @@ void Frame()
 
 void Event_( const sapp_event* ev )
 {
+	bool input = ev->type == SAPP_EVENTTYPE_KEY_DOWN || ev->type == SAPP_EVENTTYPE_KEY_UP || ev->type == SAPP_EVENTTYPE_CHAR ||
+				 ( ev->type >= SAPP_EVENTTYPE_MOUSE_DOWN && ev->type <= SAPP_EVENTTYPE_MOUSE_LEAVE );
+	if ( input && app.control && app.opt.allowInput == false )
+	{
+		return; // an agent drives this one: nothing typed or clicked here (the UI included) may change its test
+	}
 	if ( simgui_handle_event( ev ) && ( ev->type == SAPP_EVENTTYPE_MOUSE_DOWN || ev->type == SAPP_EVENTTYPE_MOUSE_SCROLL ||
 										ev->type == SAPP_EVENTTYPE_KEY_DOWN || ev->type == SAPP_EVENTTYPE_CHAR ) )
 	{
@@ -1156,7 +1734,12 @@ void Event_( const sapp_event* ev )
 			return;
 		}
 	}
+	HandleInput( ev );
+}
 
+// A key or a mouse event, a person's (Event_) or an agent's (control.h)
+void HandleInput( const sapp_event* ev )
+{
 	switch ( ev->type )
 	{
 		case SAPP_EVENTTYPE_KEY_DOWN:
@@ -1285,6 +1868,8 @@ void Cleanup()
 	}
 	lpScriptFree( &app.script );
 	lpLockstep_Destroy( app.lockstep );
+	lpFault_Destroy( app.fault );
+	Control_Stop();
 	for ( lpTcp* link : app.links )
 	{
 		lpTcp_Close( link );
@@ -1389,19 +1974,48 @@ int main( int argc, char** argv )
 			o.follow = true;
 			takes = false;
 		}
+		else if ( strcmp( a, "--control" ) == 0 )
+			o.controlPort = atoi( v );
+		else if ( strcmp( a, "--paused" ) == 0 )
+		{
+			o.startPaused = true;
+			takes = false;
+		}
+		else if ( strcmp( a, "--allow-input" ) == 0 )
+		{
+			o.allowInput = true;
+			takes = false;
+		}
+		else if ( strcmp( a, "--background" ) == 0 )
+		{
+			o.background = true;
+			takes = false;
+		}
+		else if ( strcmp( a, "--window" ) == 0 )
+			o.haveWindowPos = sscanf( v, "%d,%d", &o.windowPos[0], &o.windowPos[1] ) == 2;
 		else
 		{
 			printf( "usage: sandbox [--scene walls|house|town|tower|pile|lumber|ruins|yard|keep|track|mech] [--workers N] [--frames N] [--screenshot out.png]\n"
 					"               [--screenshot-at f1,f2,...] [--dump tick:path.json]\n"
 					"               [--script file] [--record file] [--hash-log file] [--bombard period] [--fragment-scale F]\n"
 					"               [--max-debris N] [--render-scale F] [--vsync 0|1] [--camera x,y,z,yawDeg,pitchDeg] [--hide-ui] [--follow]\n"
-					"               [--input-delay ticks] [--host port [--peers N] | --join host:port]\n" );
+					"               [--input-delay ticks] [--host [127.0.0.1:]port [--peers N] | --join host:port]\n"
+					"               [--control port [--paused] [--allow-input]] [--background] [--window x,y] [--width W] [--height H]\n" );
 			return 1;
 		}
 		if ( takes )
 		{
 			++i;
 		}
+	}
+	if ( o.controlPort >= 0 && o.frames > 0 )
+	{
+		printf( "--control and --frames each want the clock: give one\n" );
+		return 1;
+	}
+	if ( o.controlPort >= 0 )
+	{
+		setvbuf( stdout, nullptr, _IONBF, 0 ); // a launcher reads the port and the reports from a log file as they come
 	}
 
 	sapp_desc desc = {};
@@ -1414,6 +2028,7 @@ int main( int argc, char** argv )
 	desc.window_title = "lowpoly-fracture sandbox";
 	desc.swap_interval = o.vsync ? 1 : 0;
 	desc.logger.func = slog_func;
+	desc.win32.no_activate = o.background;
 	sapp_run( &desc );
 	return 0;
 }
