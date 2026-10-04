@@ -784,3 +784,212 @@ times F (the int64 `mas`). The twins for comparison (MSVC): stack10 0.18 / 0.22 
   dispatch, or a persistent solver kernel are step 7's questions. Bandwidth is not the limit yet.
 - No UBSan build yet (DESIGN's gate).
 - The joint (step 6) and its kernels are not in gate 5 yet; when they land, `--write-ref` and gate 5 again.
+
+## 2026-10-04: step 6 (the revolute joint, the arm, its acceptance rows; gate 5 with the arm)
+
+**What landed** (lines, now; about 1,750 added): `joint.slang` 527 (new, included by `kernels.slang`: `prepareJoints`,
+`warmStartJoints`, `solveJoints`, `relaxJoints`, `hashJoints`), `num.slang` 1,092 (`twistAngle`, `invertSym`), `layout.h`
+559 (`Joint`, `JointCommand`, `JOINT_*`, formats `S_JA` Q3.28 for angles, `S_TQ` Q15.16 for torques, `S_J` Q9.22 for the
+point block; the joints' softness at the end of `Params`), `kernels.slang` 257 (bindings 19 to 21: joints, jointHashes,
+jointCommands; `CAT_JOINT` 3), `stages.c/.h` 609/89 (`stages_set_joints`: the jointed-pair filter, waking and islands through
+joints, joints coloured first), `scene.c/.h` 815/111 (`SceneJoint`, the arm, `grid:K` for step 7, `scene_servo_target`,
+`scene_joint_text`), `quant.c` 481, `toy.c` 2,695 (the joints' buffers, lists, commands and dispatches; the fourth hash; the
+reference files' joints column; the views and field table for the trace), `b3ref2.c` 538 (Box3D revolute joints, the servo
+set before each step), `metrics.py` 354 (`parse_joints`, `joint_state`, `arm`, `angle_diff`), `accept.py` 455 (the arm's
+rows), `gate.py` 285 (the arm in gates 2, 4 and 5), `battery.c/.slang` 1,497/305 (two helpers), `kernels_glue.cpp` 156,
+`narrow.c` (22 bindings), `results/ref/arm*.txt` (6 new reference files).
+
+```
+python lab/gpu/toy/gen_toy.py && python lab/gpu/lab.py build --compiler msvc && python lab/gpu/lab.py build --compiler clang-cl
+python lab/gpu/toy/gate.py                      # gates 1 to 5 (about 9 minutes); the arm is in gates 2, 4 and 5
+build/msvc/bin/toy_V4.exe --scene arm --ticks 1200 --threads 1,8 --gpus 3 --ref toy/results/ref/arm.V4.txt --traj build/toy-scratch/a.traj --log build/toy-scratch/a.txt
+python toy/metrics.py build/toy-scratch/a.traj --scene arm --log build/toy-scratch/a.txt   # the joints' gap, overshoot, angles
+```
+
+**The joint**, after Box3D's `b3RevoluteJoint`, one struct per joint (`Joint`: the definition, the step's prepared data and
+the impulses, which persist with the joint's fixed index: the warm start across ticks):
+- `prepareJoints` (active joints): the world frames `q local` and anchors `rotate( q, local )` (the hulls are about the
+  centre of mass, so Box3D's `localCenter` is 0), `deltaCenter = pB - pA` (`posDelta`), the hinge axis (frame A's z), the
+  masses (zero for a body solved as static), V4's exponents as the contacts' (eP from the lighter solved body, the point
+  block in eK, 8 bits under the larger inverse mass), the axial mass `1 / (z . (IA + IB) z)` (as the contact's twist mass),
+  the 2x2 axis block on the perpendicular axes `0.5 rotate( qA, s e + v x e )` inverted as the contact's tangent mass, and
+  the 3x3 point block `K = (mA + mB) E + sum (r x e_i) . I (r x e_j)` inverted by `invertSym`: Gaussian elimination with
+  reciprocal pivots (`divClamp`), `K = L D L^T`, `K^-1 = L^-T D^-1 L^-1`. V4 normalises K so its largest diagonal entry is in
+  [0.5, 1) (Q1.30); the reciprocal pivots, the multipliers and the inverse are Q9.22, so a pivot under 2^-9 of the largest
+  diagonal (a condition near 512) saturates and counts. The twist angle (`twistAngle`: `2 atan2( z, s )` through the
+  dialect's atan2, qs's sign taken out; V4's Q2.29 atan2 doubled is the same mantissa in Q3.28, so angles and their
+  differences fit), and the motor's speed: the speed motor's, or the servo's `gain (target - angle)` capped at its largest
+  speed, the target a per-tick command (`JointCommand.target`, the scene's rule quantised by the CPU and uploaded with the
+  lists). The carried impulses rescaled to this step's eP.
+- `warmStartJoints` per colour and substep: the linear impulse at the anchors (rotated by the bodies' delta rotations), the
+  axis block's impulse on the last solve's perpendicular axes, the motor and limit impulses on the hinge axis.
+- `solveJoints` (useBias) and `relaxJoints` per colour and substep, Box3D's order: the motor (its accumulated impulse capped
+  at `maxMotorTorque h`), the lower and upper limits (speculative `c / h` while the margin is positive, soft with the bias
+  when penetrating, rigid in the relax), the axis block (`C = (rel.x, rel.y)`, the perpendicular axes recomputed from the
+  current relative rotation and kept for the warm start), the point block (`C = (dpB - dpA) + (rB - rA) + deltaCenter`).
+  Box3D's joint softness (`b3MakeSoft( min( 60, 0.25 inv_h ), 2, h )`) in Params.
+- `hashJoints`: every field, the joint's index seeding the element, category 3.
+- Joints are coloured before the pairs, in index order; jointed bodies never make a broadphase pair (Box3D's
+  `collideConnected` false); a joint joins its two awake bodies' islands and wakes a sleeping partner as a touching pair
+  does; inactive joints (no awake body) keep their impulses. Per colour the joints' dispatch goes before the pairs' (Box3D's
+  joint blocks before its contact blocks; within a colour they share no moving body).
+- Scenes without joints are untouched: no joint dispatch, the stages hash and the run hash unchanged, the reference files'
+  tick lines carry a fourth hash only when the scene has joints (and `--ref` checks that the file and the scene agree).
+
+**The arm** (`scene.c`'s `build_arm`; bodies 0 ground, 1 base, 2 and 3 the links, 4 to 7 the stack): a static base (0.3 x 0.5
+x 0.3 m); link 1 (1 m x 10 cm x 10 cm, 10 kg) hinged about the vertical 3 cm above the base, a servo (torque cap 150 N m, gain
+8/s, at most 1.5 rad/s) whose target is a triangle wave of +-1 rad and 6 s (0 at tick 0, +1 at tick 90, -1 at 270); link 2
+(0.8 m, 8 kg) hinged to link 1's end across a 4 cm gap, limits +-0.5 rad, no motor; both links cantilevered at 0.58 m. A
+stack of four 0.2 m cubes (8 kg) at (1.2, 0.8) in x, z, each offset by up to 1.5 cm and turned by up to 3.4 degrees, in
+link 2's path on the return sweep (first reached near tick 245). Link 2 swings onto its limits whenever link 1 speeds up,
+slows or turns (135 to 146 of 1,200 records at a limit), and from tick 245 knocks the stack over and sweeps through the
+boxes every 3 s.
+
+**The acceptance rows** (`accept.py`, `results/decision1.md`; MSVC, one thread, 1,200 ticks, sleep on; every number from the
+trajectories by `metrics.py`'s `arm`, Box3D's `b3RevoluteJoint_GetAngle` reproduced in Python):
+
+| criterion (threshold) | Box3D | D | F | V4 |
+|---|---|---|---|---|
+| servo joint: angle against D's, ticks 1-120, largest (F, V4 <= 1 mrad) | 0.58 mrad | moved 1e-9 m: 2.0e-7 mrad | **0.00013** | **0.033** |
+| limited joint: the same | 2.33 mrad | 6.1e-7 mrad | **0.00055** | **0.10** |
+| hinge gap, largest over the run: servo; limited joint (<= 1 mm) | 0.62; 0.94 mm | 0.654; 0.953 | **0.655; 0.994** | **0.655; 0.961** |
+| limited joint's overshoot beyond +-0.5 rad, largest (<= 10 mrad) | 2.35 mrad | 1.71 | **1.99** | **1.61** |
+| the gap during the first sweep (ticks 30-90): servo; limited | 0.504; 0.543 mm | 0.503; 0.541 | 0.503; 0.541 | 0.503; 0.541 |
+| the hinge axes' largest misalignment: servo; limited (reported) | 9.0; 8.3 mrad | 10.3; 9.4 | 10.5; 10.6 | 10.7; 11.4 |
+| the servo's largest lag behind its target (reported) | 0.28 rad | 0.246 | 0.244 | 0.242 |
+
+Decision point 1's table now: **Box3D 18 of 18, D 18 of 18, F 23 of 23, V4 24 of 24** (every earlier row unchanged). The
+gap is mostly Box3D's soft joint sagging under the cantilevered links (about 0.5 mm in every program: load over the joint's
+effective mass times (2 pi 60 Hz)^2), the rest the limit slams and the impacts; the 1 mm bar is about twice the sag, and F's
+0.994 mm (tick 645, a sweep through the fallen boxes) is close to it, as Box3D's 0.94 is.
+
+**Gate 5 with the arm: passed** (`gate.py --gates 5 --write-ref`, then gates 1 to 5 again). The arm for 1,200 ticks with sleep
+on and off, F and V4, on the RTX 3060 (0x988f0000) and the UHD 630 (0x194859): **every tick's four hashes identical to the
+twin's, saturations 0; 16 of 16 runs per GPU and dialect** (the 14 earlier configs and the two arm ones). The twins (F, V4, D;
+1 and 8 threads; MSVC and clang-cl) identical to the six new reference files; the 42 existing files were rewritten byte for
+byte by `--write-ref` (git sees no change). Run hashes (1,200 ticks): arm D 2561c12af76eb57f, F 3fc6a3ad9d2dbcd5, V4
+0947f309d63f756a; arm with sleep off D 485ddf924b425db5, F 9784a8e41798d326, V4 1ec87cfc450c1f67. Gate 2's arm (600 ticks):
+D c4d948574443a8bc, F eeeeb544ac37d298, V4 820498f21046b7d8, equal on both compilers and thread counts; every earlier gate 2
+run hash is step 5a's. The arm's GPU cost (1,200 ticks, wall / kernels per tick): RTX 3060 F 0.79 / 0.33 ms, V4 1.02 / 0.59;
+UHD 630 F 2.15 / 1.46, V4 3.58 / 2.95 (up to 114 dispatches a tick).
+
+**Gate 1** (25 helpers): both GPUs every word identical in F and V4, both compilers equal. Battery hashes **F
+f7006e1c8f347ba5, V4 b8cc94dd982a448d, D e0865a1f66f355ab**; the 23 earlier helpers' lines reproduce step 5a's hashes (F
+5add7392dc064a30, V4 c45f361e4c33722e, D 17fdc03440fd6596) when hashed alone. New: `twistAngle` (unit quaternions, pure twists
+of either sign of s, s = 0, negated, z = 0; and unnormalised pairs) within 5.4e-5 rad of 2 atan2 in every dialect (lpAtan2's
+polynomial, doubled); `invertSym` (B^T B + lambda I, lambda from 2^-9 to 0.5 and one in sixteen at 1e-6, scaled into V4's
+range): relative to the largest entry F 4.7e-4 (the near-singular ones), V4 3.6e-5 (3,997; 99 near Q9.22's limit left out),
+D 2.5e-12; V4 counts 74 saturations (near-singular pivots), the same on both GPUs.
+
+**Findings.**
+- **Gauss-Seidel order matters for a chain.** With the joints given the lowest free colour, the base joint (static base, link
+  1) was solved before the link joint, and a limit slam on the link joint reached link 1 after the base joint's rows: the
+  servo hinge's gap peaked at 1.27 mm against Box3D's 0.62. Box3D colours a joint with a static body from the top
+  (`b3AssignJointColor`: "higher priority than dyn-dyn constraints"), so it is solved last; the toy now does the same for
+  joints (a joint with a body solved as static, static or asleep, takes the highest free colour, never 0), and the gap is
+  0.654 mm. Contacts keep the lowest-colour rule (their reference hashes stand). The arm's colour count reads 64 (the base
+  joint sits in colour 63; the empty colours cost no dispatch).
+- **A stack's face-on contacts are ties from tick 1.** The arm first hit the stack in its first sweep, and D and F (or V4)
+  then differed by 4 to 28 mrad in the joint angles, F and V4 agreeing with each other to 0.01 mrad, D perturbed by 1e-9 m
+  agreeing with D to 1e-9: the cubes rest face on face with every clipped point at the same separation, exactly in D and
+  within rounding in F and V4, so the reduction keeps different points from tick 1 (the perturbation moves every body alike
+  and keeps the ties), the stacks settle a millimetre apart, and the arm meets different boxes. Offsetting and turning the
+  cubes did not help (still parallel faces); the stack is now reached on the return sweep, after the 2 s over which the
+  angles are compared, and the impacts count in the gap and overshoot rows.
+- **V4 mass mantissas:** a 0.2 m cube at 1000 kg/m^3 has inverse mass 0.12499999999999997, whose mantissa at the exponent
+  `exp_for` picks rounds to 2^31 (a range error, saturated). `quant.c` now takes one exponent less in that case; no earlier
+  scene had one (their range errors were 0), so nothing else moved.
+
+**Judgement calls and deviations from Box3D.**
+- The point and axis blocks' masses are computed once per step at prepare (the brief's "inverted once per step"); Box3D
+  recomputes both in every solve from the current anchors and axes. The Jacobians (anchors rotated by the delta rotations,
+  the perpendicular axes from the current relative rotation) are current. Over the first 2 s Box3D's angles stay within 0.58
+  mrad of D's on the servo joint and 2.3 mrad on the free link (its swings amplify), the gaps within 5% in the sweep.
+- The servo's speed is set in `prepareJoints` from the angle at the start of the step, the rule b3ref2 applies between steps
+  (Box3D's motor speed cannot change inside a step); the target is a command, so a game's input reaches it the same way.
+- No spring, no fixed-rotation test, no joint breaking (Box3D's force thresholds): not in the brief.
+- Joints filter their bodies' pairs in the broadphase (sorted keys, binary search); with no joints the broadphase is step 5's.
+- The arm's stack placement (above), and 1,200 ticks for its gap and overshoot rows (20 s: four sweeps through the boxes).
+- `twistAngle` and `invertSym` live in `num.slang` (the battery reaches them); the rest of the joint in `joint.slang`.
+
+**Open issues.**
+- The 1 mm gap bar sits at about twice Box3D's soft-joint sag for this arm; heavier outboard links would fail it in Box3D
+  too. A stiffer joint (Box3D's `constraintHertz`) or a per-joint bar may be the better test.
+- V4's point block supports a condition near 512 (Q9.22): a long light link with a far anchor would saturate (counted). The
+  inverse's precision (2^-22 at values near 1) is ample for the arm; a per-joint exponent would remove the limit.
+- `invertSym`'s F accuracy degrades as cond x 6e-8 (near-singular blocks); Box3D's adjugate form has the same property.
+- Not yet on the Spark (the gcc and clang twins, the GB10 and llvmpipe: `gate.py --compilers gcc,clang` against the committed
+  references, now 48 files).
+- Box3D's servo here is per step, like the toy's; a per-substep servo (inside the solve) would track better and is a small
+  change in `solveJoint`.
+
+## 2026-10-04: step 7 (grid:K timing)
+
+**What landed:** `grid.py` 187 (new: runs grid:K, reads the cost lines, writes `results/grid.md`), `scene.c`'s `grid:K` (K
+copies of pile200's pit and bodies, the same draws, on a square grid 6.5 m apart on one floor), `toy.c` 2,797 (a `cost` line
+per twin run and per GPU: per tick over ticks 2 to N, tick 1 warming the drivers up, the wall, the kernels by entry point, the
+CPU stages, and on the GPUs the uploads before the dispatches and the readbacks after them, from timestamps; the twin times
+each dispatch). No hash changed (gates 1 to 5 again, below).
+
+```
+python lab/gpu/toy/grid.py --ks 1,4,16,64 --ticks 300      # about 9 minutes; logs in build/toy-scratch/grid, table in results/grid.md
+```
+
+**The runs:** K = 1, 4, 16 and 64 (64 fits: 13,057 bodies, 56,000 pairs, the per-pair buffers at 131,072), sleep off so
+every body is solved every tick, 300 ticks (the drop and the settled pile), F and V4, the MSVC twin at 1 and 8 threads, the
+RTX 3060 and the UHD 630. **Every GPU run is bit-exact with the twin at every K** (each run compares every tick's hashes).
+The dispatches hardly change with K (223 to 251 a tick: 17 to 20 colours, one dispatch per colour per stage and substep),
+so K scales the work per dispatch, not the dispatch count.
+
+Wall per tick, ms (the GPUs' kernels in brackets):
+
+| K: bodies, pairs | twin 1 thread F / V4 | twin 8 threads F / V4 | RTX 3060 F / V4 | UHD 630 F / V4 |
+|---|---|---|---|---|
+| 1: 205, 903 | 4.08 / 4.77 | 2.60 / 2.91 | 2.36 (1.42) / 3.93 (2.93) | 10.6 (8.0) / 19.3 (17.3) |
+| 4: 817, 3,540 | 15.5 / 18.6 | 4.84 / 5.78 | 3.22 (1.59) / 5.01 (3.33) | 21.7 (12.4) / 25.2 (19.5) |
+| 16: 3,265, 14,100 | 63.6 / 78.6 | 15.5 / 18.8 | 7.40 (2.61) / 9.35 (4.41) | 52.1 (21.7) / 53.9 (31.8) |
+| 64: 13,057, 56,300 | 275 / 335 | 70.2 / 81.6 | 32.0 (8.26) / 30.9 (9.30) | 165 (57.8) / 182 (90.9) |
+
+At K = 64 by stage (ms per tick: narrowphase, prepare, solve, body kernels, hashes; the solve's cost per colour dispatch):
+RTX 3060 F 1.15, 0.85, 5.94, 0.19, 0.14 (24 us per colour dispatch, 5.7 at K = 1); V4 1.75, 0.96, 6.30, 0.17, 0.12 (27 us);
+UHD F 10.4, 4.1, 40.6, 0.97, 1.7 (165 us); V4 17.6, 13.8, 56.2, 1.7, 1.6 (243 us); twin at 8 threads F 10.6, 4.8, 35.3, 1.1,
+2.1. Where the GPUs' wall goes at K = 64: RTX 3060 F 32.0 = kernels 8.3 + CPU stages 15.5 + readbacks 1.5 + uploads 0.6 + the
+rest (two submits and waits, host copies) 6.2; UHD F 165 = 57.8 + 14.9 + **66** + 0.6 + 26.
+
+**What it answers.**
+- **Dispatch overhead dominates at pile200's size.** The kernels' time less the work (the work per body is the slope between
+  K = 16 and 64, where the machines are busy) is the fixed cost: at K = 1 it is 92% of the RTX 3060's kernel time in F (6.0 us
+  per dispatch with its barrier, about 230 dispatches), 97% in V4 (13 us), 91% and 93% on the UHD (34 and 78 us). At K = 64 it
+  is 9% (F) and 30% (V4) on the 3060, 17% and 13% on the UHD. The work per body: 0.58 us (F) and 0.50 (V4) on the 3060, 3.7
+  and 6.0 on the UHD, 4.2 and 5.1 on the twin at 8 threads, 20 and 25 at 1 thread.
+- **The tick scales sublinearly on the GPUs until they fill:** 64 times the bodies cost the 3060's kernels 5.8 times (F) and
+  3.2 times (V4); the twin at one thread scales linearly (67 and 70 times), at 8 threads 27 and 28 times.
+- **V4 against F:** per body V4 costs the same as F on the 3060 (0.50 against 0.58 us) but twice per dispatch (longer
+  dependent chains through the int64 `mas`), so it is 1.7 times F at K = 1 and level at K = 64 (30.9 against 32.0 ms wall); on
+  the UHD V4 is 1.6 times F per body.
+- **At scale the kernels stop being the tick.** The CPU stages (broadphase, islands, colouring, lists: integers, one thread)
+  grow from 0.21 ms at K = 1 to 15 ms at K = 64, half the 3060's wall there. On the UHD the readback of the stages' inputs
+  costs 1.2 ms at K = 1 and 66 ms at K = 64: step 5 reads the sleep counters and last tick's point counts back through one
+  4-byte copy region per body and per pair (about 70,000 regions at K = 64), which the Intel driver executes one by one (the
+  3060: 1.5 ms).
+- **GPU against the twin:** at K = 1 the 8-thread twin (2.60 ms, F) is as fast as the 3060's wall (2.36); at K = 64 the 3060 is
+  2.2 times the 8-thread twin in F and 2.6 times in V4; the UHD is slower than the 8-thread twin at every K.
+
+**Judgement calls.**
+- 300 ticks (the drop, ticks 1 to about 100, and the settled pile) with sleep off; costs averaged over ticks 2 to 300.
+- The copies share one floor (overlapping floors would double the floor contacts) and one seed (the same draws per pit).
+- The fixed cost from the slope between the two largest K rather than a least-squares fit of kernels = a dispatches + b bodies:
+  the dispatch count barely moves with K, so that fit is ill-conditioned (it gave the 1-thread twin a negative cost per
+  dispatch). The twin at one thread has no barrier and its fixed cost is within the noise (it scales slightly superlinearly,
+  caches); at 8 threads its pool barrier costs about 1.5 ms a tick at K = 1 (60% of its kernels).
+- Uploads and readbacks from timestamps at the start and end of each submit (around the copies), so they are GPU-side times;
+  the rest of the wall is the two submits' fences, the host's copies and the driver.
+
+**Open issues (the next cost work, in order of what it would buy).**
+- The stages' inputs by one copy region per element: a gather kernel (or one copy of the state buffer and of the manifolds'
+  point counts) would remove the UHD's 66 ms at K = 64 and most of its 1.2 ms at K = 1.
+- The CPU stages are single-threaded and 15 ms at 13,000 bodies; the broadphase's sort-and-sweep along x, the islands and the
+  colouring could move to the GPU (sort and sweep, union-find by pointer jumping) or run on the twin's pool.
+- At pile200's size the GPU tick is about 90% fixed cost: fewer dispatches (several colours or stages per dispatch, a
+  persistent solver kernel) would cut the 3060's 1.4 ms of kernels towards its 0.1 ms of work.
+- Not run on the Spark or the Mac (DESIGN's step 7 also names them): `grid.py --compiler gcc` there after `gate.py`.
