@@ -425,6 +425,37 @@ What one input can change in a step is bounded, so repair, rollback and zones ca
   first tick.
 - Runners: `lpf_bench --host` / `--join` (`bench/pair.c`) and the sandbox's co-op; `TestLockstepPair` in memory. Not
   yet: catch-up for a late joiner, host migration, the snapshot (milestones 14 and 16).
+- When a machine leaves or the host stops, every machine ends with the host's own report ("done", "peer 2 left", a
+  desync's element and first tick). Faults for tests (`net.h`'s `lpFault`): a link held back by a delay and jitter
+  each way, in order, or stalled; never a lost line, since the protocol assumes a connection that delivers or closes.
+
+## Agent-driven co-op tests (`app/sandbox/control.h`, `tools/coop.py`, `test/coop`)
+
+Agents test the multiplayer side of the sandbox the way a person would, through its windows, but on a clock they
+hold:
+- **The control port.** `sandbox --control 0` listens on a loopback port for one request per line and answers each
+  with one JSON line.
+  - Requests press keys and the left button through the same handler as a person's input, and point the camera
+    (which aims the tools and V).
+  - They also step the clock or take turns, take screenshots (the scene, or the window with its panel), and read the
+    state.
+  - Real input is ignored, so typing elsewhere cannot change a test, and `--background` windows never take focus.
+- **The clock is the agent's.** Held, a sandbox steps only what `step` (the host's clock, so every machine) or `turn`
+  allow.
+  - `turn PEER N` is a barrier: once every player has asked, the host steps the fewest ticks asked for. Several agents
+    can each play one player, each seeing only its own window.
+  - Held keys are read once per tick, and under control the camera and particles move per tick too. The same
+    requests in the same order give the same session, hash for hash.
+- **The director.** `tools/coop.py` (Python, standard library only) launches a session, one window per player, and
+  sends requests by player. It also takes turns and side-by-side screenshots, slows a joiner's link, and runs the
+  scenarios in `test/coop` (claim, turns, desync, latency, leave, late, reproducible). These run locally, since they
+  need windows. CI runs the network faults headless with `lpf_bench --net-delay`, `--net-stall` and `--leave-at`.
+- **What the scenarios found at once.**
+  - Two players pressing V on one car in one tick: the second's window believed it drove the car the first got.
+  - Getting out never released a car, so nobody else could take it.
+  - A third machine waited for ever after a peer left.
+
+  All three are fixed.
 
 ## Extension points already in the API
 

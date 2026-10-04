@@ -631,6 +631,26 @@ only (real repair waits for the snapshot, milestone 14); co-op headless and in t
   - **One breadth-first search for units, the stress region and the supply wave** (Fable weighed it and advised
     against it): different graphs, neighbour rules and outputs.
 
+**Follow-up (2026-10-04): agent-driven co-op tests**, so that agents test multiplayer through the sandbox's windows
+instead of a person with two of them (architecture, "Agent-driven co-op tests"). The owner's choices were:
+- a command line plus a Python library, with an MCP server or a heavier harness later and probably in its own
+  repository;
+- one director agent, plus turns so several agents can each play one player;
+- the windowed scenarios run locally, and CI runs the network faults headless.
+
+Landed:
+- **The sandbox's control port** (`control.h`): held time, keys through the person's own handler, screenshots with or
+  without the panel, state as JSON, and an injected desync.
+- **`tools/coop.py`** and seven scenarios in `test/coop`.
+- **Faults in app/net:** a delayed or stalled link, and a machine leaving. CI's pair step now runs a slow link, a
+  stall, and three machines with one leaving.
+- **The fixes the scenarios called for:**
+  - a claim waits for the world's answer;
+  - getting out releases the car;
+  - every machine is told why the session stopped;
+  - a late joiner is told it was late;
+  - held keys are read once per tick.
+
 ## 11. Integer groundwork
 
 Fail fast before the integer core is built.

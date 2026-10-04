@@ -896,3 +896,14 @@ pieces a reduced judgement left unaudited, and a drift guard (architecture, "The
   179.0k after it (the review added the joint state and the lockstep's edges, and moved the lab out of `lpf.h`). The
   growth is the milestone's purpose: commands, the hash, sessions, units, the lab, the stress front and the supply
   wave; the network layer lives outside the core.
+
+## 2026-10-04 agent-driven co-op tests
+
+- **A held session steps fast:** a host and a joiner on the track, both held, step 120 ticks in 0.09 s over loopback.
+  An occluded window is not held to vsync, so the step runs as fast as the two machines exchange packets.
+- **A slow link sets the pace.** The host can run at most delay + 1 ticks ahead of the slowest machine's hash, so a
+  held host covers about (delay + 1) ticks per round trip: 60 ticks took 2.5 s at 50 ms and up to 20 more each way,
+  with a delay of 4.
+- **Idle cost:** an idle controlled window ran at 6,000 fps behind other windows and spun a core. It now sleeps 4 ms
+  on frames that step nothing.
+- **The scenarios** (`coop.py test`, seven of them) take 25 s together on this machine, launches included.

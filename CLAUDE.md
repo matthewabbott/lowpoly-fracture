@@ -45,11 +45,11 @@ a track only when a decision needs its detail.
 | `src/step.c` | pulls, wakes, freezing rubble, and the order of `lpWorld_Step` |
 | `src/debris.c` | debris tiers: ghosts, scrap, light and full debris, loose grid, shove, budget ladder, filters |
 | `scenes/` | procedural scenes (walls, house, town, tower, pile, lumber, ruins, yard, keep, track, mech, contraption), the car kit (`lpAddCar`), a crane (`lpAddCrane`), the hexapod mech (`lpAddHexapod`), scripted bombardment and drivers (`lpSceneDrive`: laps, the mech's patrol, the crane; the scene's commands); `lpBuildScene` settles their structures. `script.c`: the replay scripts (commands as text: read, write, submit; the sandbox's tools live here), `dump.c`: a world's state as JSON |
-| `app/net/` | lockstep co-op, outside the core: transports (`net.c`: TCP, in memory) and the protocol (`lockstep.c`: session handshake, the host's clock, one packet a tick, hash reports, a mismatch followed down over the wire); `bench/pair.c` runs it headless (`lpf_bench --host 7777` / `--join host:7777`, `--inject-desync`) |
+| `app/net/` | lockstep co-op, outside the core: transports (`net.c`: TCP, in memory, and `lpFault`: a link delayed or stalled, for tests) and the protocol (`lockstep.c`: session handshake, the host's clock, one packet a tick, hash reports, a mismatch followed down over the wire); `bench/pair.c` runs it headless (`lpf_bench --host 7777` / `--join host:7777`, `--inject-desync`, `--net-delay ms,jitter`, `--net-stall tick,ms`, `--leave-at tick`) |
 | `bench/main.c` | headless benchmark: `lpf_bench --scene town --workers 1,8 --json out.json` (`--check-hash`: the kept hash against a full one every tick) |
-| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md` |
-| `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, co-op (`--host 7777` / `--join host:7777`, lockstep through app/net), driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots |
-| `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them) |
+| `test/` | `lpf_test` runs everything; `lpf_test stress` runs one suite (`poly`, `fracture`, `world`, `debris`, `stress`, `links`, `vehicles`, `systems`, `rigs`), `lpf_test stress TestKeepBreach` one test. Each test has a kind (outcome, determinism: the contract; mechanism; timing): `--contract`, `--kind k`, `--list`, `--check-catalogue docs/catalogue.md`. `test/coop/*.py`: co-op scenarios in sandbox windows, driven by agents' tools (`python tools/coop.py test`; local, Windows) |
+| `app/sandbox/` | sokol + imgui sandbox: tools, record and replay, co-op (`--host 7777` / `--join host:7777`, lockstep through app/net), driving and walking (`drive.cpp`: keys to recorded controls, chase camera, a mech's strikes and grabs), renderer (vertex pulling; wheels drawn from their state), PNG screenshots; the control port (`control.h`, `--control 0`): an agent drives a window over loopback, one request a line, JSON back (keys, the camera, the clock held and stepped, turns, screenshots with or without the panel, state) |
+| `tools/` | `build.ps1`, `devenv.ps1` (MSVC environment), `check-determinism.ps1` (headless), `bench.ps1` (ladder), `get-shdc.ps1`, `catalogue-shots.ps1` (the catalogue's contact sheets), `ref-frames.ps1` (reference clips beside them), `coop.py` (agent-driven co-op: launch one sandbox window per player, send them requests, step or take turns, screenshots side by side, the scenarios; `python tools/coop.py help`) |
 | `bench/baseline.json` | committed benchmark baseline that `tools/bench.ps1` compares against |
 | `scripts/` | replay scripts of commands for the sandbox and `lpf_bench --script` (`tick[:peer] tool origin dir`, `tick drive vehicle throttle brake steer handbrake`, `tick walk rig forward strafe turn crouch`, `tick reach rig limb active x y z`, `tick grab rig limb`, `tick impact origin dir radius energy [impulse]`; the full list in `scenes/script.h`) |
 | `docs/` | goals (the north star, the kinds of game the engine serves, the feel), the outcome catalogue (`catalogue.md`: the contract, every outcome with its test or contact sheet in `catalogue/`), references (clips to aspire to; links only), feasibility, architecture, determinism rules, materials catalog, roadmap, perf log, multiplayer research (milestone 7's decisions; evidence in `docs/research/`) |
@@ -68,12 +68,16 @@ pwsh tools/bench.ps1 -StrictSolver              # also exit 3 if a stress solver
 build/msvc-release/bin/lpf_bench.exe --scene pile --workers 1,8
 build/msvc-release/bin/lpf_bench.exe --scene town --period 3 --ticks 300 --check-hash   # the kept hash against a full one
 build/msvc-release/bin/lpf_bench.exe --scene town --ticks 300 --host 7777   # then, in a second shell: --join 127.0.0.1:7777
+python tools/coop.py launch --scene track --players 2   # agent-driven co-op windows, held; then p1 key V tap, step 30, shot, stop
+python tools/coop.py test                               # the co-op scenarios in test/coop (windows, so local only)
 build/msvc-release/bin/lpf_bench.exe --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep
 build/msvc-release/bin/sandbox.exe --scene lumber --script scripts/lumber_demo.txt --frames 120 --screenshot build/shots/x.png --hide-ui
 ```
 
 Visual checks: run the sandbox with `--frames N --screenshot path --hide-ui` (optionally `--camera x,y,z,yawDeg,pitchDeg`)
-and look at the PNG.
+and look at the PNG. Multiplayer checks: `python tools/coop.py launch`, then drive each player's window by its requests
+(`coop.py help` says how the sandbox plays), step the shared clock, and read `coop.py shot` and `coop.py all state`;
+several agents can each play one player with `coop.py turn pK N`.
 
 ## Rules of the house
 

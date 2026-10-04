@@ -47,6 +47,9 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
    Controls, limb targets and a claw's grip are persistent simulation state. A held pull is one command per tick. The
    sandbox and `lpf_bench --script` replay scripts of commands (`scenes/script.h`); recordings (`--record`) write the
    commands each step applied, so they replay their own session.
+   An app reads held input once per tick, just before the step, not once per frame (which would tie what it sends to
+   the frame rate). A claim is the world's to grant: a window treats its own as a request until the claim's tick has
+   applied, and lets go if another player's came first.
 11. **Hash fields, not structs with padding.** A struct copy fills its padding with whatever was on the stack (pointers,
    under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
    ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).
