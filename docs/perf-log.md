@@ -922,8 +922,8 @@ Engine untouched (the lab is outside it). E11's full solve, 60 steps at 100k con
 | CPU twin, Grace, 1 / 8 threads | 67.6 / 17.7 | 108.7 / 19.1 | 126.4 / 22.0 | 301.8 / 42.0 | |
 
 - **Fast math on the GPU** (`slangc -fp-mode fast`, contraction allowed) saves 1.7% of the 100k solve on the GB10
-  (4.73 ms) and nothing measurable on the row benchmark on either NVIDIA GPU: the float dialect's NoContraction is
-  nearly free there.
+  (4.73 ms), 1-3% on the RTX 3060 (5.57 against 5.65 ms) and the UHD (31.7 against 32.6), and nothing measurable on
+  the row benchmark: the float dialect's NoContraction is nearly free.
 - **The Grace CPU runs the F twin 1.7 times as fast as the laptop's i7-10870H** at one thread (67.6 against E11's 118
   ms), 1.4 times at eight. The laptop's twin timings in the lab's own Windows run were taken while a build was
   compiling and are not comparable.

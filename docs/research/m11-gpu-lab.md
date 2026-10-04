@@ -22,8 +22,8 @@ here.
   NaN impossible, not merely tolerate it.
 - **Q32.32 (I64) runs correctly on the GB10 and llvmpipe.** Its miscompile was the Intel Gen9.5 driver's alone.
 - **Giving up fast math on the GPU is nearly free here.** `slangc -fp-mode fast` (contraction allowed) saves 1.7% of
-  the 100k solve on the GB10 (4.73 against 4.81 ms per step) and nothing measurable on the row benchmark on either
-  NVIDIA GPU. The fast-math kernels differ from the twin in about one word in ten, as they should (the positive
+  the 100k solve on the GB10 (4.73 against 4.81 ms per step), 1-3% on the RTX 3060 and the UHD (5.57 against 5.65,
+  31.7 against 32.6), and nothing measurable on the row benchmark on either NVIDIA GPU. The fast-math kernels differ from the twin in about one word in ten, as they should (the positive
   control).
 - **Integers cost what E11 said.** V4 costs 1.25-1.36× F per step at 100k contacts on every GPU measured, and I32
   1.07-1.20×.
@@ -95,3 +95,35 @@ predicted worse (the gate before milestone 12).
   sign for max(-0, +0) differs between MSVC and clang; it is written out.
 - **Contraction:** gcc and clang contract by default on aarch64, so every lab file is built with
   `-ffp-contract=off`, the scenario generators included.
+
+## Pending: the MacBook
+
+What the Mac answers that no other machine here can: Apple's GPU through MoltenVK (Vulkan translated to Metal by
+SPIRV-Cross), Apple clang on arm64, and an x64 twin under Rosetta 2.
+
+**Setup (the owner wakes it; about 20 minutes once):**
+- key-based ssh from the laptop: `ssh <user>@mbas-macbook-pro`;
+- the Xcode command-line tools (clang, make, python3) and CMake (`brew install cmake`);
+- the LunarG Vulkan SDK for macOS (MoltenVK, a universal Vulkan loader, vulkaninfo), sourced in the ssh session
+  (`setup-env.sh`); the universal loader lets an x64 build link under Rosetta.
+
+**Runs (`lab.py remote` once the setup works):**
+1. E11 on the Apple GPU: the probe, the solve matrix, the rows, mulbench, with Apple clang twins.
+   - Does Metal flush fp32 subnormals by default (reported, unverified)?
+   - Are selects rewritten, and is `0 - a` folded?
+   - Does sqrt round correctly?
+   - Is int64 multiplication correct? Apple's GPUs have no native 64-bit multiply, so it is emulated.
+   - What do V4 and I32 cost against F?
+2. MoltenVK with `MVK_CONFIG_FAST_MATH_ENABLED=0`, then `=1` as a positive control. Metal compiles with fast math
+   unless told otherwise, and SPIR-V's NoContraction has no per-operation equivalent in Metal's language, so this is
+   the run most likely to break the float dialect.
+3. The twins built for x64 (`CMAKE_OSX_ARCHITECTURES=x86_64`) and run under Rosetta 2, without GPUs: E11's hashes must
+   hold, as the engine's CI found for the engine itself.
+4. The toy, when its Vulkan path exists (step 5): the battery, then the scenes in both dialects on the Apple GPU
+   against the twins.
+
+## Not done
+
+- **The CUDA leg** (the plan's optional item: F through `slangc -target cuda` and nvcc with `--fmad=false` against
+  the twin, `--fmad=true` as the control) was skipped: Vulkan is the path a game ships on, and the GB10's Vulkan
+  results already cover its hardware.
