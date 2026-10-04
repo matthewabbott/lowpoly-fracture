@@ -445,7 +445,8 @@ void ToggleDriving()
 	int car = Drive_Nearest( app.world, app.camPos, rig >= 0 ? rigDistance : 25.0f, app.peer );
 	if ( car < 0 && rig < 0 )
 	{
-		return; // nothing free within reach of the camera
+		app.notice = "tick " + std::to_string( app.tick ) + ": V found nothing free within 25 m of the camera";
+		return;
 	}
 	if ( car >= 0 )
 	{
@@ -478,11 +479,11 @@ void SettleClaim()
 		int index = app.driving >= 0 ? app.driving : app.walking;
 		if ( owner >= 0 )
 		{
-			snprintf( text, sizeof( text ), "%s %d went to peer %d first", what, index, owner );
+			snprintf( text, sizeof( text ), "tick %lld: %s %d went to peer %d first", (long long)app.tick, what, index, owner );
 		}
 		else
 		{
-			snprintf( text, sizeof( text ), "%s %d could not be taken (wrecked?)", what, index );
+			snprintf( text, sizeof( text ), "tick %lld: %s %d could not be taken (wrecked?)", (long long)app.tick, what, index );
 		}
 		app.notice = text;
 		printf( "%s\n", text );
@@ -1016,7 +1017,7 @@ void DrawUi()
 	}
 	if ( app.control )
 	{
-		ImGui::Text( "agent control: %s%s", app.paused ? "clock held" : "clock running", app.opt.allowInput ? "" : ", keys and mouse ignored" );
+		ImGui::Text( "agent control: %s%s", app.paused ? "clock held" : "clock running", app.opt.allowInput ? "" : ", this window's own keyboard and mouse ignored" );
 	}
 	ImGui::Separator();
 
@@ -1137,7 +1138,7 @@ void Init()
 		{
 			app.listener = lpTcp_Listen( app.opt.hostPort, app.opt.hostLoopback );
 			app.lockstep = app.listener != nullptr ? lpLockstep_CreateHost( &def ) : nullptr;
-			printf( "co-op: hosting %s on port %d for %d player(s)\n", lpSceneName( app.opt.scene ),
+			printf( "co-op: hosting %s on port %d for %d peer(s)\n", lpSceneName( app.opt.scene ),
 					app.listener != nullptr ? lpTcp_Port( app.listener ) : app.opt.hostPort, app.opt.peers );
 		}
 		else
@@ -1520,7 +1521,8 @@ std::string Request( const ControlRequest& r )
 		}
 		return JsonError( "no moving debris to nudge" );
 	}
-	if ( verb == "net" && w.size() >= 3 && ( w[1] == "delay" || w[1] == "stall" ) )
+	if ( verb == "net" && w.size() >= 3 && w.size() <= 4 && ( w[1] == "delay" || w[1] == "stall" ) && atoi( w[2].c_str() ) >= 0 &&
+		 ( w.size() == 3 || atoi( w[3].c_str() ) >= 0 ) )
 	{
 		if ( app.fault == nullptr )
 		{

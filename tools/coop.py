@@ -11,7 +11,9 @@ prints the JSON replies, one line per player.
   python tools/coop.py p1 brief              short lines: the clock, what p1 drives, every car's place, heading,
                                              speed and distance from p1's camera (state: everything, as JSON)
   python tools/coop.py step 60               the session's clock: every machine steps 60 ticks, then holds
-  python tools/coop.py turn p1 30            p1 is ready for 30 more ticks; returns once every player has asked
+  python tools/coop.py turn p1 30            p1 is ready for 30 more ticks; returns once every player has asked (so
+                                             it waits for the others' agents; one agent playing several players runs
+                                             their turns at once: turn p0 30 & turn p1 30 & wait; or uses step)
   python tools/coop.py shot [p1|all] [--ui]  PNGs in build/coop/NAME/shots/ (all: one side by side, too)
   python tools/coop.py sync                  every player at one tick with one hash? (exit 1 if not)
   python tools/coop.py p1 net delay 120 40   p1's link held 120 ms and up to 40 more, each way (net stall MS: a pause)
@@ -42,7 +44,7 @@ How the sandbox plays (tips for agents):
   delay + 1 ticks before looking for what it did. A car's controller is -1 while nobody drives it: on the track the
   scene's driver then takes it round its laps, so free cars move from the first tick.
 - A claim can lose: if two players press V on one car in one tick, the lower peer gets it, and the other's state
-  shows a notice ("car 1 went to peer 0 first").
+  shows a notice ("tick 120: car 1 went to peer 0 first"); a V that finds nothing free in reach says so too.
 - A screenshot is a PNG: read it to see. --ui adds the sandbox's panel (the co-op line, a desync's report).
 """
 
@@ -251,7 +253,9 @@ class Session:
                           '--join', '127.0.0.1:%d' % self.game], log)
         player = Player(len(self.players) + len(self.others), 0, process.pid, log)
         self.others.append(player)
+        self.save()  # so a stop from anywhere (the scenario runner's) ends it too
         player.port = int(_wait_for(log, r'control 127\.0\.0\.1:(\d+)', process).group(1))
+        self.save()
         return player
 
     def wait_running(self, seconds=30.0):
@@ -266,7 +270,8 @@ class Session:
 
     def save(self):
         data = {'name': self.name, 'scene': self.scene, 'game': self.game,
-                'players': [{'peer': p.peer, 'port': p.port, 'pid': p.pid, 'log': p.log} for p in self.players]}
+                'players': [{'peer': p.peer, 'port': p.port, 'pid': p.pid, 'log': p.log} for p in self.players],
+                'others': [{'peer': p.peer, 'port': p.port, 'pid': p.pid, 'log': p.log} for p in self.others]}
         with open(os.path.join(self.dir, 'session.json'), 'w') as f:
             json.dump(data, f, indent=1)
 
@@ -278,7 +283,8 @@ class Session:
         with open(path) as f:
             data = json.load(f)
         return Session(data['name'], [Player(p['peer'], p['port'], p['pid'], p['log']) for p in data['players']],
-                       data['scene'], data.get('game'))
+                       data['scene'], data.get('game'),
+                       [Player(p['peer'], p['port'], p['pid'], p['log']) for p in data.get('others', [])])
 
     # -- the clock --
 
@@ -489,7 +495,7 @@ def brief(name, state):
         head += ', report: %s' % session['report']
     head += '; drives car %d' % state['driving'] if state['driving'] >= 0 else (
         '; walks rig %d' % state['walking'] if state['walking'] >= 0 else '; on foot')
-    head += '; camera (%.1f, %.1f, %.1f) yaw %.0f' % (cam['x'], cam['y'], cam['z'], cam['yaw'] % 360.0)
+    head += '; camera (%.1f, %.1f, %.1f) yaw %d' % (cam['x'], cam['y'], cam['z'], round(cam['yaw']) % 360)
     head += '; keys %s' % (' '.join(state['keys']) or 'none')
     if state.get('notice'):
         head += '; notice: %s' % state['notice']
@@ -502,8 +508,8 @@ def brief(name, state):
                 continue
             x, y, z = v['position']
             far = math.sqrt((x - cam['x']) ** 2 + (y - cam['y']) ** 2 + (z - cam['z']) ** 2)
-            lines.append('  %s %d [%s] at (%.1f, %.1f, %.1f) heading %.0f, %.1f m/s, %.1f m from the camera' % (
-                kind, v['index'], who, x, y, z, heading(v['forward']), v['speed'], far))
+            lines.append('  %s %d [%s] at (%.1f, %.1f, %.1f) heading %d, %.1f m/s, %.1f m from the camera' % (
+                kind, v['index'], who, x, y, z, round(heading(v['forward'])) % 360, v['speed'], far))
     return '\n'.join(lines)
 
 
@@ -592,6 +598,9 @@ def main(argv):
         return code
     except CoopError as e:
         print('error: %s' % e, file=sys.stderr)
+        return 2
+    except (ValueError, IndexError):
+        print('error: the arguments do not fit "%s" (coop.py help)' % ' '.join(argv), file=sys.stderr)
         return 2
 
 

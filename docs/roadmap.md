@@ -651,6 +651,44 @@ Landed:
   - a late joiner is told it was late;
   - held keys are read once per tick.
 
+**The agent trial.** Two agents (Sonnet), one per player, played through turns with nothing but `coop.py help`: take a
+car and drive it to within 10 m of the field's centre in 16 half-second turns.
+- p1 got there (3.5 m). p0 ended 10.1 m off. p1's first claim lost to p0, and the new notice told it so.
+- Neither found a multiplayer bug. Both had to work out steering, headings and V's reach from the camera.
+- The help now says these, and `pK brief` gives a player's view in a few lines.
+
+A director agent then tested freely: three players on the track, two in the mech yard. Contested claims, 300 ms of
+delay with jitter, a 4 s stall, a cannon fired at another player's car, an injected desync, and a player quitting
+all stayed in sync or stopped as designed.
+
+It found rough edges, all fixed:
+- a negative delay was accepted;
+- a Python traceback on a bad step count;
+- a V that found nothing said nothing;
+- notices carried no tick;
+- the help did not say that one agent playing several players must take their turns at once.
+
+Left as they are:
+- A car stays "driven" once wrecked, until V.
+- A released car coasts for ever at throttle 0: the vehicles have no rolling resistance, which is a vehicle matter
+  and not co-op.
+- One player leaving ends the session for all, until milestone 16's host migration and catch-up.
+
+**The simplicity pass** (Fable, and GPT-5.6 Sol through the Codex reviewer) found nothing that could split a session.
+
+Taken:
+- launches that fail part way clean up after themselves;
+- a refused peer's slot is reused;
+- screenshots get their own list;
+- verbs reply with their usage when misused;
+- peers refuse `pause` and `run`;
+- loopback is used only for 127.0.0.1 or localhost;
+- sokol's patches are listed.
+
+Rerunning CI's pair step found a host closing past `--ticks`, which is now fixed.
+
+Not taken: a process creation time beside each pid (Sol); removing the session file on stop covers it.
+
 ## 11. Integer groundwork
 
 Fail fast before the integer core is built.
