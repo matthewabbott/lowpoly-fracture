@@ -343,7 +343,7 @@ d ticks reach them.
   snapshot (milestone 14). The owner's quick check, which needs no code: play co-op at 12 ticks of input delay with no
   prediction (`python tools/coop.py launch --delay 12 --running --allow-input`) to feel what the bubble must hide.
 
-### The arithmetic (decided on evidence by milestone 11)
+### The arithmetic: block-scaled integers (decided on evidence by milestone 11)
 
 **Catto's rules are CPU rules.** His Box2D v3 post lists three things to avoid: fast math, FMA contraction and
 C-library trigonometry (sqrtf is fine). This engine's 14-leg CI proves them sufficient on CPUs, with our own additions
@@ -387,8 +387,8 @@ gate before milestone 12. The verdict is recorded here when the toy has answered
 - *Cost:* V4 is dearer where the tick is dispatch-bound (1.7 times at one pile) and level at scale; on Apple's GPU,
   whose integer multiply is nearly as fast as an fma, V4 beat F on E11's solve.
 
-**Claude's recommendation, for the owner to confirm: block-scaled integers (V4)**, provisional on the Pascal and AMD
-gate. The deciding difference is the one the rule names: F is bit-exact because no subnormal ever arises in a step
+**The verdict (the owner, 2026-10-04): block-scaled integers (V4)**, Claude's recommendation, provisional on the
+Pascal and AMD gate. The tree before the verdict, with both dialects side by side, is tagged `m11-dual-dialect`. The deciding difference is the one the rule names: F is bit-exact because no subnormal ever arises in a step
 (snapped at every select and store, watched by the x64 twin's sentinel), but nothing a driver promises keeps an
 intermediate inside an expression from going subnormal in content nobody tested, and NVIDIA flushes them by
 default. That failure would be silent and remote. V4's arithmetic is exact by the spec; its risks (saturation,

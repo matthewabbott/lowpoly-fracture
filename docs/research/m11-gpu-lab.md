@@ -8,6 +8,9 @@ here.
 
 ## Summary so far
 
+**The verdict (the owner, 2026-10-04): block-scaled integers (V4)**, provisional on Pascal and AMD
+(multiplayer-research.md §10). The tree before the verdict, both dialects side by side, is tagged `m11-dual-dialect`.
+
 - **E11 holds on two more GPUs, a second CPU architecture and two more compilers.** E11's unchanged kernels were
   regenerated (byte-identical) and run on the DGX Spark: the GB10 (Blackwell, Linux driver 580.82) and llvmpipe
   (Mesa's CPU Vulkan, LLVM 20), with gcc 13 and clang 18 twins on aarch64. Every twin on every compiler and ISA

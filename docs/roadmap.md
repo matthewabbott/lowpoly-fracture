@@ -717,9 +717,9 @@ multiply) and an AMD GPU, when the owner's low-end box exists.
 
 **Status (2026-10-04, overnight):** the lab, E11 on the Spark and the toy's seven steps are done; both decision
 points passed for both dialects on every device to hand (research/m11-gpu-lab.md), and the reviews (Fable and the
-Codex reviewer) are applied. Claude recommends block-scaled integers (multiplayer-research.md §10), for the owner to
-confirm. The MacBook's runs are in (the Apple M5 through MoltenVK, and x64 under Rosetta 2: bit-exact in both
-dialects). Left: the owner's verdict, then the push.
+Codex reviewer) are applied. The MacBook's runs are in (the Apple M5 through MoltenVK, and x64 under Rosetta 2:
+bit-exact in both dialects). **The verdict: block-scaled integers** (the owner, 2026-10-04; multiplayer-research.md
+§10), provisional on the Pascal and AMD gate; the tree with both dialects is tagged `m11-dual-dialect`.
 
 ## 11a. Exact fracture geometry
 
@@ -769,8 +769,8 @@ a swept blade, perhaps a blade stuck in a body as a joint). The catalogue gains 
 
 ## 12. The core with its CPU twin
 
-In the arithmetic milestone 11 chooses: the integer design is below; a float-dialect core keeps its structure, with the
-dialect's rules in place of the formats. The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
+In block-scaled integers, milestone 11's verdict (V4: the toy in `lab/gpu/toy` is the reference for its formats,
+rounding and helpers). The design in [research/m7-gpu-integer.md](research/m7-gpu-integer.md): block-scaled 32-bit fixed point with 64-bit
 products, 64-bit world positions, per-body exponents; Box3D's graph-coloured soft step transcribed, coloured per tick
 from state; bodies, hulls, a sorted broadphase, SAT, the four joints with motors and limits, islands and sleep, GJK and
 casts; the one-tick pipeline lag as deterministic semantics. It runs behind the seam beside Box3D, switchable per world,
