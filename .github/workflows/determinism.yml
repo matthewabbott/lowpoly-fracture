@@ -157,6 +157,26 @@ jobs:
           name: emu-bin-${{ matrix.leg }}
           path: emu
 
+      # gcc 13's backprop miscompile (lab/gpu/repro/gcc13-backprop.c): whether this leg's compiler has it at plain -O2
+      # (reported), and the reproducer built with the engine's own flags, from the compile of src/core.c (must be
+      # right). Last, so that a failure here skips nothing else; after Run, which installs Rosetta.
+      - name: Miscompile canary
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          mkdir -p out
+          repro=lab/gpu/repro/gcc13-backprop.c
+          arch=${{ matrix.osxarch }}
+          flags=$(grep -m 1 -E '"command": .*/src/core\.c"' build/default/compile_commands.json | tr ' ' '\n' |
+            grep -xE -- '-(O[0-9s]|std=[a-z0-9]+|f[a-z0-9-]+(=[a-z0-9]+)?|m[a-z0-9-]+(=[a-z0-9-]+)?)' | tr '\n' ' ') || true
+          [[ "$flags" == *-O* ]] || { echo "no optimisation flag for src/core.c in compile_commands.json"; exit 1; }
+          {
+            ${{ matrix.cc }} --version | head -n 1
+            ${{ matrix.cc }} -O2 ${arch:+-arch $arch} $repro -o build/repro_o2 && echo "-O2: $(${{ matrix.runner }} build/repro_o2)"
+            ${{ matrix.cc }} $flags ${arch:+-arch $arch} $repro -o build/repro_lpf && echo "engine flags ($flags): $(${{ matrix.runner }} build/repro_lpf)"
+          } | tee out/canary.txt
+          grep -q '^engine flags .*best 1 ' out/canary.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

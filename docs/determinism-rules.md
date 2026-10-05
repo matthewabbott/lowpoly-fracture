@@ -111,6 +111,10 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
   summary fails the run when a leg differs from the reference on any row (all but the control, which must differ on
   every row, and box64 with its default flags), or a leg's worker counts disagree: milestone 10's ARM64 split went
   unnoticed for a day under a summary that only reported.
+- Compilers miscompile too, and a leg that differs from the others is how the cross-compiler CI catches it: gcc 13's
+  backprop pass folds a live comparison to false on x64 and ARM64 (`lab/gpu/repro/gcc13-backprop.c`), so gcc builds
+  take `-fno-ssa-backprop` (top-level `CMakeLists.txt`), and every Linux and macOS leg runs that reproducer built with
+  the engine's own flags (it must answer right) and at plain `-O2` (reported, as the compiler's canary).
 - `lpf_bench`: final hash per worker count; the run fails (exit 2) if they differ. `--check-hash` compares the kept
   hash with a full recompute every tick and fails (exit 4) naming the element; `TestHashIncremental` does the same on
   seven scenes.

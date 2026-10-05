@@ -169,13 +169,24 @@ def main():
             row.append(f"{diff} ({not_rounded(leg, fn)})")
         out.append("| " + " | ".join(row) + " |")
 
+    def canary(leg):
+        # out/canary.txt: the gcc 13 backprop reproducer's answer (1 is right) at -O2 and with the engine's flags
+        got = {}
+        for line in read_lines(os.path.join(root, f"det-{leg}", "canary.txt")) or []:
+            key = "-O2" if line.startswith("-O2:") else "engine" if line.startswith("engine flags") else None
+            if key and " best " in line:
+                got[key] = line.split(" best ")[1].split()[0]
+        return f"{got.get('-O2', '?')}, {got.get('engine', '?')}" if got else "-"
+
     out.append("\n## Legs\n")
-    out.append("| leg | toolchain | lpf_test |")
-    out.append("|---|---|---|")
+    out.append("The backprop canary is `lab/gpu/repro/gcc13-backprop.c`'s answer (1 is right) at -O2, then with the "
+               "engine's flags.\n")
+    out.append("| leg | toolchain | lpf_test | backprop canary |")
+    out.append("|---|---|---|---|")
     for leg in legs:
         info = " ".join((read_lines(os.path.join(root, f"det-{leg}", "info.txt")) or ["?"])[:2]).replace("|", "/")
         test = " ".join(read_lines(os.path.join(root, f"det-{leg}", "test.txt")) or ["not run"]).replace("|", "/")
-        out.append(f"| {leg} | {info[:160]} | {test[:60]} |")
+        out.append(f"| {leg} | {info[:160]} | {test[:60]} | {canary(leg)} |")
 
     text = "\n".join(out) + "\n"
     with open(out_path, "w", encoding="utf-8") as f:

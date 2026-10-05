@@ -155,7 +155,9 @@ on the UHD, by readbacks made one region per body (66 ms). E11's solve alone: V4
 - **gcc 13.3 miscompiles a float comparison** at -O2 and -O3 (aarch64; `lab/gpu/repro/gcc13-backprop.c`, 25 lines):
   its backprop pass strips the negation in max(0, -x) because only the square of the result is used, keeps the old
   range, and VRP folds a live comparison to false. F's gcc twin lost contact points; clang, MSVC and every GPU agreed.
-  The pass rewrites only floats, so V4 was immune. Cross-compiler twins caught it at once.
+  The pass rewrites only floats, so V4 was immune. Cross-compiler twins caught it at once. x86-64 gcc 13.3 (Ubuntu's
+  cross build, run under box64) miscompiles it too, so the engine's gcc builds take `-fno-ssa-backprop`, which changed
+  no hash on aarch64 gcc 13.3 (all 24 ladder rows, every tick); CI runs the reproducer on every Linux and macOS leg.
 - **The Intel UHD 630's driver misread a variably indexed array** of manifold points once the manifold grew (661 wrong
   manifolds, in F); reading them from the buffer fixed it. E11's Intel int64 miscompile was the same driver.
 - **MSVC folds `x < 0 ? -x : x` into fabs** in C (so -0 becomes +0); clang does not.
