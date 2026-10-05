@@ -331,6 +331,14 @@ d ticks reach them.
 - **Determinism requirements are unchanged across machines.** Within a machine the core gains a contract: a unit
   stepped alone gives the same bits as that unit stepped inside the world; a unit's image carries its hidden state;
   prediction emits only commands, never state, into the shared history.
+- **Two things are deferred, not dropped** (the owner, 2026-10-04): the world's reaction to a player's own
+  destruction (a wall struck with a sledgehammer stays whole for a round trip of ticks to a friend in Finland), and
+  other players' actions shown on time. The owner wants both eventually, and their union: other players' inputs
+  predicted, with each player's own destruction inside their bubble. Fracture is deterministic, so a predicted
+  break equals the confirmed one when nothing else touches the piece; the open questions are which destruction
+  effects join a bubble (perhaps only some, perhaps capped by a count), what a wrong prediction costs, and how it
+  feels. Not decided now; the wiring stays possible because the core steps and restores units in isolation
+  (milestone 12's requirements), fracture jobs included.
 - **The exact bubble experiment needs a world clone,** which Box3D does not have. It moves to milestone 15, on the
   snapshot (milestone 14). The owner's quick check, which needs no code: play co-op at 12 ticks of input delay with no
   prediction (`python tools/coop.py launch --delay 12 --running --allow-input`) to feel what the bubble must hide.

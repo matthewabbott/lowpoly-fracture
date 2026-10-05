@@ -828,7 +828,9 @@ at 12 ticks without prediction (`coop.py launch --delay 12 --running --allow-inp
 beat.
 
 Exit: a predicted avatar and vehicle at 12 ticks of delay whose corrections are rare and eased; the bubble's cost per
-tick measured.
+tick measured. Also measured here, for the deferred decision (§16): a player's own hits predicted inside their bubble
+(the struck pieces' fracture jobs stepped ahead), against hits that wait for the round trip. The feel test wants a
+third-person humanoid stand-in to run around as (the owner, 2026-10-04: a first-person fly camera was confusing).
 
 ## 16. Networking
 
@@ -844,9 +846,11 @@ catch-up, host migration, repair by causal unit, desync reports that replay head
   jitter and deadline misses, raised at once and lowered a tick at a time. Explicit rules: a tick whose input is
   missing gets a host-finalised repeat that every peer applies; when a player's delay changes, inputs stamped for the
   same tick merge with the last one winning.
-- **Causally scoped rollback** (the owner's idea, 2026-10-01: predict other players' inputs and re-simulate only the
-  cone of a wrong guess) is dropped by the inversion, which never guesses anyone's inputs. It may return as a layer on
-  the bubble if remote players' motion needs it.
+- **Deferred, not dropped** (the owner, 2026-10-04; multiplayer-research.md §10): other players' actions shown on
+  time (the old causally scoped rollback: predict their inputs, re-simulate the cone of a wrong guess), a player's own
+  destruction inside their bubble (a sledgehammer blow that breaks the wall at once, not a round trip later), and
+  their union. Revisited after the bubble is measured: which destruction effects join a bubble, under what caps, and
+  how a wrong prediction feels.
 
 Exit: a 4-player session across machines, two of them far apart (the owner plays with a friend in Finland).
 

@@ -1,0 +1,10 @@
+
+Apple M5 (apple): 1048576 threads x 4 chains x 256 steps per dispatch, median of 5
+  fp32 fma                           580.60 G steps/s  (1.00x the fp32 fma rate, 1.849 ms)
+  int32 mul-add                      903.70 G steps/s  (0.64x the fp32 fma rate, 1.188 ms)
+  i32*i32->i64 (sext) >>20           513.28 G steps/s  (1.13x the fp32 fma rate, 2.092 ms)
+  int64*int64 (full)                 235.12 G steps/s  (2.47x the fp32 fma rate, 4.567 ms)
+  imulExtended hi/lo                  91.73 G steps/s  (6.33x the fp32 fma rate, 11.705 ms)
+  umulExtended hi/lo                  92.58 G steps/s  (6.27x the fp32 fma rate, 11.598 ms)
+  Q32.32 qmul (limbs)                128.72 G steps/s  (4.51x the fp32 fma rate, 8.342 ms)
+  i32*i32->i64 round+var shift       447.63 G steps/s  (1.30x the fp32 fma rate, 2.399 ms)

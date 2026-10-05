@@ -1,0 +1,3 @@
+E11 harness, variant I32 (label I32-rosetta), T 4 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 40/40 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off

@@ -885,6 +885,34 @@ static void dump_vec( const char* what, const BatIn* v, const BatOut* a, const B
 	say( "\n" );
 }
 
+// F: vectors whose only difference is the sign of a zero, per helper. The Apple M5 (MoltenVK) returns +0 for -0 times
+// x; a helper's raw output may carry it, but F snaps every select and store (|x| < 2^-30 to +0), so it never reaches
+// state (gate 5). Counted and printed, not failed.
+static long long g_zeroSign[64];
+
+static int zero_sign_only( const uint32_t* x, const uint32_t* y )
+{
+#if defined( DIALECT_F )
+	int any = 0;
+	for ( int w = 0; w < OUT_WORDS; ++w )
+	{
+		if ( x[w] != y[w] )
+		{
+			if ( ( x[w] | y[w] ) != 0x80000000u ) // one is +0, the other -0
+			{
+				return 0;
+			}
+			any = 1;
+		}
+	}
+	return any;
+#else
+	(void)x;
+	(void)y;
+	return 0;
+#endif
+}
+
 static long long compare_range( const Battery* b, int h, const BatOut* twin, const BatOut* gpu, int* dumps )
 {
 	long long bad = 0;
@@ -896,6 +924,11 @@ static long long compare_range( const Battery* b, int h, const BatOut* twin, con
 		for ( int w = 0; w < OUT_WORDS; ++w )
 		{
 			diff |= x[w] != y[w];
+		}
+		if ( diff && zero_sign_only( x, y ) )
+		{
+			g_zeroSign[h] += 1;
+			diff = 0;
 		}
 		if ( diff )
 		{
@@ -1469,6 +1502,11 @@ int main( int argc, char** argv )
 		{
 			long long bad = compare_range( &b, h, twin, gout[gi], &dumps );
 			say( " | %s %lld differ, sat %u", gpus[gi].vendor, bad, gsat[gi][h] );
+			if ( g_zeroSign[h] > 0 )
+			{
+				say( " (zero signs %lld, absorbed by the snap at stores)", g_zeroSign[h] );
+				g_zeroSign[h] = 0;
+			}
 			failures += bad > 0 || gsat[gi][h] != twinSat[h];
 		}
 		say( "\n" );

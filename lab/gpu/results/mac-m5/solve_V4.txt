@@ -1,0 +1,26 @@
+E11 harness, variant V4 (label V4), T 4 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 64/64 Pose 40/40 Constraint 260/260 Impulse 16/16 Params 68/68
+twin: clang 21.0.0 (clang-2100.3.34.2), aarch64, contraction off
+gpu 0: Apple M5 (apple), driver 0x28a2, api 1.3.357; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  spirv gen/V4/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 0.6454 ms/step, final hash 7b75af48e4c4c01b, range counter 8068
+  cpu twin 8 thread(s): 1.1763 ms/step, final hash 7b75af48e4c4c01b, range counter 7967
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+  gpu apple: 1.6758 ms/step (timestamps, median of 3 reps; fastest step 1.0743), 2.2230 ms/step with per-step submit+readback; first divergent step -1; range counter 8068
+  compare cpu vs apple               words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 6.0680 ms/step, final hash 69490a6639762b62, range counter 155326
+  cpu twin 8 thread(s): 3.3966 ms/step, final hash 69490a6639762b62, range counter 139880
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+  gpu apple: 1.7655 ms/step (timestamps, median of 3 reps; fastest step 1.2348), 2.2760 ms/step with per-step submit+readback; first divergent step -1; range counter 155326
+  compare cpu vs apple               words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 65.3166 ms/step, final hash 83f32634d79973d2, range counter 1460705
+  cpu twin 8 thread(s): 25.3311 ms/step, final hash 83f32634d79973d2, range counter 1285842
+  compare cpu1 vs cpu8               words 1550023 mismatches 0
+  gpu apple: 6.2613 ms/step (timestamps, median of 3 reps; fastest step 5.8560), 7.5350 ms/step with per-step submit+readback; first divergent step -1; range counter 1460705
+  compare cpu vs apple               words 1550023 mismatches 0

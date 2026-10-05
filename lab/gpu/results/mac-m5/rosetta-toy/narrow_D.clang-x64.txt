@@ -1,0 +1,12 @@
+narrowphase corpus, dialect D, 10000 pairs, seed 20261004
+twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off
+layout sizes C/twin: Pair 24/24 Manifold 632/632 SatAxis 88/88 NarrowDiag 128/128
+corpus: 124 hulls (4 big boxes, 60 boxes, 60 chunks, 19 chunks redrawn); box-box 4066 box-chunk 2963 chunk-chunk 2971
+  poses: faces aligned (stack) 1045; faces twisted 1949; faces tilted 1e-3..0.1 1574; faces within 1e-4 rad 963; edges crossing 1997; vertex on face 1484; generic 988;
+  separations: deep -0.15..-0.04 1339; shallow -0.02..0 2734; inside 0..0.02 2255; at 0.02 +-2e-5 423; just outside 0.02..0.03 1344; far 0.03..0.08 917; generic poses 988
+quantisation range errors 0, 0
+twin pass 1: saturations 0, floating-point sentinel clean
+twin pass 2: saturations 0, floating-point sentinel clean
+narrow D corpus hash ec5972a1a82de840 (manifolds and SAT records, both passes; twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off)
+wrote /Users/matthewabbott/lpf-m11/lab/gpu/results/mac-m5/rosetta-toy/narrow.D.bin
+PASS

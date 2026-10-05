@@ -1,0 +1,8 @@
+toy battery, dialect F, 4096 vectors per helper, seed 20261004
+twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off
+layout sizes C/twin: BatIn 32/32 BatOut 24/24
+inputs: 98304 vectors, hash b70d2b7da863fbc3
+accuracy (twin): recip max rel 8.78e-08 (3131), rsqrt max rel 8.93e-08 (3274), atan2 max abs 2.77e-05 rad (4096), |quatNormalize| - 1 max 1.25e-07 (3092), divClamp max rel 1.3e-07 (1372)
+accuracy (twin): |unit3| - 1 max 1.3e-07 (2301)
+accuracy (twin): sqrtT max rel 1.17e-07 (3286), recipE max rel 8.39e-08 (1563), discScale max rel 1.31e-07 (1214 clamped), 0 not exactly 1 inside
+accuracy (twin): twistAngle max abs 5.4e-05 rad (8192), invertSym max error relative to the largest entry 0.000466 (4096; 0 near V4's limit left out)

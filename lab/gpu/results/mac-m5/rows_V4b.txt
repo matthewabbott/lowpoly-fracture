@@ -1,0 +1,11 @@
+E11 rows V4b (label V4b): 1049600 rows (262144 per quarter + 1024 hand-made), RRow 316 bytes, ROut 56 bytes, spv gen/rows/V4b.spv
+prepare per quarter (town, chip vs mech, car crash, adversarial, hand-made): quantisation range errors 0 0 0 131085 0; shift clamps 0 0 0 393376 0
+corpus hashes: rows eadfe81d7419fa04 (double) f3ee27c3d157e53e (quantised)
+twin (clang 21.0.0 (clang-2100.3.34.2), aarch64, contraction off; 1 thread): 126.30 ns/row, hash 8dcefcdc4110e7b6, counters: saturations 7515037, kernel shift clamps 430865
+accuracy against float64 (relative error of the velocity deltas; clamp decisions newImpulse == 0):
+  town          rows  262144  max rel 2.206e-01  rms rel 5.949e-04  max abs 8.153e+01  (996276 vectors)  clamp flips push 0 relax 0  saturations 15
+  chip vs mech  rows  262144  max rel 8.075e-01  rms rel 7.483e-02  max abs 1.302e+03  (1048576 vectors)  clamp flips push 0 relax 0  saturations 114519
+  car crash     rows  262144  max rel 1.304e-02  rms rel 2.740e-05  max abs 7.638e-05  (524288 vectors)  clamp flips push 0 relax 0  saturations 8940
+  adversarial   rows  262144  max rel 5.227e+01  rms rel 8.170e-01  max abs 3.487e+32  (1048576 vectors)  clamp flips push 114714 relax 75462  saturations 7391563
+  hand-made     rows    1024  max rel 0.000e+00  rms rel 0.000e+00  max abs 0.000e+00  (3584 vectors)  clamp flips push 0 relax 0  saturations 0
+gpu apple: 4.025 ns/row (median of 5; fastest 3.948), hash 8dcefcdc4110e7b6 == twin, rows differing 0, counters: saturations 7515037, kernel shift clamps 430865

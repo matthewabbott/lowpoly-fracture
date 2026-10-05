@@ -383,7 +383,7 @@ def parse_rows(text):
 
 
 def ref_key(label):
-    base = re.split(r"-(ieee|any|fma|fast|gcc|clang|clang-cl|msvc|rtesz|pszinp|dxc|glslang)$", label or "")[0]
+    base = re.split(r"-(ieee|any|fma|fast|gcc|clang|clang-cl|msvc|rtesz|pszinp|dxc|glslang|rosetta|mvkfast)$", label or "")[0]
     return base
 
 

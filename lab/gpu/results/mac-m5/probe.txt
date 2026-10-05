@@ -1,0 +1,317 @@
+E11 probe: 1048576 operand triples per op, classes of 131072
+
+##### Apple M5 (apple), driver 0x28a2; fp32 denorm preserve 0 ftz 0, RTE 1 RTZ 0, signedZeroInfNanPreserve 1
+
+--- float ops, SPIR-V gen/probe/probe.spv (execution modes: none (driver default))
+op                        mismatch |   nanPay   nanNum      +-0  flushed    subIn     1ulp    >1ulp maxUlp | subnormal outputs kept | first mismatch
+fadd                        131471 |     1048        0        0   113932    16491        0        0      0 | 0 of 113932 | [random bits] a=617f2bf4 b=7fec94a2 c=23b4df61 cpu=7fec94a2 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1148; near 1 0; subnormal input 65790; underflow 40771; signed zeros 23754; add ties 0; mul ties 0; wide range 8;
+                         [random bits] a=f17b9cbb b=7fe4a10c c=b25709b5 cpu=7fe4a10c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=881d1f9b b=7fe31230 c=ed47d409 cpu=7fe31230 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=8c2d6f06 b=7fee2bec c=8a5367bb cpu=7fee2bec (nan) gpu=7fc00000 (nan)
+fmul                        286710 |     1011        0    73870   179866    31963        0        0      0 | 0 of 179866 | [random bits] a=b4e6a03b b=07a49d8d c=63db53aa cpu=80012899 (-1.06399191e-40) gpu=80000000 (-0)
+                         per class: random bits 7205; near 1 0; subnormal input 98101; underflow 110240; signed zeros 65595; add ties 0; mul ties 0; wide range 5569;
+                         [random bits] a=07c3c6e8 b=34864f19 c=eadbaadb cpu=0000cd6d (7.36928849e-41) gpu=00000000 (0)
+                         [random bits] a=34e438a8 b=003486c3 c=78224092 cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+                         [random bits] a=8e6764f7 b=a7d0372e c=23cafd9f cpu=0000000c (1.68155816e-44) gpu=00000000 (0)
+a*b+c (NoContraction)       281200 |     1487        0     5139   131999    32332     4598   105645 8387136 | 0 of 134286 | [random bits] a=3578a45f b=fffca903 c=d77b7bd5 cpu=fffca903 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 2045; near 1 0; subnormal input 131072; underflow 111525; signed zeros 36558; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9d02ef b=2396447c c=778f3089 cpu=ffdd02ef (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd00288 b=6946e71c c=8afd446c cpu=7fd00288 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=b47d292e b=05e007da c=068ead52 cpu=068ead51 (5.36691289e-35) gpu=068ead52 (5.36691346e-35)
+fdiv                        176410 |     1029    92193        0    53134    30054        0        0      0 | 0 of 53134 | [random bits] a=396645eb b=ff8cb8bd c=76fe54cf cpu=ffccb8bd (nan) gpu=7fc00000 (nan)
+                         per class: random bits 7210; near 1 0; subnormal input 130754; underflow 0; signed zeros 32860; add ties 0; mul ties 0; wide range 5586;
+                         [random bits] a=93cdf8c2 b=00593397 c=cfbf37c7 cpu=d313c7a6 (-6.34709737e+11) gpu=ff800000 (-inf)
+                         [random bits] a=72e8ec32 b=fff7610f c=dc89a74e cpu=fff7610f (nan) gpu=7fc00000 (nan)
+                         [random bits] a=9197bbda b=dc74601d c=80d768aa cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+sqrt                        156539 |      529        0        0        0   156010        0        0      0 | 0 of 0 | [random bits] a=0076bb76 b=f10f0212 c=fedc6098 cpu=1ff68ee3 (1.04421439e-19) gpu=00000000 (0)
+                         per class: random bits 1015; near 1 0; subnormal input 131072; underflow 0; signed zeros 24452; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fcd1dc8 b=745e8de7 c=2204f4ec cpu=7fcd1dc8 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd6bf4c b=10c3f4b4 c=01bcfeb8 cpu=7fd6bf4c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fdf8364 b=3666b4e3 c=0a8300e4 cpu=7fdf8364 (nan) gpu=7fc00000 (nan)
+inversesqrt                 156709 |      466        0        0        0   156243        0        0      0 | 0 of 0 | [random bits] a=001e86ab b=e239d79b c=ede56472 cpu=5f830dc7 (1.88868456e+19) gpu=7f800000 (inf)
+                         per class: random bits 969; near 1 0; subnormal input 131072; underflow 0; signed zeros 24668; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fd95e41 b=2107ea72 c=a9848094 cpu=7fd95e41 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=005e8d10 b=7b0e24c4 c=aa5467e7 cpu=5f14ee0c (1.07315282e+19) gpu=7f800000 (inf)
+                         [random bits] a=7f88d6a4 b=fb3a243b c=6b88031c cpu=7fc8d6a4 (nan) gpu=7fc00000 (nan)
+select max (a>b?a:b)         44417 |        0        0        0     3076    41341        0        0      0 | 89946 of 127326 | [subnormal input] a=006be453 b=806386ad c=804722eb cpu=006be453 (9.90830539e-39) gpu=806386ad (-9.14002669e-39)
+                         per class: random bits 0; near 1 0; subnormal input 32773; underflow 0; signed zeros 11644; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=8056beef b=8066be9f c=00321d31 cpu=8056beef (-7.96634674e-39) gpu=8066be9f (-9.43560257e-39)
+                         [subnormal input] a=0025fd0d b=807cbc71 c=80008f3e cpu=0025fd0d (3.48869087e-39) gpu=807cbc71 (-1.14552016e-38)
+                         [subnormal input] a=002d1651 b=80173e4b c=806c93d0 cpu=002d1651 (4.14060295e-39) gpu=80173e4b (-2.13456292e-39)
+select clamp(x,-m,m)         65426 |        0        0        0     7196    58230        0        0      0 | 71235 of 130601 | [random bits] a=801518dd b=001038e0 c=a14d2cd6 cpu=801038e0 (-1.48977084e-39) gpu=801518dd (-1.93746468e-39)
+                         per class: random bits 1; near 1 0; subnormal input 49011; underflow 0; signed zeros 16414; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=80716565 b=800328b3 c=801af183 cpu=000328b3 (2.90106617e-40) gpu=80716565 (-1.04137846e-38)
+                         [subnormal input] a=00485619 b=800cd27d c=8034ad17 cpu=800cd27d (-1.17753492e-39) gpu=00485619 (6.64304174e-39)
+                         [subnormal input] a=8017791b b=80164b9d c=0015459b cpu=00164b9d (2.04750585e-39) gpu=8017791b (-2.15566087e-39)
+max() intrinsic              48234 |        0        0     3459     3106    41669        0        0      0 | 90148 of 127794 | [random bits] a=0053df0d b=0016d867 c=30b0ad26 cpu=0053df0d (7.70236172e-39) gpu=0016d867 (2.09801145e-39)
+                         per class: random bits 1; near 1 0; subnormal input 32955; underflow 0; signed zeros 15278; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=801c0693 b=8030d3a5 c=002ebde5 cpu=801c0693 (-2.57375228e-39) gpu=8030d3a5 (-4.48402757e-39)
+                         [subnormal input] a=802ea5df b=805cb561 c=00139f47 cpu=802ea5df (-4.28393616e-39) gpu=805cb561 (-8.51393214e-39)
+                         [subnormal input] a=004f08ad b=80385225 c=800d6945 cpu=004f08ad (7.25811648e-39) gpu=80385225 (-5.17225569e-39)
+min() intrinsic              47992 |        0        0     3643     3077    41272        0        0      0 | 89985 of 127103 | [random bits] a=000f2034 b=006864d9 c=ac568984 cpu=000f2034 (1.38908475e-39) gpu=006864d9 (9.58706892e-39)
+                         per class: random bits 4; near 1 0; subnormal input 32491; underflow 0; signed zeros 15497; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=8023c86c b=00605b28 c=750038bc cpu=8023c86c (-3.28614019e-39) gpu=00605b28 (8.84890833e-39)
+                         [random bits] a=000e1b25 b=007dd6ca c=d9042267 cpu=000e1b25 (1.29543457e-39) gpu=007dd6ca (1.15564888e-38)
+                         [random bits] a=80729d18 b=00161b17 c=f07e9df4 cpu=80729d18 (-1.05256012e-38) gpu=00161b17 (2.03009892e-39)
+mad() intrinsic             563788 |     1488    16903    11761   134164    32267    14065   353140 1929348726 | 0 of 134164 | [random bits] a=b0dab041 b=48f22b28 c=b871d245 cpu=ba5dfc9f (-0.000846812443) gpu=ba5dfca0 (-0.000846812502)
+                         per class: random bits 4726; near 1 131072; subnormal input 131072; underflow 6970; signed zeros 31126; add ties 8509; mul ties 131072; wide range 119241;
+                         [random bits] a=6e2993a9 b=0f1fcb95 c=345d147d cpu=3dd3b33e (0.103369221) gpu=3dd3b33d (0.103369214)
+                         [random bits] a=c2bf32d0 b=3eb82031 c=bda37abc cpu=c209d64d (-34.4592781) gpu=c209d64e (-34.4592819)
+                         [random bits] a=7fb52079 b=b2a75360 c=598a7276 cpu=7ff52079 (nan) gpu=7fc00000 (nan)
+fma() intrinsic             178231 |     1479        0     3211   141153    32388        0        0      0 | 0 of 141154 | [random bits] a=d81b2c69 b=2cf4ebfd c=ffaafa49 cpu=ffeafa49 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1748; near 1 0; subnormal input 131072; underflow 3816; signed zeros 31830; add ties 0; mul ties 0; wide range 9765;
+                         [random bits] a=48e7204a b=5db5b610 c=7fd13d2e cpu=7fd13d2e (nan) gpu=7fc00000 (nan)
+                         [random bits] a=50dcf04e b=7f83891a c=fc1031d3 cpu=7fc3891a (nan) gpu=7fc00000 (nan)
+                         [random bits] a=f777e6ca b=0043be14 c=81060e71 cpu=b80332ef (-3.12802695e-05) gpu=81060e71 (-2.46222742e-38)
+-a                               0 |        0        0        0        0        0        0        0      0 | 156178 of 156178 | 
+0-a                         156465 |      504        0        0   155961        0        0        0      0 | 0 of 155961 | [random bits] a=ffd25a8b b=affc64cc c=5fed924a cpu=ffd25a8b (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1012; near 1 0; subnormal input 131072; underflow 0; signed zeros 24381; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9e6889 b=58a09641 c=ac518904 cpu=ffde6889 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=000f3c47 b=6ba76f76 c=baa6b637 cpu=800f3c47 (-1.39915588e-39) gpu=00000000 (0)
+                         [random bits] a=006fcbd9 b=ffe0ce8a c=87daefba cpu=806fcbd9 (-1.02668668e-38) gpu=00000000 (0)
+a+0                          29175 |      268        0    28907        0        0        0        0      0 | 156345 of 156345 | [random bits] a=ff9fc88e b=441f9132 c=1d7395d3 cpu=ffdfc88e (nan) gpu=ff9fc88e (nan)
+                         per class: random bits 268; near 1 0; subnormal input 0; underflow 0; signed zeros 28907; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ffbc1a0e b=068d4eea c=d3a31330 cpu=fffc1a0e (nan) gpu=ffbc1a0e (nan)
+                         [random bits] a=7f9e54cd b=e6ad4683 c=c0b7d4a3 cpu=7fde54cd (nan) gpu=7f9e54cd (nan)
+                         [random bits] a=7fb80a42 b=3180c61a c=762e3b12 cpu=7ff80a42 (nan) gpu=7fb80a42 (nan)
+
+--- int64 / int32 ops (SPIR-V gen/probe/probe.spv)
+i64 add                  mismatches 0 of 1048576
+i64 sub                  mismatches 0 of 1048576
+i64 mul (low 64)         mismatches 0 of 1048576
+u32*u32->u64             mismatches 0 of 1048576
+i32*i32->i64             mismatches 0 of 1048576
+i64 >> (arith)           mismatches 0 of 1048576
+i64 <<                   mismatches 0 of 1048576
+i64 select max           mismatches 0 of 1048576
+i64 a<b                  mismatches 0 of 1048576
+Q32.32 qmul (limbs)      mismatches 0 of 1048576
+i64 round shift          mismatches 0 of 1048576
+i64 negate               mismatches 0 of 1048576
+i64 max(a-b,0)           mismatches 0 of 1048576
+i64 max(a-b,0)-a         mismatches 0 of 1048576
+i64 a==b                 mismatches 0 of 1048576
+i64 >> 32                mismatches 0 of 1048576
+
+--- float ops, SPIR-V gen/probe/probe.rte.spv (execution modes: RoundingModeRTE)
+op                        mismatch |   nanPay   nanNum      +-0  flushed    subIn     1ulp    >1ulp maxUlp | subnormal outputs kept | first mismatch
+fadd                        131471 |     1048        0        0   113932    16491        0        0      0 | 0 of 113932 | [random bits] a=617f2bf4 b=7fec94a2 c=23b4df61 cpu=7fec94a2 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1148; near 1 0; subnormal input 65790; underflow 40771; signed zeros 23754; add ties 0; mul ties 0; wide range 8;
+                         [random bits] a=f17b9cbb b=7fe4a10c c=b25709b5 cpu=7fe4a10c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=881d1f9b b=7fe31230 c=ed47d409 cpu=7fe31230 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=8c2d6f06 b=7fee2bec c=8a5367bb cpu=7fee2bec (nan) gpu=7fc00000 (nan)
+fmul                        286710 |     1011        0    73870   179866    31963        0        0      0 | 0 of 179866 | [random bits] a=b4e6a03b b=07a49d8d c=63db53aa cpu=80012899 (-1.06399191e-40) gpu=80000000 (-0)
+                         per class: random bits 7205; near 1 0; subnormal input 98101; underflow 110240; signed zeros 65595; add ties 0; mul ties 0; wide range 5569;
+                         [random bits] a=07c3c6e8 b=34864f19 c=eadbaadb cpu=0000cd6d (7.36928849e-41) gpu=00000000 (0)
+                         [random bits] a=34e438a8 b=003486c3 c=78224092 cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+                         [random bits] a=8e6764f7 b=a7d0372e c=23cafd9f cpu=0000000c (1.68155816e-44) gpu=00000000 (0)
+a*b+c (NoContraction)       281200 |     1487        0     5139   131999    32332     4598   105645 8387136 | 0 of 134286 | [random bits] a=3578a45f b=fffca903 c=d77b7bd5 cpu=fffca903 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 2045; near 1 0; subnormal input 131072; underflow 111525; signed zeros 36558; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9d02ef b=2396447c c=778f3089 cpu=ffdd02ef (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd00288 b=6946e71c c=8afd446c cpu=7fd00288 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=b47d292e b=05e007da c=068ead52 cpu=068ead51 (5.36691289e-35) gpu=068ead52 (5.36691346e-35)
+fdiv                        176410 |     1029    92193        0    53134    30054        0        0      0 | 0 of 53134 | [random bits] a=396645eb b=ff8cb8bd c=76fe54cf cpu=ffccb8bd (nan) gpu=7fc00000 (nan)
+                         per class: random bits 7210; near 1 0; subnormal input 130754; underflow 0; signed zeros 32860; add ties 0; mul ties 0; wide range 5586;
+                         [random bits] a=93cdf8c2 b=00593397 c=cfbf37c7 cpu=d313c7a6 (-6.34709737e+11) gpu=ff800000 (-inf)
+                         [random bits] a=72e8ec32 b=fff7610f c=dc89a74e cpu=fff7610f (nan) gpu=7fc00000 (nan)
+                         [random bits] a=9197bbda b=dc74601d c=80d768aa cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+sqrt                        156539 |      529        0        0        0   156010        0        0      0 | 0 of 0 | [random bits] a=0076bb76 b=f10f0212 c=fedc6098 cpu=1ff68ee3 (1.04421439e-19) gpu=00000000 (0)
+                         per class: random bits 1015; near 1 0; subnormal input 131072; underflow 0; signed zeros 24452; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fcd1dc8 b=745e8de7 c=2204f4ec cpu=7fcd1dc8 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd6bf4c b=10c3f4b4 c=01bcfeb8 cpu=7fd6bf4c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fdf8364 b=3666b4e3 c=0a8300e4 cpu=7fdf8364 (nan) gpu=7fc00000 (nan)
+inversesqrt                 156709 |      466        0        0        0   156243        0        0      0 | 0 of 0 | [random bits] a=001e86ab b=e239d79b c=ede56472 cpu=5f830dc7 (1.88868456e+19) gpu=7f800000 (inf)
+                         per class: random bits 969; near 1 0; subnormal input 131072; underflow 0; signed zeros 24668; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fd95e41 b=2107ea72 c=a9848094 cpu=7fd95e41 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=005e8d10 b=7b0e24c4 c=aa5467e7 cpu=5f14ee0c (1.07315282e+19) gpu=7f800000 (inf)
+                         [random bits] a=7f88d6a4 b=fb3a243b c=6b88031c cpu=7fc8d6a4 (nan) gpu=7fc00000 (nan)
+select max (a>b?a:b)         44417 |        0        0        0     3076    41341        0        0      0 | 89946 of 127326 | [subnormal input] a=006be453 b=806386ad c=804722eb cpu=006be453 (9.90830539e-39) gpu=806386ad (-9.14002669e-39)
+                         per class: random bits 0; near 1 0; subnormal input 32773; underflow 0; signed zeros 11644; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=8056beef b=8066be9f c=00321d31 cpu=8056beef (-7.96634674e-39) gpu=8066be9f (-9.43560257e-39)
+                         [subnormal input] a=0025fd0d b=807cbc71 c=80008f3e cpu=0025fd0d (3.48869087e-39) gpu=807cbc71 (-1.14552016e-38)
+                         [subnormal input] a=002d1651 b=80173e4b c=806c93d0 cpu=002d1651 (4.14060295e-39) gpu=80173e4b (-2.13456292e-39)
+select clamp(x,-m,m)         65426 |        0        0        0     7196    58230        0        0      0 | 71235 of 130601 | [random bits] a=801518dd b=001038e0 c=a14d2cd6 cpu=801038e0 (-1.48977084e-39) gpu=801518dd (-1.93746468e-39)
+                         per class: random bits 1; near 1 0; subnormal input 49011; underflow 0; signed zeros 16414; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=80716565 b=800328b3 c=801af183 cpu=000328b3 (2.90106617e-40) gpu=80716565 (-1.04137846e-38)
+                         [subnormal input] a=00485619 b=800cd27d c=8034ad17 cpu=800cd27d (-1.17753492e-39) gpu=00485619 (6.64304174e-39)
+                         [subnormal input] a=8017791b b=80164b9d c=0015459b cpu=00164b9d (2.04750585e-39) gpu=8017791b (-2.15566087e-39)
+max() intrinsic              48234 |        0        0     3459     3106    41669        0        0      0 | 90148 of 127794 | [random bits] a=0053df0d b=0016d867 c=30b0ad26 cpu=0053df0d (7.70236172e-39) gpu=0016d867 (2.09801145e-39)
+                         per class: random bits 1; near 1 0; subnormal input 32955; underflow 0; signed zeros 15278; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=801c0693 b=8030d3a5 c=002ebde5 cpu=801c0693 (-2.57375228e-39) gpu=8030d3a5 (-4.48402757e-39)
+                         [subnormal input] a=802ea5df b=805cb561 c=00139f47 cpu=802ea5df (-4.28393616e-39) gpu=805cb561 (-8.51393214e-39)
+                         [subnormal input] a=004f08ad b=80385225 c=800d6945 cpu=004f08ad (7.25811648e-39) gpu=80385225 (-5.17225569e-39)
+min() intrinsic              47992 |        0        0     3643     3077    41272        0        0      0 | 89985 of 127103 | [random bits] a=000f2034 b=006864d9 c=ac568984 cpu=000f2034 (1.38908475e-39) gpu=006864d9 (9.58706892e-39)
+                         per class: random bits 4; near 1 0; subnormal input 32491; underflow 0; signed zeros 15497; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=8023c86c b=00605b28 c=750038bc cpu=8023c86c (-3.28614019e-39) gpu=00605b28 (8.84890833e-39)
+                         [random bits] a=000e1b25 b=007dd6ca c=d9042267 cpu=000e1b25 (1.29543457e-39) gpu=007dd6ca (1.15564888e-38)
+                         [random bits] a=80729d18 b=00161b17 c=f07e9df4 cpu=80729d18 (-1.05256012e-38) gpu=00161b17 (2.03009892e-39)
+mad() intrinsic             563788 |     1488    16903    11761   134164    32267    14065   353140 1929348726 | 0 of 134164 | [random bits] a=b0dab041 b=48f22b28 c=b871d245 cpu=ba5dfc9f (-0.000846812443) gpu=ba5dfca0 (-0.000846812502)
+                         per class: random bits 4726; near 1 131072; subnormal input 131072; underflow 6970; signed zeros 31126; add ties 8509; mul ties 131072; wide range 119241;
+                         [random bits] a=6e2993a9 b=0f1fcb95 c=345d147d cpu=3dd3b33e (0.103369221) gpu=3dd3b33d (0.103369214)
+                         [random bits] a=c2bf32d0 b=3eb82031 c=bda37abc cpu=c209d64d (-34.4592781) gpu=c209d64e (-34.4592819)
+                         [random bits] a=7fb52079 b=b2a75360 c=598a7276 cpu=7ff52079 (nan) gpu=7fc00000 (nan)
+fma() intrinsic             178231 |     1479        0     3211   141153    32388        0        0      0 | 0 of 141154 | [random bits] a=d81b2c69 b=2cf4ebfd c=ffaafa49 cpu=ffeafa49 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1748; near 1 0; subnormal input 131072; underflow 3816; signed zeros 31830; add ties 0; mul ties 0; wide range 9765;
+                         [random bits] a=48e7204a b=5db5b610 c=7fd13d2e cpu=7fd13d2e (nan) gpu=7fc00000 (nan)
+                         [random bits] a=50dcf04e b=7f83891a c=fc1031d3 cpu=7fc3891a (nan) gpu=7fc00000 (nan)
+                         [random bits] a=f777e6ca b=0043be14 c=81060e71 cpu=b80332ef (-3.12802695e-05) gpu=81060e71 (-2.46222742e-38)
+-a                               0 |        0        0        0        0        0        0        0      0 | 156178 of 156178 | 
+0-a                         156465 |      504        0        0   155961        0        0        0      0 | 0 of 155961 | [random bits] a=ffd25a8b b=affc64cc c=5fed924a cpu=ffd25a8b (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1012; near 1 0; subnormal input 131072; underflow 0; signed zeros 24381; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9e6889 b=58a09641 c=ac518904 cpu=ffde6889 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=000f3c47 b=6ba76f76 c=baa6b637 cpu=800f3c47 (-1.39915588e-39) gpu=00000000 (0)
+                         [random bits] a=006fcbd9 b=ffe0ce8a c=87daefba cpu=806fcbd9 (-1.02668668e-38) gpu=00000000 (0)
+a+0                          29175 |      268        0    28907        0        0        0        0      0 | 156345 of 156345 | [random bits] a=ff9fc88e b=441f9132 c=1d7395d3 cpu=ffdfc88e (nan) gpu=ff9fc88e (nan)
+                         per class: random bits 268; near 1 0; subnormal input 0; underflow 0; signed zeros 28907; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ffbc1a0e b=068d4eea c=d3a31330 cpu=fffc1a0e (nan) gpu=ffbc1a0e (nan)
+                         [random bits] a=7f9e54cd b=e6ad4683 c=c0b7d4a3 cpu=7fde54cd (nan) gpu=7f9e54cd (nan)
+                         [random bits] a=7fb80a42 b=3180c61a c=762e3b12 cpu=7ff80a42 (nan) gpu=7fb80a42 (nan)
+
+--- float ops, SPIR-V gen/probe/probe.szinp.spv (execution modes: SignedZeroInfNanPreserve)
+op                        mismatch |   nanPay   nanNum      +-0  flushed    subIn     1ulp    >1ulp maxUlp | subnormal outputs kept | first mismatch
+fadd                        131471 |     1048        0        0   113932    16491        0        0      0 | 0 of 113932 | [random bits] a=617f2bf4 b=7fec94a2 c=23b4df61 cpu=7fec94a2 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1148; near 1 0; subnormal input 65790; underflow 40771; signed zeros 23754; add ties 0; mul ties 0; wide range 8;
+                         [random bits] a=f17b9cbb b=7fe4a10c c=b25709b5 cpu=7fe4a10c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=881d1f9b b=7fe31230 c=ed47d409 cpu=7fe31230 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=8c2d6f06 b=7fee2bec c=8a5367bb cpu=7fee2bec (nan) gpu=7fc00000 (nan)
+fmul                        286710 |     1011        0    73870   179866    31963        0        0      0 | 0 of 179866 | [random bits] a=b4e6a03b b=07a49d8d c=63db53aa cpu=80012899 (-1.06399191e-40) gpu=80000000 (-0)
+                         per class: random bits 7205; near 1 0; subnormal input 98101; underflow 110240; signed zeros 65595; add ties 0; mul ties 0; wide range 5569;
+                         [random bits] a=07c3c6e8 b=34864f19 c=eadbaadb cpu=0000cd6d (7.36928849e-41) gpu=00000000 (0)
+                         [random bits] a=34e438a8 b=003486c3 c=78224092 cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+                         [random bits] a=8e6764f7 b=a7d0372e c=23cafd9f cpu=0000000c (1.68155816e-44) gpu=00000000 (0)
+a*b+c (NoContraction)       281200 |     1487        0     5139   131999    32332     4598   105645 8387136 | 0 of 134286 | [random bits] a=3578a45f b=fffca903 c=d77b7bd5 cpu=fffca903 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 2045; near 1 0; subnormal input 131072; underflow 111525; signed zeros 36558; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9d02ef b=2396447c c=778f3089 cpu=ffdd02ef (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd00288 b=6946e71c c=8afd446c cpu=7fd00288 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=b47d292e b=05e007da c=068ead52 cpu=068ead51 (5.36691289e-35) gpu=068ead52 (5.36691346e-35)
+fdiv                        176410 |     1029    92193        0    53134    30054        0        0      0 | 0 of 53134 | [random bits] a=396645eb b=ff8cb8bd c=76fe54cf cpu=ffccb8bd (nan) gpu=7fc00000 (nan)
+                         per class: random bits 7210; near 1 0; subnormal input 130754; underflow 0; signed zeros 32860; add ties 0; mul ties 0; wide range 5586;
+                         [random bits] a=93cdf8c2 b=00593397 c=cfbf37c7 cpu=d313c7a6 (-6.34709737e+11) gpu=ff800000 (-inf)
+                         [random bits] a=72e8ec32 b=fff7610f c=dc89a74e cpu=fff7610f (nan) gpu=7fc00000 (nan)
+                         [random bits] a=9197bbda b=dc74601d c=80d768aa cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+sqrt                        156539 |      529        0        0        0   156010        0        0      0 | 0 of 0 | [random bits] a=0076bb76 b=f10f0212 c=fedc6098 cpu=1ff68ee3 (1.04421439e-19) gpu=00000000 (0)
+                         per class: random bits 1015; near 1 0; subnormal input 131072; underflow 0; signed zeros 24452; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fcd1dc8 b=745e8de7 c=2204f4ec cpu=7fcd1dc8 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd6bf4c b=10c3f4b4 c=01bcfeb8 cpu=7fd6bf4c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fdf8364 b=3666b4e3 c=0a8300e4 cpu=7fdf8364 (nan) gpu=7fc00000 (nan)
+inversesqrt                 156709 |      466        0        0        0   156243        0        0      0 | 0 of 0 | [random bits] a=001e86ab b=e239d79b c=ede56472 cpu=5f830dc7 (1.88868456e+19) gpu=7f800000 (inf)
+                         per class: random bits 969; near 1 0; subnormal input 131072; underflow 0; signed zeros 24668; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fd95e41 b=2107ea72 c=a9848094 cpu=7fd95e41 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=005e8d10 b=7b0e24c4 c=aa5467e7 cpu=5f14ee0c (1.07315282e+19) gpu=7f800000 (inf)
+                         [random bits] a=7f88d6a4 b=fb3a243b c=6b88031c cpu=7fc8d6a4 (nan) gpu=7fc00000 (nan)
+select max (a>b?a:b)         44417 |        0        0        0     3076    41341        0        0      0 | 89946 of 127326 | [subnormal input] a=006be453 b=806386ad c=804722eb cpu=006be453 (9.90830539e-39) gpu=806386ad (-9.14002669e-39)
+                         per class: random bits 0; near 1 0; subnormal input 32773; underflow 0; signed zeros 11644; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=8056beef b=8066be9f c=00321d31 cpu=8056beef (-7.96634674e-39) gpu=8066be9f (-9.43560257e-39)
+                         [subnormal input] a=0025fd0d b=807cbc71 c=80008f3e cpu=0025fd0d (3.48869087e-39) gpu=807cbc71 (-1.14552016e-38)
+                         [subnormal input] a=002d1651 b=80173e4b c=806c93d0 cpu=002d1651 (4.14060295e-39) gpu=80173e4b (-2.13456292e-39)
+select clamp(x,-m,m)         65426 |        0        0        0     7196    58230        0        0      0 | 71235 of 130601 | [random bits] a=801518dd b=001038e0 c=a14d2cd6 cpu=801038e0 (-1.48977084e-39) gpu=801518dd (-1.93746468e-39)
+                         per class: random bits 1; near 1 0; subnormal input 49011; underflow 0; signed zeros 16414; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=80716565 b=800328b3 c=801af183 cpu=000328b3 (2.90106617e-40) gpu=80716565 (-1.04137846e-38)
+                         [subnormal input] a=00485619 b=800cd27d c=8034ad17 cpu=800cd27d (-1.17753492e-39) gpu=00485619 (6.64304174e-39)
+                         [subnormal input] a=8017791b b=80164b9d c=0015459b cpu=00164b9d (2.04750585e-39) gpu=8017791b (-2.15566087e-39)
+max() intrinsic              48234 |        0        0     3459     3106    41669        0        0      0 | 90148 of 127794 | [random bits] a=0053df0d b=0016d867 c=30b0ad26 cpu=0053df0d (7.70236172e-39) gpu=0016d867 (2.09801145e-39)
+                         per class: random bits 1; near 1 0; subnormal input 32955; underflow 0; signed zeros 15278; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=801c0693 b=8030d3a5 c=002ebde5 cpu=801c0693 (-2.57375228e-39) gpu=8030d3a5 (-4.48402757e-39)
+                         [subnormal input] a=802ea5df b=805cb561 c=00139f47 cpu=802ea5df (-4.28393616e-39) gpu=805cb561 (-8.51393214e-39)
+                         [subnormal input] a=004f08ad b=80385225 c=800d6945 cpu=004f08ad (7.25811648e-39) gpu=80385225 (-5.17225569e-39)
+min() intrinsic              47992 |        0        0     3643     3077    41272        0        0      0 | 89985 of 127103 | [random bits] a=000f2034 b=006864d9 c=ac568984 cpu=000f2034 (1.38908475e-39) gpu=006864d9 (9.58706892e-39)
+                         per class: random bits 4; near 1 0; subnormal input 32491; underflow 0; signed zeros 15497; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=8023c86c b=00605b28 c=750038bc cpu=8023c86c (-3.28614019e-39) gpu=00605b28 (8.84890833e-39)
+                         [random bits] a=000e1b25 b=007dd6ca c=d9042267 cpu=000e1b25 (1.29543457e-39) gpu=007dd6ca (1.15564888e-38)
+                         [random bits] a=80729d18 b=00161b17 c=f07e9df4 cpu=80729d18 (-1.05256012e-38) gpu=00161b17 (2.03009892e-39)
+mad() intrinsic             563788 |     1488    16903    11761   134164    32267    14065   353140 1929348726 | 0 of 134164 | [random bits] a=b0dab041 b=48f22b28 c=b871d245 cpu=ba5dfc9f (-0.000846812443) gpu=ba5dfca0 (-0.000846812502)
+                         per class: random bits 4726; near 1 131072; subnormal input 131072; underflow 6970; signed zeros 31126; add ties 8509; mul ties 131072; wide range 119241;
+                         [random bits] a=6e2993a9 b=0f1fcb95 c=345d147d cpu=3dd3b33e (0.103369221) gpu=3dd3b33d (0.103369214)
+                         [random bits] a=c2bf32d0 b=3eb82031 c=bda37abc cpu=c209d64d (-34.4592781) gpu=c209d64e (-34.4592819)
+                         [random bits] a=7fb52079 b=b2a75360 c=598a7276 cpu=7ff52079 (nan) gpu=7fc00000 (nan)
+fma() intrinsic             178231 |     1479        0     3211   141153    32388        0        0      0 | 0 of 141154 | [random bits] a=d81b2c69 b=2cf4ebfd c=ffaafa49 cpu=ffeafa49 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1748; near 1 0; subnormal input 131072; underflow 3816; signed zeros 31830; add ties 0; mul ties 0; wide range 9765;
+                         [random bits] a=48e7204a b=5db5b610 c=7fd13d2e cpu=7fd13d2e (nan) gpu=7fc00000 (nan)
+                         [random bits] a=50dcf04e b=7f83891a c=fc1031d3 cpu=7fc3891a (nan) gpu=7fc00000 (nan)
+                         [random bits] a=f777e6ca b=0043be14 c=81060e71 cpu=b80332ef (-3.12802695e-05) gpu=81060e71 (-2.46222742e-38)
+-a                               0 |        0        0        0        0        0        0        0      0 | 156178 of 156178 | 
+0-a                         156465 |      504        0        0   155961        0        0        0      0 | 0 of 155961 | [random bits] a=ffd25a8b b=affc64cc c=5fed924a cpu=ffd25a8b (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1012; near 1 0; subnormal input 131072; underflow 0; signed zeros 24381; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9e6889 b=58a09641 c=ac518904 cpu=ffde6889 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=000f3c47 b=6ba76f76 c=baa6b637 cpu=800f3c47 (-1.39915588e-39) gpu=00000000 (0)
+                         [random bits] a=006fcbd9 b=ffe0ce8a c=87daefba cpu=806fcbd9 (-1.02668668e-38) gpu=00000000 (0)
+a+0                          29175 |      268        0    28907        0        0        0        0      0 | 156345 of 156345 | [random bits] a=ff9fc88e b=441f9132 c=1d7395d3 cpu=ffdfc88e (nan) gpu=ff9fc88e (nan)
+                         per class: random bits 268; near 1 0; subnormal input 0; underflow 0; signed zeros 28907; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ffbc1a0e b=068d4eea c=d3a31330 cpu=fffc1a0e (nan) gpu=ffbc1a0e (nan)
+                         [random bits] a=7f9e54cd b=e6ad4683 c=c0b7d4a3 cpu=7fde54cd (nan) gpu=7f9e54cd (nan)
+                         [random bits] a=7fb80a42 b=3180c61a c=762e3b12 cpu=7ff80a42 (nan) gpu=7fb80a42 (nan)
+
+--- float ops, SPIR-V gen/probe/probe.rtesz.spv (execution modes: RoundingModeRTE + SignedZeroInfNanPreserve)
+op                        mismatch |   nanPay   nanNum      +-0  flushed    subIn     1ulp    >1ulp maxUlp | subnormal outputs kept | first mismatch
+fadd                        131471 |     1048        0        0   113932    16491        0        0      0 | 0 of 113932 | [random bits] a=617f2bf4 b=7fec94a2 c=23b4df61 cpu=7fec94a2 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1148; near 1 0; subnormal input 65790; underflow 40771; signed zeros 23754; add ties 0; mul ties 0; wide range 8;
+                         [random bits] a=f17b9cbb b=7fe4a10c c=b25709b5 cpu=7fe4a10c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=881d1f9b b=7fe31230 c=ed47d409 cpu=7fe31230 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=8c2d6f06 b=7fee2bec c=8a5367bb cpu=7fee2bec (nan) gpu=7fc00000 (nan)
+fmul                        286710 |     1011        0    73870   179866    31963        0        0      0 | 0 of 179866 | [random bits] a=b4e6a03b b=07a49d8d c=63db53aa cpu=80012899 (-1.06399191e-40) gpu=80000000 (-0)
+                         per class: random bits 7205; near 1 0; subnormal input 98101; underflow 110240; signed zeros 65595; add ties 0; mul ties 0; wide range 5569;
+                         [random bits] a=07c3c6e8 b=34864f19 c=eadbaadb cpu=0000cd6d (7.36928849e-41) gpu=00000000 (0)
+                         [random bits] a=34e438a8 b=003486c3 c=78224092 cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+                         [random bits] a=8e6764f7 b=a7d0372e c=23cafd9f cpu=0000000c (1.68155816e-44) gpu=00000000 (0)
+a*b+c (NoContraction)       281200 |     1487        0     5139   131999    32332     4598   105645 8387136 | 0 of 134286 | [random bits] a=3578a45f b=fffca903 c=d77b7bd5 cpu=fffca903 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 2045; near 1 0; subnormal input 131072; underflow 111525; signed zeros 36558; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9d02ef b=2396447c c=778f3089 cpu=ffdd02ef (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd00288 b=6946e71c c=8afd446c cpu=7fd00288 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=b47d292e b=05e007da c=068ead52 cpu=068ead51 (5.36691289e-35) gpu=068ead52 (5.36691346e-35)
+fdiv                        176410 |     1029    92193        0    53134    30054        0        0      0 | 0 of 53134 | [random bits] a=396645eb b=ff8cb8bd c=76fe54cf cpu=ffccb8bd (nan) gpu=7fc00000 (nan)
+                         per class: random bits 7210; near 1 0; subnormal input 130754; underflow 0; signed zeros 32860; add ties 0; mul ties 0; wide range 5586;
+                         [random bits] a=93cdf8c2 b=00593397 c=cfbf37c7 cpu=d313c7a6 (-6.34709737e+11) gpu=ff800000 (-inf)
+                         [random bits] a=72e8ec32 b=fff7610f c=dc89a74e cpu=fff7610f (nan) gpu=7fc00000 (nan)
+                         [random bits] a=9197bbda b=dc74601d c=80d768aa cpu=00000001 (1.40129846e-45) gpu=00000000 (0)
+sqrt                        156539 |      529        0        0        0   156010        0        0      0 | 0 of 0 | [random bits] a=0076bb76 b=f10f0212 c=fedc6098 cpu=1ff68ee3 (1.04421439e-19) gpu=00000000 (0)
+                         per class: random bits 1015; near 1 0; subnormal input 131072; underflow 0; signed zeros 24452; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fcd1dc8 b=745e8de7 c=2204f4ec cpu=7fcd1dc8 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fd6bf4c b=10c3f4b4 c=01bcfeb8 cpu=7fd6bf4c (nan) gpu=7fc00000 (nan)
+                         [random bits] a=7fdf8364 b=3666b4e3 c=0a8300e4 cpu=7fdf8364 (nan) gpu=7fc00000 (nan)
+inversesqrt                 156709 |      466        0        0        0   156243        0        0      0 | 0 of 0 | [random bits] a=001e86ab b=e239d79b c=ede56472 cpu=5f830dc7 (1.88868456e+19) gpu=7f800000 (inf)
+                         per class: random bits 969; near 1 0; subnormal input 131072; underflow 0; signed zeros 24668; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=7fd95e41 b=2107ea72 c=a9848094 cpu=7fd95e41 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=005e8d10 b=7b0e24c4 c=aa5467e7 cpu=5f14ee0c (1.07315282e+19) gpu=7f800000 (inf)
+                         [random bits] a=7f88d6a4 b=fb3a243b c=6b88031c cpu=7fc8d6a4 (nan) gpu=7fc00000 (nan)
+select max (a>b?a:b)         44417 |        0        0        0     3076    41341        0        0      0 | 89946 of 127326 | [subnormal input] a=006be453 b=806386ad c=804722eb cpu=006be453 (9.90830539e-39) gpu=806386ad (-9.14002669e-39)
+                         per class: random bits 0; near 1 0; subnormal input 32773; underflow 0; signed zeros 11644; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=8056beef b=8066be9f c=00321d31 cpu=8056beef (-7.96634674e-39) gpu=8066be9f (-9.43560257e-39)
+                         [subnormal input] a=0025fd0d b=807cbc71 c=80008f3e cpu=0025fd0d (3.48869087e-39) gpu=807cbc71 (-1.14552016e-38)
+                         [subnormal input] a=002d1651 b=80173e4b c=806c93d0 cpu=002d1651 (4.14060295e-39) gpu=80173e4b (-2.13456292e-39)
+select clamp(x,-m,m)         65426 |        0        0        0     7196    58230        0        0      0 | 71235 of 130601 | [random bits] a=801518dd b=001038e0 c=a14d2cd6 cpu=801038e0 (-1.48977084e-39) gpu=801518dd (-1.93746468e-39)
+                         per class: random bits 1; near 1 0; subnormal input 49011; underflow 0; signed zeros 16414; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=80716565 b=800328b3 c=801af183 cpu=000328b3 (2.90106617e-40) gpu=80716565 (-1.04137846e-38)
+                         [subnormal input] a=00485619 b=800cd27d c=8034ad17 cpu=800cd27d (-1.17753492e-39) gpu=00485619 (6.64304174e-39)
+                         [subnormal input] a=8017791b b=80164b9d c=0015459b cpu=00164b9d (2.04750585e-39) gpu=8017791b (-2.15566087e-39)
+max() intrinsic              48234 |        0        0     3459     3106    41669        0        0      0 | 90148 of 127794 | [random bits] a=0053df0d b=0016d867 c=30b0ad26 cpu=0053df0d (7.70236172e-39) gpu=0016d867 (2.09801145e-39)
+                         per class: random bits 1; near 1 0; subnormal input 32955; underflow 0; signed zeros 15278; add ties 0; mul ties 0; wide range 0;
+                         [subnormal input] a=801c0693 b=8030d3a5 c=002ebde5 cpu=801c0693 (-2.57375228e-39) gpu=8030d3a5 (-4.48402757e-39)
+                         [subnormal input] a=802ea5df b=805cb561 c=00139f47 cpu=802ea5df (-4.28393616e-39) gpu=805cb561 (-8.51393214e-39)
+                         [subnormal input] a=004f08ad b=80385225 c=800d6945 cpu=004f08ad (7.25811648e-39) gpu=80385225 (-5.17225569e-39)
+min() intrinsic              47992 |        0        0     3643     3077    41272        0        0      0 | 89985 of 127103 | [random bits] a=000f2034 b=006864d9 c=ac568984 cpu=000f2034 (1.38908475e-39) gpu=006864d9 (9.58706892e-39)
+                         per class: random bits 4; near 1 0; subnormal input 32491; underflow 0; signed zeros 15497; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=8023c86c b=00605b28 c=750038bc cpu=8023c86c (-3.28614019e-39) gpu=00605b28 (8.84890833e-39)
+                         [random bits] a=000e1b25 b=007dd6ca c=d9042267 cpu=000e1b25 (1.29543457e-39) gpu=007dd6ca (1.15564888e-38)
+                         [random bits] a=80729d18 b=00161b17 c=f07e9df4 cpu=80729d18 (-1.05256012e-38) gpu=00161b17 (2.03009892e-39)
+mad() intrinsic             563788 |     1488    16903    11761   134164    32267    14065   353140 1929348726 | 0 of 134164 | [random bits] a=b0dab041 b=48f22b28 c=b871d245 cpu=ba5dfc9f (-0.000846812443) gpu=ba5dfca0 (-0.000846812502)
+                         per class: random bits 4726; near 1 131072; subnormal input 131072; underflow 6970; signed zeros 31126; add ties 8509; mul ties 131072; wide range 119241;
+                         [random bits] a=6e2993a9 b=0f1fcb95 c=345d147d cpu=3dd3b33e (0.103369221) gpu=3dd3b33d (0.103369214)
+                         [random bits] a=c2bf32d0 b=3eb82031 c=bda37abc cpu=c209d64d (-34.4592781) gpu=c209d64e (-34.4592819)
+                         [random bits] a=7fb52079 b=b2a75360 c=598a7276 cpu=7ff52079 (nan) gpu=7fc00000 (nan)
+fma() intrinsic             178231 |     1479        0     3211   141153    32388        0        0      0 | 0 of 141154 | [random bits] a=d81b2c69 b=2cf4ebfd c=ffaafa49 cpu=ffeafa49 (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1748; near 1 0; subnormal input 131072; underflow 3816; signed zeros 31830; add ties 0; mul ties 0; wide range 9765;
+                         [random bits] a=48e7204a b=5db5b610 c=7fd13d2e cpu=7fd13d2e (nan) gpu=7fc00000 (nan)
+                         [random bits] a=50dcf04e b=7f83891a c=fc1031d3 cpu=7fc3891a (nan) gpu=7fc00000 (nan)
+                         [random bits] a=f777e6ca b=0043be14 c=81060e71 cpu=b80332ef (-3.12802695e-05) gpu=81060e71 (-2.46222742e-38)
+-a                               0 |        0        0        0        0        0        0        0      0 | 156178 of 156178 | 
+0-a                         156465 |      504        0        0   155961        0        0        0      0 | 0 of 155961 | [random bits] a=ffd25a8b b=affc64cc c=5fed924a cpu=ffd25a8b (nan) gpu=7fc00000 (nan)
+                         per class: random bits 1012; near 1 0; subnormal input 131072; underflow 0; signed zeros 24381; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ff9e6889 b=58a09641 c=ac518904 cpu=ffde6889 (nan) gpu=7fc00000 (nan)
+                         [random bits] a=000f3c47 b=6ba76f76 c=baa6b637 cpu=800f3c47 (-1.39915588e-39) gpu=00000000 (0)
+                         [random bits] a=006fcbd9 b=ffe0ce8a c=87daefba cpu=806fcbd9 (-1.02668668e-38) gpu=00000000 (0)
+a+0                          29175 |      268        0    28907        0        0        0        0      0 | 156345 of 156345 | [random bits] a=ff9fc88e b=441f9132 c=1d7395d3 cpu=ffdfc88e (nan) gpu=ff9fc88e (nan)
+                         per class: random bits 268; near 1 0; subnormal input 0; underflow 0; signed zeros 28907; add ties 0; mul ties 0; wide range 0;
+                         [random bits] a=ffbc1a0e b=068d4eea c=d3a31330 cpu=fffc1a0e (nan) gpu=ffbc1a0e (nan)
+                         [random bits] a=7f9e54cd b=e6ad4683 c=c0b7d4a3 cpu=7fde54cd (nan) gpu=7f9e54cd (nan)
+                         [random bits] a=7fb80a42 b=3180c61a c=762e3b12 cpu=7ff80a42 (nan) gpu=7fb80a42 (nan)

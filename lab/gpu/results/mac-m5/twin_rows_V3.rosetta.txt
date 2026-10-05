@@ -1,0 +1,10 @@
+E11 rows V3 (label V3-rosetta): 1049600 rows (262144 per quarter + 1024 hand-made), RRow 316 bytes, ROut 56 bytes, spv gen/rows/V3.spv
+prepare per quarter (town, chip vs mech, car crash, adversarial, hand-made): quantisation range errors 0 0 0 1441965 0; shift clamps 0 0 0 0 0
+corpus hashes: rows eadfe81d7419fa04 (double) 640be1c5770764c9 (quantised)
+twin (clang 21.0.0 (clang-2100.3.34.2), x64, contraction off; 1 thread): 122.94 ns/row, hash 8dbf59a0f05e9857, counters: saturations 6926917, kernel shift clamps 0
+accuracy against float64 (relative error of the velocity deltas; clamp decisions newImpulse == 0):
+  town          rows  262144  max rel 8.190e+00  rms rel 1.808e-02  max abs 8.153e+01  (996276 vectors)  clamp flips push 0 relax 2  saturations 15
+  chip vs mech  rows  262144  max rel 7.078e+01  rms rel 2.047e-01  max abs 1.302e+03  (1048576 vectors)  clamp flips push 3 relax 79  saturations 115065
+  car crash     rows  262144  max rel 4.453e-01  rms rel 7.502e-02  max abs 1.084e+01  (524288 vectors)  clamp flips push 0 relax 308  saturations 168491
+  adversarial   rows  262144  max rel 1.000e+00  rms rel 8.646e-01  max abs 3.487e+32  (1048576 vectors)  clamp flips push 91608 relax 79897  saturations 6643346
+  hand-made     rows    1024  max rel 0.000e+00  rms rel 0.000e+00  max abs 0.000e+00  (3584 vectors)  clamp flips push 0 relax 0  saturations 0

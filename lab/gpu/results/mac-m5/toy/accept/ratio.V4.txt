@@ -1,0 +1,153 @@
+toy ratio, dialect V4, 1200 ticks, threads 1 8; gravity 10, sleep on, contact recycling on
+twin: clang 21.0.0 (clang-2100.3.34.2), aarch64, contraction off
+layout sizes C/twin: Hull 68/68 HullFace 24/24 BodyState 60/60 BodyPose 40/40 BodyMass 80/80 Aabb 32/32 Params 200/200 Hash2 8/8 V3 12/12 Pair 24/24 Manifold 348/348 SatAxis 72/72 NarrowDiag 64/64 Constraint 460/460 Joint 376/376 JointCommand 16/16
+scene ratio (seed 1): 8 bodies (1 static), 5 hulls (0 irregular chunks, 0 redrawn), largest hull 8 vertices 6 faces 24 half-edges; mass 0.05 to 3000 kg; quantisation range errors 0
+  hull 0 (box 20 x 1 x 20 m): volume 400 (8abc 400), Ixx/density 13366.7 (V(b^2+c^2)/3 13366.7), Ixy -0
+start: every position, orientation and velocity exact in V4 (the grid moved 0 values off their float)
+traj /Users/matthewabbott/lpf-m11/lab/gpu/results/mac-m5/toy/accept/ratio.V4.traj: 1201 records of 8 bodies, every 1 ticks
+tick  bodies-hash       manifolds-hash    stages-hash       awake pairs active touching points colours(ovf) islands(largest) slept woken bodyprep-hash     pairwork-hash
+   1  99193fe6c8abbdf3  77566c0470b112f7  fca564f39c7f560d      7    11     11       10     40    5(0)      7(1)     0     0 92d9d0949901a4ae  8a7795a09274de07
+   2  f62ec5f531b89e48  9e8fb5596b7b63b4  95add299d10864a5      7    11     11       10     40    5(0)      2(5)     0     0 a674feb6e0c345fe  539e072cb9e7d7d3
+   3  c917f8fce7ffd7ff  d48f1a0455ae677c  95add299d10864a5      7    11     11       10     40    5(0)      2(5)     0     0 cb371bcbda3c5273  ec541e0754583aab
+   4  27ac04b5ad424c62  524fc5f129e5c7bf  95add299d10864a5      7    11     11       10     40    5(0)      2(5)     0     0 5f2ebf5fbca77745  c6aee1b73304d434
+   5  072ecedd9ec20b9a  67554ef217861979  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 ba9d2d81a57e06c3  97453cd9968f3a61
+   6  e6d9f2a6589d1350  8fd0f8c8c097b07f  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 5a6b0fce7690fcc2  662ba30fe6751782
+   7  9f6649ad4af753fd  d7aa19c273568bc9  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 bd2aba86123336f4  6cb786bfac59cb87
+   8  47847c886781fb79  f87d142fd8da45c0  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 72d40051929b1a04  5727810c9ec73b15
+   9  a108cd123fc363e5  c6e78e21fdc05489  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 7e3a065be121992a  fb84f8fb172e0049
+  10  6f82b06cfada403c  1134aa5eb83f1f65  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 9f4aef7696fe3b29  63e251fcc12af79e
+  11  6f2d0800af5d5c47  7ec33ba944946e44  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 e119765eff6a481b  246efdb56b04b3fe
+  12  25022b86a1e03f0f  3b013f12eccdaf72  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 f278cd0875e2e75e  d6f5b980ca15d55d
+  13  b9118c37d20b2c2d  aa7a0e27e6e7b7a7  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 f8c34e87684bd51b  194551f5b94f6807
+  14  126001981d31a10e  f94f06bcce99d3c7  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 be69737e066cb3e8  a7a2e8c17c38cd01
+  15  506990c830fa4388  12816d345854572d  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 99567daa76d60e7b  eb92a0c1ca43c5a1
+  16  e3b7bd2a96b66c6d  b45c0f7ab8a2861c  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 374b1b66392589e1  789d720738def759
+  17  5963a667f24efa66  bb16fa1e77669f2c  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 740fd086fd05fd0e  4662b6162a81bd5f
+  18  3412b1affd7f0549  22adea8a859220e6  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 bd274ce80fe78cc5  862e0ecb8c16a242
+  19  eb3f99cda96410e4  45f71575b5f9f874  95add299d10864a5      7    11     11       11     44    5(0)      2(5)     0     0 617be1dcf5659d50  bb4445ef5ef3fa68
+  20  e6e6a28329c51664  e52708bd03bbccfb  222d7bcec7cf667d      7    12     12       11     44    5(0)      2(5)     0     0 c68d4278b2f4a564  f030024298083776
+  21  f725c14714282b39  f76873c041ae6980  01cec1c069ec448a      7    12     12       11     44    5(0)      2(5)     0     0 9b4b0cf396306972  eff0c9bf403b7a6a
+  22  d7f81b15141b97ab  718af2491e871b5e  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 c2d05188f896c89c  4ae87f497f9e2d41
+  23  899b0a6c737c7393  080207f4d594a9b3  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 16a27f77e68d0b36  048469d036bf1e55
+  24  f4f76369f34cbae7  4a88122ce9b8cfd1  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 62983af2febc9a6f  48055e9b6ac1da15
+  25  20a24151d79549ef  a8b49d6b1221b249  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 026054c8b8b95d76  11b1a2d9997d4e30
+  26  bc786e3633679668  b8b6d1c0c6d5650e  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 448d58abe024d4e8  f173746c8a6a8462
+  27  3e9832bf1eb8b2a6  c754859ecb708762  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 4661e8c2b4c8c384  84094723e5611c33
+  28  284147b80b6f61a7  6da91a7deb4297ea  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 db3f01b385024b44  178b986490280370
+  29  4b80de8395de8745  71359bf5f0dc6cff  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 24ebb7f07bcdbfeb  3caa75104574b75f
+  30  41bfc9347dc05e40  e78b0a5a5e80d691  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 57a9531e750496fb  8564b4b964c12431
+  31  50de266867ec0ce8  9a90ccb2c0d752b3  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 c8461e515341df1a  d59dfdec236519c9
+  32  ac4e5710aa65c8e8  f9a5528ea784d082  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 161f0d66dc53255a  b0eb665c5d422e26
+  33  ba64465a72466e56  a9d85cffb95cc0d0  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 5b347c0f0e7bbb27  bd299ab2f7c00bef
+  34  b6b5c006a1e3fc57  546d9ee58a42ea54  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 f68fca7a8a06d8c4  9e3c2513cbb198db
+  35  b7d2e6a79c816246  69ffc74c4d22f4d6  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 cda1fe4cca83ed15  fe46f178f74399a0
+  36  0c05159658141931  e94c8be1a29f37df  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 5feb0ec93b90b766  8e233ddd1fd8e766
+  37  6ad56452d8610a94  1045fe04bdc77f03  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 6fda0e8726854cd0  a1fecb4054ca837a
+  38  996c24301c46ebc2  4fcaebe34ce45987  01cec1c069ec448a      7    12     12       12     48    5(0)      2(5)     0     0 ca8a83db115b6896  4a5832c4ad21c080
+  39  383ac8a667ed3e86  739d80881f684b95  f8cb4a17da518060      2    12      3       12     48    2(0)      1(5)     5     0 173c64b98342416a  5b1a9aab0a5fac50
+  40  34b42fb80a60bbf2  4e1baf09fbc502b2  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 7d07cb7565a5e9b4  7467cf2ddb047c84
+  41  da6020b425815e39  d8dfd24170d48727  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 284dd9f729a45a3d  61dcdbba3b925a44
+  42  b0b0dcbec3bed018  fc777b071714ae84  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 981a25a64f4e90e9  10fd5b2f9d4db166
+  43  d34586225063886b  032991c3831b86e3  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 31c94d084313ebf0  be2624c3771a78a2
+  44  2d200faae23fb0fc  ae090e2566f389ec  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 1cad200130584e56  27eb2b1cd8af8a3e
+  45  a77fa4d351868f2c  2700aeb67f9fb64a  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 5fcbc5d627161ce5  58235f87f40c6e22
+  46  fe11c6e93c0397b2  c8ea7e4f4652ca31  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 e4eee2c9657cfa27  b9e47f6bfe861ab0
+  47  aa22a480e746618c  a1724936fe8fb8c0  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 866112f7b7698fcb  914d686dcd492612
+  48  2fc56b8198cc6352  4d99de80d95611c9  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 2d97ebe8ac51b272  9b8f9e67fc37b454
+  49  ac19f69c51a4e180  6702ccde73568445  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 2c51d26f6064079e  66404847728b32e1
+  50  24a6ddb1fbea7689  a59f0561bc2da0d3  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 74e3288e6d27c0bd  b449fed0d424167a
+  51  8fba37caf146fd96  8ced7f8e0eb9355d  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 6f434d4d9b356bac  256f47be36f2b3c9
+  52  32e95905c858a407  3c0a514e1312edf7  f8cb4a17da518060      2    12      3       12     48    2(0)      1(2)     0     0 6f434d4d9b356bac  1494c766c6d44d8f
+  53  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(2)     2     0 504f1dbf67770ec1  1494c766c6d44d8f
+  54  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  55  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  56  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  57  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  58  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  59  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  60  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  61  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  62  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  63  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  64  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  65  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  66  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  67  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  68  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  69  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  70  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  71  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  72  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  73  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  74  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  75  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  76  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  77  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  78  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  79  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  80  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  81  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  82  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  83  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  84  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  85  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  86  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  87  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  88  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  89  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  90  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  91  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  92  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  93  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  94  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  95  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  96  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  97  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  98  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+  99  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 100  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 101  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 102  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 103  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 104  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 105  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 106  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 107  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 108  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 109  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 110  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 111  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 112  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 113  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 114  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 115  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 116  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 117  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 118  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 119  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 120  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 180  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 240  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 300  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 360  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 420  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 480  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 540  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 600  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 660  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 720  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 780  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 840  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 900  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+ 960  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+1020  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+1080  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+1140  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+1200  32e95905c858a407  3c0a514e1312edf7  69e88c10f15ec078      0    12      0       12     48    0(0)      0(0)     0     0 504f1dbf67770ec1  1494c766c6d44d8f
+threads 1: 0.105 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes (reference)
+threads 8: 0.211 ms/tick, saturations 0, floating-point sentinel clean; per-tick hashes identical
+cost twin1: ticks 1199 bodies 8 pairs 12 active 0 colours 0.18 wall 0.1053 kernels 0.0057 cpu 0.0994 upload 0.0000 readback 0.0000 dispatches 5.7 | prepareBodies 0.0000 0.04 integrateVelocities 0.0000 0.17 integratePositions 0.0001 0.17 finalizeBodies 0.0000 0.04 hashElements 0.0006 1.00 narrowSat 0.0002 0.04 narrowClip 0.0001 0.04 copyManifolds 0.0002 0.97 hashManifolds 0.0033 1.00 prepareContacts 0.0002 0.04 warmStart 0.0002 0.71 pushContacts 0.0004 0.71 relaxContacts 0.0005 0.71 storeImpulses 0.0000 0.04
+cost twin8: ticks 1199 bodies 8 pairs 12 active 0 colours 0.18 wall 0.2102 kernels 0.1004 cpu 0.1093 upload 0.0000 readback 0.0000 dispatches 5.7 | prepareBodies 0.0007 0.04 integrateVelocities 0.0029 0.17 integratePositions 0.0029 0.17 finalizeBodies 0.0008 0.04 hashElements 0.0176 1.00 narrowSat 0.0009 0.04 narrowClip 0.0007 0.04 copyManifolds 0.0164 0.97 hashManifolds 0.0191 1.00 prepareContacts 0.0009 0.04 warmStart 0.0122 0.71 pushContacts 0.0122 0.71 relaxContacts 0.0123 0.71 storeImpulses 0.0007 0.04
+solve: every dynamic body asleep from tick 53; deepest point -0.48708 m (tick 25, bodies 1 2), at rest (the 60 ticks before every body sleeps, or the last 60) -0.48708 m (tick 25, bodies 1 2); at most 76 dispatches a tick
+rest: after tick 1200, over every touching pair (sleeping ones too): deepest point -0.429225 m (bodies 1 2), 12 touching pairs
+toy V4 ratio: run hash fd0f1022de546e2d, final bodies 32e95905c858a407 manifolds 3c0a514e1312edf7 stages 69e88c10f15ec078 bodyprep 504f1dbf67770ec1 pairwork 1494c766c6d44d8f, threads agree, saturations 0 (twin: clang 21.0.0 (clang-2100.3.34.2), aarch64, contraction off)
