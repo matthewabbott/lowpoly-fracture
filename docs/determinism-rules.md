@@ -53,6 +53,10 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 11. **Hash fields, not structs with padding.** A struct copy fills its padding with whatever was on the stack (pointers,
    under ASLR different each run): hashing `lpVehicleControl` whole made the hash differ in one run in twenty at the
    ticks its controls changed, while the simulation itself was identical. Hash the fields (a bool as a byte).
+   Hash what the physics engine's SIMD solver writes (contact warm starts, body motion) by value, -0 as +0
+   (`lpHashFloats`, `lpHashFloatBits`): SSE's min and max return their second operand when both are zero, NEON's
+   order -0 below +0, so Box3D's twist clamp left -0 on ARM64 where x64 left +0. From milestone 10, which began
+   hashing warm starts, every ARM64 leg's hash split from x64 that way, while the motion stayed bit-identical.
 12. **What the physics engine reports is acted on in our own total order.** Hit events (by piece pair, speed, point),
    body move events (by body index), a body's contact list (by piece, then what it touches) and casts (ties by piece
    index: the cast clips one float past its best hit so an equal hit is still seen) never act in the engine's report

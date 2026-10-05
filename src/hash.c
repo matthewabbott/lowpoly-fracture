@@ -153,9 +153,10 @@ static uint64_t lpHashBodyElement( const lpWorld* w, int bi )
 		lpVec3 v, omega;
 		lpPhys_GetMotion( w->phys, b->id, &xf, &v, &omega );
 		LP_ASSERT( lpIsValidVec3( xf.p ) && lpIsValidVec3( v ) && lpIsValidVec3( omega ) ); // NaN in state is a bug (rule 17)
-		LP_FIELD( h, xf );
-		LP_FIELD( h, v );
-		LP_FIELD( h, omega );
+		// By value, -0 as +0: the velocities come out of Box3D's SIMD contact solver, whose zeros' signs depend on the CPU
+		h = lpHashFloats( h, &xf, sizeof( xf ) );
+		h = lpHashFloats( h, &v, sizeof( v ) );
+		h = lpHashFloats( h, &omega, sizeof( omega ) );
 	}
 	h = lpHashWords( h, b->pieces.data, sizeof( int ) * (size_t)b->pieces.count ); // which, in order
 	return lpMix64( h );

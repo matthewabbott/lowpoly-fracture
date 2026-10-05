@@ -537,11 +537,12 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 	}
 	int32_t head[4] = { (int32_t)(intptr_t)shapeA, (int32_t)(intptr_t)shapeB, s->manifoldCount, (int32_t)s->flags };
 	uint64_t h = lpHashWords( LP_HASH_INIT, head, sizeof( head ) );
+	// Floats by value, -0 as +0 (lpHashFloatBits): the SIMD solver's twist clamp leaves -0 on ARM64 where x64 leaves +0
 	float cache[15] = { s->cachedRotationA.v.x, s->cachedRotationA.v.y, s->cachedRotationA.v.z, s->cachedRotationA.s,
 						s->cachedRotationB.v.x, s->cachedRotationB.v.y, s->cachedRotationB.v.z, s->cachedRotationB.s,
 						s->cachedRelativePose.p.x, s->cachedRelativePose.p.y, s->cachedRelativePose.p.z, s->cachedRelativePose.q.v.x,
 						s->cachedRelativePose.q.v.y, s->cachedRelativePose.q.v.z, s->cachedRelativePose.q.s };
-	h = lpHashWords( h, cache, sizeof( cache ) );
+	h = lpHashFloats( h, cache, sizeof( cache ) );
 	for ( int m = 0; m < s->manifoldCount; ++m )
 	{
 		const b3Manifold* manifold = s->manifolds + m;
@@ -551,14 +552,17 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 		float impulses[7] = { manifold->twistImpulse,		 manifold->frictionImpulse.x, manifold->frictionImpulse.y,
 							  manifold->frictionImpulse.z, manifold->rollingImpulse.x,	manifold->rollingImpulse.y,
 							  manifold->rollingImpulse.z };
-		memcpy( packed, impulses, sizeof( impulses ) );
+		for ( int i = 0; i < 7; ++i )
+		{
+			packed[i] = lpHashFloatBits( impulses[i] );
+		}
 		packed[7] = (uint32_t)manifold->pointCount;
 		int words = 8;
 		for ( int k = 0; k < manifold->pointCount; ++k )
 		{
 			const b3ManifoldPoint* mp = manifold->points + k;
-			memcpy( packed + words, &mp->normalImpulse, 4 );
-			memcpy( packed + words + 1, &mp->totalNormalImpulse, 4 );
+			packed[words] = lpHashFloatBits( mp->normalImpulse );
+			packed[words + 1] = lpHashFloatBits( mp->totalNormalImpulse );
 			packed[words + 2] = mp->featureId;
 			packed[words + 3] = mp->persisted ? 1u : 0u;
 			words += 4;

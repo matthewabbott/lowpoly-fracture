@@ -181,3 +181,26 @@ static inline uint64_t lpHashWords( uint64_t h, const void* data, size_t size )
 	}
 	return h;
 }
+
+// A float's bits for a state hash, by value: -0 as +0. Box3D's SIMD contact solver leaves zeros of either sign
+// depending on the CPU (SSE's min and max return their second operand when both are zero, NEON's order -0 below +0),
+// and there a zero's sign only reaches the signs of other zeros, never the motion (determinism rule 11).
+static inline uint32_t lpHashFloatBits( float x )
+{
+	uint32_t u;
+	memcpy( &u, &x, 4 );
+	return u == 0x80000000u ? 0u : u;
+}
+
+// lpHashWords over a float-only field or array (a vector, a transform; at most 16 floats), by value (lpHashFloatBits)
+static inline uint64_t lpHashFloats( uint64_t h, const void* data, size_t size )
+{
+	uint32_t bits[16];
+	LP_ASSERT( size <= sizeof( bits ) && size % 4 == 0 );
+	memcpy( bits, data, size );
+	for ( size_t i = 0; i < size / 4; ++i )
+	{
+		bits[i] = bits[i] == 0x80000000u ? 0u : bits[i];
+	}
+	return lpHashWords( h, bits, size );
+}
