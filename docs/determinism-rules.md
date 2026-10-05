@@ -101,7 +101,10 @@ multiplayer and golden-hash tests possible. Box3D guarantees it for the physics;
 - The `determinism` CI workflow (`.github/workflows/determinism.yml`), on every push to `sandbox` and `master`:
   every bench rung at 1 and 8 workers on Windows (MSVC, clang-cl, ARM64), Linux (gcc, clang, x64 and ARM64) and
   macOS (arm64, and x86_64 under Rosetta 2), plus the x64 binaries under box64 and Prism, diffed per tick against
-  Windows MSVC; `lpf_test` on every native leg; a gcc ARM64 leg with contraction on as the positive control.
+  Windows MSVC; `lpf_test` on every native leg; a gcc ARM64 leg with contraction on as the positive control. The
+  summary fails the run when a leg differs from the reference on any row (all but the control, which must differ on
+  every row, and box64 with its default flags), or a leg's worker counts disagree: milestone 10's ARM64 split went
+  unnoticed for a day under a summary that only reported.
 - `lpf_bench`: final hash per worker count; the run fails (exit 2) if they differ. `--check-hash` compares the kept
   hash with a full recompute every tick and fails (exit 4) naming the element; `TestHashIncremental` does the same on
   seven scenes.

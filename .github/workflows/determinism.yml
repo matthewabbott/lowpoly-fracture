@@ -1,6 +1,7 @@
 # Cross-platform determinism: every lpf_bench rung at workers 1 and 8 on each OS, CPU and compiler, plus x64
 # binaries under emulation on ARM64, and a probe of the C library functions the engine calls. The summary job diffs
-# every leg against windows-x64-msvc (the committed baseline's toolchain) into a table in the job summary.
+# every leg against windows-x64-msvc (the committed baseline's toolchain) into a table in the job summary, and fails
+# the run when a leg that must match it does not (summarize.py's verdict).
 name: determinism
 
 on:
@@ -235,11 +236,15 @@ jobs:
         with:
           pattern: det-*
           path: artifacts
+      # Fails the run when a leg that must match the reference does not (the summary's verdict), after writing it
       - name: Diff the legs
         run: |
-          python3 .github/determinism/summarize.py artifacts summary.md
+          code=0
+          python3 .github/determinism/summarize.py artifacts summary.md || code=$?
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $code
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: summary
           path: summary.md

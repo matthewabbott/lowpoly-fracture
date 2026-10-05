@@ -4,12 +4,18 @@
     summarize.py <artifacts dir> <summary.md>
 
 Each leg is a directory det-<leg> holding a default/ ladder (hashes.txt, ticks/<rung>.w<N>.txt),
-probe/*.bin (libm results), probe.txt, info.txt and test.txt. The reference leg is windows-x64-msvc."""
+probe/*.bin (libm results), probe.txt, info.txt and test.txt. The reference leg is windows-x64-msvc.
+
+Exits 1, after writing the summary, when the verdict fails: a leg that must match the reference (every leg but the
+control and the informational ones) differs on a row or lacks one, or a leg's worker counts disagree, or the control
+matches a row (contraction no longer shows in the hashes)."""
 import os
 import sys
 from array import array
 
 REFERENCE = "windows-x64-msvc"
+CONTROL = "linux-arm64-gcc-contract"  # FMA contraction on: must differ from the reference on every row
+INFORMATIONAL = {"box64-default"}  # box64's default dynarec flags differed on one transient line (determinism-rules.md)
 RUNGS = ["walls", "town", "pile", "lumber", "tower", "ruins", "yard", "keep", "barrage", "siege", "track", "mech"]
 PROBES = ["cbrtf", "sqrtf", "sinf", "cosf", "atan2f"]
 
@@ -59,6 +65,31 @@ def cell(ref, got, ref_dir, leg_dir, variant, rung, workers):
     return f"DIFF @{where}{mark}"
 
 
+def verdict(ref_leg, ref_hashes, leg_hashes):
+    """What breaks the contract, one line each (empty: the run passes)."""
+    rows = [(rung, workers) for rung in RUNGS for workers in ("1", "8")]
+    problems = [] if ref_leg == REFERENCE else [f"the reference leg {REFERENCE} is missing"]
+    for leg, hashes in leg_hashes.items():
+        if leg in INFORMATIONAL:
+            continue
+        split = sum(1 for k in rows if k in hashes and hashes[k][2] != "exit=0")
+        if split:
+            problems.append(f"{leg}: its worker counts disagree on {split} rows (lpf_bench exit 2)")
+        if leg == ref_leg:
+            missing = sum(1 for k in rows if k not in hashes)
+            if missing:
+                problems.append(f"{leg} (the reference) lacks {missing} of {len(rows)} rows")
+            continue
+        same = sum(1 for k in rows if k in hashes and k in ref_hashes and hashes[k][:2] == ref_hashes[k][:2])
+        if leg == CONTROL:
+            if same:
+                problems.append(f"{leg} (the control) matches {same}/{len(rows)} rows: "
+                                "contraction no longer shows in the hashes")
+        elif same < len(rows):
+            problems.append(f"{leg} matches the reference on {same}/{len(rows)} rows")
+    return problems
+
+
 def main():
     root, out_path = sys.argv[1], sys.argv[2]
     legs = sorted(d[4:] for d in os.listdir(root) if d.startswith("det-") and os.path.isdir(os.path.join(root, d)))
@@ -90,6 +121,15 @@ def main():
             n = sum(1 for k, v in leg_hashes[leg].items() if ref_hashes.get(k) and v[:2] == ref_hashes[k][:2])
             same.append(f"{leg} {n}/{len(ref_hashes)}")
         out.append("\nMatching the reference: " + ", ".join(same) + "\n")
+        problems = verdict(ref_leg, ref_hashes, leg_hashes)
+        rule = (f"every leg but `{CONTROL}` (the control, which must differ on every row) and "
+                + ", ".join(f"`{leg}`" for leg in sorted(INFORMATIONAL)) + " (informational) {} the reference on all "
+                + f"{2 * len(RUNGS)} rows, with its worker counts agreeing")
+        if problems:
+            lines = [f"**FAIL**: {rule.format('must match')}.\n"] + [f"- {p}" for p in problems]
+        else:
+            lines = [f"**PASS**: {rule.format('matches')}."]
+        out[2:2] = ["## Verdict\n"] + lines + [""]
 
     out.append("\n## C library probe\n")
     out.append("Values that differ from the reference leg's libm, of the probe's sweep (cbrtf and sqrtf: 2^-30..2^30; "
@@ -141,7 +181,10 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(text)
     print(text)
+    for p in problems:
+        print(f"::error title=determinism::{p}")
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
