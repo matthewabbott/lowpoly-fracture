@@ -944,3 +944,18 @@ The dual-dialect toy (`lab/gpu/toy/results/grid.md`): K copies of pile200, sleep
 - **At scale the CPU side dominates:** the single-threaded CPU stages take 15 ms at K = 64 (half the 3060's wall
   time), and the UHD spends 66 ms reading back the stages' inputs one 4-byte region per body and pair. A gather kernel,
   the stages on the twin's pool or the GPU, and fewer dispatches are milestone 13's work.
+
+## 2026-10-04 the ARM64 split: -0 in the twist warm start
+
+Every native ARM64 leg had matched x64 on 2 of 24 ladder rows since milestone 10 (hash only: the motion was
+bit-identical, and a contact's twist impulse was +0 on x64 and -0 on ARM64). The two fixes, timed on the Spark
+(aarch64 gcc 13, 1 worker, 600 ticks, minimum of 6 interleaved runs; 32abd30 / hash by value / hash and NEON patch):
+
+| rung | hash avg ms | physics avg ms | step avg ms |
+|---|---|---|---|
+| barrage | 0.288 / 0.271 / 0.263 | 2.726 / 2.722 / 2.762 (+1.5%) | 4.952 / 4.927 / 4.989 (+1.3%) |
+| siege | 0.612 / 0.591 / 0.600 | 5.305 / 5.297 / 5.361 (+1.2%) | 9.145 / 9.155 / 9.176 (+0.2%) |
+| pile | 0.089 / 0.091 / 0.082 | 0.979 / 0.978 / 0.996 (+1.8%) | 1.148 / 1.148 / 1.165 (+1.5%) |
+
+Hashing the engine's floats by value costs nothing measurable. The NEON min and max with SSE's rule (two instructions
+each in the wide contact solver) cost 1.2 to 1.8% of physics time on ARM64; x64 compiles the same code as before.

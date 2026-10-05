@@ -35,8 +35,20 @@
   back, by its slot, for the same lab (a repair that copies warm starts, and the injected warm-start desync).
 - `body.c`, `b3Body_GetMotion` (new): the transform and both velocities in one lookup instead of three, for the state
   hash, which reads every body that moved each tick.
+- `simd.h`, the wide `b3MinW` and `b3MaxW` on NEON and on the scalar path, and the scalar `b3SymClampW`: SSE's rule
+  (`minps`/`maxps` give `b` unless `a` is strictly less, or greater). NEON's `FMIN`/`FMAX` order -0 below +0, and the
+  scalar path used `<=`/`>=`. Both disagreed with x64 on the sign of a zero. The twist clamp
+  (`b3SymClampW(a, b)` with no normal impulse, so `b` = 0) left -0 in the warm start on ARM64 where x64 left +0. The
+  motion was identical, but from milestone 10, which hashes warm starts, every ARM64 leg's hash split from x64 on 22
+  of 24 ladder rows. With the patch, NEON and the scalar path (`BOX3D_DISABLE_SIMD`) both match x64's raw hashes on all
+  24 rows; the scalar path matched none before. NEON pays two instructions per min or max: +1.2 to 1.8% physics time
+  on aarch64 (perf log, 2026-10-04). Milestone 7's red team (R10) had asked for this patch.
 
 ## Known issues at this commit (found in a code audit; not patched, avoided instead)
+
+- `simd.h`: other places where a zero's sign still depends on the path, none of which reaches stored state: `b3NegV`
+  is `0 - a` on SSE but `-a` in the 3-lane scalar path that ARM64 uses (only the SAT's face separation calls it, and
+  only compares the result), and NEON's `b3UnionAABBV` uses `vminq`/`vmaxq` (bounds are only compared).
 
 - `solver.c:443`: CCD calls `world->preSolveFcn` without a NULL check. Never enable `enablePreSolveEvents` on a
   shape unless a presolve callback is registered.

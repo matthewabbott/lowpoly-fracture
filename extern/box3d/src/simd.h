@@ -463,14 +463,16 @@ static inline b3FloatW b3MulAddW( b3FloatW a, b3FloatW b, b3FloatW c )
 	return vaddq_f32( a, vmulq_f32( b, c ) );
 }
 
+// lowpoly-fracture patch: SSE's rule (minps and maxps give b unless a is strictly less, or greater), not FMIN and FMAX,
+// which order -0 below +0: zeros come out with the same sign as on x64 (b3SymClampW's twist clamp). PATCHES.md.
 static inline b3FloatW b3MinW( b3FloatW a, b3FloatW b )
 {
-	return vminq_f32( a, b );
+	return vbslq_f32( vcltq_f32( a, b ), a, b );
 }
 
 static inline b3FloatW b3MaxW( b3FloatW a, b3FloatW b )
 {
-	return vmaxq_f32( a, b );
+	return vbslq_f32( vcgtq_f32( a, b ), a, b );
 }
 
 // clamp a to [-b, b]
@@ -852,39 +854,34 @@ static inline b3FloatW b3MulAddW( b3FloatW a, b3FloatW b, b3FloatW c )
 	return (b3FloatW){ a.x + b.x * c.x, a.y + b.y * c.y, a.z + b.z * c.z, a.w + b.w * c.w };
 }
 
+// lowpoly-fracture patch: SSE's rule (b unless a is strictly less, or greater) and its clamp's order, as the NEON path,
+// so zeros come out with the same sign as on x64. PATCHES.md.
 static inline b3FloatW b3MinW( b3FloatW a, b3FloatW b )
 {
 	b3FloatW r;
-	r.x = a.x <= b.x ? a.x : b.x;
-	r.y = a.y <= b.y ? a.y : b.y;
-	r.z = a.z <= b.z ? a.z : b.z;
-	r.w = a.w <= b.w ? a.w : b.w;
+	r.x = a.x < b.x ? a.x : b.x;
+	r.y = a.y < b.y ? a.y : b.y;
+	r.z = a.z < b.z ? a.z : b.z;
+	r.w = a.w < b.w ? a.w : b.w;
 	return r;
 }
 
 static inline b3FloatW b3MaxW( b3FloatW a, b3FloatW b )
 {
 	b3FloatW r;
-	r.x = a.x >= b.x ? a.x : b.x;
-	r.y = a.y >= b.y ? a.y : b.y;
-	r.z = a.z >= b.z ? a.z : b.z;
-	r.w = a.w >= b.w ? a.w : b.w;
+	r.x = a.x > b.x ? a.x : b.x;
+	r.y = a.y > b.y ? a.y : b.y;
+	r.z = a.z > b.z ? a.z : b.z;
+	r.w = a.w > b.w ? a.w : b.w;
 	return r;
 }
 
 // clamp a to [-b, b]
 static inline b3FloatW b3SymClampW( b3FloatW a, b3FloatW b )
 {
-	b3FloatW r;
-	r.x = a.x <= b.x ? a.x : b.x;
-	r.y = a.y <= b.y ? a.y : b.y;
-	r.z = a.z <= b.z ? a.z : b.z;
-	r.w = a.w <= b.w ? a.w : b.w;
-	r.x = r.x <= -b.x ? -b.x : r.x;
-	r.y = r.y <= -b.y ? -b.y : r.y;
-	r.z = r.z <= -b.z ? -b.z : r.z;
-	r.w = r.w <= -b.w ? -b.w : r.w;
-	return r;
+	b3FloatW nb = b3NegW( b );
+	b3FloatW c = b3MaxW( nb, a );
+	return b3MinW( c, b );
 }
 
 // Logical operations on the scalar path are 0/1 float values. Not bit-wise like SIMD.
