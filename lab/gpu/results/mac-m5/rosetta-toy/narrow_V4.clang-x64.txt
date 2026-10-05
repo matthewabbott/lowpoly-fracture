@@ -21,3 +21,7 @@ against D (/Users/matthewabbott/lpf-m11/lab/gpu/results/mac-m5/rosetta-toy/narro
     errors against D (agreeing pairs): normal rms 1.33e-07 max 7.15e-06; anchor rms 1.56e-07 max 1.21e-05 m (24121 points); separation rms 9.94e-08 max 3.91e-07 m; SAT face separations rms 6.34e-08 max 2.99e-07 m
     largest anchor error: pair 8674 (edges crossing, shallow -0.02..0, chunk-chunk); its closest clip distance in D 0.000227 m
     by pose (pairs, axis ties, clip ties, ties that differ): faces aligned (stack) 759/0/4/0; faces twisted 1949/2/6/0; faces tilted 1e-3..0.1 1574/2/1/0; faces within 1e-4 rad 962/1/6/0; edges crossing 1997/1/1/0; vertex on face 1295/3/2/0; generic 988/0/0/0;
+gpu 0: Apple M5 (apple), driver 0x28a2 (F-plain: no float-control modes declared)
+  apple pass 1: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
+  apple pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
+PASS

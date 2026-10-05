@@ -20,6 +20,13 @@ its own run. Positive controls must differ. ms/step at the largest N.
 | control_rows_V1_fast | clang 21.0.0 (clang-2100.3.34.2), aarch6 | ok | | apple: 641680 rows (3.56 ns/row) |
 | control_rows_V1_fma | clang 21.0.0 (clang-2100.3.34.2), aarch6 | differs (control ok) | | - |
 | control_rows_V1_mvkfast | clang 21.0.0 (clang-2100.3.34.2), aarch6 | ok | | apple: 28 rows (6.46 ns/row) |
+| rosetta_rows_V1 | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | apple: 28 rows (6.60 ns/row) |
+| rosetta_rows_V4 | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | apple: 0 rows (4.88 ns/row) |
+| rosetta_solve_F | clang 21.0.0 (clang-2100.3.34.2), x64, c | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (6.99 ms) |
+| rosetta_solve_Fdisc | clang 21.0.0 (clang-2100.3.34.2), x64, c | 1000: ok, 10000: ok, 100000: ok | yes | apple: 825/8056/83452 (7.01 ms) |
+| rosetta_solve_I32 | clang 21.0.0 (clang-2100.3.34.2), x64, c | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (5.14 ms) |
+| rosetta_solve_I64 | clang 21.0.0 (clang-2100.3.34.2), x64, c | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (14.43 ms) |
+| rosetta_solve_V4 | clang 21.0.0 (clang-2100.3.34.2), x64, c | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (6.37 ms) |
 | rows_V1 | clang 21.0.0 (clang-2100.3.34.2), aarch6 | ok | | apple: 28 rows (6.42 ns/row) |
 | rows_V1_pszinp | clang 21.0.0 (clang-2100.3.34.2), aarch6 | ok | | - |
 | rows_V1_rtesz | clang 21.0.0 (clang-2100.3.34.2), aarch6 | ok | | apple: 28 rows (7.05 ns/row) |
@@ -38,15 +45,5 @@ its own run. Positive controls must differ. ms/step at the largest N.
 | solve_I32 | clang 21.0.0 (clang-2100.3.34.2), aarch6 | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (5.34 ms) |
 | solve_I64 | clang 21.0.0 (clang-2100.3.34.2), aarch6 | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (14.93 ms) |
 | solve_V4 | clang 21.0.0 (clang-2100.3.34.2), aarch6 | 1000: ok, 10000: ok, 100000: ok | yes | apple: 0/0/0 (6.26 ms) |
-| twin_F.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c |  | yes | - |
-| twin_Fdisc.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c |  | yes | - |
-| twin_I32.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c |  | yes | - |
-| twin_I64.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c |  | yes | - |
-| twin_V4.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c |  | yes | - |
-| twin_rows_V1.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | - |
-| twin_rows_V2.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | - |
-| twin_rows_V3.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | - |
-| twin_rows_V4.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | - |
-| twin_rows_V4b.rosetta | clang 21.0.0 (clang-2100.3.34.2), x64, c | ok | | - |
 
 **Failures:** none

@@ -1,0 +1,26 @@
+E11 harness, variant I64 (label I64-rosetta), T 8 bytes, TP 8 bytes; steps 60, reps 3, seed 20260930
+layout sizes C/twin: Body 128/128 Pose 56/56 Constraint 456/456 Impulse 32/32 Params 136/136
+twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off
+gpu 0: Apple M5 (apple), driver 0x28a2, api 1.3.357; denorm preserve/ftz fp32 0/0, RTE fp32 1, timestampPeriod 1.000 ns
+  spirv gen/I64/*.spv
+
+=== N 1000 contacts (1500 points, 89 on the static body), 500 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 2.4695 ms/step, final hash ac217ddf3b57db96, range counter 0
+  cpu twin 8 thread(s): 3.0470 ms/step, final hash ac217ddf3b57db96, range counter 0
+  compare cpu1 vs cpu8               words 15523 mismatches 0
+  gpu apple: 2.4466 ms/step (timestamps, median of 3 reps; fastest step 2.1375), 3.4116 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs apple               words 15523 mismatches 0
+
+=== N 10000 contacts (15064 points, 1062 on the static body), 5000 bodies, 11 colours, 141 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 24.8965 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  cpu twin 8 thread(s): 10.7918 ms/step, final hash e47aa8efa37a96dd, range counter 0
+  compare cpu1 vs cpu8               words 155023 mismatches 0
+  gpu apple: 2.8512 ms/step (timestamps, median of 3 reps; fastest step 2.5515), 3.8894 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs apple               words 155023 mismatches 0
+
+=== N 100000 contacts (150056 points, 10081 on the static body), 50000 bodies, 13 colours, 165 dispatches per step; quantisation range errors 0, shift errors 0
+  cpu twin 1 thread(s): 271.8337 ms/step, final hash bfc67079360763ad, range counter 0
+  cpu twin 8 thread(s): 95.7627 ms/step, final hash bfc67079360763ad, range counter 0
+  compare cpu1 vs cpu8               words 1550023 mismatches 0
+  gpu apple: 14.4298 ms/step (timestamps, median of 3 reps; fastest step 13.8931), 16.2315 ms/step with per-step submit+readback; first divergent step -1; range counter 0
+  compare cpu vs apple               words 1550023 mismatches 0

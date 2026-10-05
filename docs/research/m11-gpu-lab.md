@@ -34,9 +34,10 @@ here.
 |---|---|---|
 | win-laptop | RTX 3060 Laptop (NVIDIA 610.60), Intel UHD 630 (101.2137) | MSVC 19.42, clang-cl 23.1 (x64) |
 | spark-gb10 | NVIDIA GB10 (580.82.09), llvmpipe (Mesa, LLVM 20.1.2) | gcc 13.3, clang 18.1 (aarch64, Grace) |
+| mac-m5 | Apple M5 (MoltenVK 1.4) | Apple clang 21 (arm64; x64 under Rosetta 2) |
 
-Pending: the MacBook (Apple GPU through MoltenVK; Apple clang; x64 under Rosetta 2), a Pascal GPU (GTX 1060) and an
-AMD GPU (the owner's low-end box). The Pascal number gates milestone 12, not this milestone.
+Pending: a Pascal GPU (GTX 1060) and an AMD GPU (the owner's low-end box). The Pascal number gates milestone 12, not
+this milestone.
 
 ## Bit agreement (E11's full solve, 60 steps; mismatching words against the twin at 1k / 10k / 100k contacts)
 
@@ -77,6 +78,7 @@ allowed) differs on both ISAs.
 | UHD 630 | 34.2 | 41.1 | 42.7 | (wrong) | 1.25 |
 | GB10 | 4.81 | 5.15 | 6.55 | 8.65 | 1.36 |
 | llvmpipe (20 Grace cores) | 52.2 | 55.6 | 63.0 | 88.1 | 1.21 |
+| Apple M5 | 7.01 | 5.34 | 6.26 | 14.9 | 0.89 |
 | twin, Grace, 1 / 8 threads | 67.6 / 17.7 | 108.7 / 19.1 | 126.4 / 22.0 | 301.8 / 42.0 | 1.87 / 1.25 |
 
 The laptop's twin timings in this run were taken while another build was compiling; E11's (F 118 / 25 ms at 1 / 8
@@ -115,12 +117,13 @@ awake, pile200 seeds 1 to 8 for 1,200 ticks, bounce, ramp, ratio, chip, the arm 
 | Intel UHD 630 | every tick identical | every tick identical |
 | GB10 | every tick identical | every tick identical |
 | llvmpipe | every tick identical | every tick identical |
-| twins: MSVC, clang-cl (x64); gcc, clang (aarch64) | the reference files | the reference files |
+| Apple M5 (MoltenVK; also from x64 under Rosetta 2) | every tick identical | every tick identical |
+| twins: MSVC, clang-cl (x64); gcc, clang (aarch64); Apple clang (arm64, and x64 under Rosetta 2) | the reference files | the reference files |
 
 Every row is the final code (after the reviews), with the full-buffer traces showing no differing word on any GPU
 (`lab/gpu/toy/results/gate5-windows.txt`, `lab/gpu/results/spark-gb10/toy-gate.txt`). The helper battery (25 helpers) and the narrowphase corpus (10,000 hull
 pairs, fresh and warm-started; F and V4 choose D's axis, points and ids on every pair outside ties) are word-identical
-on all four GPUs. A clang UBSan build of the twins runs gates 1 to 4 clean (it found one V4 overflow, now fixed).
+on all five GPUs (on the M5 up to signed zeros in F's raw helpers, which the snap absorbs). A clang UBSan build of the twins runs gates 1 to 4 clean (it found one V4 overflow, now fixed).
 
 **Decision point 1, physics (`lab/gpu/toy/results/decision1.md`).** DESIGN.md's acceptance table against Box3D and D:
 
@@ -165,31 +168,30 @@ on the UHD, by readbacks made one region per body (66 ms). E11's solve alone: V4
 - **Contact recycling is load-bearing:** without Box3D's recycling an exactly aligned stack loses its warm start every
   other tick and slides, in every dialect and in Box3D itself.
 
-## Pending: the MacBook
+## The MacBook (Apple M5, MoltenVK)
 
-What the Mac answers that no other machine here can: Apple's GPU through MoltenVK (Vulkan translated to Metal by
-SPIRV-Cross), Apple clang on arm64, and an x64 twin under Rosetta 2.
+macOS 27.0.1 on an Apple M5; Vulkan through MoltenVK (Homebrew's, and LunarG's SDK 1.4.363 for its universal loader
+and driver), run with `MVK_CONFIG_FAST_MATH_ENABLED=0`; Apple clang 21 twins on arm64, and the same twins built for x64
+and run under Rosetta 2. Results in `lab/gpu/results/mac-m5/`.
 
-**Setup (the owner wakes it; about 20 minutes once):**
-- key-based ssh from the laptop: `ssh <user>@mbas-macbook-pro`;
-- the Xcode command-line tools (clang, make, python3) and CMake (`brew install cmake`);
-- the LunarG Vulkan SDK for macOS (MoltenVK, a universal Vulkan loader, vulkaninfo), sourced in the ssh session
-  (`setup-env.sh`); the universal loader lets an x64 build link under Rosetta.
-
-**Runs (`lab.py remote` once the setup works):**
-1. E11 on the Apple GPU: the probe, the solve matrix, the rows, mulbench, with Apple clang twins.
-   - Does Metal flush fp32 subnormals by default (reported, unverified)?
-   - Are selects rewritten, and is `0 - a` folded?
-   - Does sqrt round correctly?
-   - Is int64 multiplication correct? Apple's GPUs have no native 64-bit multiply, so it is emulated.
-   - What do V4 and I32 cost against F?
-2. MoltenVK with `MVK_CONFIG_FAST_MATH_ENABLED=0`, then `=1` as a positive control. Metal compiles with fast math
-   unless told otherwise, and SPIR-V's NoContraction has no per-operation equivalent in Metal's language, so this is
-   the run most likely to break the float dialect.
-3. The twins built for x64 (`CMAKE_OSX_ARCHITECTURES=x86_64`) and run under Rosetta 2, without GPUs: E11's hashes must
-   hold, as the engine's CI found for the engine itself.
-4. The toy, when its Vulkan path exists (step 5): the battery, then the scenes in both dialects on the Apple GPU
-   against the twins.
+- **E11:** F, I32, V4 and I64 bit-exact against the twin at 1k, 10k and 100k contacts; Fdisc differs (825 / 8,056 /
+  83,452 words), as on NVIDIA. The M5 runs Q32.32 correctly.
+- **The probe:** the M5 flushes fp32 subnormals by default (no DenormPreserve advertised), returns +0 where IEEE gives
+  -0 for -0 times x, and honours NoContraction: every a*b+c difference is a product flushed before the add. E11's row
+  benchmark, which does not snap, differs in 28 rows, every one a signed zero.
+- **MoltenVK's fast-math switch** (`MVK_CONFIG_FAST_MATH_ENABLED=1`) changed no word of F's solve or rows: the kernels
+  carry NoContraction and use no operation Metal's fast math rewrites. Slang's own fast-math build (the positive
+  control) differs, as everywhere.
+- **The toy:** gates 1 to 5 pass on the M5, every tick identical to the twin in F and V4 across the 16 runs, the
+  full-buffer traces clean, the narrowphase corpus word-exact. F's raw helpers in the battery differ from the twin
+  only in zero signs (the M5's multiply: 1,080 vectors), which F's snap at selects and stores absorbs; the battery
+  counts them apart.
+- **Rosetta 2:** the x64 twins reproduce every hash (E11's, the battery's, the corpus's, every scene's reference file),
+  and the x64 build driving the M5 through Rosetta and MoltenVK's x64 driver is bit-exact too (E11 and the toy's 16
+  runs per dialect).
+- **Integer multiplies are cheap on Apple's GPU:** an int32×int32→int64 product with a shift costs 1.1-1.3 times an
+  fp32 fma (5.7-8 times on the NVIDIA and Intel GPUs), and V4 runs E11's 100k solve faster than F (6.26 against 7.01
+  ms per step; I32 5.34, I64 14.9). The M5's CPU runs the F twin in 24 ms at one thread (the Grace 68, the laptop 118).
 
 ## Not done
 

@@ -360,8 +360,8 @@ and multiply":
 
 **Two candidates, both bit-exact.** The float dialect F (fp32, NoContraction, only add, subtract and multiply on the
 GPU, software reciprocals, every select written out and snapped, no float-control modes) and block-scaled int32 V4
-both matched their CPU twins on four GPUs (RTX 3060, Intel UHD 630, GB10, llvmpipe) and four twin compilers on two
-ISAs ([research/m11-gpu-lab.md](research/m11-gpu-lab.md)): E11's single solve (except E11's one signed zero in F on
+both matched their CPU twins on five GPUs (RTX 3060, Intel UHD 630, GB10, llvmpipe, Apple M5 through MoltenVK) and
+five twin compilers on two ISAs, x64 under Rosetta 2 included ([research/m11-gpu-lab.md](research/m11-gpu-lab.md)): E11's single solve (except E11's one signed zero in F on
 the UHD at 100k contacts, a select rewritten into min/max, which F's snap now absorbs) and then the toy's whole tick,
 every word of it, for thousands of ticks. V4 costs 1.25 to 1.36 times F for E11's solve; for the toy's whole tick
 1.7 times at one pile (dispatch-bound) and the same as F per body at 64. The asymmetry between
@@ -384,7 +384,8 @@ gate before milestone 12. The verdict is recorded here when the toy has answered
 - *Tools:* each dialect met one bug that only it could meet: gcc 13 miscompiled a float comparison (F's twin), and
   V4's matrix inversion overflowed int32 on near-singular inputs (UBSan). Both were loud: the cross-compiler twins
   and the sanitizer caught them the first time they ran.
-- *Cost:* V4 is dearer where the tick is dispatch-bound (1.7 times at one pile) and level at scale.
+- *Cost:* V4 is dearer where the tick is dispatch-bound (1.7 times at one pile) and level at scale; on Apple's GPU,
+  whose integer multiply is nearly as fast as an fma, V4 beat F on E11's solve.
 
 **Claude's recommendation, for the owner to confirm: block-scaled integers (V4)**, provisional on the Pascal and AMD
 gate. The deciding difference is the one the rule names: F is bit-exact because no subnormal ever arises in a step

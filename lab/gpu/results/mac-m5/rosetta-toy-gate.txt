@@ -1,8 +1,8 @@
-gate.py: compilers clang-x64; GPUs none (--no-gpu)
+gate.py: compilers clang-x64; GPUs mask 0xff, expected 1
 gate 1: the battery
-  battery F  clang-x64 hash ?  exit 1  GPUs -
+  battery F  clang-x64 hash f7006e1c8f347ba5  exit 0  GPUs apple
   battery F: same hash and helper lines on clang-x64
-  battery V4 clang-x64 hash ?  exit 1  GPUs -; lpDivQ31 vs C: 0 of 79976 differ
+  battery V4 clang-x64 hash 081ff06910407f15  exit 0  GPUs apple; lpDivQ31 vs C: 0 of 79976 differ
   battery V4: same hash and helper lines on clang-x64
   battery D  clang-x64 hash e0865a1f66f355ab  exit 0  GPUs -
   battery D: same hash and helper lines on clang-x64
@@ -58,7 +58,7 @@ gate 2: the twin driver
 gate 3: the narrowphase corpus
   narrow D  clang-x64 corpus hash ec5972a1a82de840 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
   narrow D: same corpus hash on clang-x64
-  narrow F  clang-x64 corpus hash 2ea78ea1cf0bdb32 exit 1; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
+  narrow F  clang-x64 corpus hash 2ea78ea1cf0bdb32 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
     pass 1: 10000 pairs compared; D: 6976 touching, 3017 separated (0 by the cached axis), 0 tried a cached feature and 0 kept its contact
     ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 477 axis ties (5 with another axis, 210 other points), 336 clip ties (272 with other points)
     GATE outside ties: axis kind and index differ in 0 of 9523; point count or ids differ in 0 of 9187 (no tie at all); the support vertex beside a face axis differs in 0 of 4901 outside its own ties (3762 ties)
@@ -67,8 +67,10 @@ gate 3: the narrowphase corpus
     ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 8 axis ties (0 with another axis, 0 other points), 22 clip ties (0 with other points)
     GATE outside ties: axis kind and index differ in 0 of 9510; point count or ids differ in 0 of 9488 (no tie at all); warm-start impulses (markers) differ in 0; the support vertex beside a face axis differs in 0 of 13 outside its own ties (2 ties)
     errors against D (agreeing pairs): normal rms 2.1e-07 max 1.25e-05; anchor rms 7.16e-07 max 0.000101 m (24092 points); separation rms 1.24e-07 max 3.04e-06 m; SAT face separations rms 1.67e-07 max 3.94e-06 m
+    gpu apple pass 1: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
+    gpu apple pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
   narrow F: same corpus hash on clang-x64
-  narrow V4 clang-x64 corpus hash c5d33b47944fc009 exit 1; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
+  narrow V4 clang-x64 corpus hash c5d33b47944fc009 exit 0; twin passes: saturations 0 sentinel clean, saturations 0 sentinel clean
     pass 1: 10000 pairs compared; D: 6976 touching, 3017 separated (0 by the cached axis), 0 tried a cached feature and 0 kept its contact
     ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 477 axis ties (8 with another axis, 193 other points), 336 clip ties (283 with other points)
     GATE outside ties: axis kind and index differ in 0 of 9523; point count or ids differ in 0 of 9187 (no tie at all); the support vertex beside a face axis differs in 0 of 4901 outside its own ties (3762 ties)
@@ -77,6 +79,8 @@ gate 3: the narrowphase corpus
     ties (D's margins, tolerance 1e-05 m, 1e-05 m^2, 1e-05): 9 axis ties (0 with another axis, 0 other points), 20 clip ties (0 with other points)
     GATE outside ties: axis kind and index differ in 0 of 9515; point count or ids differ in 0 of 9495 (no tie at all); warm-start impulses (markers) differ in 0; the support vertex beside a face axis differs in 0 of 13 outside its own ties (2 ties)
     errors against D (agreeing pairs): normal rms 1.33e-07 max 7.15e-06; anchor rms 1.56e-07 max 1.21e-05 m (24121 points); separation rms 9.94e-08 max 3.91e-07 m; SAT face separations rms 6.34e-08 max 2.99e-07 m
+    gpu apple pass 1: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
+    gpu apple pass 2: SAT records 0 of 10000 differ, manifolds 0 differ, diagnostics 0 differ, saturations 0 (twin 0): every word identical
   narrow V4: same corpus hash on clang-x64
 gate 4: decision point 1's runs (accept.py) on the twins of clang-x64, 1 and 8 threads
 ran 111 runs in /Users/matthewabbott/lpf-m11/lab/gpu/results/mac-m5/rosetta-toy/accept
@@ -150,59 +154,94 @@ ran 111 runs in /Users/matthewabbott/lpf-m11/lab/gpu/results/mac-m5/rosetta-toy/
   pile-s8    F     every body asleep from tick 260 (0 awake at tick 3600); escapes 0; highest centre 1.753 m
   pile-s8    V4    every body asleep from tick 250 (0 awake at tick 3600); escapes 0; highest centre 1.758 m
 gate 5: decision point 2 (the whole tick on the GPUs against the twin; the twins against the reference files; the full-buffer traces)
-  stack10-sleep0 F  clang-x64 run hash 36ba76c96aab06c4 threads agree saturations 0 exit 0; twins vs reference: identical
-  stack10-sleep0 V4 clang-x64 run hash 6f69c34bd79e4213 threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10-sleep0 F  clang-x64 run hash 36ba76c96aab06c4 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  stack10-sleep0 V4 clang-x64 run hash 6f69c34bd79e4213 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   stack10-sleep0 D  clang-x64 run hash 916691cd4af93abc threads agree saturations 0 exit 0; twins vs reference: identical
-  stack10        F  clang-x64 run hash 15684d87ff1d68b1 threads agree saturations 0 exit 0; twins vs reference: identical
-  stack10        V4 clang-x64 run hash 3896097ca8de26ff threads agree saturations 0 exit 0; twins vs reference: identical
+  stack10        F  clang-x64 run hash 15684d87ff1d68b1 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  stack10        V4 clang-x64 run hash 3896097ca8de26ff threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   stack10        D  clang-x64 run hash 036b2bfa93e1b928 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s1     F  clang-x64 run hash 0d16219f3a673fe1 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s1     V4 clang-x64 run hash 14758a25bb1fe4ac threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s1     F  clang-x64 run hash 0d16219f3a673fe1 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s1     V4 clang-x64 run hash 14758a25bb1fe4ac threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s1     D  clang-x64 run hash 41432c2559a772ef threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s2     F  clang-x64 run hash fc6b37998c62d11e threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s2     V4 clang-x64 run hash a273e69e4717b7c7 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s2     F  clang-x64 run hash fc6b37998c62d11e threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s2     V4 clang-x64 run hash a273e69e4717b7c7 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s2     D  clang-x64 run hash 78065ce54582e208 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s3     F  clang-x64 run hash 5e44386f88f61cb3 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s3     V4 clang-x64 run hash a26348b258116dd3 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s3     F  clang-x64 run hash 5e44386f88f61cb3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s3     V4 clang-x64 run hash a26348b258116dd3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s3     D  clang-x64 run hash d01c265625097bff threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s4     F  clang-x64 run hash cd66607a712be9fc threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s4     V4 clang-x64 run hash 41bc195468d33954 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s4     F  clang-x64 run hash cd66607a712be9fc threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s4     V4 clang-x64 run hash 41bc195468d33954 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s4     D  clang-x64 run hash ff3d8251a0b34d18 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s5     F  clang-x64 run hash 34e0b350828c1c5b threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s5     V4 clang-x64 run hash c9578bef51c9cfd2 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s5     F  clang-x64 run hash 34e0b350828c1c5b threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s5     V4 clang-x64 run hash c9578bef51c9cfd2 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s5     D  clang-x64 run hash 4952570453f565d4 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s6     F  clang-x64 run hash 86d7ef793851bd8b threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s6     V4 clang-x64 run hash a714aa3ea8cede32 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s6     F  clang-x64 run hash 86d7ef793851bd8b threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s6     V4 clang-x64 run hash a714aa3ea8cede32 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s6     D  clang-x64 run hash 253c9bef197d09d2 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s7     F  clang-x64 run hash 5c2b0722d3db957f threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s7     V4 clang-x64 run hash b73a0ebbde7fe615 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s7     F  clang-x64 run hash 5c2b0722d3db957f threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s7     V4 clang-x64 run hash b73a0ebbde7fe615 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s7     D  clang-x64 run hash bb7fbddb229fa3c9 threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s8     F  clang-x64 run hash 3d2c23cb6937e5cc threads agree saturations 0 exit 0; twins vs reference: identical
-  pile200-s8     V4 clang-x64 run hash 3f898622e8023507 threads agree saturations 0 exit 0; twins vs reference: identical
+  pile200-s8     F  clang-x64 run hash 3d2c23cb6937e5cc threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  pile200-s8     V4 clang-x64 run hash 3f898622e8023507 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   pile200-s8     D  clang-x64 run hash 0ceebd0046b28aa6 threads agree saturations 0 exit 0; twins vs reference: identical
-  bounce         F  clang-x64 run hash 5a472a3b03339b86 threads agree saturations 0 exit 0; twins vs reference: identical
-  bounce         V4 clang-x64 run hash bd0624b07e8cefaf threads agree saturations 0 exit 0; twins vs reference: identical
+  bounce         F  clang-x64 run hash 5a472a3b03339b86 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  bounce         V4 clang-x64 run hash bd0624b07e8cefaf threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   bounce         D  clang-x64 run hash b1d611cc0f697635 threads agree saturations 0 exit 0; twins vs reference: identical
-  ramp           F  clang-x64 run hash cc7d156d0e35c9f7 threads agree saturations 0 exit 0; twins vs reference: identical
-  ramp           V4 clang-x64 run hash 251330e7e0643146 threads agree saturations 0 exit 0; twins vs reference: identical
+  ramp           F  clang-x64 run hash cc7d156d0e35c9f7 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  ramp           V4 clang-x64 run hash 251330e7e0643146 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   ramp           D  clang-x64 run hash 4c94be0151e3537f threads agree saturations 0 exit 0; twins vs reference: identical
-  ratio          F  clang-x64 run hash c2bc875f4967a9ee threads agree saturations 0 exit 0; twins vs reference: identical
-  ratio          V4 clang-x64 run hash d0b69b314f19d00d threads agree saturations 0 exit 0; twins vs reference: identical
+  ratio          F  clang-x64 run hash c2bc875f4967a9ee threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  ratio          V4 clang-x64 run hash d0b69b314f19d00d threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   ratio          D  clang-x64 run hash 67b7e59404194816 threads agree saturations 0 exit 0; twins vs reference: identical
-  chip           F  clang-x64 run hash 22308826aec57c83 threads agree saturations 0 exit 0; twins vs reference: identical
-  chip           V4 clang-x64 run hash 19bd156226d3b1f4 threads agree saturations 0 exit 0; twins vs reference: identical
+  chip           F  clang-x64 run hash 22308826aec57c83 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  chip           V4 clang-x64 run hash 19bd156226d3b1f4 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   chip           D  clang-x64 run hash 35cac36b6d7121e2 threads agree saturations 0 exit 0; twins vs reference: identical
-  arm            F  clang-x64 run hash 3aac45a38810f555 threads agree saturations 0 exit 0; twins vs reference: identical
-  arm            V4 clang-x64 run hash ee7c37b7e15e2ef3 threads agree saturations 0 exit 0; twins vs reference: identical
+  arm            F  clang-x64 run hash 3aac45a38810f555 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  arm            V4 clang-x64 run hash ee7c37b7e15e2ef3 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   arm            D  clang-x64 run hash d0aa4985d2d6f1a3 threads agree saturations 0 exit 0; twins vs reference: identical
-  arm-sleep0     F  clang-x64 run hash 2c318aad1b3f5233 threads agree saturations 0 exit 0; twins vs reference: identical
-  arm-sleep0     V4 clang-x64 run hash 45cfc897272f746e threads agree saturations 0 exit 0; twins vs reference: identical
+  arm-sleep0     F  clang-x64 run hash 2c318aad1b3f5233 threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
+  arm-sleep0     V4 clang-x64 run hash 45cfc897272f746e threads agree saturations 0 exit 0; twins vs reference: identical; gpu 0 apple: identical
   arm-sleep0     D  clang-x64 run hash 49ff930e829b5f61 threads agree saturations 0 exit 0; twins vs reference: identical
   decision point 2, per GPU and dialect: runs whose every tick's hashes equal the twin's (saturations 0)
-  full-buffer traces: skipped (--no-gpu)
+    gpu 0 apple      F : 16 of 16
+    gpu 0 apple      V4: 16 of 16
+  full-buffer traces (every buffer the kernels write, word by word, after every tick's prepare and after its end):
+    pile200-s1   F  120 ticks, exit 0: gpu 0 apple: no difference in 120 ticks
+    pile200-s1   V4 120 ticks, exit 0: gpu 0 apple: no difference in 120 ticks
+    arm          F  300 ticks, exit 0: gpu 0 apple: no difference in 300 ticks
+    arm          V4 300 ticks, exit 0: gpu 0 apple: no difference in 300 ticks
+  GPU costs (informative): scene, dialect, gpu: wall and kernel ms per tick over the run; the busiest tick after the first: tick, kernels, wall (ms); the most dispatches in a tick
+    stack10-sleep0 F  gpu 0:   1.822   0.551; tick    4:   2.827   4.651; 40
+    stack10-sleep0 V4 gpu 0:   1.837   0.628; tick    2:   2.916   4.389; 40
+    stack10        F  gpu 0:   0.659   0.040; tick    3:   2.296   4.582; 40
+    stack10        V4 gpu 0:   0.656   0.042; tick    3:   2.899   4.855; 40
+    pile200-s1     F  gpu 0:   2.537   0.988; tick  157:   6.251   9.954; 305
+    pile200-s1     V4 gpu 0:   2.640   1.071; tick  122:   6.849  10.228; 305
+    pile200-s2     F  gpu 0:   2.491   0.904; tick   93:   6.223  10.512; 305
+    pile200-s2     V4 gpu 0:   2.346   0.861; tick  191:   8.013  11.780; 317
+    pile200-s3     F  gpu 0:   2.742   1.108; tick  137:   6.978  11.433; 329
+    pile200-s3     V4 gpu 0:   2.849   1.225; tick  146:   7.094  10.821; 329
+    pile200-s4     F  gpu 0:   2.455   0.902; tick  205:   6.866  10.343; 318
+    pile200-s4     V4 gpu 0:   3.050   1.368; tick   83:   6.821  10.764; 305
+    pile200-s5     F  gpu 0:   2.805   1.158; tick  244:   6.758  10.292; 329
+    pile200-s5     V4 gpu 0:   2.806   1.221; tick  138:   6.430   9.504; 293
+    pile200-s6     F  gpu 0:   2.524   0.982; tick   45:  16.866  18.260; 293
+    pile200-s6     V4 gpu 0:   2.680   1.140; tick  229:   6.388   9.516; 281
+    pile200-s7     F  gpu 0:   2.271   0.813; tick  148:   5.975   9.880; 293
+    pile200-s7     V4 gpu 0:   2.487   1.000; tick  163:   6.239   9.365; 281
+    pile200-s8     F  gpu 0:   2.574   0.993; tick  111:   6.641  10.993; 316
+    pile200-s8     V4 gpu 0:   2.692   1.121; tick  158:   7.381  10.985; 329
+    bounce         F  gpu 0:   0.753   0.086; tick   36:   3.490   4.652; 30
+    bounce         V4 gpu 0:   0.751   0.093; tick   36:   3.421   4.628; 30
+    ramp           F  gpu 0:   1.123   0.238; tick    6:   1.906   2.934; 29
+    ramp           V4 gpu 0:   1.117   0.257; tick    2:   1.908   3.347; 29
+    ratio          F  gpu 0:   0.857   0.138; tick    5:   2.221   3.727; 76
+    ratio          V4 gpu 0:   0.863   0.158; tick    2:   5.770   7.152; 76
+    chip           F  gpu 0:   0.722   0.090; tick    3:   4.228   5.497; 28
+    chip           V4 gpu 0:   0.720   0.098; tick    3:   4.856   6.153; 28
+    arm            F  gpu 0:   1.965   0.586; tick    2:   3.980   5.260; 114
+    arm            V4 gpu 0:   1.989   0.672; tick    2:   3.500   4.755; 114
+    arm-sleep0     F  gpu 0:   2.857   1.282; tick    3:   4.655   6.072; 114
+    arm-sleep0     V4 gpu 0:   2.921   1.351; tick    2:   6.133   7.964; 114
 
-FAIL:
-  battery F clang-x64: exit 1
-  battery V4 clang-x64: exit 1
-  narrow F clang-x64: exit 1
-  narrow V4 clang-x64: exit 1
+PASS

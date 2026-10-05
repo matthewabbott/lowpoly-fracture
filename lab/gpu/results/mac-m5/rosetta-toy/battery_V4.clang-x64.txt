@@ -8,3 +8,31 @@ accuracy (twin): sqrtT max rel 4.77e-07 (2533), recipE max rel 1.79e-09 (1858), 
 accuracy (twin): twistAngle max abs 5.4e-05 rad (8192), invertSym max error relative to the largest entry 3.55e-05 (3997; 99 near V4's limit left out)
 lpDivQ31 vs C's '/': 79976 inputs, 0 differ; saturations C 17938, lpDivQ31 17938
 divClamp vs C: 16384 inputs, 0 differ (saturations 0)
+gpu 0: Apple M5 (apple), driver 0x28a2, api 1.3.357; float controls: denorm preserve/ftz 0/0, RTE 1, SZINP 1 (F-plain: none declared)
+helper mul            n   4096  hash bb46055711efb305  sat    725  fp none                     | apple 0 differ, sat 725
+helper sum2/dif2      n   4096  hash 2315aa7c6b4d45c9  sat   2100  fp none                     | apple 0 differ, sat 2100
+helper sum3           n   4096  hash d0e595f65968c106  sat   1284  fp none                     | apple 0 differ, sat 1284
+helper rescale        n   4096  hash 39e1784f95b82bfa  sat   1106  fp none                     | apple 0 differ, sat 1106
+helper select         n   4096  hash fc4328d95a6aa22f  sat      0  fp none                     | apple 0 differ, sat 0
+helper snap           n   4096  hash 699ede0cf32b9852  sat      0  fp none                     | apple 0 differ, sat 0
+helper recip          n   4096  hash 946ee229a4fe201e  sat   1829  fp none                     | apple 0 differ, sat 1829
+helper rsqrt          n   4096  hash dbf13ca77e323b6d  sat    460  fp none                     | apple 0 differ, sat 460
+helper divClamp       n  16384  hash a33e31b2a6de1165  sat      0  fp none                     | apple 0 differ, sat 0
+helper lpDivQ31       n  79976  hash 2873bc57049239cb  sat  17938  fp none                     | apple 0 differ, sat 17938
+helper clz            n   4096  hash 45f4e5c3799712c4  sat      0  fp none                     | apple 0 differ, sat 0
+helper atan2          n   4096  hash 679ef16bcff951dc  sat      0  fp none                     | apple 0 differ, sat 0
+helper quatNormalize  n   4096  hash ee34041ae4e94dfd  sat      0  fp none                     | apple 0 differ, sat 0
+helper quatMul        n   4096  hash c25306ac7be24c0e  sat      0  fp none                     | apple 0 differ, sat 0
+helper rotate         n   4096  hash 138550fe9912f9ec  sat      0  fp none                     | apple 0 differ, sat 0
+helper pos/grid       n   4096  hash a547f8a5232d88d5  sat      0  fp none                     | apple 0 differ, sat 0
+helper unit3/len3     n   4096  hash e1ed12b433badf96  sat   1180  fp none                     | apple 0 differ, sat 1180
+helper posDelta       n   4096  hash 465c5d99d9b34de6  sat     15  fp none                     | apple 0 differ, sat 15
+helper frame          n   4096  hash 7f878d0194cad0f6  sat      0  fp none                     | apple 0 differ, sat 0
+helper msb/shiftOf    n   4096  hash b7f38f0f0e26e86e  sat   1298  fp none                     | apple 0 differ, sat 1298
+helper recipE         n   4096  hash be561b0525bb62de  sat      0  fp none                     | apple 0 differ, sat 0
+helper sqrtT          n   4096  hash 6c85f2bb33e8578d  sat      0  fp none                     | apple 0 differ, sat 0
+helper discScale      n   4096  hash d6936934f1caee13  sat      0  fp none                     | apple 0 differ, sat 0
+helper twistAngle     n   4096  hash d28f0d4c047a9fd5  sat      0  fp none                     | apple 0 differ, sat 0
+helper invertSym      n   4096  hash 0d887c03aa7692fc  sat    107  fp none                     | apple 0 differ, sat 107
+battery V4 hash 081ff06910407f15 (twin: clang 21.0.0 (clang-2100.3.34.2), x64, contraction off)
+PASS: 1 GPU(s) against the twin, every word identical
