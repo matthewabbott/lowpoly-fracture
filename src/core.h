@@ -182,9 +182,10 @@ static inline uint64_t lpHashWords( uint64_t h, const void* data, size_t size )
 	return h;
 }
 
-// A float's bits for a state hash, by value: -0 as +0. Box3D's SIMD contact solver leaves zeros of either sign
-// depending on the CPU (SSE's min and max return their second operand when both are zero, NEON's order -0 below +0),
-// and there a zero's sign only reaches the signs of other zeros, never the motion (determinism rule 11).
+// A float's bits for a state hash, by value: -0 as +0. Box3D's SIMD contact solver left zeros of either sign
+// depending on the CPU (SSE's min and max return their second operand when both are zero, NEON's ordered -0 below +0)
+// until simd.h took SSE's rule on every path; there a zero's sign only reaches the signs of other zeros, never the
+// motion, so a difference in it is not a desync (determinism rule 11).
 static inline uint32_t lpHashFloatBits( float x )
 {
 	uint32_t u;

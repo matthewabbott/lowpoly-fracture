@@ -537,7 +537,7 @@ static void lpHashContactState( void* shapeA, void* shapeB, void* bodyA, void* b
 	}
 	int32_t head[4] = { (int32_t)(intptr_t)shapeA, (int32_t)(intptr_t)shapeB, s->manifoldCount, (int32_t)s->flags };
 	uint64_t h = lpHashWords( LP_HASH_INIT, head, sizeof( head ) );
-	// Floats by value, -0 as +0 (lpHashFloatBits): the SIMD solver's twist clamp leaves -0 on ARM64 where x64 leaves +0
+	// Floats by value, -0 as +0 (lpHashFloatBits): the SIMD solver's twist clamp left -0 on ARM64 where x64 left +0
 	float cache[15] = { s->cachedRotationA.v.x, s->cachedRotationA.v.y, s->cachedRotationA.v.z, s->cachedRotationA.s,
 						s->cachedRotationB.v.x, s->cachedRotationB.v.y, s->cachedRotationB.v.z, s->cachedRotationB.s,
 						s->cachedRelativePose.p.x, s->cachedRelativePose.p.y, s->cachedRelativePose.p.z, s->cachedRelativePose.q.v.x,
