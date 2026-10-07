@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "core.h"
+#include "geom.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -192,11 +193,53 @@ static volatile float lp_selfIn[] = { 1.000244140625f,		// 1 + 2^-12
 									  1.1754943508222875e-38f, // 2^-126, the smallest normal
 									  2.0f, 3.0f, -0.5f, 0.0f, 0.1f };
 
+// The exact-geometry answers' inputs: int64's extremes, a factor near 2^31.5, and the bit budget's A and D (geom.h)
+static volatile int64_t lp_selfInts[] = { INT64_MIN, INT64_MAX, -3037000499ll, ( 1ll << 24 ) - 1,
+										  3ll * ( ( 1ll << 24 ) - 1 ) * ( 1ll << 23 ) };
+
 static uint32_t lpBits( float x )
 {
 	uint32_t u;
 	memcpy( &u, &x, sizeof( u ) );
 	return u;
+}
+
+// lpI128 products at the top of their range and a vertex classified at the edge of geom.h's bit budget, against the
+// bits they must have whatever path lpI128 takes (a wrong one fails here, and its session's self-test differs)
+static int lpSelfTestExact( uint64_t* h )
+{
+	int64_t lowest = lp_selfInts[0], highest = lp_selfInts[1], q = lp_selfInts[2];
+	int32_t a = (int32_t)lp_selfInts[3];
+	int64_t d = lp_selfInts[4];
+
+	// The four planes of a Hadamard sign pattern, every normal component +-A and offset +-D: planes 1-3 meet at
+	// W = 4 A^3, numerators of 12 A^3 P, and plane 4 classifies that vertex at -48 A^4 P, every bound reached
+	lpIPlane planes[4] = { { { a, a, a }, d }, { { a, -a, a }, -d }, { { a, a, -a }, -d }, { { a, -a, -a }, d } };
+	lpIVertex v = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } };
+	bool met = lpIVertex_FromPlanes( planes, planes + 1, planes + 2, &v );
+	lpI128 product = lpI128_Mul64( highest, q );
+	struct
+	{
+		lpI128 value;
+		uint64_t lo, hi;
+	} known[] = {
+		{ lpI128_Mul64( lowest, lowest ), 0x0000000000000000ull, 0x4000000000000000ull },	// 2^126
+		{ lpI128_Mul64( highest, lowest ), 0x8000000000000000ull, 0xC000000000000000ull }, // -2^126 + 2^63
+		{ lpI128_Mul( product, q ), 0x00000001615E23D7ull, 0x3FFFFFFF4F50EE14ull },		// (2^63 - 1) q^2, near 2^126
+		{ lpI128_Sub( lpI128_Neg( product ), product ), 0xFFFFFFFE95F6199Aull, 0x00000000B504F332ull }, // -2 (2^63 - 1) q
+		{ v.w, 0xFFF400000BFFFFFCull, 0x00000000000003FFull },							// 4 A^3
+		{ v.x, 0xFFEE000006000000ull, 0xFFFFFFFA000011FFull },							// -12 A^3 P
+		{ lpIVertex_Evaluate( &v, planes + 3 ), 0x005FFFFFE8000000ull, 0xE800005FFFFF7000ull }, // -48 A^4 P
+	};
+	int failed = met ? 0 : 1;
+	for ( size_t i = 0; i < sizeof( known ) / sizeof( known[0] ); ++i )
+	{
+		failed += known[i].value.lo != known[i].lo || known[i].value.hi != known[i].hi ? 1 : 0;
+		*h = lpMix64( *h ^ known[i].value.lo );
+		*h = lpMix64( *h ^ known[i].value.hi );
+	}
+	failed += lpI128_Compare( known[5].value, known[4].value ) < 0 && lpI128_Sign( known[6].value ) < 0 ? 0 : 1;
+	return failed;
 }
 
 void lpRadixSort64( uint64_t* keys, uint64_t* scratch, int count, int fromBit )
@@ -294,6 +337,8 @@ uint64_t lpDeterminismSelfTest( int* failures )
 		failed += lpBits( back ) != lpBits( awkward[i] ) ? 1 : 0;
 		h = lpMix64( lpHashWords( h, text, (size_t)( length > 0 ? length : 0 ) ) );
 	}
+
+	failed += lpSelfTestExact( &h );
 
 	if ( failures != NULL )
 	{

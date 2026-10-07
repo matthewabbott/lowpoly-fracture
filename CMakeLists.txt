@@ -12,6 +12,7 @@ option(LPF_BENCH "Build the headless benchmark" ON)
 option(LPF_WARNINGS_AS_ERRORS "Treat warnings in our own code as errors" ON)
 option(LPF_SANITIZE "Build with AddressSanitizer" OFF)
 option(LPF_ASSERTS "Keep lpf asserts in optimized builds (asserts never change state, so hashes are unaffected)" OFF)
+option(LPF_INT128_PORTABLE "128-bit integers on the portable 32-bit-limb reference instead of the native path (src/int128.h)" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -43,6 +44,10 @@ endif()
 
 if(LPF_ASSERTS)
 	add_compile_definitions(LP_FORCE_ASSERT)
+endif()
+
+if(LPF_INT128_PORTABLE)
+	add_compile_definitions(LP_INT128_PORTABLE)
 endif()
 
 if(LPF_SANITIZE)

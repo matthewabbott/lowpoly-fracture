@@ -11,7 +11,7 @@
 #include <stdlib.h>
 
 // lpDeterminismSelfTest's hash on every platform (set from the reference build; CI checks every leg against it)
-#define LP_SELF_TEST_HASH 0xe6c87a41bbafe2ddull
+#define LP_SELF_TEST_HASH 0x60bc710134f7dbabull
 
 // The tick the contraption's vial goes off today (TestContraptionOnTime allows 10% either way)
 #define LP_CONTRAPTION_TICK 2986
