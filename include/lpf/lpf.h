@@ -942,7 +942,8 @@ bool lpWorld_CheckHash( const lpWorld* world, char* message, int size );
 
 // Runs the determinism self-test: arithmetic with known answers (no fused multiply-add, ties to even, no
 // flush-to-zero, correctly rounded sqrt and division, the min and max conventions), the engine's own trig and cube
-// root, and floats printed as %.9g and read back (the text format of commands and sessions). Returns a hash that must
+// root, floats printed as %.9g and read back (the text format of commands and sessions), and 128-bit integer products
+// and an exact vertex classified at the edge of its bit budget (exact geometry, src/geom.h). Returns a hash that must
 // be equal on every machine that plays together (a session handshake compares it), and counts the known answers that
 // came out wrong in *failures (may be NULL).
 uint64_t lpDeterminismSelfTest( int* failures );

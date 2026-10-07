@@ -14,6 +14,7 @@ int LinkTest( void );
 int VehicleTest( void );
 int SystemsTest( void );
 int RigTest( void );
+int GeomTest( void );
 
 const char* lp_testFilter = NULL;
 int lp_testLargeNodes = 0;
@@ -185,7 +186,7 @@ int main( int argc, char** argv )
 	} suites[] = {
 		{ "poly", PolyTest },		{ "fracture", FractureTest }, { "world", WorldTest },	  { "debris", DebrisTest },
 		{ "stress", StressTest },	{ "links", LinkTest },		  { "vehicles", VehicleTest }, { "systems", SystemsTest },
-		{ "rigs", RigTest },
+		{ "rigs", RigTest },		{ "geom", GeomTest },
 	};
 	for ( int i = 0; i < (int)( sizeof( suites ) / sizeof( suites[0] ) ); ++i )
 	{

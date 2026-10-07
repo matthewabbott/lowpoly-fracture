@@ -10,8 +10,11 @@ add_library(lpf_core OBJECT
 	fracture.c
 	fracture.h
 	gait.c
+	geom.c
+	geom.h
 	hash.c
 	impact.c
+	int128.h
 	lab.c
 	link.c
 	lpmath.c
