@@ -156,6 +156,10 @@ bool lpGeom_SnapDirection( lpVec3 direction, int k, int32_t out[3] );
 // positive). False for a zero or non-finite axis.
 bool lpGeom_SnapAxis( lpVec3 axis, int32_t g[3] );
 
+// The grid point nearest a point given in metres (doubles), half away from zero. False outside the grid's range (or
+// not finite).
+bool lpGeom_GridPoint( double x, double y, double z, int32_t p[3] );
+
 // ---- predicates ----
 
 // The meeting point of three planes (in range, any order); false when they do not meet in one point (W = 0)
@@ -175,4 +179,46 @@ static inline int lpIPlane_ClassifyPoint( const lpIPlane* plane, const int32_t p
 {
 	int64_t s = (int64_t)plane->n[0] * p[0] + (int64_t)plane->n[1] * p[1] + (int64_t)plane->n[2] * p[2] - plane->d;
 	return s < 0 ? -1 : ( s > 0 ? 1 : 0 );
+}
+
+// ---- canonical rounding: a rational to the nearest grid point, or to the nearest float ----
+//
+// Both start from a double estimate and correct it exactly, so the answer is the exact nearest whatever the estimate's
+// bits: x / w in double is within 2^-50 of itself (relative: lpI128_ToDouble's 2^-51 twice and the division's 2^-53),
+// an estimate further than 2^-45 of itself from every rounding boundary is taken as it is (provably on the right side),
+// and the rest are decided by integer comparisons in the budget below. For the grid, 2x against (2q -+ 1) w: below
+// 2^99 for a vertex in the grid's range (|q| <= 2^23), below 2^126.1 at the domain's edge (|q| <= 2^50). For floats,
+// x against w K 2^s, a midpoint K 2^s (K < 2^26) within 2^-22 of x / w: both sides below 2^101, the shift on whichever
+// side keeps it so.
+
+// x / w as a double (w > 0): an estimate, relative error below 2^-50
+static inline double lpGeom_Ratio( lpI128 x, lpI128 w )
+{
+	return lpI128_ToDouble( x ) / lpI128_ToDouble( w );
+}
+
+// The grid point nearest x / w (w > 0; grid units), ties half away from zero (as lpGeom_SnapDirection, and the GPU
+// lab's toy): 2x is compared with (2q -+ 1) w. For |x / w| < 2^50 (a vertex of a polyhedron in the grid's range is
+// within 2^23).
+int64_t lpGeom_RoundToGrid( lpI128 x, lpI128 w );
+
+// The float nearest x / (w 2^16), in metres (w > 0), ties to even (IEEE's own rounding): x is compared with w times
+// the float's midpoints with its neighbours. Any vertex of in-range planes (|x| < 2^99, 0 < w < 2^75) is a normal
+// float or zero there. One exact point rounds to one float, so siblings' shared vertices are bit-identical in float.
+float lpGeom_RoundToFloat( lpI128 x, lpI128 w );
+
+static inline void lpIVertex_RoundToGrid( const lpIVertex* v, int64_t out[3] )
+{
+	out[0] = lpGeom_RoundToGrid( v->x, v->w );
+	out[1] = lpGeom_RoundToGrid( v->y, v->w );
+	out[2] = lpGeom_RoundToGrid( v->z, v->w );
+}
+
+static inline lpVec3 lpIVertex_RoundToFloat( const lpIVertex* v )
+{
+	lpVec3 r;
+	r.x = lpGeom_RoundToFloat( v->x, v->w );
+	r.y = lpGeom_RoundToFloat( v->y, v->w );
+	r.z = lpGeom_RoundToFloat( v->z, v->w );
+	return r;
 }

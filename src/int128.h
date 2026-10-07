@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Signed 128-bit integers for exact geometry (geom.h): two's complement in two 64-bit words, the same bits on every
-// platform, so values hash and serialise alike. Add, sub and neg wrap modulo 2^128; the products give the exact result
-// whenever it fits, which the caller guarantees (geom.h's bit budget), and wrap otherwise, never trapping. No signed
-// overflow can happen in any path: the arithmetic is on unsigned words.
+// platform, so values hash and serialise alike. Add, sub, neg and the left shift wrap modulo 2^128; the products give
+// the exact result whenever it fits, which the caller guarantees (geom.h's bit budget), and wrap otherwise, never
+// trapping. No signed overflow can happen in any path: the arithmetic is on unsigned words.
 //
 // One path is compiled as lpI128_*: __int128 on gcc and clang; _umul128 and _mul128 on MSVC x64 (clang-cl too: its
 // __int128 products could need compiler-rt helpers, which MSVC's link has not); __umulh and __mulh on MSVC ARM64; and
@@ -148,6 +148,35 @@ static inline int lpI128_SignPortable( lpI128 a )
 	return ( x[0] | x[1] | x[2] | x[3] ) != 0 ? 1 : 0;
 }
 
+// a * 2^k modulo 2^128, 0 <= k < 128: limbs moved up by k / 32, bits by k % 32
+static inline lpI128 lpI128_ShlPortable( lpI128 a, int k )
+{
+	uint32_t x[4], r[4] = { 0, 0, 0, 0 };
+	lpI128_ToLimbs( a, x );
+	int words = k / 32;
+	int bits = k % 32;
+	for ( int i = words; i < 4; ++i )
+	{
+		uint32_t low = x[i - words];
+		uint32_t carried = ( bits > 0 && i - words - 1 >= 0 ) ? x[i - words - 1] >> ( 32 - bits ) : 0u;
+		r[i] = ( bits > 0 ? low << bits : low ) | carried;
+	}
+	return lpI128_FromLimbs( r );
+}
+
+// a as a double, the same bits on every path (one formula on the two words, nothing path-specific): |a| as
+// hi 2^64 + lo with at most three roundings (hi's past 2^53, lo's, the sum's), each within 2^-53 of what it rounds, so
+// the relative error is below 2^-52 + 2^-106 < 2^-51 for every a. For estimates only: exact geometry never decides on
+// it (geom.h's rounding corrects it exactly).
+static inline double lpI128_ToDouble( lpI128 a )
+{
+	bool negative = ( a.hi >> 63 ) != 0;
+	uint64_t lo = negative ? 0u - a.lo : a.lo;
+	uint64_t hi = negative ? 0u - a.hi - ( a.lo != 0u ? 1u : 0u ) : a.hi;
+	double r = (double)hi * 18446744073709551616.0 + (double)lo;
+	return negative ? -r : r;
+}
+
 // ---- the native path ----
 
 #if defined( LP_INT128_PORTABLE )
@@ -223,6 +252,11 @@ static inline int lpI128_Sign( lpI128 a )
 {
 	lpI128Native x = (lpI128Native)lpI128_ToNative( a );
 	return x < 0 ? -1 : ( x > 0 ? 1 : 0 );
+}
+
+static inline lpI128 lpI128_Shl( lpI128 a, int k )
+{
+	return lpI128_FromNative( lpI128_ToNative( a ) << k );
 }
 
 #elif defined( LP_INT128_MSVC_X64 ) || defined( LP_INT128_MSVC_ARM64 )
@@ -301,6 +335,27 @@ static inline int lpI128_Sign( lpI128 a )
 	return ( a.lo | a.hi ) != 0 ? 1 : 0;
 }
 
+// 0 <= k < 128; the word shifts stay below 64 (a shift by 64 is undefined in C)
+static inline lpI128 lpI128_Shl( lpI128 a, int k )
+{
+	lpI128 r;
+	if ( k >= 64 )
+	{
+		r.hi = a.lo << ( k - 64 );
+		r.lo = 0;
+	}
+	else if ( k > 0 )
+	{
+		r.hi = a.hi << k | a.lo >> ( 64 - k );
+		r.lo = a.lo << k;
+	}
+	else
+	{
+		r = a;
+	}
+	return r;
+}
+
 #else // the portable reference for the whole build
 
 static inline lpI128 lpI128_Add( lpI128 a, lpI128 b )
@@ -336,6 +391,11 @@ static inline int lpI128_Compare( lpI128 a, lpI128 b )
 static inline int lpI128_Sign( lpI128 a )
 {
 	return lpI128_SignPortable( a );
+}
+
+static inline lpI128 lpI128_Shl( lpI128 a, int k )
+{
+	return lpI128_ShlPortable( a, k );
 }
 
 #endif

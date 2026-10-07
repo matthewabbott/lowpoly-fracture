@@ -127,6 +127,11 @@ typedef struct lpFractureStats
 // cellSites (optional) receives the Voronoi site of each cell, or -1 for patterns without sites.
 int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, int capacity, lpFractureStats* stats );
 
+// The sites the Voronoi pattern (impact and grain) draws for its first pass with a capacity of LP_MAX_SITES, in the
+// parent's frame (a grain's unsquashed back from the frame it is drawn in): milestone 11a's exact prototype
+// (xvoronoi.h) starts from them. Writes up to LP_MAX_SITES sites and returns the count.
+int lpFracture_VoronoiSites( const lpFractureInput* input, lpVec3* sites );
+
 // A face two cells of one fracture share
 typedef struct lpCellBond
 {

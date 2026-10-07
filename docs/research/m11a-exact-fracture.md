@@ -208,3 +208,132 @@ lattice, wood's stretch stored as 3.58 (cells 2% longer; a material can be tuned
 hashed, and fragments inherit it exactly; an assert build recomputes it, and a search over the rounding neighbours of
 each largest component (about 64 candidates) is tested against the brute force. A load-dependent switch to the coarser
 axis would save nothing per fracture once the axis is cached: noted with the real load-time knobs in roadmap §17.
+
+## C2: the exact polyhedron beside the float one, and the go/no-go (2026-10-07)
+
+Built beside the engine: nothing calls it but the tests and the bench, so every simulation hash is the same.
+
+### What was built
+
+- `int128.h`: `lpI128_Shl` on every path (and the portable reference), and `lpI128_ToDouble`, one formula on the two
+  words for every path (within 2^-51; estimates only).
+- `geom.h/.c`, canonical rounding: a rational to the nearest grid point (ties half away from zero, as the snap and the
+  GPU lab's toy) and to the nearest float in metres (ties to even, IEEE's own). Both take a double estimate (within
+  2^-50), keep it when it is more than 2^-45 from every boundary, and otherwise decide by integer comparisons (2x
+  against (2q -+ 1) w; x against w times the float's midpoint, shifted on whichever side keeps both below 2^101). One
+  exact point gives one float, so siblings' shared vertices are bit-identical in float. And `lpGeom_GridPoint`.
+- `xpoly.h/.c`, `lpXPoly`: faces on canonical `lpIPlane`s with material and tag; each vertex its cached homogeneous
+  point, a double estimate (for bounds and early outs) and a defining triple of its faces; today's limits (128, 64,
+  512). `lpXPoly_Clip` (exact, no tolerance, no shift, failure only at capacity), `FromPlanes` (the box at the grid's
+  range clipped by each half-space; unbounded when a range face survives), `MakeBox` (six snapped planes),
+  `FromPoly` (each float face's plane snapped through the grid point nearest its vertices' mean, then `FromPlanes`:
+  the authoring path's first draft), `Round`, `ComputeMass` (doubles from the canonical floats: the thresholds' mass),
+  `ComputeMassPrecise` (offsets from a grid point exact in int128, for checks), `ToPoly`, `Validate`, `SamePoint` (by
+  incidence) and `Digest`.
+- `xvoronoi.h/.c`, the exact Voronoi stage as a prototype (not wired in): today's sites (`lpFracture_VoronoiSites`,
+  the same draws) rounded to the grid in the object frame, de-duplicated, kept only strictly inside (int64); neighbours
+  by exact int64 distance; each cell clipped by `lpIPlane_MakeBisector`s, with the float loop's early out made exact
+  (a bisector beyond the cell's reach, the largest site-to-vertex distance from the doubles plus one grid unit, stops
+  the loop: provably no later plane cuts); vertices rounded, mass in doubles, shapes made as the float pattern makes
+  them, slivers absorbed in the same three passes; `lpXVoronoi_Check` (validity, tiling from the precise masses, every
+  cut face's twin on the exactly negated plane holding the same points, and their floats bit-identical).
+- `lpf_bench --replay-fractures path --exact-voronoi [--repeat n] [--job k]`: every impact and grain job's float
+  pattern stage (`lpFracture`, what `voronoiMs` measures) against the exact stage on the same input, each job's best of
+  n summed; the parents' conversion timed apart (C5's pieces are exact already); counts, histograms, the checks, the
+  phases of a run with timers per cell, the cost of a classification and of a new vertex on the exact cells
+  themselves, and digests of the exact cells and of their float shapes.
+- Tests (suite `geom`): `TestCanonicalRounding` (200,000 random rationals over the whole budget, vertices of random
+  planes, 20,000 constructed grid ties and 9,452 float ties with their neighbours, the budget's largest and smallest
+  values and the grid domain's edge, all against the 256-bit reference), `TestXClipFuzz` (3,000 random exact
+  polyhedra, eight planes each, half of them through a vertex, along an edge or in a face: both halves valid, caps the
+  same values in opposite orders, on-plane vertices in both caps, volumes to 1e-12; 51% of 24,000 planes touch a
+  vertex, 12,250 cuts touch, 13,459 triples re-picked, worst volume error 6.8e-14), `TestXHalfSpaces` (1,500 sets
+  against brute force, with repeats and pencils: 690 built, 510 unbounded, 300 empty), `TestXBuild` (boxes and
+  converted float boxes), `TestRoundingCost` and `TestXClipCost` (timing); `TestInt128` gains the shift at every k and
+  the conversion's bound, against the portable and 256-bit references.
+
+### The gates
+
+Written before the results. The laptop was quiet for the timings (no builds, 1% load); the Spark's load was 0.05.
+
+| gate | result |
+|---|---|
+| G1 | `tools/build.ps1 -Test`: 11 of 11; `lpf_test --contract` passes; the catalogue check: 185 tests, 113 in the contract, no problems. |
+| G2 | `tools/bench.ps1 -StrictSolver`: every rung's hash and solver hash `same` (12 rungs at 1 and 8 workers); `tools/check-fractures.ps1 -Record` writes the four recordings again byte for byte. |
+| G3 | The tests pass on msvc-release, clang-cl (warnings not errors; none from the new code), a whole portable build (every suite) and the Spark's gcc 13.3 and clang 18 (every suite). The fuzz prints the same counts everywhere, and the exact cells of the four recordings and their float shapes have the same digests on all five builds (keep `5ffe071379840380`, barrage `43fb33b778959c85`, siege `65bb0cf690df103e`, town `f88a971de5cd5642`). `clang-cl --target=aarch64-pc-windows-msvc` compiles the new code on the MSVC ARM64 path. |
+| G4 | Impact jobs: exact 1.68 times the float stage on MSVC, 1.78 on clang-cl (per rung 1.65 to 1.87), under 3: C9 stays where it is. Grain (plain bisectors): 1.34 and 1.48. The table below; the first measurement, with nothing tuned after it. |
+| G5 | Every exact cell valid (26,033 on the four rungs), the tiling within 2.2e-15 of the parent's volume (the precise masses), every one of 128,100 cut faces an exact twin, no float mismatch, no overflow, no reject. |
+| G6 | `tools/build.ps1 -Preset msvc-asan -Test`: 11 of 11 (geom 11 s); rebuilt with the final code, `lpf_test geom` again and the exact replays of the four recordings under ASan with asserts on: clean, the same checks and digests. |
+
+### The go/no-go
+
+Each job's best of 3, summed (ms); the same jobs on both sides: the float pattern stage of the impact and grain jobs
+against the exact stage, the parents made exact beforehand and timed apart (impact: MSVC 42 ms on the four rungs,
+clang-cl 33).
+
+| rung | compiler | impact float | impact exact | ratio | grain float | grain exact | ratio |
+|---|---|---|---|---|---|---|---|
+| keep | MSVC | 15.96 | 27.81 | 1.74 | 0.30 | 0.40 | 1.31 |
+| barrage | MSVC | 32.03 | 54.25 | 1.69 | 10.46 | 13.91 | 1.33 |
+| siege | MSVC | 52.49 | 86.51 | 1.65 | 0.62 | 0.81 | 1.30 |
+| town | MSVC | 13.66 | 23.48 | 1.72 | 3.06 | 4.18 | 1.37 |
+| total | MSVC | 114.1 | 192.0 | **1.68** | 14.4 | 19.3 | 1.34 |
+| keep | clang-cl | 12.56 | 23.48 | 1.87 | 0.21 | 0.34 | 1.59 |
+| barrage | clang-cl | 25.35 | 45.08 | 1.78 | 7.90 | 11.56 | 1.46 |
+| siege | clang-cl | 41.68 | 72.68 | 1.74 | 0.43 | 0.68 | 1.60 |
+| town | clang-cl | 10.64 | 19.01 | 1.79 | 2.20 | 3.30 | 1.50 |
+| total | clang-cl | 90.2 | 160.2 | **1.78** | 10.7 | 15.9 | 1.48 |
+| total | Spark gcc 13 | 60.8 | 72.6 | 1.19 | 6.3 | 6.9 | 1.11 |
+| total | Spark clang 18 | 43.8 | 70.9 | 1.62 | 5.0 | 6.9 | 1.37 |
+
+A second pass on the quiet laptop (nothing changed in the timed code): impact 1.62 on MSVC and 1.76 on clang-cl (per
+rung 1.60 to 1.84), grain 1.30 and 1.45. The grain ratio is not like for like: the float side squashes and re-planes
+(Newell), the exact side clips plain bisectors of the unsquashed sites (its cells are isotropic, not the float's).
+Masonry jobs that fall back to the Voronoi pattern are left out (their draws follow masonry's).
+
+Where the exact stage spends its time (impact, the four rungs, a run with timers per cell; MSVC / clang-cl, ms):
+sites (the same float draws as the float stage, then grid, de-duplication and inside tests) 37 / 32; the clips 135 /
+110, of which classification about 28 / 19 (3.1 million at 9.3 / 6.2 ns), new vertices about 17 / 16 (537,000 at 32 / 30
+ns, with their doubles) and the rest, bookkeeping (copying 91-byte vertices into each clip's output, face walks, the
+reach, the sort) 89 / 75; rounding to floats 13 / 12.5 (13 to 20 ns a coordinate on MSVC, 3 to 5 on the Spark: MSVC's
+uint64-to-double conversions); mass and shapes 17 / 14. The bookkeeping, not the arithmetic, is the larger cost.
+
+The cells (impact and grain, the four rungs, MSVC; the same on every build): the same number of cells as the float
+pattern on every rung (26,033), faces mean 8.8 to 9.6 and max 37 to 40 on both sides, histograms within a few cells;
+vertices mean +0.2 to +0.4 and max 70 to 76 against 45 to 47. The extra vertices come from the parents: float parents
+have vertices where four faces or more meet (barrage's impact parents: 13.9 vertices for 11.0 faces, where three faces
+a vertex would give 18), and snapping their planes one by one splits each such vertex into a cluster of degree-three
+vertices a few grid units apart (exact parents +11% to +30% vertices; the faces the same but 3 on siege, whose snapped
+planes came out redundant). No sites were lost to rounding (no duplicate, none outside), no clip in the recorded jobs
+touched a vertex (generic sites), and exact clips number about what float clips did (keep 37,287 against 37,343).
+
+### Decisions
+
+- **Triples by face index, re-picked; the point kept.** Only a vertex exactly on the cutting plane can lose a face of
+  its triple; it takes the cap and the faces of its two cap edges, whose planes always meet in one point (the cap edges
+  are never collinear). The cached point is kept as made, not recomputed from the new triple, so the two halves of a
+  clip (which may re-pick differently) keep the same values; the validator checks the incidence. Planes by value
+  would cost 72 bytes a vertex against 3, and C5's lpShape stores face triples anyway.
+- **Cuts decided from vertex classes alone:** nothing outside, unchanged; nothing strictly inside, empty; a face kept
+  only with a vertex strictly inside; its cut edge the one pair of neighbours on the plane; new vertices made after the
+  face walk, once both faces of the edge are known. No case analysis beyond that.
+- **Validity's orientation by volume:** consistent loops are all counter clockwise or all clockwise; the precise
+  volume's sign says which (an exact per-face test would need products past the budget).
+- **The prototype runs in the object frame** (the job's poly and sites moved by its centre in doubles), as C5 will.
+- **Conversion snaps at k = 23** (normals within 8.4e-8 rad; axis-aligned faces reduce to unit normals).
+- **Limits unchanged:** no overflow on any rung (exact cells reach 40 faces and 76 vertices).
+- **Grain uses plain bisectors** in the prototype, as the brief allowed.
+
+### For C3 to C5
+
+- Converting float parents inflates vertices (+11 to +30%) where four faces met: C3's authoring merge should snap
+  concurrent faces so they still meet (or merge near-coplanar ones); C5's fractures are exact from the start and keep
+  any number of faces meeting at one point.
+- The bookkeeping is 44% of the stage: a vertex pool per cell (clips append new vertices and pass indices, nothing
+  copied) and `lpXPoly_Copy` of the parent per cell are C5's (or C9's arenas') easy wins; MSVC's rounding wants a
+  conversion without uint64-to-double. None was tried here: the ratio did not ask for it.
+- The portable path costs 7.5 times the float clip (1.9 us a clip against 0.25, TestXClipCost) against 1.9 to 2.2 on
+  MSVC x64, 2.1 on clang-cl and 1.15 to 1.7 on the Spark: fine as a reference and a fallback, not as a target's main
+  path.
+- lpShape for C5: `lpXPoly_ToPoly` gives float planes from the integer normals (unit normal, offset in metres); the
+  float shapes of the exact cells are bit-identical across the five builds.

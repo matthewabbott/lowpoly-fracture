@@ -5,6 +5,7 @@
 #include "fractures.h"
 
 #include "world.h"
+#include "xvoronoi.h"
 
 #include <float.h>
 #include <stdarg.h>
@@ -444,13 +445,24 @@ static uint64_t lpReadU64( const uint8_t* p )
 	return (uint64_t)lpReadU32( p ) | (uint64_t)lpReadU32( p + 4 ) << 32;
 }
 
-int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
+// A recording read whole, and its records one by one
+typedef struct lpRecording
 {
+	uint8_t* data;
+	int size;
+	int at; // the next record
+	int metaLength;
+} lpRecording;
+
+// Prints why and returns false when the file is not a recording of this version
+static bool lpRecording_Open( const char* path, lpRecording* rec )
+{
+	memset( rec, 0, sizeof( *rec ) );
 	FILE* f = fopen( path, "rb" );
 	if ( f == NULL )
 	{
 		printf( "cannot read %s\n", path );
-		return 1;
+		return false;
 	}
 	fseek( f, 0, SEEK_END );
 	long fileSize = ftell( f );
@@ -459,7 +471,7 @@ int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
 	{
 		printf( "%s: not a recording (%ld bytes)\n", path, fileSize );
 		fclose( f );
-		return 1;
+		return false;
 	}
 	int size = (int)fileSize;
 	uint8_t* data = malloc( (size_t)size );
@@ -471,12 +483,52 @@ int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
 	{
 		printf( "%s: not a recording of version %d\n", path, LP_RECORDING_VERSION );
 		free( data );
+		return false;
+	}
+	*rec = (lpRecording){ data, size, 12 + (int)metaLength, (int)metaLength };
+	return true;
+}
+
+// Record `index`: false at the end, or (with *broken set, and why printed) when the rest is truncated or corrupt
+static bool lpRecording_Next( lpRecording* rec, int index, const uint8_t** snapshot, int* snapshotSize, uint64_t* digest,
+							  int* tick, bool* broken )
+{
+	if ( rec->at >= rec->size )
+	{
+		return false;
+	}
+	if ( rec->size - rec->at < 4 )
+	{
+		printf( "record %d: truncated\n", index );
+		*broken = true;
+		return false;
+	}
+	int bytes = (int)lpReadU32( rec->data + rec->at );
+	if ( bytes <= 0 || bytes > LP_JOB_SNAPSHOT_MAX || rec->size - rec->at - 4 < bytes + 12 )
+	{
+		printf( "record %d: truncated or corrupt (a snapshot of %d bytes, %d left)\n", index, bytes, rec->size - rec->at - 4 );
+		*broken = true;
+		return false;
+	}
+	*snapshot = rec->data + rec->at + 4;
+	*snapshotSize = bytes;
+	*digest = lpReadU64( *snapshot + bytes );
+	*tick = (int)lpReadU32( *snapshot + bytes + 8 );
+	rec->at += 4 + bytes + 12;
+	return true;
+}
+
+int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
+{
+	lpRecording rec;
+	if ( lpRecording_Open( path, &rec ) == false )
+	{
 		return 1;
 	}
+	uint8_t* data = rec.data;
 	repeat = repeat < 1 ? 1 : repeat;
-	printf( "replay %s (%.*s), best of %d\n", path, (int)metaLength, (const char*)data + 12, repeat );
+	printf( "replay %s (%.*s), best of %d\n", path, rec.metaLength, (const char*)data + 12, repeat );
 
-	int at = 12 + (int)metaLength;
 	int count = 0, same = 0, differs = 0;
 	bool broken = false;
 	lpBenchFractures* bf = lpBenchFractures_Create( check );
@@ -485,25 +537,11 @@ int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
 	lpReplayJob* jobs = malloc( sizeof( lpReplayJob ) * (size_t)jobCapacity );
 	int jobCount = 0;
 	double stageTotals[5] = { 0.0 };
-	for ( int index = 0; at < size; ++index )
+	const uint8_t* snapshot;
+	int snapshotSize, tick;
+	uint64_t recorded;
+	for ( int index = 0; lpRecording_Next( &rec, index, &snapshot, &snapshotSize, &recorded, &tick, &broken ); ++index )
 	{
-		if ( size - at < 4 )
-		{
-			printf( "record %d: truncated\n", index );
-			broken = true;
-			break;
-		}
-		int snapshotSize = (int)lpReadU32( data + at );
-		if ( snapshotSize <= 0 || snapshotSize > LP_JOB_SNAPSHOT_MAX || size - at - 4 < snapshotSize + 12 )
-		{
-			printf( "record %d: truncated or corrupt (a snapshot of %d bytes, %d left)\n", index, snapshotSize, size - at - 4 );
-			broken = true;
-			break;
-		}
-		const uint8_t* snapshot = data + at + 4;
-		uint64_t recorded = lpReadU64( snapshot + snapshotSize );
-		int tick = (int)lpReadU32( snapshot + snapshotSize + 8 );
-		at += 4 + snapshotSize + 12;
 		if ( onlyJob >= 0 && index != onlyJob )
 		{
 			continue;
@@ -585,6 +623,370 @@ int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check )
 		return 2;
 	}
 	if ( broken || ( onlyJob >= 0 && count == 0 ) )
+	{
+		return 1;
+	}
+	return violations > 0 ? 5 : 0;
+}
+
+// ---- the exact Voronoi stage against the float one (milestone 11a, C2's go/no-go) ----
+
+typedef struct lpExactSide
+{
+	int jobs;
+	int split[2];	  // jobs with two cells or more: float, exact
+	int cells[2];	  // float pattern cells, exact cells
+	double ms[2];	  // the float pattern stage and the exact stage, each job's best of n, summed
+	double convertMs; // the parents made exact, best of n (C5's pieces are exact already: not in the stage)
+	int convertFailures;
+	int64_t parentFaces[2], parentVertices[2]; // the float parents' and the exact ones'
+	uint64_t exactDigest, shapeDigest;		   // the exact cells and their float shapes, in job order
+	int64_t faces[2], vertices[2]; // summed over the cells, for the means
+	int maxFaces[2], maxVertices[2];
+	int faceBins[2][LP_CELL_BINS], vertexBins[2][LP_CELL_BINS];
+	lpXVoronoiStats stats;	 // the first run of each job: counts
+	lpXVoronoiStats profile; // a run with timers per cell: the phases
+	lpXVoronoiCheck check;
+	// The operations' cost on the exact cells themselves: every vertex against every face plane of its cell, and every
+	// vertex made again from its triple (with its doubles)
+	double classifyMs, vertexMs;
+	int64_t classifyCount, vertexCount;
+} lpExactSide;
+
+static void lpExactBins( lpExactSide* side, int k, int faces, int vertices )
+{
+	side->faces[k] += faces;
+	side->vertices[k] += vertices;
+	side->maxFaces[k] = faces > side->maxFaces[k] ? faces : side->maxFaces[k];
+	side->maxVertices[k] = vertices > side->maxVertices[k] ? vertices : side->maxVertices[k];
+	side->faceBins[k][lpCellBin( true, faces )] += 1;
+	side->vertexBins[k][lpCellBin( false, vertices )] += 1;
+}
+
+static void lpExactAdd( lpExactSide* total, const lpExactSide* one )
+{
+	total->jobs += one->jobs;
+	total->convertMs += one->convertMs;
+	total->convertFailures += one->convertFailures;
+	for ( int k = 0; k < 2; ++k )
+	{
+		total->parentFaces[k] += one->parentFaces[k];
+		total->parentVertices[k] += one->parentVertices[k];
+	}
+	for ( int k = 0; k < 2; ++k )
+	{
+		total->split[k] += one->split[k];
+		total->cells[k] += one->cells[k];
+		total->ms[k] += one->ms[k];
+		total->faces[k] += one->faces[k];
+		total->vertices[k] += one->vertices[k];
+		total->maxFaces[k] = one->maxFaces[k] > total->maxFaces[k] ? one->maxFaces[k] : total->maxFaces[k];
+		total->maxVertices[k] = one->maxVertices[k] > total->maxVertices[k] ? one->maxVertices[k] : total->maxVertices[k];
+		for ( int b = 0; b < LP_CELL_BINS; ++b )
+		{
+			total->faceBins[k][b] += one->faceBins[k][b];
+			total->vertexBins[k][b] += one->vertexBins[k][b];
+		}
+	}
+	const lpXVoronoiStats* s = &one->stats;
+	lpXVoronoiStats* t = &total->stats;
+	t->jobs += s->jobs;
+	t->sitesDrawn += s->sitesDrawn;
+	t->siteDuplicates += s->siteDuplicates;
+	t->sitesOutside += s->sitesOutside;
+	t->planeRejects += s->planeRejects;
+	t->sliversAbsorbed += s->sliversAbsorbed;
+	t->cellsEmpty += s->cellsEmpty;
+	t->cellsDropped += s->cellsDropped;
+	t->cells += s->cells;
+	t->clip.clips += s->clip.clips;
+	t->clip.unchanged += s->clip.unchanged;
+	t->clip.cut += s->clip.cut;
+	t->clip.empty += s->clip.empty;
+	t->clip.overflows += s->clip.overflows;
+	t->clip.touching += s->clip.touching;
+	t->clip.classifications += s->clip.classifications;
+	t->clip.vertices += s->clip.vertices;
+	t->clip.repicked += s->clip.repicked;
+	total->profile.sitesMs += one->profile.sitesMs;
+	total->profile.clipMs += one->profile.clipMs;
+	total->profile.roundMs += one->profile.roundMs;
+	total->profile.shapeMs += one->profile.shapeMs;
+	lpXVoronoiCheck* c = &total->check;
+	c->jobs += one->check.jobs;
+	c->cells += one->check.cells;
+	c->invalid += one->check.invalid;
+	c->firstInvalid = c->firstInvalid != NULL ? c->firstInvalid : one->check.firstInvalid;
+	c->tilingViolations += one->check.tilingViolations;
+	c->tilingMaxError = one->check.tilingMaxError > c->tilingMaxError ? one->check.tilingMaxError : c->tilingMaxError;
+	c->cutFaces += one->check.cutFaces;
+	c->twins += one->check.twins;
+	c->unmatched += one->check.unmatched;
+	c->floatMismatches += one->check.floatMismatches;
+	total->exactDigest = lpMix64( total->exactDigest ^ lpMix64( one->exactDigest + 1u ) );
+	total->shapeDigest = lpMix64( total->shapeDigest ^ lpMix64( one->shapeDigest + 1u ) );
+	total->classifyMs += one->classifyMs;
+	total->vertexMs += one->vertexMs;
+	total->classifyCount += one->classifyCount;
+	total->vertexCount += one->vertexCount;
+}
+
+static void lpPrintExactBins( const int* bins )
+{
+	printf( "[" );
+	for ( int k = 0; k < LP_CELL_BINS; ++k )
+	{
+		printf( "%s%d", k > 0 ? ", " : "", bins[k] );
+	}
+	printf( "]" );
+}
+
+static void lpPrintExactSide( const char* name, const lpExactSide* side )
+{
+	const lpXVoronoiStats* s = &side->stats;
+	const lpXClipStats* x = &s->clip;
+	printf( "  %s: %d jobs (split: float %d, exact %d), cells float %d, exact %d\n", name, side->jobs, side->split[0],
+			side->split[1], side->cells[0], side->cells[1] );
+	printf( "    stage ms (each job's best, summed): float %.2f, exact %.2f, ratio %.2f; parents made exact %.2f ms (%d "
+			"failed)\n",
+			side->ms[0], side->ms[1], side->ms[0] > 0.0 ? side->ms[1] / side->ms[0] : 0.0, side->convertMs,
+			side->convertFailures );
+	printf( "    parents: float %lld faces, %lld vertices; exact %lld faces, %lld vertices\n", (long long)side->parentFaces[0],
+			(long long)side->parentVertices[0], (long long)side->parentFaces[1], (long long)side->parentVertices[1] );
+	for ( int k = 0; k < 2; ++k )
+	{
+		int cells = side->cells[k] > 0 ? side->cells[k] : 1;
+		printf( "    %s cells: faces mean %.1f max %d ", k == 0 ? "float" : "exact", (double)side->faces[k] / cells,
+				side->maxFaces[k] );
+		lpPrintExactBins( side->faceBins[k] );
+		printf( "; vertices mean %.1f max %d ", (double)side->vertices[k] / cells, side->maxVertices[k] );
+		lpPrintExactBins( side->vertexBins[k] );
+		printf( "\n" );
+	}
+	printf( "    exact clips %lld (unchanged %lld, cut %lld, empty %lld, overflows %lld; %lld cuts touching a vertex, %lld "
+			"triples re-picked), %lld vertices classified (%.1f a clip), %lld made (%.2f a clip)\n",
+			(long long)x->clips, (long long)x->unchanged, (long long)x->cut, (long long)x->empty, (long long)x->overflows,
+			(long long)x->touching, (long long)x->repicked, (long long)x->classifications,
+			x->clips > 0 ? (double)x->classifications / (double)x->clips : 0.0, (long long)x->vertices,
+			x->clips > 0 ? (double)x->vertices / (double)x->clips : 0.0 );
+	printf( "    sites: %d drawn, %d duplicates, %d outside; %d plane rejects, %d slivers absorbed, %d cells empty, %d "
+			"dropped\n",
+			s->sitesDrawn, s->siteDuplicates, s->sitesOutside, s->planeRejects, s->sliversAbsorbed, s->cellsEmpty,
+			s->cellsDropped );
+	const lpXVoronoiStats* p = &side->profile;
+	double nsClassify = side->classifyCount > 0 ? 1e6 * side->classifyMs / (double)side->classifyCount : 0.0;
+	double nsVertex = side->vertexCount > 0 ? 1e6 * side->vertexMs / (double)side->vertexCount : 0.0;
+	double classifyMs = 1e-6 * nsClassify * (double)x->classifications;
+	double vertexMs = 1e-6 * nsVertex * (double)x->vertices;
+	double phases = p->sitesMs + p->clipMs + p->roundMs + p->shapeMs;
+	printf( "    phases (a run with timers, %.2f ms): sites %.2f, clips %.2f (classification about %.2f at %.1f ns, new "
+			"vertices about %.2f at %.1f ns, the rest %.2f), rounding %.2f, mass and shapes %.2f\n",
+			phases, p->sitesMs, p->clipMs, classifyMs, nsClassify, vertexMs, nsVertex, p->clipMs - classifyMs - vertexMs,
+			p->roundMs, p->shapeMs );
+	const lpXVoronoiCheck* c = &side->check;
+	printf( "    checks: %d cells, %d invalid%s%s; tiling max error %.3g (%d jobs past %.0e); %d cut faces: %d twins, %d "
+			"unmatched, %d float mismatches\n",
+			c->cells, c->invalid, c->firstInvalid != NULL ? ", first: " : "", c->firstInvalid != NULL ? c->firstInvalid : "",
+			c->tilingMaxError, c->tilingViolations, LP_CHECK_TILING, c->cutFaces, c->twins, c->unmatched, c->floatMismatches );
+	printf( "    digests: exact cells %016llx, their float shapes %016llx\n", (unsigned long long)side->exactDigest,
+			(unsigned long long)side->shapeDigest );
+}
+
+int lpBenchExactVoronoi( const char* path, int onlyJob, int repeat )
+{
+	lpRecording rec;
+	if ( lpRecording_Open( path, &rec ) == false )
+	{
+		return 1;
+	}
+	repeat = repeat < 1 ? 1 : repeat;
+	printf( "exact voronoi against float (milestone 11a, C2) on %s (%.*s), best of %d, int128 path %s\n", path,
+			rec.metaLength, (const char*)rec.data + 12, repeat, lpI128_Path() );
+
+	lpFractureJob* job = lpFractureJob_Create();
+	lpXVoronoiWork* work = malloc( sizeof( lpXVoronoiWork ) );
+	lpXPoly* parents = malloc( 2 * sizeof( lpXPoly ) );
+	lpExactSide* sides = calloc( 2, sizeof( lpExactSide ) ); // impact, grain
+	lpShape* cells[LP_MAX_SITES];
+	int cellSites[LP_MAX_SITES];
+	int others = 0, count = 0;
+	bool broken = false;
+	const uint8_t* snapshot;
+	int snapshotSize, tick;
+	uint64_t recorded;
+	for ( int index = 0; lpRecording_Next( &rec, index, &snapshot, &snapshotSize, &recorded, &tick, &broken ); ++index )
+	{
+		if ( onlyJob >= 0 && index != onlyJob )
+		{
+			continue;
+		}
+		if ( lpFractureJob_Read( job, snapshot, snapshotSize ) == false )
+		{
+			printf( "record %d: corrupt snapshot\n", index );
+			broken = true;
+			break;
+		}
+		count += 1;
+		int pattern = lpJobPattern( job );
+		if ( pattern != 0 && pattern != 1 )
+		{
+			others += 1;
+			continue;
+		}
+		lpExactSide* side = sides + pattern;
+		side->jobs += 1;
+
+		// The float pattern stage (what voronoiMs measures in a job)
+		float best = 1e30f;
+		int floatCells = 0;
+		for ( int n = 0; n < repeat; ++n )
+		{
+			uint64_t ticks = lpGetTicks();
+			int made = lpFracture( &job->input, cells, cellSites, LP_MAX_SITES, NULL );
+			float ms = lpGetMilliseconds( ticks );
+			best = ms < best ? ms : best;
+			if ( n == 0 )
+			{
+				floatCells = made;
+				side->cells[0] += made;
+				side->split[0] += made >= 2 ? 1 : 0;
+				for ( int c = 0; c < made; ++c )
+				{
+					lpExactBins( side, 0, cells[c]->faceCount, cells[c]->vertexCount );
+				}
+			}
+			for ( int c = 0; c < made; ++c )
+			{
+				lpShape_Destroy( cells[c] );
+			}
+		}
+		side->ms[0] += best;
+
+		// The parent made exact, in the object frame
+		best = 1e30f;
+		lpXBuild built = lp_xBuilt;
+		for ( int n = 0; n < repeat; ++n )
+		{
+			uint64_t ticks = lpGetTicks();
+			built = lpXPoly_FromPoly( &job->poly, job->center, parents, parents + 1 );
+			float ms = lpGetMilliseconds( ticks );
+			best = ms < best ? ms : best;
+		}
+		side->convertMs += best;
+		side->parentFaces[0] += job->poly.faceCount;
+		side->parentVertices[0] += job->poly.vertexCount;
+		side->parentFaces[1] += built == lp_xBuilt ? parents->faceCount : 0;
+		side->parentVertices[1] += built == lp_xBuilt ? parents->vertexCount : 0;
+		if ( built != lp_xBuilt )
+		{
+			printf( "record %d: the parent made exact failed (%d)\n", index, (int)built );
+			side->convertFailures += 1;
+			continue;
+		}
+
+		// The exact stage
+		best = 1e30f;
+		int made = 0;
+		for ( int n = 0; n < repeat; ++n )
+		{
+			lpXVoronoiStats ignored = { 0 };
+			uint64_t ticks = lpGetTicks();
+			made = lpXVoronoi_Run( parents, &job->input, job->center, work, cells, cellSites, LP_MAX_SITES,
+								   n == 0 ? &side->stats : &ignored );
+			float ms = lpGetMilliseconds( ticks );
+			best = ms < best ? ms : best;
+			for ( int c = 0; c < made; ++c )
+			{
+				lpShape_Destroy( cells[c] );
+			}
+		}
+		side->ms[1] += best;
+		side->cells[1] += made;
+		side->split[1] += made >= 2 ? 1 : 0;
+		for ( int c = 0; c < made; ++c )
+		{
+			lpExactBins( side, 1, work->cells[c].faceCount, work->cells[c].vertexCount );
+		}
+
+		// What the cells are worth, and what their operations cost
+		lpXVoronoi_Check( parents, work, made, cellSites, &side->check );
+		for ( int c = 0; c < made; ++c )
+		{
+			uint64_t d = lpXPoly_Digest( work->cells + c );
+			side->exactDigest = lpHashWords( side->exactDigest, &d, sizeof( d ) );
+		}
+		int sum = 0;
+		uint64_t ticks = lpGetTicks();
+		for ( int c = 0; c < made; ++c )
+		{
+			const lpXPoly* cell = work->cells + c;
+			for ( int v = 0; v < cell->vertexCount; ++v )
+			{
+				for ( int f = 0; f < cell->faceCount; ++f )
+				{
+					sum += lpIVertex_Classify( cell->vertices + v, &cell->faces[f].plane );
+				}
+			}
+			side->classifyCount += (int64_t)cell->vertexCount * cell->faceCount;
+		}
+		side->classifyMs += lpGetMilliseconds( ticks );
+		ticks = lpGetTicks();
+		double approx = 0.0;
+		for ( int c = 0; c < made; ++c )
+		{
+			const lpXPoly* cell = work->cells + c;
+			for ( int v = 0; v < cell->vertexCount; ++v )
+			{
+				const uint8_t* t = cell->triples[v];
+				lpIVertex again;
+				if ( lpIVertex_FromPlanes( &cell->faces[t[0]].plane, &cell->faces[t[1]].plane, &cell->faces[t[2]].plane,
+										   &again ) )
+				{
+					double w = lpI128_ToDouble( again.w );
+					approx += lpI128_ToDouble( again.x ) / w + lpI128_ToDouble( again.y ) / w + lpI128_ToDouble( again.z ) / w;
+				}
+			}
+			side->vertexCount += cell->vertexCount;
+		}
+		side->vertexMs += lpGetMilliseconds( ticks );
+		if ( sum == 1 && approx == 0.5 )
+		{
+			printf( "(never)\n" ); // keeps the measured work alive
+		}
+
+		// A run with timers per cell, for the phases
+		side->profile.profile = true;
+		int again = lpXVoronoi_Run( parents, &job->input, job->center, work, cells, cellSites, LP_MAX_SITES, &side->profile );
+		for ( int c = 0; c < again; ++c )
+		{
+			side->shapeDigest = lpHashWords( side->shapeDigest, &cells[c]->digest, sizeof( cells[c]->digest ) );
+			lpShape_Destroy( cells[c] );
+		}
+		if ( onlyJob >= 0 )
+		{
+			printf( "record %d (tick %d, %s): float %d cells, exact %d; exact parent %d faces, %d vertices (float %d, %d)\n",
+					index, tick, lp_patternNames[pattern], floatCells, made, parents->faceCount, parents->vertexCount,
+					job->poly.faceCount, job->poly.vertexCount );
+		}
+	}
+
+	printf( "%d jobs read (%d of other patterns)%s\n", count, others, broken ? "; the file is TRUNCATED or CORRUPT" : "" );
+	lpPrintExactSide( "impact", sides );
+	lpPrintExactSide( "grain (plain bisectors on the exact side: not the float's cells)", sides + 1 );
+	lpExactSide* total = calloc( 1, sizeof( lpExactSide ) );
+	lpExactAdd( total, sides );
+	lpExactAdd( total, sides + 1 );
+	lpPrintExactSide( "impact and grain", total );
+	int violations = total->check.invalid + total->check.tilingViolations + total->check.unmatched +
+					 total->check.floatMismatches + (int)total->stats.clip.overflows;
+
+	free( total );
+	free( sides );
+	free( parents );
+	free( work );
+	lpFractureJob_Destroy( job );
+	free( rec.data );
+	if ( broken )
 	{
 		return 1;
 	}

@@ -105,6 +105,30 @@ static bool WideEqual( Wide a, Wide b )
 	return memcmp( a.l, b.l, sizeof( a.l ) ) == 0;
 }
 
+// a 2^k modulo 2^256 (0 <= k < 256)
+static Wide WideShl( Wide a, int k )
+{
+	Wide p = { { 0 } };
+	p.l[k / 32] = 1u << ( k % 32 );
+	return WideMul( a, p );
+}
+
+static int WideCompare( Wide a, Wide b )
+{
+	return WideSign( WideSub( a, b ) );
+}
+
+// A finite double that is an integer or a dyadic rational, exactly, as K 2^t with K < 2^53 (K = 0 for zero)
+static void DoubleParts( double d, uint64_t* k, int* t )
+{
+	uint64_t bits;
+	memcpy( &bits, &d, sizeof( bits ) );
+	int exponent = (int)( ( bits >> 52 ) & 0x7FFu );
+	*k = bits & 0xFFFFFFFFFFFFFull;
+	*t = exponent == 0 ? -1074 : exponent - 1075;
+	*k |= exponent == 0 ? 0u : 1ull << 52;
+}
+
 // The bit length of |a|
 static int WideBits( Wide a )
 {
@@ -286,6 +310,16 @@ static int64_t RandomIn( lpRandom* rng, int64_t m )
 }
 
 // A plane in range (not canonical: the predicates need only the ranges), its offset near the edge of the range often
+// A vector in [-1, 1]^3, its draws as statements (rule 13: an initializer's order is unspecified)
+static lpVec3 RandomBox( lpRandom* rng )
+{
+	lpVec3 v;
+	v.x = lpRandom_Range( rng, -1.0f, 1.0f );
+	v.y = lpRandom_Range( rng, -1.0f, 1.0f );
+	v.z = lpRandom_Range( rng, -1.0f, 1.0f );
+	return v;
+}
+
 static lpIPlane RandomPlane( lpRandom* rng, int32_t maxNormal )
 {
 	lpIPlane p;
@@ -326,6 +360,27 @@ static int CheckOps( lpI128 x, lpI128 y, int64_t a, int64_t b )
 	ENSURE( memcmp( WideFrom128( lpI128_Sub( x, y ) ).l, difference.l, 4 * sizeof( uint32_t ) ) == 0 );
 	ENSURE( lpI128_Compare( x, y ) == WideSign( difference ) );
 	ENSURE( lpI128_Sign( x ) == WideSign( WideFrom128( x ) ) );
+
+	// C2's: the left shift (modulo 2^128, every k), and the conversion to double within 2^-51 of the value, exactly
+	int k = (int)( (uint64_t)a % 128u );
+	ENSURE( lpI128_Equal( lpI128_Shl( x, k ), lpI128_ShlPortable( x, k ) ) );
+	ENSURE( memcmp( WideFrom128( lpI128_Shl( x, k ) ).l, WideShl( WideFrom128( x ), k ).l, 4 * sizeof( uint32_t ) ) == 0 );
+	double d = lpI128_ToDouble( x );
+	Wide dw = WideFrom64( 0 );
+	if ( d != 0.0 )
+	{
+		uint64_t significand;
+		int exponent;
+		DoubleParts( d < 0.0 ? -d : d, &significand, &exponent );
+		ENSURE( exponent >= -52 );
+		ENSURE( exponent >= 0 || ( significand & ( ( 1ull << -exponent ) - 1u ) ) == 0 ); // an integer, as x is
+		dw = exponent >= 0 ? WideShl( WideFrom64( (int64_t)significand ), exponent )
+						   : WideFrom64( (int64_t)( significand >> -exponent ) );
+		dw = d < 0.0 ? WideNeg( dw ) : dw;
+	}
+	Wide error = WideAbs( WideSub( dw, WideFrom128( x ) ) );
+	ENSURE( WideCompare( WideShl( error, 51 ), WideAbs( WideFrom128( x ) ) ) <= 0 );
+	ENSURE( ( d < 0.0 ) == ( lpI128_Sign( x ) < 0 ) && ( d == 0.0 ) == lpI128_IsZero( x ) );
 	return 0;
 }
 
@@ -400,6 +455,20 @@ static int TestInt128( void )
 	ENSURE( lpI128_Compare( bottom, top ) < 0 && lpI128_Sign( bottom ) < 0 && lpI128_Sign( top ) > 0 );
 	ENSURE( lpI128_Equal( lpI128_Add( top, lpI128_FromI64( 1 ) ), bottom ) ); // wraps, as documented
 	ENSURE( lpI128_Equal( lpI128_Mul( lpI128_Mul64( INT64_MIN, 4 ), INT64_MIN ), ( lpI128 ){ 0, 0 } ) ); // 2^128 wraps
+
+	// The shift at every k, on every edge word pair
+	for ( int i = 0; i < edgeCount; ++i )
+	{
+		for ( int k = 0; k < 128; ++k )
+		{
+			ENSURE( lpI128_Equal( lpI128_Shl( edges[i], k ), lpI128_ShlPortable( edges[i], k ) ) );
+			ENSURE( memcmp( WideFrom128( lpI128_Shl( edges[i], k ) ).l, WideShl( WideFrom128( edges[i] ), k ).l,
+							4 * sizeof( uint32_t ) ) == 0 );
+		}
+	}
+	ENSURE( lpI128_Equal( lpI128_Shl( lpI128_FromI64( 1 ), 127 ), bottom ) );
+	ENSURE( lpI128_ToDouble( bottom ) == -1.7014118346046923e38 && lpI128_ToDouble( top ) == 1.7014118346046923e38 );
+	ENSURE( lpI128_ToDouble( lpI128_FromI64( -1 ) ) == -1.0 && lpI128_ToDouble( allOnes ) == 18446744073709551616.0 );
 
 	// Seeded random inputs of every magnitude
 	lpRandom rng;
@@ -477,8 +546,7 @@ static int TestPlaneCanonical( void )
 		}
 
 		// A snapped normal and its negation give exactly negated planes (rounding half away from zero is symmetric)
-		lpVec3 n = { lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ),
-					 lpRandom_Range( &rng, -1.0f, 1.0f ) };
+		lpVec3 n = RandomBox( &rng );
 		int k = 1 + (int)( lpRandom_Next( &rng ) % 23u );
 		if ( lpIPlane_MakeSnapped( n, k, a, &p, NULL ) )
 		{
@@ -757,8 +825,7 @@ static int TestConstructors( void )
 	int checked = 0;
 	for ( int i = 0; i < 300; ++i )
 	{
-		lpVec3 axis = { lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ),
-						lpRandom_Range( &rng, -1.0f, 1.0f ) };
+		lpVec3 axis = RandomBox( &rng );
 		if ( i % 3 == 0 )
 		{
 			axis = (lpVec3){ 0.0f, 0.0f, 1.0f }; // the common case: grain along a box axis
@@ -837,11 +904,13 @@ static int TestConstructors( void )
 	// c. Snapped planes contain their point; the normal is within asin(2^-k / sqrt 2) of the float one
 	for ( int i = 0; i < 20000; ++i )
 	{
-		lpVec3 n = { lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ),
-					 lpRandom_Range( &rng, -1.0f, 1.0f ) };
+		lpVec3 n = RandomBox( &rng );
 		int k = (int)( lpRandom_Next( &rng ) % 24u );
-		int32_t p[3] = { (int32_t)RandomIn( &rng, P_MAX ), (int32_t)RandomIn( &rng, P_MAX ),
-						 (int32_t)RandomIn( &rng, P_MAX ) };
+		int32_t p[3];
+		for ( int j = 0; j < 3; ++j )
+		{
+			p[j] = (int32_t)RandomIn( &rng, P_MAX );
+		}
 		if ( lpIPlane_MakeSnapped( n, k, p, &plane, NULL ) == false )
 		{
 			continue;
@@ -876,8 +945,7 @@ static int TestConstructors( void )
 		int wedgeCount = 0;
 		for ( int w = 0; w < 6; ++w )
 		{
-			lpVec3 direction = { lpRandom_Range( &rng, -1.0f, 1.0f ), lpRandom_Range( &rng, -1.0f, 1.0f ),
-								 lpRandom_Range( &rng, -1.0f, 1.0f ) };
+			lpVec3 direction = RandomBox( &rng );
 			int k = gRange == 8 ? 16 : 8;
 			if ( lpIPlane_MakeAxial( g, p, direction, k, wedges + wedgeCount, NULL ) == false )
 			{
@@ -1058,6 +1126,354 @@ static int TestPredicateCost( void )
 	return 0;
 }
 
+// ---- canonical rounding (C2) ----
+
+// The reference's sign of |x| / (w 2^16) - m for a positive double m, from the 256-bit reference alone
+static int RefCompareMetres( Wide ax, Wide w, double m )
+{
+	uint64_t k;
+	int t;
+	DoubleParts( m, &k, &t );
+	int s = t + 16;
+	Wide wk = WideMul( w, WideFrom64( (int64_t)k ) );
+	return s >= 0 ? WideCompare( ax, WideShl( wk, s ) ) : WideCompare( WideShl( ax, -s ), wk );
+}
+
+static float FloatOfBits( uint32_t bits )
+{
+	float f;
+	memcpy( &f, &bits, sizeof( f ) );
+	return f;
+}
+
+// lpGeom_RoundToFloat against the reference: x / (w 2^16) lies between the result's midpoints with its neighbours, a
+// midpoint only with an even result; the sign is x's; the negation rounds to the negation. Returns the result's bits.
+static int CheckFloatRounding( lpI128 x, lpI128 w, uint32_t* out )
+{
+	float f = lpGeom_RoundToFloat( x, w );
+	uint32_t bits;
+	memcpy( &bits, &f, sizeof( bits ) );
+	*out = bits;
+	ENSURE( lpGeom_RoundToFloat( lpI128_Neg( x ), w ) == -f );
+	if ( lpI128_IsZero( x ) )
+	{
+		ENSURE( bits == 0 );
+		return 0;
+	}
+	ENSURE( ( f < 0.0f ) == ( lpI128_Sign( x ) < 0 ) );
+	float af = f < 0.0f ? -f : f;
+	uint32_t ab = bits & 0x7FFFFFFFu;
+	ENSURE( ab >= 0x00800000u && ab < 0x7F800000u ); // normal, finite
+	double lower = 0.5 * ( (double)FloatOfBits( ab - 1u ) + (double)af );
+	double upper = 0.5 * ( (double)af + (double)FloatOfBits( ab + 1u ) );
+	Wide ax = WideAbs( WideFrom128( x ) ), ww = WideFrom128( w );
+	int below = RefCompareMetres( ax, ww, lower );
+	int above = RefCompareMetres( ax, ww, upper );
+	ENSURE( below >= 0 && above <= 0 );
+	if ( below == 0 || above == 0 )
+	{
+		ENSURE( ( ab & 1u ) == 0 ); // a tie: the even significand
+	}
+	return 0;
+}
+
+// lpGeom_RoundToGrid against the reference: |2x - 2qw| <= w, and at a half |q| beyond |x / w| (away from zero)
+static int CheckGridRounding( lpI128 x, lpI128 w, int64_t* out )
+{
+	int64_t q = lpGeom_RoundToGrid( x, w );
+	*out = q;
+	ENSURE( lpGeom_RoundToGrid( lpI128_Neg( x ), w ) == -q );
+	Wide ww = WideFrom128( w );
+	Wide twoX = WideAdd( WideFrom128( x ), WideFrom128( x ) );
+	Wide twoQW = WideMul( WideFrom64( 2 * q ), ww );
+	int c = WideCompare( WideAbs( WideSub( twoX, twoQW ) ), ww );
+	ENSURE( c <= 0 );
+	if ( c == 0 )
+	{
+		ENSURE( WideCompare( WideAbs( twoQW ), WideAbs( twoX ) ) > 0 );
+	}
+	return 0;
+}
+
+// True when |x / w| < 2^50 (lpGeom_RoundToGrid's domain)
+static bool InGridDomain( lpI128 x, lpI128 w )
+{
+	return WideCompare( WideAbs( WideFrom128( x ) ), WideShl( WideFrom128( w ), 50 ) ) < 0;
+}
+
+static lpI128 RandomPositive128( lpRandom* rng, int maxBits )
+{
+	int bits = 1 + (int)( lpRandom_Next( rng ) % (uint32_t)maxBits );
+	lpI128 r;
+	r.lo = Next64( rng );
+	r.hi = Next64( rng );
+	if ( bits <= 64 )
+	{
+		r.hi = 0;
+		r.lo &= bits == 64 ? ~0ull : ( 1ull << bits ) - 1u;
+		r.lo |= 1ull << ( bits - 1 );
+	}
+	else
+	{
+		r.hi &= ( 1ull << ( bits - 64 ) ) - 1u;
+		r.hi |= 1ull << ( bits - 65 );
+	}
+	return r;
+}
+
+// Rounding to the grid (half away from zero) and to floats (to nearest, ties to even) against an exact reference: random
+// rationals of every size the budget allows, vertices of random planes, constructed ties for both, both signs, and
+// the budget's largest and smallest values
+static int TestCanonicalRounding( void )
+{
+	lpRandom rng;
+	lpRandom_Seed( &rng, 0xC2C2ull, 9 );
+	uint32_t bits;
+	int64_t q;
+	int gridTies = 0, floatTies = 0, checked = 0;
+
+	// Random rationals: |x| up to 2^99, w up to 2^74
+	for ( int i = 0; i < 200000; ++i )
+	{
+		lpI128 w = RandomPositive128( &rng, 74 );
+		lpI128 x = RandomPositive128( &rng, 99 );
+		x = ( lpRandom_Next( &rng ) & 1u ) ? lpI128_Neg( x ) : x;
+		ENSURE( CheckFloatRounding( x, w, &bits ) == 0 );
+		if ( InGridDomain( x, w ) )
+		{
+			ENSURE( CheckGridRounding( x, w, &q ) == 0 );
+		}
+		checked += 1;
+	}
+
+	// Vertices of random planes: the points the clip makes
+	for ( int i = 0; i < 40000; ++i )
+	{
+		lpIPlane planes[3];
+		for ( int k = 0; k < 3; ++k )
+		{
+			planes[k] = RandomPlane( &rng, i % 2 == 0 ? A_MAX : 64 );
+		}
+		lpIVertex v;
+		if ( lpIVertex_FromPlanes( planes, planes + 1, planes + 2, &v ) == false )
+		{
+			continue;
+		}
+		const lpI128* c[3] = { &v.x, &v.y, &v.z };
+		for ( int k = 0; k < 3; ++k )
+		{
+			ENSURE( CheckFloatRounding( *c[k], v.w, &bits ) == 0 );
+			if ( InGridDomain( *c[k], v.w ) )
+			{
+				ENSURE( CheckGridRounding( *c[k], v.w, &q ) == 0 );
+			}
+		}
+		lpVec3 f = lpIVertex_RoundToFloat( &v );
+		ENSURE( f.x == lpGeom_RoundToFloat( v.x, v.w ) && f.z == lpGeom_RoundToFloat( v.z, v.w ) );
+	}
+
+	// Grid ties: x / w = q + 1/2 exactly (x = (2q + 1) m, w = 2m), and one off either side
+	for ( int i = 0; i < 20000; ++i )
+	{
+		int64_t m = (int64_t)( Next64( &rng ) >> 1 ); // one draw per statement
+		m = ( m >> ( lpRandom_Next( &rng ) % 63u ) ) | 1;
+		int64_t half = (int64_t)( Next64( &rng ) >> 15 );
+		half >>= lpRandom_Next( &rng ) % 49u;
+		half = ( lpRandom_Next( &rng ) & 1u ) ? -half : half;
+		lpI128 w = lpI128_Mul64( m, 2 );
+		lpI128 x = lpI128_Mul64( 2 * half + 1, m );
+		ENSURE( CheckGridRounding( x, w, &q ) == 0 );
+		ENSURE( q == ( half >= 0 ? half + 1 : half ) ); // away from zero
+		gridTies += 1;
+		ENSURE( CheckGridRounding( lpI128_Add( x, lpI128_FromI64( 1 ) ), w, &q ) == 0 );
+		ENSURE( CheckGridRounding( lpI128_Sub( x, lpI128_FromI64( 1 ) ), w, &q ) == 0 );
+		ENSURE( CheckFloatRounding( x, w, &bits ) == 0 );
+	}
+
+	// Float ties: x / (w 2^16) exactly the midpoint of a float and the next, as K 2^t (K odd), with w = c or c 2^-s
+	for ( int i = 0; i < 20000; ++i )
+	{
+		int exponent = 127 - 90 + (int)( lpRandom_Next( &rng ) % 172u ); // floats from 2^-90 to 2^82 m
+		uint32_t fb = (uint32_t)exponent << 23 | ( lpRandom_Next( &rng ) & 0x7FFFFFu );
+		float f = FloatOfBits( fb );
+		double mid = 0.5 * ( (double)f + (double)FloatOfBits( fb + 1u ) );
+		uint64_t k;
+		int t;
+		DoubleParts( mid, &k, &t );
+		while ( ( k & 1u ) == 0 )
+		{
+			k >>= 1;
+			t += 1;
+		}
+		int s = t + 16; // x / w = K 2^s
+		int64_t c = (int64_t)lpRandom_Next( &rng );
+		c = ( c >> ( lpRandom_Next( &rng ) % 32u ) ) | 1;
+		lpI128 x, w;
+		if ( s >= 0 )
+		{
+			if ( s > 40 ) // |x| < 2^99, the budget's
+			{
+				continue;
+			}
+			w = lpI128_FromI64( c );
+			x = lpI128_Shl( lpI128_Mul64( (int64_t)k, c ), s );
+		}
+		else
+		{
+			if ( -s > 40 )
+			{
+				continue;
+			}
+			w = lpI128_Shl( lpI128_FromI64( c ), -s );
+			x = lpI128_Mul64( (int64_t)k, c );
+		}
+		x = ( i & 1 ) ? lpI128_Neg( x ) : x;
+		ENSURE( CheckFloatRounding( x, w, &bits ) == 0 );
+		uint32_t even = ( fb & 1u ) == 0 ? fb : fb + 1u;
+		ENSURE( ( bits & 0x7FFFFFFFu ) == even );
+		floatTies += 1;
+		ENSURE( CheckFloatRounding( lpI128_Add( x, lpI128_FromI64( 1 ) ), w, &bits ) == 0 );
+		ENSURE( CheckFloatRounding( lpI128_Sub( x, lpI128_FromI64( 1 ) ), w, &bits ) == 0 );
+		if ( InGridDomain( x, w ) )
+		{
+			ENSURE( CheckGridRounding( x, w, &q ) == 0 );
+		}
+	}
+
+	// The budget's ends: numerators of 12 A^3 P, w from 1 to 4 A^3, both signs; the grid's range and its domain's edge
+	{
+		Wide a3 = WideMul( WideMul( WideFrom64( A_MAX ), WideFrom64( A_MAX ) ), WideFrom64( A_MAX ) );
+		lpI128 numerator = lpI128_Mul( lpI128_Mul64( 12ll * A_MAX, (int64_t)A_MAX * A_MAX ), P_MAX );
+		lpI128 wMax = lpI128_Mul64( 4ll * A_MAX, (int64_t)A_MAX * A_MAX );
+		ENSURE( WideEqual( WideFrom128( wMax ), WideMul( WideFrom64( 4 ), a3 ) ) );
+		lpI128 ws[3] = { lpI128_FromI64( 1 ), lpI128_FromI64( 3 ), wMax };
+		lpI128 xs[6] = { numerator, lpI128_FromI64( 1 ), lpI128_FromI64( 2 ), wMax, lpI128_Sub( numerator, lpI128_FromI64( 1 ) ),
+						 lpI128_Mul( wMax, P_MAX ) };
+		for ( int a = 0; a < 3; ++a )
+		{
+			for ( int b = 0; b < 6; ++b )
+			{
+				for ( int sign = 0; sign < 2; ++sign )
+				{
+					lpI128 x = sign ? lpI128_Neg( xs[b] ) : xs[b];
+					ENSURE( CheckFloatRounding( x, ws[a], &bits ) == 0 );
+					if ( InGridDomain( x, ws[a] ) )
+					{
+						ENSURE( CheckGridRounding( x, ws[a], &q ) == 0 );
+					}
+				}
+			}
+		}
+		// Known answers: 1 / (4 A^3) u is the smallest |x| (2^-90 m and a little), 12 A^3 P u the largest (2^82.6 m)
+		ENSURE( CheckFloatRounding( lpI128_FromI64( 1 ), wMax, &bits ) == 0 && ( bits >> 23 ) == 127 - 90 );
+		ENSURE( CheckFloatRounding( numerator, lpI128_FromI64( 1 ), &bits ) == 0 && ( bits >> 23 ) == 127 + 82 );
+		ENSURE( lpGeom_RoundToFloat( wMax, wMax ) == 1.0f / 65536.0f ); // one grid unit
+		ENSURE( lpGeom_RoundToFloat( lpI128_Mul( wMax, -P_MAX ), wMax ) == -128.0f );
+		ENSURE( CheckGridRounding( lpI128_Mul( wMax, P_MAX ), wMax, &q ) == 0 && q == P_MAX );
+		// The domain's edge: |x / w| just under 2^50, at w = 4 A^3 (products near 2^126)
+		lpI128 edge = lpI128_Sub( lpI128_Shl( wMax, 50 ), lpI128_FromI64( 1 ) );
+		ENSURE( CheckGridRounding( edge, wMax, &q ) == 0 && q == ( 1ll << 50 ) );
+		ENSURE( CheckGridRounding( lpI128_Neg( edge ), wMax, &q ) == 0 && q == -( 1ll << 50 ) );
+		lpI128 below = lpI128_Sub( lpI128_Shl( wMax, 50 ), wMax ); // 2^50 - 1, and a little more
+		ENSURE( CheckGridRounding( lpI128_Add( below, lpI128_FromI64( 2 * A_MAX ) ), wMax, &q ) == 0 && q == ( 1ll << 50 ) - 1 );
+
+		// The budget's Hadamard vertex (geom.h): W = 4 A^3, numerators 12 A^3 P
+		int32_t m = A_MAX;
+		int64_t d = D_MAX;
+		lpIPlane h[3] = { { { m, m, m }, d }, { { m, -m, m }, -d }, { { m, m, -m }, -d } };
+		lpIVertex v;
+		ENSURE( lpIVertex_FromPlanes( h, h + 1, h + 2, &v ) );
+		const lpI128* c[3] = { &v.x, &v.y, &v.z };
+		for ( int k = 0; k < 3; ++k )
+		{
+			ENSURE( CheckFloatRounding( *c[k], v.w, &bits ) == 0 && CheckGridRounding( *c[k], v.w, &q ) == 0 );
+		}
+	}
+
+	// Grid points come back as themselves, and as the floats they are (exact below 2^24 u)
+	for ( int i = 0; i < 20000; ++i )
+	{
+		int64_t p = RandomIn( &rng, P_MAX );
+		lpI128 w = RandomPositive128( &rng, 74 );
+		lpI128 x = lpI128_Mul( w, p );
+		ENSURE( CheckGridRounding( x, w, &q ) == 0 && q == p );
+		ENSURE( lpGeom_RoundToFloat( x, w ) == (float)p / 65536.0f );
+	}
+	printf( "  %d random rationals, %d grid ties, %d float ties against the 256-bit reference\n", checked, gridTies,
+			floatTies );
+	return 0;
+}
+
+// The rounding's cost per coordinate (fast path and exact path), printed only
+static int TestRoundingCost( void )
+{
+	enum
+	{
+		lp_count = 4096
+	};
+	lpRandom rng;
+	lpRandom_Seed( &rng, 5150, 3 );
+	lpIVertex* vertices = malloc( lp_count * sizeof( lpIVertex ) );
+	for ( int i = 0; i < lp_count; )
+	{
+		lpIPlane planes[3];
+		for ( int k = 0; k < 3; ++k )
+		{
+			int32_t a[3], b[3];
+			for ( int j = 0; j < 3; ++j )
+			{
+				a[j] = (int32_t)RandomIn( &rng, 1 << 20 );
+				b[j] = (int32_t)RandomIn( &rng, 1 << 20 );
+			}
+			if ( lpIPlane_MakeBisector( a, b, planes + k, NULL ) == false )
+			{
+				planes[k] = planes[0];
+			}
+		}
+		i += lpIVertex_FromPlanes( planes, planes + 1, planes + 2, vertices + i ) ? 1 : 0;
+	}
+	bool* inDomain = malloc( lp_count * sizeof( bool ) );
+	for ( int i = 0; i < lp_count; ++i )
+	{
+		inDomain[i] = InGridDomain( vertices[i].x, vertices[i].w ) && InGridDomain( vertices[i].y, vertices[i].w ) &&
+					  InGridDomain( vertices[i].z, vertices[i].w );
+	}
+	float sum = 0.0f;
+	int64_t gridSum = 0;
+	uint64_t ticks = lpGetTicks();
+	for ( int round = 0; round < 16; ++round )
+	{
+		for ( int i = 0; i < lp_count; ++i )
+		{
+			lpVec3 f = lpIVertex_RoundToFloat( vertices + i );
+			sum += f.x + f.y + f.z;
+		}
+	}
+	float floatMs = lpGetMilliseconds( ticks );
+	ticks = lpGetTicks();
+	for ( int round = 0; round < 16; ++round )
+	{
+		for ( int i = 0; i < lp_count; ++i )
+		{
+			int64_t g[3];
+			if ( inDomain[i] )
+			{
+				lpIVertex_RoundToGrid( vertices + i, g );
+				gridSum += g[0] + g[1] + g[2];
+			}
+		}
+	}
+	float gridMs = lpGetMilliseconds( ticks );
+	free( inDomain );
+	free( vertices );
+	float n = 16.0f * 3.0f * lp_count;
+	printf( "  rounding a coordinate to float: %.1f ns; to the grid: %.1f ns (%s; sums %g %lld)\n",
+			1e6f * floatMs / n, 1e6f * gridMs / n, lpI128_Path(), (double)sum, (long long)gridSum );
+	return 0;
+}
+
+int XPolyTest( void );
+
 int GeomTest( void )
 {
 	RUN_TEST( TestInt128, MECHANISM );
@@ -1065,5 +1481,7 @@ int GeomTest( void )
 	RUN_TEST( TestPredicateBudget, MECHANISM );
 	RUN_TEST( TestConstructors, MECHANISM );
 	RUN_TEST( TestPredicateCost, TIMING );
-	return 0;
+	RUN_TEST( TestCanonicalRounding, MECHANISM );
+	RUN_TEST( TestRoundingCost, TIMING );
+	return XPolyTest();
 }

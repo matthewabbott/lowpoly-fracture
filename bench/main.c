@@ -7,6 +7,7 @@
 //   lpf_bench --scene town --ticks 300 --host 7777   and   lpf_bench --scene town --ticks 300 --join 127.0.0.1:7777   (pair.c)
 //   lpf_bench --scene town --period 3 --workers 1,8 --check-fractures --record-fractures build/fractures/barrage.lpfr
 //   lpf_bench --replay-fractures build/fractures/barrage.lpfr --repeat 3 [--job 42] [--check-fractures]   (fractures.c)
+//   lpf_bench --replay-fractures build/fractures/keep.lpfr --exact-voronoi --repeat 3   (exact against float: C2's go/no-go)
 //
 // Also checks determinism: the final state hash must be the same for every worker count. Exit codes: 2 when worker
 // counts (or a replayed job) differ, 4 when --check-hash fails, 6 when the fracture checks differ between worker
@@ -326,6 +327,7 @@ int main( int argc, char** argv )
 	const char* replayPath = NULL; // --replay-fractures path [--job k] [--repeat n]
 	int replayJob = -1;
 	int replayRepeat = 1;
+	bool exactVoronoi = false; // --replay-fractures path --exact-voronoi (milestone 11a, C2)
 
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -399,6 +401,11 @@ int main( int argc, char** argv )
 		{
 			replayPath = v;
 			++i;
+		}
+		else if ( strcmp( a, "--exact-voronoi" ) == 0 )
+		{
+			exactVoronoi = true;
+			continue;
 		}
 		else if ( strcmp( a, "--job" ) == 0 )
 		{
@@ -521,11 +528,15 @@ int main( int argc, char** argv )
 					"                 [--host [127.0.0.1:]port [--peers N] | --join host:port] [--input-delay N] [--inject-desync tick]\n"
 					"                 [--net-delay ms[,jitter]] [--net-stall tick,ms] [--leave-at tick]\n"
 					"                 [--check-fractures] [--record-fractures path.lpfr]\n"
-					"       lpf_bench --replay-fractures path.lpfr [--job k] [--repeat n] [--check-fractures]\n" );
+					"       lpf_bench --replay-fractures path.lpfr [--job k] [--repeat n] [--check-fractures | --exact-voronoi]\n" );
 			return 1;
 		}
 	}
 
+	if ( replayPath != NULL && exactVoronoi )
+	{
+		return lpBenchExactVoronoi( replayPath, replayJob, replayRepeat );
+	}
 	if ( replayPath != NULL )
 	{
 		return lpBenchReplay( replayPath, replayJob, replayRepeat, s_checkFractures );

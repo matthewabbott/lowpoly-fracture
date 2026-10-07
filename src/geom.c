@@ -213,6 +213,21 @@ bool lpGeom_SnapAxis( lpVec3 axis, int32_t g[3] )
 	return true;
 }
 
+bool lpGeom_GridPoint( double x, double y, double z, int32_t p[3] )
+{
+	double c[3] = { x * 65536.0, y * 65536.0, z * 65536.0 }; // exact: a power of two
+	for ( int i = 0; i < 3; ++i )
+	{
+		// Within the range before rounding: |c| <= P + 1/2 rounds into it (half away from zero takes P + 1/2 out)
+		if ( !( c[i] > -( LP_GRID_RANGE + 0.5 ) && c[i] < LP_GRID_RANGE + 0.5 ) )
+		{
+			return false;
+		}
+		p[i] = lpRoundHalfAway( c[i] );
+	}
+	return true;
+}
+
 bool lpIPlane_MakeSnapped( lpVec3 normal, int k, const int32_t p[3], lpIPlane* plane, lpGeomReject* why )
 {
 	if ( lpGrid_Contains( p ) == false )
@@ -386,4 +401,151 @@ lpI128 lpIVertex_Evaluate( const lpIVertex* vertex, const lpIPlane* plane )
 	lpI128 s = lpI128_Add( lpI128_Mul( vertex->x, plane->n[0] ), lpI128_Mul( vertex->y, plane->n[1] ) );
 	s = lpI128_Add( s, lpI128_Mul( vertex->z, plane->n[2] ) );
 	return lpI128_Sub( s, lpI128_Mul( vertex->w, plane->d ) );
+}
+
+// ---- canonical rounding ----
+
+// 2^-45: an estimate further than this (relative) from a rounding boundary is on its side (the estimate is within 2^-50)
+#define LP_ROUND_SLACK ( 1.0 / 35184372088832.0 )
+
+int64_t lpGeom_RoundToGrid( lpI128 x, lpI128 w )
+{
+	LP_ASSERT( lpI128_Sign( w ) > 0 );
+	double e = lpGeom_Ratio( x, w );
+	double ae = e < 0.0 ? -e : e;
+	LP_ASSERT( ae <= 1125899906842624.0 ); // 2^50 (an estimate of a value just below may round to it)
+	double f = floor( ae );
+	double r = ae - f >= 0.5 ? f + 1.0 : f; // ae - f is exact
+	int64_t q = e < 0.0 ? -(int64_t)r : (int64_t)r;
+	// e - q is exact (Sterbenz: q within a factor of two of e, or q = 0); the estimate is within ae 2^-50 of x / w
+	double frac = e - (double)q;
+	frac = frac < 0.0 ? -frac : frac;
+	if ( 0.5 - frac > ae * LP_ROUND_SLACK )
+	{
+		return q;
+	}
+	// x / w in [q - 1/2, q + 1/2] exactly when 2x in [(2q - 1) w, (2q + 1) w]; at a half, away from zero
+	lpI128 twice = lpI128_Add( x, x );
+	for ( ;; )
+	{
+		int below = lpI128_Compare( twice, lpI128_Mul( w, 2 * q - 1 ) );
+		if ( below < 0 || ( below == 0 && q <= 0 ) )
+		{
+			q -= 1;
+			continue;
+		}
+		int above = lpI128_Compare( twice, lpI128_Mul( w, 2 * q + 1 ) );
+		if ( above > 0 || ( above == 0 && q >= 0 ) )
+		{
+			q += 1;
+			continue;
+		}
+		return q;
+	}
+}
+
+static uint32_t lpBitsOfFloat( float value )
+{
+	uint32_t bits;
+	memcpy( &bits, &value, sizeof( bits ) );
+	return bits;
+}
+
+static float lpFloatOfBits( uint32_t bits )
+{
+	float value;
+	memcpy( &value, &bits, sizeof( value ) );
+	return value;
+}
+
+// The bit length of a >= 0
+static int lpBitLength128( lpI128 a )
+{
+	int n = 0;
+	for ( uint64_t h = a.hi; h != 0; h >>= 1 )
+	{
+		n += 1;
+	}
+	if ( n > 0 )
+	{
+		return 64 + n;
+	}
+	for ( uint64_t l = a.lo; l != 0; l >>= 1 )
+	{
+		n += 1;
+	}
+	return n;
+}
+
+// The sign of a / (w 2^16) - m for a >= 0, w > 0 and m a float's midpoint with a neighbour (a normal double whose
+// significand has at most 26 bits): m = K 2^t with K odd, so the comparison is a against w K 2^(t + 16), shifted on
+// whichever side keeps both below 2^101 when m is near a / (w 2^16), as it is here. A shift that would pass 2^127 says
+// the answer without being made (the other side is below 2^127), so the comparison is exact for any such m.
+static int lpCompareToMidpoint( lpI128 a, lpI128 w, double m )
+{
+	uint64_t bits;
+	memcpy( &bits, &m, sizeof( bits ) );
+	int t = (int)( ( bits >> 52 ) & 0x7FFu ) - 1075; // m = significand 2^t
+	uint64_t significand = ( bits & 0xFFFFFFFFFFFFFull ) | ( 1ull << 52 );
+	while ( ( significand & 1u ) == 0 )
+	{
+		significand >>= 1;
+		t += 1;
+	}
+	LP_ASSERT( significand < ( 1ull << 26 ) );
+	lpI128 wk = lpI128_Mul( w, (int64_t)significand ); // < 2^75 2^26
+	int s = t + 16;
+	if ( s >= 0 )
+	{
+		if ( lpBitLength128( wk ) + s >= 128 )
+		{
+			return -1; // w K 2^s >= 2^127 > a
+		}
+		return lpI128_Compare( a, lpI128_Shl( wk, s ) );
+	}
+	if ( lpBitLength128( a ) - s >= 128 )
+	{
+		return 1; // a 2^-s >= 2^127 > w K
+	}
+	return lpI128_Compare( lpI128_Shl( a, -s ), wk );
+}
+
+float lpGeom_RoundToFloat( lpI128 x, lpI128 w )
+{
+	LP_ASSERT( lpI128_Sign( w ) > 0 );
+	int sign = lpI128_Sign( x );
+	if ( sign == 0 )
+	{
+		return 0.0f;
+	}
+	lpI128 a = sign < 0 ? lpI128_Neg( x ) : x;
+	double e = lpGeom_Ratio( a, w ) * ( 1.0 / 65536.0 );
+	float f = (float)e; // the float nearest the estimate; a / (w 2^16) is a normal float's distance from it at most
+	for ( ;; )
+	{
+		uint32_t bits = lpBitsOfFloat( f );
+		// The midpoints with the neighbours, exact in double (26 significant bits at most)
+		double lower = 0.5 * ( (double)lpFloatOfBits( bits - 1u ) + (double)f );
+		double upper = 0.5 * ( (double)f + (double)lpFloatOfBits( bits + 1u ) );
+		double slack = e * LP_ROUND_SLACK;
+		if ( e - lower > slack && upper - e > slack ) // e - lower and upper - e are exact (Sterbenz)
+		{
+			break;
+		}
+		bool odd = ( bits & 1u ) != 0; // at a midpoint, the even significand
+		int below = lpCompareToMidpoint( a, w, lower );
+		if ( below < 0 || ( below == 0 && odd ) )
+		{
+			f = lpFloatOfBits( bits - 1u );
+			continue;
+		}
+		int above = lpCompareToMidpoint( a, w, upper );
+		if ( above > 0 || ( above == 0 && odd ) )
+		{
+			f = lpFloatOfBits( bits + 1u );
+			continue;
+		}
+		break;
+	}
+	return sign < 0 ? -f : f;
 }

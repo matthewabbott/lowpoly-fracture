@@ -458,6 +458,53 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	return count;
 }
 
+int lpFracture_VoronoiSites( const lpFractureInput* input, lpVec3* sites )
+{
+	// lpFracturePattern's seed and lpFractureVoronoi's first lines, kept in step with them
+	lpRandom rng;
+	lpRandom_Seed( &rng, input->seed, 0x5EEDu );
+	lpPoly* parent = lpAlloc( sizeof( lpPoly ) );
+	*parent = *input->parent;
+	lpVec3 impact = input->impact;
+	lpMatrix3 unsquash = { 0 };
+	bool grain = input->pattern == lp_breakGrain && input->stretch > 1.0f;
+	if ( grain )
+	{
+		lpVec3 a = input->axis;
+		float s = 1.0f / input->stretch;
+		float k = s - 1.0f;
+		lpMatrix3 squash = {
+			{ 1.0f + k * a.x * a.x, k * a.y * a.x, k * a.z * a.x },
+			{ k * a.x * a.y, 1.0f + k * a.y * a.y, k * a.z * a.y },
+			{ k * a.x * a.z, k * a.y * a.z, 1.0f + k * a.z * a.z },
+		};
+		float g = input->stretch - 1.0f;
+		unsquash = (lpMatrix3){
+			{ 1.0f + g * a.x * a.x, g * a.y * a.x, g * a.z * a.x },
+			{ g * a.x * a.y, 1.0f + g * a.y * a.y, g * a.z * a.y },
+			{ g * a.x * a.z, g * a.y * a.z, 1.0f + g * a.z * a.z },
+		};
+		lpPoly_ApplyLinear( parent, squash );
+		impact = lpMulMV( squash, impact );
+	}
+	lpSiteParams params = { 0 };
+	params.impact = impact;
+	params.radius = input->radius;
+	params.fragmentSize = input->fragmentSize;
+	params.plateSize = grain ? input->plateSize / input->stretch : input->plateSize;
+	params.maxSites = input->maxCells < LP_MAX_SITES ? input->maxCells : LP_MAX_SITES;
+	params.grainAxis = grain ? input->axis : lpVec3_zero;
+	params.stretch = grain ? input->stretch : 1.0f;
+	params.ringSites = grain ? 0 : 5;
+	int count = lpGenerateImpactSites( parent, &params, &rng, sites );
+	for ( int i = 0; i < count && grain; ++i )
+	{
+		sites[i] = lpMulMV( unsquash, sites[i] );
+	}
+	lpFree( parent );
+	return count;
+}
+
 static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShape** cells, int* cellSites, int capacity,
 							 lpFractureStats* stats )
 {

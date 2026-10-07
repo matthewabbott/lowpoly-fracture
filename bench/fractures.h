@@ -43,3 +43,9 @@ int lpBenchFractures_Counts( const lpBenchFractures* bf, char* text, int size );
 // --replay-fractures: 0 when every job replayed the same (and with check, no violation); 2 when one differs, 5 on a
 // violation, 1 when the file cannot be read or is truncated or corrupt
 int lpBenchReplay( const char* path, int onlyJob, int repeat, bool check );
+
+// --replay-fractures path --exact-voronoi (milestone 11a, C2's go/no-go): every impact and grain job's float pattern
+// stage against the exact Voronoi stage (src/xvoronoi.h) on the same input, each job's best of n summed, with what the
+// exact cells are worth (valid, tiling, twins), their faces and vertices beside the float cells', and where the exact
+// stage spends its time. 0 when the exact cells check out, 5 when not, 1 when the file cannot be read.
+int lpBenchExactVoronoi( const char* path, int onlyJob, int repeat );

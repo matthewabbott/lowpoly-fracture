@@ -35,6 +35,10 @@ add_library(lpf_core OBJECT
 	wheel.c
 	world.c
 	world.h
+	xpoly.c
+	xpoly.h
+	xvoronoi.c
+	xvoronoi.h
 	../include/lpf/lpf.h
 	../include/lpf/lpmath.h
 	../include/lpf/lplab.h
