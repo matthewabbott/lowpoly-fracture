@@ -145,7 +145,9 @@ void lpPoly_ApplyLinear( lpPoly* poly, lpMatrix3 m )
 	}
 }
 
-lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out )
+// The clip; stats (NULL: none) counts what it did (the integers and the largest shift never feed back into it)
+static lpClipResult lpClip( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out,
+							lpClipStats* stats )
 {
 	LP_ASSERT( in != out );
 
@@ -163,10 +165,18 @@ lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int
 
 	if ( maxS <= tolerance )
 	{
+		if ( stats != NULL && maxS > 0.0f )
+		{
+			stats->toleranceOuts += 1; // a vertex outside, within tolerance: kept whole
+		}
 		return lp_clipUnchanged;
 	}
 	if ( minS >= -tolerance )
 	{
+		if ( stats != NULL && minS < 0.0f )
+		{
+			stats->toleranceOuts += 1; // a vertex inside, within tolerance: dropped whole
+		}
 		return lp_clipEmpty;
 	}
 
@@ -191,6 +201,11 @@ lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int
 		}
 		shift += 2.0f * tolerance;
 	}
+	if ( stats != NULL && shift > 0.0f )
+	{
+		stats->shifts += 1;
+		stats->maxShift = shift > stats->maxShift ? shift : stats->maxShift;
+	}
 
 	int insideCount = 0;
 	for ( int i = 0; i < vertexCount; ++i )
@@ -204,13 +219,13 @@ lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int
 		insideCount += si < 0.0f ? 1 : 0;
 	}
 
-	if ( insideCount == vertexCount )
+	if ( insideCount == vertexCount || insideCount == 0 )
 	{
-		return lp_clipUnchanged;
-	}
-	if ( insideCount == 0 )
-	{
-		return lp_clipEmpty;
+		if ( stats != NULL )
+		{
+			stats->toleranceOuts += 1; // the shift and the snap decided it
+		}
+		return insideCount == vertexCount ? lp_clipUnchanged : lp_clipEmpty;
 	}
 
 	// Keep inside vertices
@@ -390,6 +405,23 @@ lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int
 	out->faceCount = outFaceCount;
 	out->indexCount = outIndexCount;
 	return lp_clipCut;
+}
+
+lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out )
+{
+	return lpClip( in, plane, material, tag, tolerance, out, NULL );
+}
+
+lpClipResult lpPoly_ClipCounted( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out,
+								 lpClipStats* stats )
+{
+	lpClipResult result = lpClip( in, plane, material, tag, tolerance, out, stats );
+	if ( stats != NULL )
+	{
+		stats->clips += 1;
+		stats->failures += result == lp_clipFailed || result == lp_clipOverflow ? 1 : 0;
+	}
+	return result;
 }
 
 void lpPoly_ComputeMass( const lpPoly* poly, float* volume, lpVec3* centroid )

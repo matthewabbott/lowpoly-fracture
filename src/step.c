@@ -173,6 +173,8 @@ void lpWorld_Step( lpWorld* w, float timeStep, int subStepCount )
 	w->stats.voronoiCpuMs = 0.0f;
 	w->stats.mergeCpuMs = 0.0f;
 	w->stats.hullCpuMs = 0.0f;
+	w->stats.cellBondCpuMs = 0.0f;
+	w->stats.chipCpuMs = 0.0f;
 	w->stats.stressMs = 0.0f;
 	w->stats.stressIterations = 0;
 	w->stats.stressBreaks = 0;

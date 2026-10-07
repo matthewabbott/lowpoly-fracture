@@ -658,6 +658,8 @@ struct lpWorld
 	int jobCount;
 	int jobCapacity;
 	int jobsThisStep;
+	lpFractureHook* fractureHook; // lpWorld_SetFractureHook
+	void* fractureHookContext;
 
 	uint64_t tick;
 	float lastTimeStep; // of the last physics step, to turn contact impulses into forces
@@ -732,6 +734,11 @@ void lpMarkDirty( lpWorld* w, int bodyIndex );
 void lpProcessDeferred( lpWorld* w );
 void lpProcessImpact( lpWorld* w, const lpImpactDef* impact );
 void lpApplyForces( lpWorld* w );
+// For tools (lpf_bench --check-fractures and --record-fractures, tests; impact.c): fn( context, job ) sees every fracture
+// job in phase 3, in job order, once it ran and before its cells become pieces; NULL removes it. It cannot change the
+// simulation: the job is const, and its output digest is checked unchanged after the call (a hard failure, in every
+// build). Not in lpf.h: the job is an internal type.
+void lpWorld_SetFractureHook( lpWorld* world, lpFractureHook* fn, void* context );
 // Commands (command.c): the current tick's, as the step begins; templates freed with the world
 void lpApplyCommands( lpWorld* w );
 // The state hash (hash.c): every category's sum of element hashes, recomputed whole

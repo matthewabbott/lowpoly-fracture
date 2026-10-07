@@ -985,6 +985,7 @@ typedef struct lpStats
 	int cellsThisStep;
 	int splitsThisStep;
 	int clipFailures;
+	int planeShifts; // fracture's float clips that pushed their plane out of the way of a vertex, since the world was made
 	float fractureMs;
 	float physicsMs;
 	float updateMs;
@@ -1000,6 +1001,8 @@ typedef struct lpStats
 	float voronoiCpuMs;
 	float mergeCpuMs;
 	float hullCpuMs;
+	float cellBondCpuMs; // bonds between a job's cells
+	float chipCpuMs;
 
 	// Stress solve (stress.c)
 	float stressMs;

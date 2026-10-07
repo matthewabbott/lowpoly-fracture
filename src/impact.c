@@ -2,6 +2,7 @@
 // Impacts: which pieces a blast, shot or hard collision reaches, fracturing them in three phases (see "fracture
 // jobs"), damaging bonds, detonators, blast forces on debris, and turning physics hit events into impacts.
 
+#include "fcheck.h"
 #include "tasks.h"
 #include "world.h"
 
@@ -98,9 +99,15 @@ static void lpRunFractureJob( int index, void* context )
 static void lpIntegrateFractureJob( lpWorld* w, lpFractureJob* job )
 {
 	w->stats.clipFailures += job->stats.failureCount;
+	for ( int k = 0; k < lp_clipCallerCount; ++k )
+	{
+		w->stats.planeShifts += job->stats.clips[k].shifts;
+	}
 	w->stats.voronoiCpuMs += job->stats.voronoiMs;
 	w->stats.mergeCpuMs += job->stats.mergeMs;
 	w->stats.hullCpuMs += job->stats.hullMs;
+	w->stats.cellBondCpuMs += job->stats.bondMs;
+	w->stats.chipCpuMs += job->stats.chipMs;
 	int pieceIndex = job->piece;
 	lpPiece* piece = w->pieces.data + pieceIndex;
 	if ( job->cellCount < 2 || piece->body < 0 )
@@ -529,9 +536,24 @@ static void lpFractureCandidates( lpWorld* w, const lpImpactDef* impact, uint32_
 
 	for ( int i = 0; i < w->jobCount; ++i )
 	{
+		if ( w->fractureHook != NULL )
+		{
+			uint64_t digest = lpFractureJob_Digest( w->jobs + i );
+			w->fractureHook( w->fractureHookContext, w->jobs + i );
+			if ( lpFractureJob_Digest( w->jobs + i ) != digest )
+			{
+				lpAssertFailed( "a fracture hook changed its job", __FILE__, __LINE__ ); // in every build
+			}
+		}
 		lpIntegrateFractureJob( w, w->jobs + i );
 	}
 	w->jobCount = 0;
+}
+
+void lpWorld_SetFractureHook( lpWorld* world, lpFractureHook* fn, void* context )
+{
+	world->fractureHook = fn;
+	world->fractureHookContext = context;
 }
 
 // Blasts and shots damage links like bonds, by the energy density at the anchor, anywhere along a rope (a shot

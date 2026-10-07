@@ -5,6 +5,8 @@ add_library(lpf_core OBJECT
 	debris.c
 	facet.c
 	facet.h
+	fcheck.c
+	fcheck.h
 	fracture.c
 	fracture.h
 	gait.c

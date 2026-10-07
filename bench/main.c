@@ -5,10 +5,15 @@
 //   lpf_bench --scene keep --script scripts/keep_demo.txt --period 0 --ticks 420 --hash-log build/keep
 //   lpf_bench --scene town --period 3 --ticks 600 --twin warm:200 --repair motion,warm,sleep   (twin.c)
 //   lpf_bench --scene town --ticks 300 --host 7777   and   lpf_bench --scene town --ticks 300 --join 127.0.0.1:7777   (pair.c)
+//   lpf_bench --scene town --period 3 --workers 1,8 --check-fractures --record-fractures build/fractures/barrage.lpfr
+//   lpf_bench --replay-fractures build/fractures/barrage.lpfr --repeat 3 [--job 42] [--check-fractures]   (fractures.c)
 //
-// Also checks determinism: the final state hash must be the same for every worker count.
+// Also checks determinism: the final state hash must be the same for every worker count. Exit codes: 2 when worker
+// counts (or a replayed job) differ, 4 when --check-hash fails, 6 when the fracture checks differ between worker
+// counts, 5 when they find an exactness violation (floats have them until milestone 11a's C5), 1 on bad input.
 
 #include "dump.h"
+#include "fractures.h"
 #include "pair.h"
 #include "scenes.h"
 #include "script.h"
@@ -54,7 +59,8 @@ typedef struct Result
 	int settleIterations, pieces, bonds; // at load
 	lpStats worst; // stats of the step with the largest fracture time
 	double sumCell, sumHull, sumShape, sumBond, sumSplit;
-	double sumVoronoiCpu, sumMergeCpu, sumHullCpu;
+	double sumVoronoiCpu, sumMergeCpu, sumHullCpu, sumBondCpu, sumChipCpu;
+	int clipFailures, planeShifts; // fracture's float clips, over the run
 	double sumStress, maxStress;
 	int stressIterations, stressBreaks, stressSolves, stressJudged, stressWaiting, stressReduced, stressAudits;
 	int maxContacts, maxAwakeContacts, maxShapes;
@@ -62,6 +68,7 @@ typedef struct Result
 	int over16, over33; // ticks over a 60 Hz and a 30 Hz frame: the spikes a lockstep peer must absorb
 	double sumHash, maxHash; // the state hash each tick, kept incrementally (what a lockstep peer computes)
 	bool hashBroken;		  // --check-hash found the incremental hash off a full recompute
+	lpBenchFractures* bf; // --check-fractures, --record-fractures
 } Result;
 
 // Stress budgets from --stress-work (0: the world's defaults)
@@ -90,6 +97,11 @@ static int64_t s_dumpTicks[MAX_DUMPS];
 static const char* s_dumpPaths[MAX_DUMPS];
 static int s_dumpCount;
 static bool s_dumped;
+
+// --check-fractures: validate every fracture job of each run (fractures.c); --record-fractures path: write every job of
+// the first worker count's run
+static bool s_checkFractures;
+static const char* s_recordFractures;
 
 static Result RunOnce( int scene, int workers, int ticks, int period, float fragmentScale, int maxDebris )
 {
@@ -130,6 +142,14 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 	{
 		r.pieces += lpWorld_GetPieceInfo( world, i ).body >= 0 ? 1 : 0;
 	}
+	const char* recordPath = s_dumped ? NULL : s_recordFractures; // the first worker count's run, as --dump
+	if ( s_checkFractures || recordPath != NULL )
+	{
+		char meta[256];
+		snprintf( meta, sizeof( meta ), "scene %s, period %d, ticks %d, workers %d, fragment scale %.3f, debris cap %d",
+				  lpSceneName( scene ), period, ticks, workers, (double)fragmentScale, maxDebris );
+		r.bf = lpBenchFractures_Begin( world, s_checkFractures, recordPath, meta );
+	}
 
 	FILE* hashLog = NULL;
 	if ( s_hashLog != NULL )
@@ -169,6 +189,10 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		next = lpScriptPlay( world, &s_script, next );
 		lpSceneBombard( world, scene, tick, period );
 		lpSceneDrive( world, scene, tick );
+		if ( r.bf != NULL )
+		{
+			r.bf->tick = tick;
+		}
 		uint64_t t0 = lpGetTicks();
 		lpWorld_Step( world, 1.0f / 60.0f, 4 );
 		total[tick] = lpGetMilliseconds( t0 );
@@ -209,6 +233,10 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		r.stressWaiting += st.stressWaiting;
 		r.sumMergeCpu += st.mergeCpuMs;
 		r.sumHullCpu += st.hullCpuMs;
+		r.sumBondCpu += st.cellBondCpuMs;
+		r.sumChipCpu += st.chipCpuMs;
+		r.clipFailures = st.clipFailures;
+		r.planeShifts = st.planeShifts;
 		phys[tick] = st.physicsMs;
 		update[tick] = st.updateMs;
 		int bodies = st.structureBodies + st.debrisBodies + st.rubbleBodies;
@@ -246,6 +274,10 @@ static Result RunOnce( int scene, int workers, int ticks, int period, float frag
 		}
 	}
 	s_dumped = true;
+	if ( r.bf != NULL )
+	{
+		lpBenchFractures_End( r.bf, world );
+	}
 	if ( hashLog != NULL )
 	{
 		fclose( hashLog );
@@ -291,6 +323,9 @@ int main( int argc, char** argv )
 	const char* twin = NULL; // --twin: two worlds and an injected desync (twin.c)
 	const char* repair = NULL;
 	const char* conePath = NULL;
+	const char* replayPath = NULL; // --replay-fractures path [--job k] [--repeat n]
+	int replayJob = -1;
+	int replayRepeat = 1;
 
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -349,6 +384,31 @@ int main( int argc, char** argv )
 		{
 			s_checkHash = true;
 			continue;
+		}
+		else if ( strcmp( a, "--check-fractures" ) == 0 )
+		{
+			s_checkFractures = true;
+			continue;
+		}
+		else if ( strcmp( a, "--record-fractures" ) == 0 )
+		{
+			s_recordFractures = v;
+			++i;
+		}
+		else if ( strcmp( a, "--replay-fractures" ) == 0 )
+		{
+			replayPath = v;
+			++i;
+		}
+		else if ( strcmp( a, "--job" ) == 0 )
+		{
+			replayJob = atoi( v );
+			++i;
+		}
+		else if ( strcmp( a, "--repeat" ) == 0 )
+		{
+			replayRepeat = atoi( v );
+			++i;
 		}
 		else if ( strcmp( a, "--session" ) == 0 )
 		{
@@ -459,11 +519,17 @@ int main( int argc, char** argv )
 					"                 [--hash-log path] [--tick-log path] [--script path] [--dump tick:path.json] [--check-hash]\n"
 					"                 [--session path] [--twin velocity|warm:tick[:ulps] [--repair motion,warm,sleep[@delay]] [--cone path]]\n"
 					"                 [--host [127.0.0.1:]port [--peers N] | --join host:port] [--input-delay N] [--inject-desync tick]\n"
-					"                 [--net-delay ms[,jitter]] [--net-stall tick,ms] [--leave-at tick]\n" );
+					"                 [--net-delay ms[,jitter]] [--net-stall tick,ms] [--leave-at tick]\n"
+					"                 [--check-fractures] [--record-fractures path.lpfr]\n"
+					"       lpf_bench --replay-fractures path.lpfr [--job k] [--repeat n] [--check-fractures]\n" );
 			return 1;
 		}
 	}
 
+	if ( replayPath != NULL )
+	{
+		return lpBenchReplay( replayPath, replayJob, replayRepeat, s_checkFractures );
+	}
 	if ( twin != NULL )
 	{
 		return lpBenchTwin( scene, period, ticks, workers[0], &s_script, twin, repair, conePath );
@@ -500,9 +566,11 @@ int main( int argc, char** argv )
 				r.worst.fracturesThisStep, r.worst.cellsThisStep );
 		printf( "        box3d: shapes max %d, contacts max %d, awake contacts avg %.0f max %d\n", r.maxShapes, r.maxContacts,
 				r.sumAwakeContacts, r.maxAwakeContacts );
-		double jobCpu = r.sumVoronoiCpu + r.sumMergeCpu + r.sumHullCpu;
-		printf( "        fracture job cpu ms: voronoi %.0f merge %.0f hulls %.0f (hulls %.0f%% of job time)\n", r.sumVoronoiCpu,
-				r.sumMergeCpu, r.sumHullCpu, jobCpu > 0.0 ? 100.0 * r.sumHullCpu / jobCpu : 0.0 );
+		double jobCpu = r.sumVoronoiCpu + r.sumMergeCpu + r.sumHullCpu + r.sumBondCpu + r.sumChipCpu;
+		printf( "        fracture job cpu ms: voronoi %.0f merge %.0f hulls %.0f bonds %.0f chips %.0f (hulls %.0f%% of job time); "
+				"float clips: %d plane shifts, %d failures\n",
+				r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumBondCpu, r.sumChipCpu,
+				jobCpu > 0.0 ? 100.0 * r.sumHullCpu / jobCpu : 0.0, r.planeShifts, r.clipFailures );
 		printf( "        stress: avg %.3f ms, max %.2f ms, %d iterations, %d joints broke, %d solves (%d judged, %.1f steps each; "
 				"%d on reduced systems, %d audits), %d waits for budget; solver %016llx\n",
 				r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress, r.stressIterations, r.stressBreaks, r.stressSolves,
@@ -513,9 +581,34 @@ int main( int argc, char** argv )
 				r.maxHash, r.hashBroken ? "; CHECK FAILED" : "" );
 		printf( "        load: %.1f ms for %d pieces and %d bonds, settling %.1f ms of it (%d iterations)\n", (double)r.loadMs,
 				r.pieces, r.bonds, (double)r.settleMs, r.settleIterations );
+		if ( r.bf != NULL && s_checkFractures )
+		{
+			lpBenchFractures_Print( r.bf );
+		}
+		else if ( r.bf != NULL )
+		{
+			printf( "        recorded %d fracture jobs to %s\n", r.bf->jobs, s_recordFractures );
+		}
 	}
 	printf( "impacts %d, fractures %d, cells %d\n", results[0].impacts, results[0].fractures, results[0].cells );
 	printf( "deterministic across worker counts: %s\n", deterministic ? "yes" : "NO" );
+
+	// The fracture checks count the same jobs whatever the worker count: the counts (not the timings) must agree
+	bool fracturesAgree = true;
+	int violations = 0;
+	if ( s_checkFractures )
+	{
+		static char first[16384], other[16384];
+		lpBenchFractures_Counts( results[0].bf, first, (int)sizeof( first ) );
+		for ( int w = 1; w < workerCount; ++w )
+		{
+			lpBenchFractures_Counts( results[w].bf, other, (int)sizeof( other ) );
+			fracturesAgree = fracturesAgree && strcmp( first, other ) == 0;
+		}
+		violations = lpFractureCheck_Violations( &results[0].bf->total );
+		printf( "fracture checks agree across worker counts: %s; exactness violations %d\n", fracturesAgree ? "yes" : "NO",
+				violations );
+	}
 
 	if ( jsonPath != NULL )
 	{
@@ -532,19 +625,33 @@ int main( int argc, char** argv )
 						 "\"fractureMaxMs\": %.3f, \"physicsAvgMs\": %.3f, \"physicsP95Ms\": %.3f, \"maxPieces\": %d, \"maxBodies\": %d, "
 						 "\"maxAwakeDebris\": %d, \"maxRubble\": %d, \"impacts\": %d, \"fractures\": %d, \"cells\": %d, "
 						 "\"awakeContactsAvg\": %.0f, \"maxContacts\": %d, \"voronoiCpuMs\": %.1f, \"mergeCpuMs\": %.1f, "
-						 "\"hullCpuMs\": %.1f, \"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, \"stressJudged\": %d, "
+						 "\"hullCpuMs\": %.1f, \"cellBondCpuMs\": %.1f, \"chipCpuMs\": %.1f, \"planeShifts\": %d, \"clipFailures\": %d, "
+						 "\"stressAvgMs\": %.3f, \"stressMaxMs\": %.2f, \"stressSolves\": %d, \"stressJudged\": %d, "
 						 "\"stressReduced\": %d, \"stressAudits\": %d, "
 						 "\"stressWaits\": %d, \"loadMs\": %.1f, \"settleMs\": %.1f, \"settleIterations\": %d, \"pieces\": %d, "
 						 "\"bonds\": %d, \"over16ms\": %d, \"over33ms\": %d, \"hashAvgMs\": %.4f, \"hashMaxMs\": %.4f, \"hash\": \"%016llx\", "
-						 "\"solverHash\": \"%016llx\"}%s\n",
+						 "\"solverHash\": \"%016llx\"",
 						 r.workers, (double)r.total.avg, (double)r.total.p95, (double)r.total.max, (double)r.fracture.avg,
 						 (double)r.fracture.max, (double)r.physics.avg, (double)r.physics.p95, r.maxPieces, r.maxBodies,
 						 r.maxAwakeDebris, r.maxRubble, r.impacts, r.fractures, r.cells, r.sumAwakeContacts, r.maxContacts,
-						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
+						 r.sumVoronoiCpu, r.sumMergeCpu, r.sumHullCpu, r.sumBondCpu, r.sumChipCpu, r.planeShifts, r.clipFailures,
+						 r.sumStress / (double)( ticks > 0 ? ticks : 1 ), r.maxStress,
 						 r.stressSolves, r.stressJudged, r.stressReduced, r.stressAudits, r.stressWaiting, (double)r.loadMs,
 						 (double)r.settleMs, r.settleIterations, r.pieces, r.bonds, r.over16, r.over33,
 						 r.sumHash / (double)( ticks > 0 ? ticks : 1 ), r.maxHash,
-						 (unsigned long long)r.hash, (unsigned long long)r.solverHash, w + 1 < workerCount ? "," : "" );
+						 (unsigned long long)r.hash, (unsigned long long)r.solverHash );
+				if ( r.bf != NULL && s_checkFractures )
+				{
+					static char counts[16384];
+					lpBenchFractures_Counts( r.bf, counts, (int)sizeof( counts ) );
+					const lpFractureStats* st = &r.bf->stats;
+					fprintf( f,
+							 ", \"fractures\": {%s, \"jobCpuMs\": {\"pattern\": %.3f, \"merge\": %.3f, \"hulls\": %.3f, "
+							 "\"bonds\": %.3f, \"chips\": %.3f}, \"validateMs\": %.1f}",
+							 counts, (double)st->voronoiMs, (double)st->mergeMs, (double)st->hullMs, (double)st->bondMs,
+							 (double)st->chipMs, r.bf->validateMs );
+				}
+				fprintf( f, "}%s\n", w + 1 < workerCount ? "," : "" );
 			}
 			fprintf( f, "  ]\n}\n" );
 			fclose( f );
@@ -555,6 +662,15 @@ int main( int argc, char** argv )
 	for ( int w = 0; w < workerCount; ++w )
 	{
 		hashBroken = hashBroken || results[w].hashBroken;
+		lpBenchFractures_Free( results[w].bf );
 	}
-	return deterministic == false ? 2 : ( hashBroken ? 4 : 0 );
+	if ( deterministic == false )
+	{
+		return 2;
+	}
+	if ( hashBroken )
+	{
+		return 4;
+	}
+	return fracturesAgree == false ? 6 : ( violations > 0 ? 5 : 0 );
 }

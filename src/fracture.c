@@ -52,7 +52,7 @@ static void lpSortKeys( uint64_t* keys, int count )
 // cell is empty or a clip failed. Neighbor sites are visited nearest first, and the search stops once the
 // next site is farther than twice the current cell radius (no further plane can cut).
 static bool lpComputeVoronoiCell( const lpPoly* parent, const lpVec3* sites, int siteCount, int index, uint8_t material,
-						   float tolerance, lpPoly* scratch, lpPoly* out, lpFractureStats* stats )
+						   float tolerance, lpPoly* scratch, lpPoly* out, lpFractureStats* stats, lpClipStats* clipStats )
 {
 	lpVec3 site = sites[index];
 
@@ -91,7 +91,7 @@ static bool lpComputeVoronoiCell( const lpPoly* parent, const lpVec3* sites, int
 		lpVec3 mid = lpMulSV( 0.5f, lpAdd( site, other ) );
 		lpPlane plane = { normal, lpDot( normal, mid ) };
 
-		lpClipResult result = lpPoly_Clip( current, plane, material, j, tolerance, next );
+		lpClipResult result = lpPoly_ClipCounted( current, plane, material, j, tolerance, next, clipStats );
 
 		if ( result == lp_clipCut )
 		{
@@ -368,18 +368,26 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 	// jagged from the splinters that left it.
 	params.ringSites = grain ? 0 : 5;
 	int siteCount = lpGenerateImpactSites( parent, &params, rng, sites );
+	lpClipStats* clipStats = stats != NULL ? stats->clips + ( grain ? lp_clipGrain : lp_clipVoronoi ) : NULL;
+	if ( stats != NULL )
+	{
+		stats->sitesDrawn += siteCount;
+	}
 
 	// Compute all cells. Tiny cells outside the damage radius are slivers: drop their sites and recompute, which
 	// hands their volume to the neighbours while keeping the tiling exact and every cell convex.
 	int count = 0;
+	int dropped = 0;
 	for ( int pass = 0; pass < 3 && siteCount >= 2; ++pass )
 	{
 		count = 0;
+		dropped = 0;
 		for ( int i = 0; i < siteCount && count < capacity; ++i )
 		{
 			if ( lpComputeVoronoiCell( parent, sites, siteCount, i, input->interiorMaterial, input->tolerance, scratch,
-									   cell, stats ) == false )
+									   cell, stats, clipStats ) == false )
 			{
+				dropped += 1;
 				continue;
 			}
 			if ( grain )
@@ -394,6 +402,10 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 					cellSites[count] = i;
 				}
 				cells[count++] = shape;
+			}
+			else
+			{
+				dropped += 1;
 			}
 		}
 
@@ -417,6 +429,10 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 		{
 			break;
 		}
+		if ( stats != NULL )
+		{
+			stats->sliversAbsorbed += dropCount;
+		}
 
 		for ( int c = 0; c < count; ++c )
 		{
@@ -432,6 +448,10 @@ static int lpFractureVoronoi( const lpFractureInput* input, lpRandom* rng, lpSha
 		}
 		siteCount = kept;
 		count = 0;
+	}
+	if ( stats != NULL )
+	{
+		stats->cellsDropped += dropped;
 	}
 
 	lpFree( work );
@@ -520,7 +540,8 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 
 			for ( int q = 0; q < planeCount; ++q )
 			{
-				lpClipResult result = lpPoly_Clip( cur, planes[q], input->interiorMaterial, tags[q], input->tolerance, nxt );
+				lpClipResult result = lpPoly_ClipCounted( cur, planes[q], input->interiorMaterial, tags[q], input->tolerance, nxt,
+														  stats != NULL ? stats->clips + lp_clipRadial : NULL );
 				if ( result == lp_clipCut )
 				{
 					lpPoly* tmp = cur;
@@ -549,6 +570,10 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 					}
 					cells[count++] = shape;
 				}
+				else if ( stats != NULL )
+				{
+					stats->cellsDropped += 1;
+				}
 			}
 		}
 	}
@@ -561,7 +586,8 @@ static int lpFractureRadial( const lpFractureInput* input, lpRandom* rng, lpShap
 // Keep the part of `in` behind the plane (dot(n, x) <= d) in `out`; false if nothing is left
 static bool lpKeepBehind( const lpPoly* in, lpVec3 n, float d, const lpFractureInput* input, lpPoly* out, lpFractureStats* stats )
 {
-	lpClipResult result = lpPoly_Clip( in, (lpPlane){ n, d }, input->interiorMaterial, LP_TAG_CUT, input->tolerance, out );
+	lpClipResult result = lpPoly_ClipCounted( in, (lpPlane){ n, d }, input->interiorMaterial, LP_TAG_CUT, input->tolerance, out,
+											  stats != NULL ? stats->clips + lp_clipMasonry : NULL );
 	if ( result == lp_clipUnchanged )
 	{
 		*out = *in;
@@ -741,7 +767,7 @@ static int lpFractureMasonry( const lpFractureInput* input, lpRandom* rng, lpSha
 			int chipCount = 0;
 			if ( group == 1 && lpDistance( centre, input->impact ) < 0.5f * r && count + 4 <= capacity )
 			{
-				chipCount = lpChipCell( shape, 2, lpVec3_zero, input->interiorMaterial, 1e-5f, rng, chips, 4 );
+				chipCount = lpChipCell( shape, 2, lpVec3_zero, input->interiorMaterial, 1e-5f, rng, chips, 4, stats );
 			}
 			if ( chipCount > 0 )
 			{
@@ -788,9 +814,12 @@ static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape*
 	lpPlane flipped = { lpNeg( n ), -plane.offset };
 
 	lpPoly* halves = lpAlloc( 2 * sizeof( lpPoly ) );
+	lpClipStats* clipStats = stats != NULL ? stats->clips + lp_clipSnap : NULL;
 	int count = 0;
-	if ( lpPoly_Clip( input->parent, plane, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves ) == lp_clipCut &&
-		 lpPoly_Clip( input->parent, flipped, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves + 1 ) == lp_clipCut )
+	if ( lpPoly_ClipCounted( input->parent, plane, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves, clipStats ) ==
+			 lp_clipCut &&
+		 lpPoly_ClipCounted( input->parent, flipped, input->interiorMaterial, LP_TAG_CUT, input->tolerance, halves + 1,
+							 clipStats ) == lp_clipCut )
 	{
 		for ( int i = 0; i < 2; ++i )
 		{
@@ -810,7 +839,7 @@ static int lpFractureSnap( const lpFractureInput* input, lpRandom* rng, lpShape*
 	return count;
 }
 
-int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, int capacity, lpFractureStats* stats )
+static int lpFracturePattern( const lpFractureInput* input, lpShape** cells, int* cellSites, int capacity, lpFractureStats* stats )
 {
 	lpRandom rng;
 	lpRandom_Seed( &rng, input->seed, 0x5EEDu );
@@ -838,7 +867,18 @@ int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, i
 	return lpFractureVoronoi( input, &rng, cells, cellSites, capacity, stats );
 }
 
-int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpCellBond* bonds, int capacity )
+int lpFracture( const lpFractureInput* input, lpShape** cells, int* cellSites, int capacity, lpFractureStats* stats )
+{
+	int count = lpFracturePattern( input, cells, cellSites, capacity, stats );
+	if ( stats != NULL )
+	{
+		stats->patternCells += count;
+	}
+	return count;
+}
+
+int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpCellBond* bonds, int capacity,
+					 lpFractureStats* stats )
 {
 	int siteToCell[LP_MAX_SITES];
 	for ( int i = 0; i < LP_MAX_SITES; ++i )
@@ -854,6 +894,7 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 	}
 
 	int n = 0;
+	int byContact = 0;
 	for ( int a = 0; a < count; ++a )
 	{
 		bool voronoi = cellSites != NULL && cellSites[a] >= 0;
@@ -892,6 +933,7 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 				if ( lpShape_Contact( cells[a], cells[b], 2e-3f, &bond.contact ) && bond.contact.area > 1e-4f )
 				{
 					bonds[n++] = bond;
+					byContact += 1;
 				}
 			}
 		}
@@ -937,6 +979,11 @@ int lpFindCellBonds( lpShape* const* cells, const int* cellSites, int count, lpC
 			}
 		}
 	}
+	if ( stats != NULL )
+	{
+		stats->bondsByContact += byContact;
+		stats->bondsByTag += n - byContact;
+	}
 	return n;
 }
 
@@ -967,12 +1014,24 @@ static float lpHullVolumeLowerBound( const lpShape* a, const lpShape* b )
 
 // Hull of two cells into `poly`, retagged from their faces. False if it is too much bigger than the cells were, or
 // if it would fill in the space of a cell that leaves (a notch knocked out of a log must stay a notch).
+// The faces of an accepted hull that took a source face's tag, and those that found none (counted when it is accepted)
+typedef struct lpMergeTags
+{
+	int retagged;
+	int bridges;
+} lpMergeTags;
+
 static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int siteB, float allowedVolume,
-						 const lpVec3* keepOut, int keepOutCount, uint8_t interiorMaterial, lpPoly* poly, lpVec3* points )
+						 const lpVec3* keepOut, int keepOutCount, uint8_t interiorMaterial, lpPoly* poly, lpVec3* points,
+						 lpFractureStats* stats, lpMergeTags* tags )
 {
 	int n = a->vertexCount + b->vertexCount;
 	if ( n > LP_POLY_MAX_VERTICES )
 	{
+		if ( stats != NULL )
+		{
+			stats->mergeTooBig += 1;
+		}
 		return false;
 	}
 	// Cheap reject before paying for a quickhull: most pairs fail the volume test, and a lower bound on the hull's
@@ -981,10 +1040,18 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 	float margin = 1.0f + 1e-3f;
 	if ( lpHullVolumeLowerBound( a, b ) > margin * allowedVolume || lpHullVolumeLowerBound( b, a ) > margin * allowedVolume )
 	{
+		if ( stats != NULL )
+		{
+			stats->mergePrerejected += 1;
+		}
 		return false;
 	}
 	memcpy( points, a->vertices, sizeof( lpVec3 ) * (size_t)a->vertexCount );
 	memcpy( points + a->vertexCount, b->vertices, sizeof( lpVec3 ) * (size_t)b->vertexCount );
+	if ( stats != NULL )
+	{
+		stats->mergeHulls += 1;
+	}
 	if ( lpPoly_MakeFromPoints( poly, points, n, interiorMaterial ) == false )
 	{
 		return false;
@@ -1007,6 +1074,8 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 	// Authored surface stays authored and a face against a third cell still names it. Faces across the filled-in
 	// gap are cut faces.
 	const lpShape* sources[2] = { a, b };
+	tags->retagged = 0;
+	tags->bridges = 0;
 	for ( int f = 0; f < poly->faceCount; ++f )
 	{
 		lpFace* face = poly->faces + f;
@@ -1032,12 +1101,14 @@ static bool lpMergePair( const lpShape* a, const lpShape* b, int siteA, int site
 				}
 			}
 		}
+		tags->retagged += found ? 1 : 0;
+		tags->bridges += found ? 0 : 1;
 	}
 	return true;
 }
 
 int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, uint8_t mergeClass, float slack,
-				  uint8_t interiorMaterial, lpVec3 impact )
+				  uint8_t interiorMaterial, lpVec3 impact, lpFractureStats* stats )
 {
 	if ( ( slack > 0.0f ) == false || cellSites == NULL || count < 2 || count > LP_MAX_SITES )
 	{
@@ -1102,8 +1173,13 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 					continue; // another face of a names the same neighbour: same inputs, same answer
 				}
 				tried[b] = version;
+				if ( stats != NULL )
+				{
+					stats->mergeTried += 1;
+				}
+				lpMergeTags tags;
 				if ( lpMergePair( cells[a], cells[b], cellSites[a], cellSites[b], allowed, keepOut, keepOutCount,
-								  interiorMaterial, poly, points ) == false )
+								  interiorMaterial, poly, points, stats, &tags ) == false )
 				{
 					continue;
 				}
@@ -1111,6 +1187,12 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 				if ( joined == NULL )
 				{
 					continue;
+				}
+				if ( stats != NULL )
+				{
+					stats->mergeAccepted += 1;
+					stats->mergeRetagged += tags.retagged;
+					stats->mergeBridges += tags.bridges;
 				}
 				int siteA = cellSites[a];
 				int siteB = cellSites[b];
@@ -1156,8 +1238,9 @@ int lpMergeCells( lpShape** cells, int* cellSites, uint8_t* classes, int count, 
 }
 
 int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t material, float minVolume, lpRandom* rng,
-				lpShape** chips, int capacity )
+				lpShape** chips, int capacity, lpFractureStats* stats )
 {
+	lpClipStats* clipStats = stats != NULL ? stats->clips + lp_clipChips : NULL;
 	enum
 	{
 		lp_maxChips = 4
@@ -1205,7 +1288,7 @@ int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t mater
 		lpPlane plane = { n, lpDot( n, centroids[big] ) + lpRandom_Range( rng, -reach, reach ) };
 		lpPlane flipped = { lpNeg( n ), -plane.offset };
 
-		lpClipResult below = lpPoly_Clip( polys + big, plane, material, LP_TAG_CUT, 1e-5f, scratch );
+		lpClipResult below = lpPoly_ClipCounted( polys + big, plane, material, LP_TAG_CUT, 1e-5f, scratch, clipStats );
 		if ( below != lp_clipCut )
 		{
 			continue;
@@ -1214,7 +1297,7 @@ int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t mater
 		lpVec3 ca, cb;
 		lpPoly_ComputeMass( scratch, &va, &ca );
 		lpPoly* other = polys + count;
-		if ( lpPoly_Clip( polys + big, flipped, material, LP_TAG_CUT, 1e-5f, other ) != lp_clipCut )
+		if ( lpPoly_ClipCounted( polys + big, flipped, material, LP_TAG_CUT, 1e-5f, other, clipStats ) != lp_clipCut )
 		{
 			continue;
 		}
@@ -1251,9 +1334,30 @@ int lpChipCell( const lpShape* cell, int splits, lpVec3 grainAxis, uint8_t mater
 
 // Phase 2. Must not touch the world. Cells inside the break radius are ejecta: their bonds would break anyway, so
 // they skip bonding and connectivity and go straight to their tier. Puffs and ghosts need no physics hull at all.
+uint8_t lpFracture_ClassifyCell( const lpFractureJob* job, const lpShape* cell )
+{
+	float r2 = job->input.radius * job->input.radius;
+	float volume = cell->volume;
+	bool ejecta = lpDistanceSquared( cell->centroid, job->localImpact ) < r2;
+	// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
+	return ejecta ? lpLooseClass( volume, job->particleVolume, job->ghostVolume, job->lightVolume )
+				  : ( volume < job->input.absorbVolume ? lp_cellPuff : lp_cellKeep );
+}
+
+int lpFracture_ChipGhost( const lpFractureJob* job, int cell, int cellCount, lpShape** chips, lpFractureStats* stats )
+{
+	bool oriented = job->input.pattern == lp_breakGrain || job->input.pattern == lp_breakRadial;
+	lpRandom rng;
+	lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)cell );
+	int room = LP_MAX_SITES - cellCount + 1;
+	return lpChipCell( job->cells[cell], job->chipSplits, oriented ? job->input.axis : lpVec3_zero, job->input.interiorMaterial,
+					   job->particleVolume, &rng, chips, room < 4 ? room : 4, stats );
+}
+
 void lpFracture_RunJob( lpFractureJob* job )
 {
 	job->input.parent = &job->poly; // the job array may have moved since the job was prepared
+	memset( &job->stats, 0, sizeof( job->stats ) );
 	uint64_t ticks = lpGetTicks();
 	job->cellCount = lpFracture( &job->input, job->cells, job->cellSites, LP_MAX_SITES, &job->stats );
 	job->stats.voronoiMs = lpGetMillisecondsAndReset( &ticks );
@@ -1266,21 +1370,15 @@ void lpFracture_RunJob( lpFractureJob* job )
 	{
 		return;
 	}
-	float r2 = job->input.radius * job->input.radius;
 	for ( int i = 0; i < job->cellCount; ++i )
 	{
-		lpShape* cell = job->cells[i];
-		lpShape_Translate( cell, job->center );
-		float volume = cell->volume;
-		bool ejecta = lpDistanceSquared( cell->centroid, job->localImpact ) < r2;
-		// Flying ejecta are real geometry down to the tiny particle volume; a sliver left on the piece turns to dust
-		job->cellClass[i] = ejecta ? lpLooseClass( volume, job->particleVolume, job->ghostVolume, job->lightVolume )
-								   : ( volume < job->input.absorbVolume ? lp_cellPuff : lp_cellKeep );
+		lpShape_Translate( job->cells[i], job->center );
+		job->cellClass[i] = lpFracture_ClassifyCell( job, job->cells[i] );
 	}
 
 	// Cells that stay on the piece merge where their union is nearly convex: a log end becomes one piece
 	job->cellCount = lpMergeCells( job->cells, job->cellSites, job->cellClass, job->cellCount, lp_cellKeep, job->mergeSlack,
-								   job->input.interiorMaterial, job->localImpact );
+								   job->input.interiorMaterial, job->localImpact, &job->stats );
 	job->stats.mergeMs = lpGetMillisecondsAndReset( &ticks );
 
 	// What is still too small to carry load does not stay on the piece: it falls as debris. Structures keep chunks,
@@ -1301,9 +1399,18 @@ void lpFracture_RunJob( lpFractureJob* job )
 		uint8_t cls = job->cellClass[i];
 		bool needsHull = cls == lp_cellKeep || cls == lp_cellLight || cls == lp_cellFull;
 		job->hulls[i] = needsHull ? lpShape_CreateHull( job->cells[i] ) : NULL;
+		if ( needsHull )
+		{
+			const lpShape* cell = job->cells[i];
+			bool large = cell->vertexCount + cell->faceCount - 2 > 128; // edges, against Box3D's B3_MAX_HULL_EDGES
+			job->stats.hullsBuilt += job->hulls[i] != NULL ? 1 : 0;
+			job->stats.hullFailsLarge += job->hulls[i] == NULL && large ? 1 : 0;
+			job->stats.hullFailsOther += job->hulls[i] == NULL && large == false ? 1 : 0;
+		}
 	}
 	job->stats.hullMs = lpGetMillisecondsAndReset( &ticks );
-	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS );
+	job->bondCount = lpFindCellBonds( job->cells, job->cellSites, job->cellCount, job->bonds, LP_MAX_CELL_BONDS, &job->stats );
+	job->stats.bondMs = lpGetMillisecondsAndReset( &ticks );
 
 	// Ghost ejecta break into a few real chips: a dirtier spray for a few plane clips. After the bonds, which only
 	// keepers use, so the chips need none. Wood splits along the grain, glass across the pane.
@@ -1314,17 +1421,14 @@ void lpFracture_RunJob( lpFractureJob* job )
 		{
 			continue;
 		}
-		bool oriented = job->input.pattern == lp_breakGrain || job->input.pattern == lp_breakRadial;
-		lpRandom rng;
-		lpRandom_Seed( &rng, job->input.seed, 0xC41Full + (uint64_t)i );
 		lpShape* chips[4];
-		int room = LP_MAX_SITES - job->cellCount + 1;
-		int count = lpChipCell( job->cells[i], job->chipSplits, oriented ? job->input.axis : lpVec3_zero,
-								job->input.interiorMaterial, job->particleVolume, &rng, chips, room < 4 ? room : 4 );
+		int count = lpFracture_ChipGhost( job, i, job->cellCount, chips, &job->stats );
 		if ( count == 0 )
 		{
 			continue;
 		}
+		job->stats.ghostsChipped += 1;
+		job->stats.chipsMade += count;
 		lpShape_Destroy( job->cells[i] );
 		job->cells[i] = chips[0];
 		for ( int k = 1; k < count; ++k )
@@ -1335,6 +1439,18 @@ void lpFracture_RunJob( lpFractureJob* job )
 			job->cellClass[c] = lp_cellGhost;
 			job->hulls[c] = NULL;
 		}
+	}
+	job->stats.chipMs = lpGetMillisecondsAndReset( &ticks );
+
+	// The output cells' sizes, for the bench's histograms
+	job->stats.outputCells = job->cellCount;
+	for ( int i = 0; i < job->cellCount; ++i )
+	{
+		const lpShape* cell = job->cells[i];
+		job->stats.maxFaces = cell->faceCount > job->stats.maxFaces ? cell->faceCount : job->stats.maxFaces;
+		job->stats.maxVertices = cell->vertexCount > job->stats.maxVertices ? cell->vertexCount : job->stats.maxVertices;
+		job->stats.faceBins[lpCellBin( true, cell->faceCount )] += 1;
+		job->stats.vertexBins[lpCellBin( false, cell->vertexCount )] += 1;
 	}
 }
 

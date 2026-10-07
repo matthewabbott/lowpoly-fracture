@@ -60,6 +60,22 @@ bool lpPoly_MakeFromHull( lpPoly* poly, const lpPhysHull* hull, uint8_t material
 // sub-tolerance amount, which keeps the topology exact. `out` must not alias `in`.
 lpClipResult lpPoly_Clip( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out );
 
+// What the float clip did, for fracture's stats (never hashed; milestone 11a's before-numbers): clips, those that
+// pushed the plane out of the way of a vertex (and the largest push, m), those whose answer only the tolerance decided
+// (a vertex within it outside: unchanged, or inside: empty), and those that failed or overflowed
+typedef struct lpClipStats
+{
+	int clips;
+	int shifts;
+	float maxShift;
+	int toleranceOuts;
+	int failures;
+} lpClipStats;
+
+// lpPoly_Clip, counted into stats (NULL: not counted)
+lpClipResult lpPoly_ClipCounted( const lpPoly* in, lpPlane plane, uint8_t material, int32_t tag, float tolerance, lpPoly* out,
+								 lpClipStats* stats );
+
 void lpPoly_Translate( lpPoly* poly, lpVec3 translation );
 
 // Apply a linear map (e.g. a non-uniform scale along the wood grain). Face planes are rebuilt with

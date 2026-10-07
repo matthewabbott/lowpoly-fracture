@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
+#include "fcheck.h"
 #include "fracture.h"
 #include "test_macros.h"
+#include "test_sim.h"
 
 // Cells must be valid convex polyhedra that tile the parent: volumes sum to the parent volume.
 static int CheckTiling( const lpPoly* parent, lpShape** cells, int count, float relativeTolerance )
@@ -297,7 +299,7 @@ static int TestChipCell( void )
 		int splits = 1 + trial % 3;
 		lpVec3 axis = trial % 2 == 0 ? grain : lpVec3_zero;
 		lpShape* chips[8];
-		int count = lpChipCell( cell, splits, axis, 0, 1e-6f, &rng, chips, 8 );
+		int count = lpChipCell( cell, splits, axis, 0, 1e-6f, &rng, chips, 8, NULL );
 		ENSURE( count == 0 || ( count >= 2 && count <= splits + 1 ) );
 		if ( count > 0 )
 		{
@@ -322,6 +324,289 @@ static int TestChipCell( void )
 	return 0;
 }
 
+// ---- the fracture checks (fcheck.h): every validator catches the fault it is for ----
+
+// A box shape: dyadic halves and centres keep every coordinate, plane and volume exact in float
+static lpShape* BoxShape( lpVec3 half, lpVec3 center )
+{
+	lpPoly poly;
+	lpTransform xf = { center, lpQuat_identity };
+	lpPoly_MakeBox( &poly, half, xf, 0 );
+	return lpShape_Create( &poly );
+}
+
+// The cube [-1, 1]^3 cut into its eight octants: an exact tiling, every inner face with an exact twin
+static void Octants( lpShape** cells )
+{
+	for ( int i = 0; i < 8; ++i )
+	{
+		lpVec3 c = { ( i & 1 ) ? 0.5f : -0.5f, ( i & 2 ) ? 0.5f : -0.5f, ( i & 4 ) ? 0.5f : -0.5f };
+		cells[i] = BoxShape( (lpVec3){ 0.5f, 0.5f, 0.5f }, c );
+	}
+}
+
+static int TestCheckCatchesFaults( void )
+{
+	lpPoly parent;
+	lpPoly_MakeBox( &parent, (lpVec3){ 1.0f, 1.0f, 1.0f }, lpTransform_identity, 0 );
+	lpShape* cells[8];
+	Octants( cells );
+	lpShape* whole = lpShape_Create( &parent );
+
+	// Clean: nothing to report
+	lpFractureCheck c;
+	lpFractureCheck_Init( &c );
+	ENSURE( lpFractureCheck_Tiling( &c, &parent, cells, 8 ) == 0.0 );
+	lpFractureCheck_Overlap( &c, cells, 8 );
+	lpFractureCheck_Siblings( &c, &parent, cells, 8 );
+	lpFractureCheck_Cells( &c, cells, 8 );
+	lpFractureCheck_Containment( &c, cells, 8, cells, 8 );
+	lpFractureCheck_Chips( &c, whole, cells, 8 );
+	printf( "  clean: %d violations, %d sibling faces (%d exact), %d overlap pairs\n", lpFractureCheck_Violations( &c ),
+			c.siblingFaces, c.siblingExact, c.overlapPairs );
+	ENSURE( lpFractureCheck_Violations( &c ) == 0 );
+	ENSURE( c.siblingFaces == 24 && c.siblingExact == 24 && c.overlapPairs == 28 );
+	ENSURE( c.census.closePairs == 0 && c.census.gridCollisions == 0 && c.census.maxCoordinate == 1.0 );
+
+	// A gap: an octant missing (tiling, and three faces of its neighbours unmatched)
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Tiling( &c, &parent, cells, 7 );
+	lpFractureCheck_Siblings( &c, &parent, cells, 7 );
+	ENSURE( c.tilingViolations == 1 && c.tilingGaps == 1 && fabs( c.tilingMaxError - 0.125 ) < 1e-12 );
+	ENSURE( c.siblingUnmatched == 3 && fabs( c.siblingUnmatchedArea - 3.0 ) < 1e-12 );
+
+	// An overlapping pair: octant 0 pushed 1/8 m into octant 1
+	lpShape* moved[8];
+	memcpy( moved, cells, sizeof( moved ) );
+	moved[0] = BoxShape( (lpVec3){ 0.5f, 0.5f, 0.5f }, (lpVec3){ -0.375f, -0.5f, -0.5f } );
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Overlap( &c, moved, 8 );
+	ENSURE( c.overlapViolations == 1 && fabs( c.overlapMax - 0.125 ) < 1e-12 );
+	// and in a chip set
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Chips( &c, whole, moved, 8 );
+	ENSURE( c.chipViolations == 1 && c.chipMaxOverlap > 0.0 );
+	lpShape_Destroy( moved[0] );
+
+	// A mismatched sibling face: octant 0 pulled 1/1024 m away from octant 1 (a gap between faces on near planes)
+	moved[0] = BoxShape( (lpVec3){ 0.5f, 0.5f, 0.5f }, (lpVec3){ -0.5f - 1.0f / 1024.0f, -0.5f, -0.5f } );
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Siblings( &c, &parent, moved, 8 );
+	// Its faces against octants 1, 2 and 4 and theirs against it: on near planes, or offset along a shared plane
+	ENSURE( c.siblingNear == 6 && c.siblingUnmatched == 0 && fabs( c.siblingMaxDistance - 1.0 / 1024.0 ) < 1e-9 );
+	lpShape_Destroy( moved[0] );
+
+	// A moved vertex: a corner of octant 0 pushed out past its own face planes
+	lpPoly poly;
+	lpShape_ToPoly( cells[0], &poly );
+	for ( int i = 0; i < poly.vertexCount; ++i )
+	{
+		lpVec3 v = poly.vertices[i];
+		if ( v.x == -1.0f && v.y == -1.0f && v.z == -1.0f )
+		{
+			poly.vertices[i].x = -1.0625f;
+		}
+	}
+	moved[0] = lpShape_Create( &poly );
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Cells( &c, moved, 1 );
+	ENSURE( c.convexViolations == 1 && fabs( c.maxConvexExcess - 0.0625 ) < 1e-12 && c.maxPlanarity > 0.0 );
+	lpShape_Destroy( moved[0] );
+
+	// An open cell: a face missing
+	lpShape* open = BoxShape( (lpVec3){ 0.5f, 0.5f, 0.5f }, lpVec3_zero );
+	open->faceCount -= 1;
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Cells( &c, &open, 1 );
+	ENSURE( c.invalidCells == 1 );
+	lpShape_Destroy( open );
+
+	// A merged cell missing part of a source cell: octants 0 and 1 merged into a box that stops halfway across octant 1
+	lpShape* merged = BoxShape( (lpVec3){ 0.75f, 0.5f, 0.5f }, (lpVec3){ -0.25f, -0.5f, -0.5f } );
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Containment( &c, cells, 2, &merged, 1 );
+	ENSURE( c.keepersChecked == 2 && c.containViolations == 1 && fabs( c.maxContainExcess - 0.5 ) < 1e-12 );
+	lpShape_Destroy( merged );
+
+	// Chips that leave a gap
+	lpFractureCheck_Init( &c );
+	lpFractureCheck_Chips( &c, whole, cells, 7 );
+	ENSURE( c.chipViolations == 1 && fabs( c.chipMaxTilingError - 0.125 ) < 1e-12 );
+
+	// The census: two distinct vertices of one cell closer than the 2^-16 m grid step, on the same grid point
+	lpShape* close = BoxShape( (lpVec3){ 0.5f, 0.5f, 0.5f }, (lpVec3){ 0.5f, 0.5f, 0.5f } );
+	close->vertices[1] = close->vertices[0]; // the corner at the origin
+	close->vertices[1].x += 1.0f / 262144.0f; // 2^-18 m away
+	lpShapeCensus census;
+	lpShapeCensus_Init( &census );
+	lpShapeCensus_Add( &census, close );
+	ENSURE( census.closePairs == 1 && census.gridCollisions == 1 && census.minEdge == 1.0 / 262144.0 );
+	lpShape_Destroy( close );
+
+	for ( int i = 0; i < 8; ++i )
+	{
+		lpShape_Destroy( cells[i] );
+	}
+	lpShape_Destroy( whole );
+	return 0;
+}
+
+// What the world's jobs look like to a hook: snapshots read back, run again, and their digests compared
+typedef struct RoundTrip
+{
+	int jobs;
+	int failures;
+	int patterns[5];
+	lpFractureJob* copy;
+} RoundTrip;
+
+static void RoundTripHook( void* context, const lpFractureJob* job )
+{
+	RoundTrip* rt = context;
+	if ( rt->jobs >= 60 )
+	{
+		return;
+	}
+	rt->jobs += 1;
+	rt->patterns[job->input.snap ? 4 : (int)job->input.pattern] += 1;
+	uint8_t bytes[LP_JOB_SNAPSHOT_MAX], again[LP_JOB_SNAPSHOT_MAX];
+	int size = lpFractureJob_Write( job, bytes, (int)sizeof( bytes ) );
+	bool ok = size > 0 && size <= LP_JOB_SNAPSHOT_MAX && lpFractureJob_Read( rt->copy, bytes, size );
+	// Read and write are inverses, and running the job leaves its snapshot as it was
+	ok = ok && lpFractureJob_Write( rt->copy, again, (int)sizeof( again ) ) == size && memcmp( bytes, again, (size_t)size ) == 0;
+	if ( ok )
+	{
+		lpFracture_RunJob( rt->copy );
+		ok = lpFractureJob_Digest( rt->copy ) == lpFractureJob_Digest( job );
+		ok = ok && lpFractureJob_Write( rt->copy, again, (int)sizeof( again ) ) == size && memcmp( bytes, again, (size_t)size ) == 0;
+		lpFracture_FreeJob( rt->copy );
+	}
+	// Short, long and corrupt bytes fail cleanly
+	ok = ok && lpFractureJob_Read( rt->copy, bytes, size - 1 ) == false && lpFractureJob_Read( rt->copy, bytes, 7 ) == false;
+	for ( int k = 0; k < 4 && ok; ++k )
+	{
+		int at = ( k * 997 + rt->jobs * 31 ) % size;
+		bytes[at] ^= (uint8_t)( 1u << ( k + rt->jobs ) % 8 );
+		ok = lpFractureJob_Read( rt->copy, bytes, size ) == false;
+		bytes[at] ^= (uint8_t)( 1u << ( k + rt->jobs ) % 8 );
+	}
+	rt->failures += ok ? 0 : 1;
+}
+
+// A job's snapshot reads back into a job that runs to the same digest, in memory; truncated or corrupt bytes are refused
+static int TestJobSnapshotRoundTrip( void )
+{
+	Sim s = CreateSimWorkers( lp_sceneWall, 1 );
+	RoundTrip rt = { 0 };
+	rt.copy = lpFractureJob_Create();
+	lpWorld_SetFractureHook( s.world, RoundTripHook, &rt );
+	for ( int tick = 0; tick < 200 && rt.jobs < 60; ++tick )
+	{
+		lpSceneBombard( s.world, lp_sceneWall, tick, 12 );
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+	}
+	printf( "  %d jobs (impact %d, grain %d, radial %d, masonry %d, snap %d) round trip, %d failures\n", rt.jobs, rt.patterns[0],
+			rt.patterns[1], rt.patterns[2], rt.patterns[3], rt.patterns[4], rt.failures );
+	ENSURE( rt.jobs >= 40 && rt.failures == 0 );
+	ENSURE( rt.patterns[0] > 0 && rt.patterns[2] > 0 && rt.patterns[3] > 0 );
+	lpFractureJob_Destroy( rt.copy );
+	DestroySim( &s );
+	return 0;
+}
+
+// Sums every job's stats and checks: what --check-fractures counts
+typedef struct CheckRun
+{
+	lpFractureStats stats;
+	lpFractureCheck check;
+	int jobs;
+} CheckRun;
+
+static void CheckHook( void* context, const lpFractureJob* job )
+{
+	CheckRun* run = context;
+	run->jobs += 1;
+	lpFractureStats_Add( &run->stats, &job->stats );
+	lpFractureJob_Validate( job, &run->check );
+	uint8_t bytes[LP_JOB_SNAPSHOT_MAX];
+	lpFractureJob_Write( job, bytes, (int)sizeof( bytes ) );
+}
+
+static void RunChecked( int workers, int ticks, CheckRun* run, uint64_t* hashes, uint64_t* stressHashes, lpStats* stats )
+{
+	Sim s = CreateSimWorkers( lp_sceneWall, workers );
+	if ( run != NULL )
+	{
+		memset( run, 0, sizeof( *run ) );
+		lpFractureCheck_Init( &run->check );
+		lpWorld_SetFractureHook( s.world, CheckHook, run );
+	}
+	for ( int tick = 0; tick < ticks; ++tick )
+	{
+		lpSceneBombard( s.world, lp_sceneWall, tick, 12 );
+		lpWorld_Step( s.world, 1.0f / 60.0f, 4 );
+		hashes[tick] = lpWorld_Hash( s.world );
+		stressHashes[tick] = lpWorld_HashStress( s.world );
+	}
+	*stats = lpWorld_GetStats( s.world );
+	DestroySim( &s );
+}
+
+// A hook that validates and snapshots every job changes nothing: the state hashes match a run without one, every tick
+static int TestFractureHookChangesNothing( void )
+{
+	enum
+	{
+		ticks = 240
+	};
+	static uint64_t a[ticks], b[ticks], sa[ticks], sb[ticks];
+	static CheckRun run;
+	lpStats stA, stB;
+	RunChecked( 1, ticks, &run, a, sa, &stA );
+	RunChecked( 1, ticks, NULL, b, sb, &stB );
+	for ( int i = 0; i < ticks; ++i )
+	{
+		if ( a[i] != b[i] || sa[i] != sb[i] )
+		{
+			printf( "  the hook changed the state at tick %d\n", i );
+			return 1;
+		}
+	}
+	printf( "  %d jobs validated, %d ticks equal (final %016llx)\n", run.jobs, ticks, (unsigned long long)a[ticks - 1] );
+	ENSURE( run.jobs > 20 && run.check.jobs > 10 );
+	return 0;
+}
+
+// The jobs' stats and the checks' counts are the same at 1 and 8 workers (only their timings differ)
+static int TestFractureStatsWorkers( void )
+{
+	enum
+	{
+		ticks = 240
+	};
+	static uint64_t a[ticks], b[ticks], sa[ticks], sb[ticks];
+	static CheckRun one, eight;
+	lpStats stOne, stEight;
+	RunChecked( 1, ticks, &one, a, sa, &stOne );
+	RunChecked( 8, ticks, &eight, b, sb, &stEight );
+	ENSURE( a[ticks - 1] == b[ticks - 1] );
+	lpFractureStats x = one.stats, y = eight.stats;
+	x.voronoiMs = x.mergeMs = x.hullMs = x.bondMs = x.chipMs = 0.0f;
+	y.voronoiMs = y.mergeMs = y.hullMs = y.bondMs = y.chipMs = 0.0f;
+	ENSURE( memcmp( &x, &y, sizeof( x ) ) == 0 ); // ints and floats only: no padding
+	const lpFractureCheck* p = &one.check;
+	const lpFractureCheck* q = &eight.check;
+	ENSURE( one.jobs == eight.jobs && p->jobs == q->jobs && lpFractureCheck_Violations( p ) == lpFractureCheck_Violations( q ) );
+	ENSURE( p->tilingMaxError == q->tilingMaxError && p->overlapTotal == q->overlapTotal && p->siblingNear == q->siblingNear &&
+			p->siblingMaxDistance == q->siblingMaxDistance && p->maxConvexExcess == q->maxConvexExcess &&
+			p->maxContainExcess == q->maxContainExcess && p->chipMaxTilingError == q->chipMaxTilingError &&
+			p->census.minEdge == q->census.minEdge && p->census.closePairs == q->census.closePairs );
+	ENSURE( stOne.planeShifts == stEight.planeShifts && stOne.clipFailures == stEight.clipFailures );
+	printf( "  %d jobs, %d cells, %d clips, %d violations at 1 and 8 workers alike\n", one.jobs, x.outputCells,
+			x.clips[lp_clipVoronoi].clips, lpFractureCheck_Violations( p ) );
+	return 0;
+}
+
 int FractureTest( void )
 {
 	RUN_TEST( TestImpactPattern, OUTCOME );
@@ -331,5 +616,9 @@ int FractureTest( void )
 	RUN_TEST( TestFractureFuzz, MECHANISM );
 	RUN_TEST( TestChipCell, MECHANISM );
 	RUN_TEST( TestMasonryGrid, OUTCOME );
+	RUN_TEST( TestCheckCatchesFaults, MECHANISM );
+	RUN_TEST( TestJobSnapshotRoundTrip, MECHANISM );
+	RUN_TEST( TestFractureHookChangesNothing, MECHANISM );
+	RUN_TEST( TestFractureStatsWorkers, MECHANISM );
 	return 0;
 }

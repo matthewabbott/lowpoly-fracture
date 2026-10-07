@@ -959,3 +959,25 @@ bit-identical, and a contact's twist impulse was +0 on x64 and -0 on ARM64). The
 
 Hashing the engine's floats by value costs nothing measurable. The NEON min and max with SSE's rule (two instructions
 each in the wide contact solver) cost 1.2 to 1.8% of physics time on ARM64; x64 compiles the same code as before.
+
+## 2026-10-07 milestone 11a C0: fracture's before-numbers
+
+The float engine as it stands, measured by `tools/check-fractures.ps1` (`lpf_bench --check-fractures`; the detail is
+in [research/m11a-exact-fracture.md](research/m11a-exact-fracture.md)). Hashes unchanged; counts the same at 1 and 8
+workers. Job CPU ms: each recorded job replayed alone (`--replay-fractures --repeat 3`), best of 3, summed, MSVC
+(clang-cl in brackets); provisional, taken while the laptop may have been busy:
+
+| rung | jobs | plane shifts (share of clips) | exactness violations | pattern | merge | hulls | bonds + chips | total |
+|---|---|---|---|---|---|---|---|---|
+| keep | 626 | 4 (0.011%) | 29,665 | 20.7 | 115.1 | 21.3 | 1.3 | 158.4 (137.7) |
+| barrage | 2,853 | 23 (0.019%) | 84,700 | 64.1 | 166.1 | 59.7 | 13.2 | 303.1 (256.4) |
+| siege | 2,427 | 31 (0.031%) | 80,807 | 68.6 | 348.3 | 62.4 | 3.8 | 483.1 (417.5) |
+| town | 1,040 | 22 (0.042%) | 35,651 | 26.8 | 62.6 | 27.8 | 7.1 | 124.4 (105.2) |
+
+- Plane shifts are rare (never past 0.04 mm), yet almost no sibling face is exact: twins reach their vertices through
+  different clips and round differently, by up to 0.48 mm at shallow corners. Every rung violates in thousands.
+- The merge is 50 to 73% of job time (a quickhull per tried pair), the pattern 13 to 22%: C2's go/no-go compares the
+  exact Voronoi against the pattern column.
+- Instrumentation costs nothing measurable when off: the ladder (best of 3) is within noise of the unmodified build
+  (barrage 10.54 / 5.26 ms at 1 / 8 workers against 10.95 / 5.27, then 11.28 / 5.43 against 11.92 / 5.80 in a second
+  pair; town 4.07 / 2.44 against 4.03 / 2.29). Validating every job costs 0.2 to 0.7 s a run.
