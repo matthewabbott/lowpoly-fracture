@@ -167,3 +167,44 @@ recordings are in `build/fractures/` (`tools/check-fractures.ps1 -Record` writes
   1,040, keep 328 of 626, siege 1,454 of 2,427): their piece stays whole after paying for the attempt.
 - **Faces:** the largest cells have 55 faces and 46 vertices; under 0.1% of cells have more than 48 faces. No physics
   hull failed on any rung.
+
+## C1: 128-bit integers, integer planes and their predicates (2026-10-07)
+
+Built beside the engine (nothing calls it yet; no simulation hash changes; the determinism self-test's hash does).
+
+- `src/int128.h`: `lpI128`, two 64-bit words everywhere, so values hash and serialise alike. Paths: `__int128` on gcc
+  and clang; `_umul128` / `_mul128` on MSVC x64, which clang-cl takes too (its `__int128` products could need
+  compiler-rt); `__umulh` / `__mulh` on MSVC ARM64; the portable 32-bit-limb reference, always compiled, which every
+  path is tested against and the whole build can run on (`-DLPF_INT128_PORTABLE=ON`).
+- `src/geom.h/.c`: canonical `lpIPlane`s (n.x <= d, gcd 1, so equal planes are equal field by field and a negation
+  stays canonical) from four range-checked constructors (bisector, grain's metric bisector, snapped normal through a
+  grid point, plane about an integer axis), each returning a reason when it makes no plane; vertices of three planes
+  (`lpIVertex`, homogeneous int128 by Cramer's rule, w > 0); classification in int128, and a grid point against a
+  plane in int64.
+- **The bit budget**, proved in geom.h's header with |n_i| <= A = 2^24 - 1 and grid points within P = 2^23 u: W <= 4A^3
+  (< 2^74), numerators <= 12A^3P (< 2^98.6), the classification <= 48A^4P (< 2^124.6): two bits spare in a signed
+  int128. The determinant bound (the largest determinant of a +-1 matrix: 4 for order 3, 16 for order 4) is what keeps
+  them there; the triangle inequality alone gives 2^99.2. Every bound is reached by planes in a Hadamard sign pattern,
+  and `TestPredicateBudget` checks them against a 256-bit reference.
+- For C2 and C3: compare vertices by incidence, never by cross-multiplying (173 bits); a vertex is the same from its
+  three planes in any order; the bisector seen from either site is the exact negation; an int64 orientation is exact
+  only for points within about 2^20.3 u (20 m) of each other on every axis; a plane through three grid points more than
+  about 4.4 cm apart can exceed A, so bridge and authored faces go through the snapped constructor.
+
+Gates: the tests pass on msvc-release, clang-cl, a whole portable build, and the Spark's gcc 13.3 and clang 18 (aarch64,
+the `__int128` path), with the same self-test hash everywhere; `clang-cl --target=aarch64-pc-windows-msvc` built the
+MSVC ARM64 path (MSVC's own ARM64 tools are not installed; the CI leg builds it); the bench's hashes are the same.
+Classification costs 9 ns on MSVC x64 (70 ns portable), 6 ns on clang-cl, 3-4 ns on the Spark; a vertex from three
+planes 15-25 ns (laptop busy: provisional).
+
+**Grain.** Wood's cells are longer along the grain: a metric Voronoi, K = sI - t g g^T up to scale, with the axis g a
+small integer vector, c = 1 - 1/stretch^2 quantised as t/Q, and the job's sites on a lattice L so that bisector normals
+2K(b - a)/L stay below A. Axis precision, stretch precision and the lattice share one budget (K grows with Q |g|^2, and
+the lattice with K). As built in C1, |g_i| <= 8 and Q = 256: the axis up to 5.0 degrees off in 3D (the plan said 3.6,
+true only within a coordinate plane), wood's 3.5 stored as 3.49, the worst axis's lattice 3.1 cm on a 4 m piece.
+**The owner's decision (2026-10-07): |g_i| <= 16 with Q = 64** (to land at C5): the axis within 2.5 degrees, the same
+lattice, wood's stretch stored as 3.58 (cells 2% longer; a material can be tuned to a stored value). The axis search
+(about 18,000 candidates by brute force) runs once per piece when its object is made, is stored on the piece and
+hashed, and fragments inherit it exactly; an assert build recomputes it, and a search over the rounding neighbours of
+each largest component (about 64 candidates) is tested against the brute force. A load-dependent switch to the coarser
+axis would save nothing per fracture once the axis is cached: noted with the real load-time knobs in roadmap §17.

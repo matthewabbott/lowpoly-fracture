@@ -878,7 +878,19 @@ Candidates logged so far:
 - the creak loop over stored overloads only; budget units calibrated to time;
 - a spinning barrier in the task pool;
 - memory on the floor machine: 432-byte bodies and 296-byte pieces carrying stress and ghost fields everywhere, hulls
-  held twice, the fracture scratch (T0 #22); vehicles and rigs that never die (T0 #23).
+  held twice, the fracture scratch (T0 #22); vehicles and rigs that never die (T0 #23);
+- fracture's fidelity under load (from milestone 11a). The owner accepts a break that looks different when the engine
+  is busy, as long as it stays plausible, and wants such shortcuts weighed here. They must be chosen from counts
+  (fracture jobs this tick, cells, pieces), never from time, so every machine takes the same one. Measured in 11a's C0
+  (docs/research/m11a-exact-fracture.md): a fracture job's time is 50-73% the keeper merge (a convex hull per pair of
+  cells tried), 13-22% the pattern (cutting the cells) and 13-22% the physics hulls, and a third to half of all jobs
+  split nothing yet pay for the attempt. Knobs, roughly by what they would save: fewer sites per job; a cheaper merge
+  or none (more, smaller pieces); no ghost chips (a cleaner spray); an early out for jobs that will not split; a
+  coarser site lattice for wood (geom.h, `lpIMetric`: sites snap to it, so a coarser one makes breaks more regular).
+  One shortcut was considered and found worthless: wood's grain axis is stored as an integer vector with components up
+  to 16 (within 2.5 degrees of the true axis) where 8 would do (within 5 degrees) and cost less to choose, but the
+  choice is made once per piece when its object is created and fragments inherit it, so the coarser axis would save
+  nothing per fracture; only objects spawned mid-game pay for the choice (about 1 µs with the fast search).
 
 ## 18. Large-map physics zones and persistence
 
