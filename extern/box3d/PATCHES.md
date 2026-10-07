@@ -43,6 +43,23 @@
   of 24 ladder rows. With the patch, NEON and the scalar path (`BOX3D_DISABLE_SIMD`) both match x64's raw hashes on all
   24 rows; the scalar path matched none before. NEON pays two instructions per min or max: +1.2 to 1.8% physics time
   on aarch64 (perf log, 2026-10-04). Milestone 7's red team (R10) had asked for this patch.
+- `hull.c`, `b3CreateHullFromFaces` (new, declared in `collision.h`): a hull from known topology instead of quickhull.
+  Fracture knows each cell's faces, loops and planes (exactly, from milestone 11a), and quickhull of the same points
+  costs 3.5 times as much and may split a face that is a float's width off its plane, or merge two near-coplanar ones.
+  It takes the points, a plane per face and the faces' loops (counter-clockwise from outside) back to back, and keeps
+  their order: vertex i is point i, face i is loop i, the face's edge starts at the loop's first point. It returns NULL
+  for a surface that is open, not manifold (an edge used twice the same way or by three faces, two fans at a point) or
+  inconsistently oriented, for an index out of range, an unused point, a non-finite point or a plane not of unit
+  length, over `B3_MAX_HULL_VERTICES`, `B3_MAX_HULL_FACES` or `B3_MAX_HULL_EDGES`, and for no volume or a centroid not
+  behind every plane (convexity itself is the caller's). The step after quickhull (allocation and layout, the SOA
+  copies, each vertex's edge, bounds, bulk properties, validation, hash) is `b3MakeHull`, split off the end of
+  `b3CreateHull` and shared: `b3CreateHull` fills the final arrays from its builder and calls it, so its hulls are byte
+  for byte what they were (every `lpf_bench` hash unchanged). With it, `b3UpdateHullBulkProperties` loses its three
+  `B3_VALIDATE`s (no volume, the centroid not behind a face, the inner radius), which it also reports by returning
+  false, as faces from the caller may be degenerate and must give NULL; `b3CreateHull` validates its own result
+  instead (`B3_VALIDATE( hull != NULL )`). And `b3IsValidHull`'s checks are compiled in every build as
+  `b3ValidateHull` (new, declared in `collision.h`), which `b3IsValidHull` calls with validation on as before, so tests
+  check hulls in release builds (`lpPhys_IsValidHull`). Milestone 11a's C4; physics hulls switch to it at C6.
 
 ## Known issues at this commit (found in a code audit; not patched, avoided instead)
 

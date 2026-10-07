@@ -136,6 +136,11 @@ static inline bool lpBoxesTouch( lpAABB a, lpAABB b, float margin )
 // The physics hull with the same vertices. Caller owns the result (lpPhys_DestroyHull). NULL on failure.
 lpPhysHull* lpShape_CreateHull( const lpShape* shape );
 
+// The physics hull from the shape's own faces, planes and loops, without quickhull (milestone 11a: nothing calls it
+// before C6). Vertex i is the shape's vertex i and face i its face i. NULL if the backend refuses them: over its limits
+// (LP_PHYS_MAX_HULL_EDGES edges), or not one closed, consistently oriented surface with a volume.
+lpPhysHull* lpShape_CreateHullFromFaces( const lpShape* shape );
+
 // Where two pieces touch: the patch a bond sits on
 typedef struct lpContact
 {

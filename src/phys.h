@@ -173,7 +173,26 @@ lpVec3 lpPhys_GetMaxExtent( const lpPhys* p, lpPhysBody body ); // from the cent
 
 // Quickhull. NULL on failure (degenerate, or more than maxVertices). Thread-safe.
 lpPhysHull* lpPhys_CreateHull( const lpVec3* points, int count, int maxVertices );
+
+// A hull's limits besides LP_PHYS_MAX_POINTS vertices
+#define LP_PHYS_MAX_HULL_FACES 128
+#define LP_PHYS_MAX_HULL_EDGES 128 // whole edges, not half-edges
+
+// A hull from known topology, without quickhull: points, and per face its plane (outward unit normal) and its loop of
+// point indices, counter clockwise seen from outside, the loops back to back in indices (faceSizes[i] of them for face
+// i). Hull vertex i is point i, hull face i is face i, and its loop starts where given. The faces must close up round
+// a convex polyhedron using every point; NULL if they do not (a surface that is open, not manifold or not consistently
+// oriented, an index out of range or a point on no face, no volume, the centroid not behind every plane) or if a limit
+// is exceeded. Convexity itself is the caller's. Thread-safe.
+lpPhysHull* lpPhys_CreateHullFromFaces( const lpVec3* points, int pointCount, const lpPlane* planes,
+										const uint8_t* faceSizes, int faceCount, const uint8_t* indices );
 void lpPhys_DestroyHull( lpPhysHull* hull );
+
+// The engine's own checks of a hull, in every build: its half-edges, Euler's formula, a volume, area and inner radius,
+// the centroid behind every face
+bool lpPhys_IsValidHull( const lpPhysHull* hull );
+// Its volume, and its centroid into centroid (NULL: not wanted)
+float lpPhys_GetHullVolume( const lpPhysHull* hull, lpVec3* centroid );
 
 int lpPhys_GetHullVertexCount( const lpPhysHull* hull );
 int lpPhys_GetHullFaceCount( const lpPhysHull* hull );

@@ -747,6 +747,27 @@ lpPhysHull* lpShape_CreateHull( const lpShape* shape )
 	return lpPhys_CreateHull( shape->vertices, shape->vertexCount, LP_PHYS_MAX_POINTS );
 }
 
+lpPhysHull* lpShape_CreateHullFromFaces( const lpShape* shape )
+{
+	lpPlane planes[LP_POLY_MAX_FACES];
+	uint8_t sizes[LP_POLY_MAX_FACES];
+	uint8_t indices[LP_POLY_MAX_INDICES];
+	int count = 0;
+	for ( int i = 0; i < shape->faceCount; ++i )
+	{
+		const lpFace* face = shape->faces + i;
+		if ( count + face->count > LP_POLY_MAX_INDICES || face->first + face->count > shape->indexCount )
+		{
+			return NULL;
+		}
+		planes[i] = face->plane;
+		sizes[i] = face->count;
+		memcpy( indices + count, shape->indices + face->first, face->count );
+		count += face->count;
+	}
+	return lpPhys_CreateHullFromFaces( shape->vertices, shape->vertexCount, planes, sizes, shape->faceCount, indices );
+}
+
 // ---- contact area between coplanar opposing faces ----
 
 typedef struct lpVec2

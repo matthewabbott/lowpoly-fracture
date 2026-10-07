@@ -666,9 +666,48 @@ lpPhysHull* lpPhys_CreateHull( const lpVec3* points, int count, int maxVertices 
 	return (lpPhysHull*)hull;
 }
 
+_Static_assert( LP_PHYS_MAX_POINTS == B3_MAX_HULL_VERTICES, "the hull vertex limit is Box3D's" );
+_Static_assert( LP_PHYS_MAX_HULL_FACES == B3_MAX_HULL_FACES, "the hull face limit is Box3D's" );
+_Static_assert( LP_PHYS_MAX_HULL_EDGES == B3_MAX_HULL_EDGES, "the hull edge limit is Box3D's" );
+
+lpPhysHull* lpPhys_CreateHullFromFaces( const lpVec3* points, int pointCount, const lpPlane* planes,
+										const uint8_t* faceSizes, int faceCount, const uint8_t* indices )
+{
+	if ( pointCount > LP_PHYS_MAX_POINTS || faceCount > LP_PHYS_MAX_HULL_FACES )
+	{
+		return NULL;
+	}
+	b3Vec3 b3Points[LP_PHYS_MAX_POINTS];
+	b3Plane b3Planes[LP_PHYS_MAX_HULL_FACES];
+	for ( int i = 0; i < pointCount; ++i )
+	{
+		b3Points[i] = lpB3Vec( points[i] );
+	}
+	for ( int i = 0; i < faceCount; ++i )
+	{
+		b3Planes[i] = ( b3Plane ){ lpB3Vec( planes[i].normal ), planes[i].offset };
+	}
+	return (lpPhysHull*)b3CreateHullFromFaces( b3Points, pointCount, b3Planes, faceSizes, faceCount, indices );
+}
+
 void lpPhys_DestroyHull( lpPhysHull* hull )
 {
 	b3DestroyHull( (b3HullData*)hull );
+}
+
+bool lpPhys_IsValidHull( const lpPhysHull* hull )
+{
+	return b3ValidateHull( (const b3HullData*)hull );
+}
+
+float lpPhys_GetHullVolume( const lpPhysHull* hull, lpVec3* centroid )
+{
+	const b3HullData* h = (const b3HullData*)hull;
+	if ( centroid != NULL )
+	{
+		*centroid = lpVec( h->center );
+	}
+	return h->volume;
 }
 
 int lpPhys_GetHullVertexCount( const lpPhysHull* hull )

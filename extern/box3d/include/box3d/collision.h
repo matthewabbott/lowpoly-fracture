@@ -225,6 +225,19 @@ B3_API b3HullData* b3CreateRock( float radius );
 /// or B3_MAX_HULL_EDGES is exceeded.
 B3_API b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount );
 
+/// Create a convex hull from known topology instead of quickhull (a local patch, see PATCHES.md). Face i has the plane
+/// planes[i] (outward unit normal) and a loop of faceSizes[i] point indices, counter-clockwise seen from outside, that
+/// follows the loop of face i - 1 in indices. The hull keeps their order: vertex i is point i, face i is face i, and
+/// its edge starts at the loop's first point. The faces must close up round a convex polyhedron using every point.
+/// Returns NULL if they do not (a surface that is open, not manifold or not consistently oriented, an index out of
+/// range, an unused point, no volume, a centroid not behind every plane) or if B3_MAX_HULL_VERTICES, B3_MAX_HULL_FACES
+/// or B3_MAX_HULL_EDGES is exceeded. Convexity itself is not checked.
+B3_API b3HullData* b3CreateHullFromFaces( const b3Vec3* points, int pointCount, const b3Plane* planes,
+										  const uint8_t* faceSizes, int faceCount, const uint8_t* indices );
+
+/// The checks b3IsValidHull makes in validation builds, made in any build (a local patch, see PATCHES.md).
+B3_API bool b3ValidateHull( const b3HullData* hull );
+
 /// Deep clone a hull.
 B3_API b3HullData* b3CloneHull( const b3HullData* hull );
 

@@ -1699,9 +1699,9 @@ int b3FindHullSupportFace( const b3HullData* hull, b3Vec3 direction )
 	return bestIndex;
 }
 
-#if B3_ENABLE_VALIDATION
-
-bool b3IsValidHull( const b3HullData* hull )
+// Patched (PATCHES.md): the checks are compiled in every build, as b3ValidateHull, so callers of
+// b3CreateHullFromFaces can run them in release builds. b3IsValidHull still runs them only with validation.
+bool b3ValidateHull( const b3HullData* hull )
 {
 	if ( hull->version != B3_HULL_VERSION )
 	{
@@ -1806,15 +1806,15 @@ bool b3IsValidHull( const b3HullData* hull )
 	return true;
 }
 
-#else
-
 bool b3IsValidHull( const b3HullData* hull )
 {
+#if B3_ENABLE_VALIDATION
+	return b3ValidateHull( hull );
+#else
 	B3_UNUSED( hull );
 	return true;
-}
-
 #endif
+}
 
 b3HullData* b3CreateCylinder( float height, float radius, float yOffset, int sides )
 {
@@ -2006,8 +2006,8 @@ static bool b3UpdateHullBulkProperties( b3HullData* hull )
 		while ( edge1 != edge3 );
 	}
 
-	B3_VALIDATE( volume > 0.0f );
-
+	// Patched (PATCHES.md): no validation here, as faces from b3CreateHullFromFaces may be degenerate; the checks
+	// below return false instead, and b3CreateHull validates its own result.
 	b3Vec3 localCenter = volume > 0.0f ? b3MulSV( 0.25f / volume, center ) : b3Vec3_zero;
 	center = b3Add( localCenter, origin );
 
@@ -2016,12 +2016,9 @@ static bool b3UpdateHullBulkProperties( b3HullData* hull )
 	{
 		b3Plane plane = planes[faceIndex];
 		float distance = b3PlaneSeparation( plane, center );
-		B3_VALIDATE( distance < 0.0f );
 
 		radius = b3MinFloat( radius, -distance );
 	}
-
-	B3_VALIDATE( 0.0f < radius && radius < FLT_MAX );
 
 	b3Matrix3 inertia;
 	inertia.cx.x = yy + zz;
@@ -2067,6 +2064,10 @@ static bool b3UpdateHullBulkProperties( b3HullData* hull )
 
 	return true;
 }
+
+// Patched (PATCHES.md): the step after quickhull, shared with b3CreateHullFromFaces
+static b3HullData* b3MakeHull( const b3Vec3* hullPoints, int vertexCount, const b3HullHalfEdge* halfEdges, int edgeCount,
+							   const b3HullFace* hullFaces, const b3Plane* hullPlanes, int faceCount );
 
 b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCount )
 {
@@ -2160,6 +2161,53 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 		while ( edge != face->edge );
 	}
 
+	// The final arrays, for the step shared with b3CreateHullFromFaces (patched, see PATCHES.md)
+	b3Vec3 finalPoints[B3_MAX_HULL_VERTICES];
+	b3HullHalfEdge finalEdges[2 * B3_MAX_HULL_EDGES];
+	b3HullFace finalFaces[B3_MAX_HULL_FACES];
+	b3Plane finalPlanes[B3_MAX_HULL_FACES];
+
+	for ( int index = 0; index < vertexCount; ++index )
+	{
+		finalPoints[index] = tempVertices[index]->position;
+	}
+
+	for ( int index = 0; index < edgeCount; ++index )
+	{
+		const b3QHHalfEdge* edge = tempEdges[index];
+		B3_ASSERT( 0 <= edge->next->finalIndex && edge->next->finalIndex <= UINT8_MAX );
+		B3_ASSERT( 0 <= edge->twin->finalIndex && edge->twin->finalIndex <= UINT8_MAX );
+		B3_ASSERT( 0 <= edge->face->finalIndex && edge->face->finalIndex <= UINT8_MAX );
+		B3_ASSERT( 0 <= edge->origin->finalIndex && edge->origin->finalIndex <= UINT8_MAX );
+
+		finalEdges[index].next = (uint8_t)edge->next->finalIndex;
+		finalEdges[index].twin = (uint8_t)edge->twin->finalIndex;
+		finalEdges[index].face = (uint8_t)edge->face->finalIndex;
+		finalEdges[index].origin = (uint8_t)edge->origin->finalIndex;
+	}
+
+	for ( int index = 0; index < faceCount; ++index )
+	{
+		const b3QHFace* face = tempFaces[index];
+		B3_ASSERT( 0 <= face->edge->finalIndex && face->edge->finalIndex <= UINT8_MAX );
+
+		finalFaces[index].edge = (uint8_t)face->edge->finalIndex;
+		finalPlanes[index] = face->plane;
+	}
+
+	// All builder pointers are dead from here on.
+	b3Free( work, sizes.totalBytes );
+
+	b3HullData* hull = b3MakeHull( finalPoints, vertexCount, finalEdges, edgeCount, finalFaces, finalPlanes, faceCount );
+	B3_VALIDATE( hull != NULL );
+	return hull;
+}
+
+// Allocates the hull for its final arrays (half-edges in twin pairs 2k and 2k + 1) and fills it, then computes the
+// bounds, bulk properties and hash. NULL if the hull is degenerate or invalid.
+static b3HullData* b3MakeHull( const b3Vec3* hullPoints, int vertexCount, const b3HullHalfEdge* halfEdges, int edgeCount,
+							   const b3HullFace* hullFaces, const b3Plane* hullPlanes, int faceCount )
+{
 	int soaVertexCount = ( vertexCount + 3 ) & ~3;
 	int soaNormalCount = ( faceCount + 3 ) & ~3;
 
@@ -2213,7 +2261,7 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 	for ( int index = 0; index < vertexCount; ++index )
 	{
 		vertices[index].edge = 0;
-		b3Vec3 p = tempVertices[index]->position;
+		b3Vec3 p = hullPoints[index];
 		finalPoints[index] = p;
 
 		vx[index] = p.x;
@@ -2230,18 +2278,8 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 
 	for ( int index = 0; index < edgeCount; ++index )
 	{
-		const b3QHHalfEdge* edge = tempEdges[index];
-		B3_ASSERT( 0 <= edge->next->finalIndex && edge->next->finalIndex <= UINT8_MAX );
-		B3_ASSERT( 0 <= edge->twin->finalIndex && edge->twin->finalIndex <= UINT8_MAX );
-		B3_ASSERT( 0 <= edge->face->finalIndex && edge->face->finalIndex <= UINT8_MAX );
-		B3_ASSERT( 0 <= edge->origin->finalIndex && edge->origin->finalIndex <= UINT8_MAX );
-
-		edges[index].next = (uint8_t)edge->next->finalIndex;
-		edges[index].twin = (uint8_t)edge->twin->finalIndex;
-		edges[index].face = (uint8_t)edge->face->finalIndex;
-		edges[index].origin = (uint8_t)edge->origin->finalIndex;
-
-		vertices[edge->origin->finalIndex].edge = (uint8_t)index;
+		edges[index] = halfEdges[index];
+		vertices[halfEdges[index].origin].edge = (uint8_t)index;
 	}
 
 	float* nx = soaNormals;
@@ -2250,13 +2288,10 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 
 	for ( int index = 0; index < faceCount; ++index )
 	{
-		const b3QHFace* face = tempFaces[index];
-		B3_ASSERT( 0 <= face->edge->finalIndex && face->edge->finalIndex <= UINT8_MAX );
+		faces[index] = hullFaces[index];
+		planes[index] = hullPlanes[index];
 
-		faces[index].edge = (uint8_t)face->edge->finalIndex;
-		planes[index] = face->plane;
-
-		b3Vec3 n = face->plane.normal;
+		b3Vec3 n = hullPlanes[index].normal;
 		nx[index] = n.x;
 		ny[index] = n.y;
 		nz[index] = n.z;
@@ -2268,9 +2303,6 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 		ny[index] = 0.0f;
 		nz[index] = 0.0f;
 	}
-
-	// All builder pointers are dead from here on.
-	b3Free( work, sizes.totalBytes );
 
 	b3UpdateHullBounds( hull );
 	bool success = b3UpdateHullBulkProperties( hull );
@@ -2290,6 +2322,177 @@ b3HullData* b3CreateHull( const b3Vec3* points, int pointCount, int maxVertexCou
 	hull->hash = b3Hash64NonZero( (uint8_t*)hull, hull->byteCount );
 
 	return hull;
+}
+
+// Patched (PATCHES.md): a hull from known topology, without quickhull
+b3HullData* b3CreateHullFromFaces( const b3Vec3* points, int pointCount, const b3Plane* planes, const uint8_t* faceSizes,
+								   int faceCount, const uint8_t* indices )
+{
+	if ( pointCount < 4 || pointCount > B3_MAX_HULL_VERTICES || faceCount < 4 || faceCount > B3_MAX_HULL_FACES )
+	{
+		return NULL;
+	}
+
+	for ( int index = 0; index < pointCount; ++index )
+	{
+		if ( b3IsValidVec3( points[index] ) == false )
+		{
+			return NULL;
+		}
+	}
+
+	// The loops' half-edges in order (slots): each one's origin, face and the next slot round its face
+	uint8_t origins[2 * B3_MAX_HULL_EDGES];
+	uint8_t slotFaces[2 * B3_MAX_HULL_EDGES];
+	uint8_t nextSlots[2 * B3_MAX_HULL_EDGES];
+	uint8_t firstSlots[B3_MAX_HULL_FACES];
+	int slotCount = 0;
+	for ( int faceIndex = 0; faceIndex < faceCount; ++faceIndex )
+	{
+		int size = faceSizes[faceIndex];
+		if ( size < 3 || slotCount + size > 2 * B3_MAX_HULL_EDGES || b3IsValidPlane( planes[faceIndex] ) == false )
+		{
+			return NULL;
+		}
+
+		firstSlots[faceIndex] = (uint8_t)slotCount;
+		for ( int k = 0; k < size; ++k )
+		{
+			int slot = slotCount + k;
+			if ( indices[slot] >= pointCount )
+			{
+				return NULL;
+			}
+
+			origins[slot] = indices[slot];
+			slotFaces[slot] = (uint8_t)faceIndex;
+			nextSlots[slot] = (uint8_t)( k + 1 < size ? slot + 1 : slotCount );
+		}
+
+		slotCount += size;
+	}
+
+	// Euler's formula for a closed surface of genus zero
+	if ( slotCount % 2 != 0 || pointCount - slotCount / 2 + faceCount != 2 )
+	{
+		return NULL;
+	}
+
+	// Each point's outgoing slots, by a counting sort on their origins
+	int outStart[B3_MAX_HULL_VERTICES + 1] = { 0 };
+	int cursor[B3_MAX_HULL_VERTICES];
+	uint8_t outSlots[2 * B3_MAX_HULL_EDGES];
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		outStart[origins[slot] + 1] += 1;
+	}
+
+	for ( int index = 0; index < pointCount; ++index )
+	{
+		if ( outStart[index + 1] == 0 )
+		{
+			// A point on no face
+			return NULL;
+		}
+
+		outStart[index + 1] += outStart[index];
+		cursor[index] = outStart[index];
+	}
+
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		int at = cursor[origins[slot]];
+		outSlots[at] = (uint8_t)slot;
+		cursor[origins[slot]] = at + 1;
+	}
+
+	// Each slot's twin: the one slot running back along its edge, on another face. None means the surface is open,
+	// two that an edge is used twice the same way (a flipped face) or by more than two faces.
+	uint8_t twins[2 * B3_MAX_HULL_EDGES];
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		int origin = origins[slot];
+		int target = origins[nextSlots[slot]];
+		if ( origin == target )
+		{
+			return NULL;
+		}
+
+		int twin = -1;
+		int matchCount = 0;
+		for ( int i = outStart[target]; i < outStart[target + 1]; ++i )
+		{
+			int other = outSlots[i];
+			if ( origins[nextSlots[other]] == origin )
+			{
+				twin = other;
+				matchCount += 1;
+			}
+		}
+
+		if ( matchCount != 1 || slotFaces[twin] == slotFaces[slot] )
+		{
+			return NULL;
+		}
+
+		twins[slot] = (uint8_t)twin;
+	}
+
+	// Half-edges numbered in twin pairs in the order of the faces and their loops, as b3CreateHull numbers them
+	int edgeIndices[2 * B3_MAX_HULL_EDGES];
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		edgeIndices[slot] = B3_NULL_INDEX;
+	}
+
+	int edgeCount = 0;
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		if ( edgeIndices[slot] == B3_NULL_INDEX )
+		{
+			edgeIndices[slot] = edgeCount;
+			edgeIndices[twins[slot]] = edgeCount + 1;
+			edgeCount += 2;
+		}
+	}
+
+	b3HullHalfEdge edges[2 * B3_MAX_HULL_EDGES];
+	for ( int slot = 0; slot < slotCount; ++slot )
+	{
+		b3HullHalfEdge* edge = edges + edgeIndices[slot];
+		edge->next = (uint8_t)edgeIndices[nextSlots[slot]];
+		edge->twin = (uint8_t)edgeIndices[twins[slot]];
+		edge->origin = origins[slot];
+		edge->face = slotFaces[slot];
+	}
+
+	b3HullFace faces[B3_MAX_HULL_FACES];
+	for ( int faceIndex = 0; faceIndex < faceCount; ++faceIndex )
+	{
+		faces[faceIndex].edge = (uint8_t)edgeIndices[firstSlots[faceIndex]];
+	}
+
+	// Each point's half-edges must make one fan round it, not two cones meeting at the point
+	for ( int index = 0; index < pointCount; ++index )
+	{
+		int degree = outStart[index + 1] - outStart[index];
+		int first = edgeIndices[outSlots[outStart[index]]];
+		int edge = first;
+		int count = 0;
+		do
+		{
+			edge = edges[edges[edge].twin].next;
+			count += 1;
+		}
+		while ( edge != first && count < degree );
+
+		if ( edge != first || count != degree )
+		{
+			return NULL;
+		}
+	}
+
+	return b3MakeHull( points, pointCount, edges, edgeCount, faces, planes, faceCount );
 }
 
 b3HullData* b3CloneHull( const b3HullData* hull )
